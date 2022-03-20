@@ -1,0 +1,8 @@
+selenium==3.141.0
+boto3==1.17.26
+pydantic==1.7.3
+tqdm==4.54.1
+requests==2.25.1
+beautifulsoup4==4.9.3
+python_dateutil==2.8.1
+awslambdaric==1.0.0
