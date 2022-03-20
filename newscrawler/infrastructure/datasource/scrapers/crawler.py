@@ -1,5 +1,4 @@
 import logging
-import os
 from abc import abstractmethod
 from concurrent.futures.thread import ThreadPoolExecutor
 from typing import List, Dict, Union
@@ -58,23 +57,25 @@ class Crawler:
         pass
 
     def _get_content(self, articles_data) -> Union[NewsDetailsDTO, None]:
-        url = articles_data.get('link')
+        url = articles_data.get("link")
         try:
             soup = self.page_loader.get_soup(url)
-            data_field_dict = {field: None for field in NewsDetailsDTO.__dataclass_fields__.keys()}
+            data_field_dict = {
+                field: None for field in NewsDetailsDTO.__dataclass_fields__.keys()
+            }
 
             data_field_dict["extracted_text"] = self._get_whole_text(soup)
-            data_field_dict["headline"] = articles_data.get('headline')
-            data_field_dict["keywords"] = articles_data.get('keywords')
-            data_field_dict["timestamp"] = articles_data.get('timestamp')
-            data_field_dict["category"] = articles_data.get('category')
-            data_field_dict["link"] = articles_data.get('link')
-            data_field_dict["sources"] = articles_data.get('sources')
+            data_field_dict["headline"] = articles_data.get("headline")
+            data_field_dict["keywords"] = articles_data.get("keywords")
+            data_field_dict["timestamp"] = articles_data.get("timestamp")
+            data_field_dict["category"] = articles_data.get("category")
+            data_field_dict["link"] = articles_data.get("link")
+            data_field_dict["sources"] = articles_data.get("sources")
 
             return NewsDetailsDTO(**data_field_dict)
         except pydantic.error_wrappers.ValidationError:
-            logger.info(f'Error in get_content {url}. Reason: extracted_text is None')
+            logger.info(f"Error in get_content {url}. Reason: extracted_text is None")
             return None
         except AttributeError as e:
-            logger.info(f'Error in get_content {url}. Reason: {e}')
+            logger.info(f"Error in get_content {url}. Reason: {e}")
             return None

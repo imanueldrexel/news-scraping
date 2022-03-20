@@ -13,13 +13,16 @@ class HeadlessBrowser:
     def __init__(self):
         self.options = Options()
         self.options.headless = True
-        self.driver = Firefox(options=self.options,
-                              executable_path=os.getenv("geckodriver.exe"))
+        self.driver = Firefox(
+            options=self.options, executable_path=os.getenv("geckodriver.exe")
+        )
 
     def get_soup_selenium(self, url: str):
         try:
             self.driver.get(url)
-            self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            self.driver.execute_script(
+                "window.scrollTo(0, document.body.scrollHeight);"
+            )
             page_response = self.driver.page_source
             soup = BeautifulSoup(page_response, "html.parser")
             return soup

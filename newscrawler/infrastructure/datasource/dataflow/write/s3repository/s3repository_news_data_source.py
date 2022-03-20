@@ -1,5 +1,4 @@
 import logging
-import os
 from typing import List, Dict, Any
 
 import csv
@@ -45,12 +44,11 @@ class S3RepositoryNewsDataSource:
     def _list_of_dict_to_csv(key: str, batch_results: List[Dict[str, Any]]):
         csv_path = f"{key}.csv"
         if batch_results:
-            with open(csv_path, 'w', encoding='utf8', newline='') as output_file:
-                fc = csv.DictWriter(output_file,
-                                    fieldnames=batch_results[0].keys())
+            with open(csv_path, "w", encoding="utf8", newline="") as output_file:
+                fc = csv.DictWriter(output_file, fieldnames=batch_results[0].keys())
                 fc.writeheader()
                 fc.writerows(batch_results)
-                logger.info(f'Saved as {csv_path}')
+                logger.info(f"Saved as {csv_path}")
         return csv_path
 
     @staticmethod

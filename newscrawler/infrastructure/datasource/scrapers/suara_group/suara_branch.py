@@ -1,4 +1,3 @@
-
 class SuaraNetwork:
     def __init__(self):
         self.SuaraJakarta = "https://jakarta.suara.com/static/news/jakarta-sitemap.xml"
@@ -12,7 +11,9 @@ class SuaraNetwork:
         self.SuaraBali = "https://bali.suara.com/static/news/bali-sitemap.xml"
         self.SuaraLampung = "https://lampung.suara.com/static/news/lampung-sitemap.xml"
         self.SuaraBanten = "https://banten.suara.com/static/news/banten-sitemap.xml"
-        self.SuaraSurakarta = "https://surakarta.suara.com/static/news/surakarta-sitemap.xml"
+        self.SuaraSurakarta = (
+            "https://surakarta.suara.com/static/news/surakarta-sitemap.xml"
+        )
         self.SuaraKaltim = "https://kaltim.suara.com/static/news/kaltim-sitemap.xml"
         self.SuaraKalbar = "https://kalbar.suara.com/static/news/kalbar-sitemap.xml"
         self.SuaraSulsel = "https://sulsel.suara.com/static/news/sulsel-sitemap.xml"
@@ -26,7 +27,9 @@ class SuaraNetwork:
     def get_all_url():
         tmp = {}
         for site in dir(SuaraNetwork()):
-            if "__" not in site and isinstance(SuaraNetwork().__getattribute__(site), str):
+            if "__" not in site and isinstance(
+                SuaraNetwork().__getattribute__(site), str
+            ):
                 tmp[site] = SuaraNetwork().__getattribute__(site)
 
         return tmp

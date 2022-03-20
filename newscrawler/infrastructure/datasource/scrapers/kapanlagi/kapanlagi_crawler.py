@@ -9,7 +9,11 @@ from newscrawler.domain.dtos.dataflow.news_information_dto import NewsInformatio
 from newscrawler.infrastructure.datasource.scrapers.crawler import Crawler
 from newscrawler.domain.entities.extraction.website_name import WebsiteName
 from newscrawler.domain.utils.date_time_reader import DateTimeReader
-from newscrawler.core.utils.utils import get_last_crawling_time, set_last_crawling_time, preprocess_text
+from newscrawler.core.utils.utils import (
+    get_last_crawling_time,
+    set_last_crawling_time,
+    preprocess_text,
+)
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)
@@ -22,17 +26,20 @@ class KapanlagiCrawler(Crawler):
         self.date_time_reader = DateTimeReader()
         self.website_name = WebsiteName.KAPANLAGI.value
         self.main_path = os.path.dirname(os.path.realpath(__file__))
-        self.last_crawling_time = get_last_crawling_time(dir_path=self.main_path,
-                                                         website_name=self.website_name)
+        self.last_crawling_time = get_last_crawling_time(
+            dir_path=self.main_path, website_name=self.website_name
+        )
         self.headless_page_loader = headless_page_loader
         self.req_page_loader = RequestsPageLoader()
 
     def get_news_data(self, web_url: str) -> NewsInformationDTO:
         news = self.get_news_in_bulk(web_url)
         news_data = self.batch_crawling(news)
-        set_last_crawling_time(last_crawling_time=self.last_crawling_time,
-                               dir_path=self.main_path,
-                               website_name=self.website_name)
+        set_last_crawling_time(
+            last_crawling_time=self.last_crawling_time,
+            dir_path=self.main_path,
+            website_name=self.website_name,
+        )
         return NewsInformationDTO(scraped_news=news_data)
 
     def get_news_in_bulk(self, web_url: str) -> List[Dict[str, any]]:
@@ -46,7 +53,9 @@ class KapanlagiCrawler(Crawler):
             if last_update:
                 self.last_crawling_time[branch_name_details] = last_update
 
-        logger.info(f"Get {len(links_to_crawl)} to crawl in {self.website_name} crawler")
+        logger.info(
+            f"Get {len(links_to_crawl)} to crawl in {self.website_name} crawler"
+        )
         return links_to_crawl
 
     @staticmethod
@@ -70,7 +79,9 @@ class KapanlagiCrawler(Crawler):
             last_stamped_crawling = self.last_crawling_time.get(branch_name)
             if not last_stamped_crawling:
                 last_stamped_crawling = self.default_time
-            timestamp_string, timestamp_datetime = self._get_timestamp(url, date_time_reader=self.date_time_reader)
+            timestamp_string, timestamp_datetime = self._get_timestamp(
+                url, date_time_reader=self.date_time_reader
+            )
 
             try:
                 latest_news_time[branch_name].append(timestamp_datetime)
@@ -79,45 +90,51 @@ class KapanlagiCrawler(Crawler):
 
             if timestamp_datetime > last_stamped_crawling:
                 attributes = {
-                    'link': link,
-                    'headline': title,
-                    'keywords': keywords,
-                    'timestamp': timestamp_datetime,
-                    'category': branch_name,
-                    'sources': self.website_name
+                    "link": link,
+                    "headline": title,
+                    "keywords": keywords,
+                    "timestamp": timestamp_datetime,
+                    "category": branch_name,
+                    "sources": self.website_name,
                 }
                 articles.append(attributes)
-        latest_news_time = {k: max(v) if len(v) > 0 else None for k, v in latest_news_time.items()}
+        latest_news_time = {
+            k: max(v) if len(v) > 0 else None for k, v in latest_news_time.items()
+        }
         return latest_news_time, articles
 
     @staticmethod
     def _get_branch_name(text) -> str:
         branch_name = re.sub(r"(.*)(//)(.*)(.kapanlagi)(.*)", r"\3", text)
         if branch_name == "www":
-            branch_name = re.sub(r"(https://www.kapanlagi.com/)(.*)([/])(.*)([/])(.*)", r"\4", text)
+            branch_name = re.sub(
+                r"(https://www.kapanlagi.com/)(.*)([/])(.*)([/])(.*)", r"\4", text
+            )
             if branch_name == "":
-                branch_name = re.sub(r"(https://www.kapanlagi.com/)(.*)([/])(.*)([/])(.*)", r"\2", text)
+                branch_name = re.sub(
+                    r"(https://www.kapanlagi.com/)(.*)([/])(.*)([/])(.*)", r"\2", text
+                )
         return branch_name
 
     @staticmethod
     def _get_link(news_soup) -> str:
-        link = news_soup.find('loc')
+        link = news_soup.find("loc")
         if link:
-            link = link.get_text(' ').strip()
+            link = link.get_text(" ").strip()
             return link
 
     @staticmethod
     def _get_title(news_soup) -> str:
         title = news_soup.find("news:title")
         if title:
-            title = title.get_text(' ').strip()
+            title = title.get_text(" ").strip()
             return title
 
     @staticmethod
     def _get_keywords(news_soup) -> List[str]:
         keyword_div = news_soup.find("news:keywords")
         if keyword_div:
-            keywords = keyword_div.get_text(' ').strip()
+            keywords = keyword_div.get_text(" ").strip()
             keywords = [x.strip() for x in keywords.split()]
             return keywords
 
@@ -125,25 +142,32 @@ class KapanlagiCrawler(Crawler):
     def _get_timestamp(news_soup, date_time_reader: DateTimeReader):
         timestamp = news_soup.find("news:publication_date")
         if timestamp:
-            timestamp_string = timestamp.get_text(' ').strip()
+            timestamp_string = timestamp.get_text(" ").strip()
             timestamp_string = timestamp_string.replace("+07:00", "")
-            timestamp_string = re.sub(r"(.*)(, )([0-9]{2})(.*)", r"\3\4", timestamp_string)
+            timestamp_string = re.sub(
+                r"(.*)(, )([0-9]{2})(.*)", r"\3\4", timestamp_string
+            )
             timestamp_datetime = date_time_reader.convert_date(timestamp_string)
             return timestamp_string, timestamp_datetime
 
     @staticmethod
     def _get_whole_text(soup) -> List[str]:
         texts = []
-        layer = soup.find("div", attrs={"class": ["body-paragraph clearfix", "body-paragraph pagging_on"]})
+        layer = soup.find(
+            "div",
+            attrs={"class": ["body-paragraph clearfix", "body-paragraph pagging_on"]},
+        )
         if layer:
             sentences = layer.find_all(["p", "div"])
             for sentence in sentences:
-                sentence_text = preprocess_text(sentence.get_text(' ').strip())
-                sentence_caption = sentence.find("div", attrs={"class": ["entertainment-newsdetail-image-caption"]})
+                sentence_text = preprocess_text(sentence.get_text(" ").strip())
+                sentence_caption = sentence.find(
+                    "div", attrs={"class": ["entertainment-newsdetail-image-caption"]}
+                )
                 if sentence_caption or (not sentence_text) or (sentence_text in texts):
                     continue
                 else:
-                    sentence_text = re.sub(r'(\s+)(\1+)', r'\1', sentence_text)
+                    sentence_text = re.sub(r"(\s+)(\1+)", r"\1", sentence_text)
                     if sentence_text:
                         texts.append(sentence_text)
             return texts

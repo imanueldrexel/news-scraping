@@ -6,30 +6,58 @@ class AntaraNewsNetwork:
         self.Finansial = "https://www.antaranews.com/rss/ekonomi-finansial.xml"
         self.Bisnis = "https://www.antaranews.com/rss/ekonomi-bisnis.xml"
         self.Bursa = "https://www.antaranews.com/rss/ekonomi-bursa.xml"
-        self.BUMNUntukNegeri = "https://www.antaranews.com/rss/ekonomi-bumn-untuk-negeri.xml"
+        self.BUMNUntukNegeri = (
+            "https://www.antaranews.com/rss/ekonomi-bumn-untuk-negeri.xml"
+        )
         self.Metro = "https://www.antaranews.com/rss/metro.xml"
         self.Kriminalitas = "https://www.antaranews.com/rss/metro-kriminalitas.xml"
         self.LintasKota = "https://www.antaranews.com/rss/metro-lintas-kota.xml"
-        self.LenggangJakarta = "https://www.antaranews.com/rss/metro-lenggang-jakarta.xml"
+        self.LenggangJakarta = (
+            "https://www.antaranews.com/rss/metro-lenggang-jakarta.xml"
+        )
         self.Sepakbola = "https://www.antaranews.com/rss/sepakbola.xml"
-        self.SepakbolaIndonesia = "https://www.antaranews.com/rss/sepakbola-liga-indonesia.xml"
-        self.SepakbolaInternasional = "https://www.antaranews.com/rss/sepakbola-internasional.xml"
-        self.SepakbolaLigaInggris = "https://www.antaranews.com/rss/sepakbola-liga-inggris-premier.xml"
-        self.SepakbolaLigaSpanyol = "https://www.antaranews.com/rss/sepakbola-liga-spanyol.xml"
-        self.SepakbolaLigaChampions = "https://www.antaranews.com/rss/sepakbola-liga-champions.xml"
-        self.SepakbolaLigaItalia = "https://www.antaranews.com/rss/sepakbola-liga-italia-seri-a.xml"
-        self.SepakbolaLigaJerman = "https://www.antaranews.com/rss/sepakbola-liga-jerman.xml"
-        self.SepakbolaLigaPrancis = "https://www.antaranews.com/rss/sepakbola-liga-prancis.xml"
-        self.SepakbolaLigaLigaLain = "https://www.antaranews.com/rss/sepakbola-liga-liga-dunia.xml"
+        self.SepakbolaIndonesia = (
+            "https://www.antaranews.com/rss/sepakbola-liga-indonesia.xml"
+        )
+        self.SepakbolaInternasional = (
+            "https://www.antaranews.com/rss/sepakbola-internasional.xml"
+        )
+        self.SepakbolaLigaInggris = (
+            "https://www.antaranews.com/rss/sepakbola-liga-inggris-premier.xml"
+        )
+        self.SepakbolaLigaSpanyol = (
+            "https://www.antaranews.com/rss/sepakbola-liga-spanyol.xml"
+        )
+        self.SepakbolaLigaChampions = (
+            "https://www.antaranews.com/rss/sepakbola-liga-champions.xml"
+        )
+        self.SepakbolaLigaItalia = (
+            "https://www.antaranews.com/rss/sepakbola-liga-italia-seri-a.xml"
+        )
+        self.SepakbolaLigaJerman = (
+            "https://www.antaranews.com/rss/sepakbola-liga-jerman.xml"
+        )
+        self.SepakbolaLigaPrancis = (
+            "https://www.antaranews.com/rss/sepakbola-liga-prancis.xml"
+        )
+        self.SepakbolaLigaLigaLain = (
+            "https://www.antaranews.com/rss/sepakbola-liga-liga-dunia.xml"
+        )
         self.SepakbolaBintang = "https://www.antaranews.com/rss/sepakbola-bintang.xml"
         self.Olahraga = "https://www.antaranews.com/rss/olahraga.xml"
-        self.OlahragaBulutangkis = "https://www.antaranews.com/rss/olahraga-bulutangkis.xml"
-        self.OlahragaBolaBasket = "https://www.antaranews.com/rss/olahraga-bola-basket.xml"
+        self.OlahragaBulutangkis = (
+            "https://www.antaranews.com/rss/olahraga-bulutangkis.xml"
+        )
+        self.OlahragaBolaBasket = (
+            "https://www.antaranews.com/rss/olahraga-bola-basket.xml"
+        )
         self.OlahragaTenis = "https://www.antaranews.com/rss/olahraga-tenis.xml"
         self.OlahragaBalap = "https://www.antaranews.com/rss/olahraga-balap.xml"
         self.OlahragaESport = "https://www.antaranews.com/rss/olahraga-e-sport.xml"
         self.OlahragaAllSport = "https://www.antaranews.com/rss/olahraga-all-sport.xml"
-        self.OlahragaSportainment = "https://www.antaranews.com/rss/olahraga-sportainment.xml"
+        self.OlahragaSportainment = (
+            "https://www.antaranews.com/rss/olahraga-sportainment.xml"
+        )
         self.Humaniora = "https://www.antaranews.com/rss/humaniora.xml"
         self.Lifestyle = "https://www.antaranews.com/rss/lifestyle.xml"
         self.LifestyleKuliner = "https://www.antaranews.com/rss/lifestyle-kuliner.xml"
@@ -42,11 +70,17 @@ class AntaraNewsNetwork:
         self.HiburanSinema = "https://www.antaranews.com/rss/hiburan-sinema.xml"
         self.HiburanMusik = "https://www.antaranews.com/rss/hiburan-musik.xml"
         self.HiburanPentas = "https://www.antaranews.com/rss/hiburan-pentas.xml"
-        self.HiburanAntaraKustik = "https://www.antaranews.com/rss/hiburan-antarakustik.xml"
+        self.HiburanAntaraKustik = (
+            "https://www.antaranews.com/rss/hiburan-antarakustik.xml"
+        )
         self.Dunia = "https://www.antaranews.com/rss/dunia.xml"
         self.DuniaAsean = "https://www.antaranews.com/rss/dunia-asean.xml"
-        self.DuniaInternasional = "https://www.antaranews.com/rss/dunia-internasional.xml"
-        self.DuniaInternasionalCorner = "https://www.antaranews.com/rss/dunia-internasional-corner.xml"
+        self.DuniaInternasional = (
+            "https://www.antaranews.com/rss/dunia-internasional.xml"
+        )
+        self.DuniaInternasionalCorner = (
+            "https://www.antaranews.com/rss/dunia-internasional-corner.xml"
+        )
         self.Tekno = "https://www.antaranews.com/rss/tekno.xml"
         self.TeknoGadget = "https://www.antaranews.com/rss/tekno-gadget.xml"
         self.TeknoGame = "https://www.antaranews.com/rss/tekno-game.xml"
@@ -65,6 +99,8 @@ class AntaraNewsNetwork:
     def get_all_url():
         tmp = {}
         for site in dir(AntaraNewsNetwork()):
-            if "__" not in site and isinstance(AntaraNewsNetwork().__getattribute__(site), str):
+            if "__" not in site and isinstance(
+                AntaraNewsNetwork().__getattribute__(site), str
+            ):
                 tmp[site] = AntaraNewsNetwork().__getattribute__(site)
         return tmp

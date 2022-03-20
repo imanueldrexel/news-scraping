@@ -19,7 +19,9 @@ class GridIdNetwork:
         self.Kids = "https://kids.grid.id/sitemap/news/sitemap.xml"
         self.MakeMac = "https://makemac.grid.id/sitemap/news/sitemap.xml"
         self.Nakita = "https://nakita.grid.id/sitemap/news/sitemap.xml"
-        self.NationalGeographic = "https://nationalgeographic.grid.id/sitemap/news/sitemap.xml"
+        self.NationalGeographic = (
+            "https://nationalgeographic.grid.id/sitemap/news/sitemap.xml"
+        )
         self.Nextren = "https://nextren.grid.id/sitemap/news/sitemap.xml"
         self.Nova = "https://nova.grid.id/sitemap/news/sitemap.xml"
         self.Otofemale = "https://otofemale.grid.id/sitemap/news/sitemap.xml"
@@ -40,7 +42,9 @@ class GridIdNetwork:
         self.Otorace = "https://otorace.gridoto.com/sitemap-news.xml"
         self.Otoseken = "https://otoseken.gridoto.com/sitemap-news.xml"
         self.Motorplus = "https://www.motorplus-online.com/sitemap/news/sitemap.xml"
-        self.GridMotor = "https://gridmotor.motorplus-online.com/sitemap/news/sitemap.xml"
+        self.GridMotor = (
+            "https://gridmotor.motorplus-online.com/sitemap/news/sitemap.xml"
+        )
         self.Bolasport = "https://www.bolasport.com/sitemap-news.xml"
         self.Bolanas = "https://bolanas.bolasport.com/sitemap/news/sitemap.xml"
         self.BolaStylo = "https://bolastylo.bolasport.com/sitemap/news/sitemap.xml"
@@ -49,7 +53,9 @@ class GridIdNetwork:
     def get_all_url():
         tmp = {}
         for site in dir(GridIdNetwork()):
-            if "__" not in site and isinstance(GridIdNetwork().__getattribute__(site), str):
+            if "__" not in site and isinstance(
+                GridIdNetwork().__getattribute__(site), str
+            ):
                 tmp[site] = GridIdNetwork().__getattribute__(site)
 
         return tmp

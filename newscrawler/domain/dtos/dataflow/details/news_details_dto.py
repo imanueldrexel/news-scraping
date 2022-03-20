@@ -1,4 +1,4 @@
-from typing import List, Dict, Union
+from typing import List, Union
 from datetime import date
 from pydantic.dataclasses import dataclass
 

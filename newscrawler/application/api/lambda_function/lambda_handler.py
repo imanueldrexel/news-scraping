@@ -1,36 +1,72 @@
-import os
-import json
 import logging
 
 from newscrawler.application.api.crawler_api import CrawlerAPI
 from newscrawler.core.page_loader.headless_page_loader import HeadlessPageLoader
-from newscrawler.infrastructure.datasource.dataflow.write.news_data_source import NewsDataSource
-from newscrawler.infrastructure.datasource.scrapers.antara_news.antara_news_crawler import AntaraNewsCrawler
-from newscrawler.infrastructure.datasource.scrapers.batampos.batampos_crawler import BatamposCrawler
-from newscrawler.infrastructure.datasource.scrapers.berita_satu.beritasatu_crawler import BeritaSatuCrawler
-from newscrawler.infrastructure.datasource.scrapers.bisnis.bisnis_crawler import BisnisCrawler
+from newscrawler.infrastructure.datasource.dataflow.write.news_data_source import (
+    NewsDataSource,
+)
+from newscrawler.infrastructure.datasource.scrapers.antara_news.antara_news_crawler import (
+    AntaraNewsCrawler,
+)
+from newscrawler.infrastructure.datasource.scrapers.batampos.batampos_crawler import (
+    BatamposCrawler,
+)
+from newscrawler.infrastructure.datasource.scrapers.berita_satu.beritasatu_crawler import (
+    BeritaSatuCrawler,
+)
+from newscrawler.infrastructure.datasource.scrapers.bisnis.bisnis_crawler import (
+    BisnisCrawler,
+)
 from newscrawler.infrastructure.datasource.scrapers.cnbc.cnbc_crawler import CNBCCrawler
 from newscrawler.infrastructure.datasource.scrapers.cnn.cnn_crawler import CNNCrawler
-from newscrawler.infrastructure.datasource.scrapers.grid_id.grid_id_crawler import GridIdCrawler
-from newscrawler.infrastructure.datasource.scrapers.idx_channel.idxchannel_crawler import IdxChannelCrawler
-from newscrawler.infrastructure.datasource.scrapers.investor_id.investorid_crawler import InvestorIDCrawler
+from newscrawler.infrastructure.datasource.scrapers.grid_id.grid_id_crawler import (
+    GridIdCrawler,
+)
+from newscrawler.infrastructure.datasource.scrapers.idx_channel.idxchannel_crawler import (
+    IdxChannelCrawler,
+)
+from newscrawler.infrastructure.datasource.scrapers.investor_id.investorid_crawler import (
+    InvestorIDCrawler,
+)
 from newscrawler.infrastructure.datasource.scrapers.jpnn.jpnn_crawler import JPNNCrawler
-from newscrawler.infrastructure.datasource.scrapers.kapanlagi.kapanlagi_crawler import KapanlagiCrawler
+from newscrawler.infrastructure.datasource.scrapers.kapanlagi.kapanlagi_crawler import (
+    KapanlagiCrawler,
+)
 
-from newscrawler.infrastructure.datasource.scrapers.kompas.kompas_crawler import KompasCrawler
-from newscrawler.infrastructure.datasource.scrapers.kontan.kontan_crawler import KontanCrawler
-from newscrawler.infrastructure.datasource.scrapers.liputan_enam.liputan_enam_crawler import LiputanEnamCrawler
-from newscrawler.infrastructure.datasource.scrapers.media_indonesia.mediaindonesia_crawler import MediaIndonesiaCrawler
-from newscrawler.infrastructure.datasource.scrapers.pikiran_rakyat.pikiran_rakyat_crawler import PikiranRakyatCrawler
-from newscrawler.infrastructure.datasource.scrapers.sindonews.sindonews_crawler import SindonewsCrawler
-from newscrawler.infrastructure.datasource.scrapers.tempo.tempo_crawler import TempoCrawler
-from newscrawler.infrastructure.datasource.scrapers.tirto.tirto_crawler import TirtoCrawler
-from newscrawler.infrastructure.datasource.scrapers.tribun.tribun_crawler import TribunCrawler
+from newscrawler.infrastructure.datasource.scrapers.kompas.kompas_crawler import (
+    KompasCrawler,
+)
+from newscrawler.infrastructure.datasource.scrapers.kontan.kontan_crawler import (
+    KontanCrawler,
+)
+from newscrawler.infrastructure.datasource.scrapers.liputan_enam.liputan_enam_crawler import (
+    LiputanEnamCrawler,
+)
+from newscrawler.infrastructure.datasource.scrapers.media_indonesia.mediaindonesia_crawler import (
+    MediaIndonesiaCrawler,
+)
+from newscrawler.infrastructure.datasource.scrapers.pikiran_rakyat.pikiran_rakyat_crawler import (
+    PikiranRakyatCrawler,
+)
+from newscrawler.infrastructure.datasource.scrapers.sindonews.sindonews_crawler import (
+    SindonewsCrawler,
+)
+from newscrawler.infrastructure.datasource.scrapers.tempo.tempo_crawler import (
+    TempoCrawler,
+)
+from newscrawler.infrastructure.datasource.scrapers.tirto.tirto_crawler import (
+    TirtoCrawler,
+)
+from newscrawler.infrastructure.datasource.scrapers.tribun.tribun_crawler import (
+    TribunCrawler,
+)
 from newscrawler.domain.entities.extraction.website_name import WebsiteName
 from newscrawler.domain.services.crawler_service_impl import CrawlerServiceImpl
 from newscrawler.domain.entities.extraction.url_data import URL
 from newscrawler.infrastructure.datasource.scrapers.viva.viva_crawler import VivaCrawler
-from newscrawler.infrastructure.repositories.dataflow.data_flow_repository_impl import DataFlowRepositoryImpl
+from newscrawler.infrastructure.repositories.dataflow.data_flow_repository_impl import (
+    DataFlowRepositoryImpl,
+)
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)
@@ -61,7 +97,7 @@ def init_crawler():
         website_name.VIVA.value: VivaCrawler(),
         website_name.TIRTO.value: TirtoCrawler(),
         website_name.INVESTORID.value: InvestorIDCrawler(),
-        website_name.BERITASATU.value: BeritaSatuCrawler()
+        website_name.BERITASATU.value: BeritaSatuCrawler(),
     }
     web_url = {
         website_name.GRIDID.value: URL.GRIDID,
@@ -84,16 +120,14 @@ def init_crawler():
         website_name.VIVA.value: URL.VIVA,
         website_name.TIRTO.value: URL.TIRTO,
         website_name.INVESTORID.value: URL.INVESTORID,
-        website_name.BERITASATU.value: URL.BERITASATU
+        website_name.BERITASATU.value: URL.BERITASATU,
     }
 
     news_data_source = NewsDataSource()
-    data_flow_repo = DataFlowRepositoryImpl(
-        news_data_source
+    data_flow_repo = DataFlowRepositoryImpl(news_data_source)
+    crawler_service = CrawlerServiceImpl(
+        web_url_dict=web_url, crawler_dict=crawler_dict, data_flow_repo=data_flow_repo
     )
-    crawler_service = CrawlerServiceImpl(web_url_dict=web_url,
-                                         crawler_dict=crawler_dict,
-                                         data_flow_repo=data_flow_repo)
 
     return CrawlerAPI(crawler_service)
 
@@ -107,4 +141,4 @@ def process_event(event, context):
         try:
             scraper_api.crawl_website_in_batch(websites)
         except BaseException as e:
-            logger.info(f'Failed to crawl. Reason: {e}')
+            logger.info(f"Failed to crawl. Reason: {e}")

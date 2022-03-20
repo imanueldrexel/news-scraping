@@ -22,5 +22,3 @@ class URL:
     TIRTO = "https://tirto.id/s/sitemap-content.xml"
     INVESTORID = "https://investor.id/sitemap_news.xml"
     BERITASATU = "https://www.beritasatu.com/sitemap_news.xml"
-
-
