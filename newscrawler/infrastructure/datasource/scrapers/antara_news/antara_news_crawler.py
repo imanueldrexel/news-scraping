@@ -1,8 +1,6 @@
 import os
 from datetime import date
 
-import pydantic
-
 from newscrawler.core.page_loader.requests_page_loader import RequestsPageLoader
 from newscrawler.domain.dtos.dataflow.news_information_dto import NewsInformationDTO
 from newscrawler.infrastructure.datasource.scrapers.antara_news.antaranews_branch import (

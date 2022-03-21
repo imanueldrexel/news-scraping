@@ -29,7 +29,11 @@ def main():
         "VIVA",
         "GRIDID",
     ]
-    WEBSITES = ",".join(FAST)
+    WEBSITES = FAST
+    if isinstance(WEBSITES, list):
+        WEBSITES = ",".join(WEBSITES)
+    elif isinstance(WEBSITES, str):
+        WEBSITES = WEBSITES
 
     lambda_handler.process_event({"website": WEBSITES}, None)
 
