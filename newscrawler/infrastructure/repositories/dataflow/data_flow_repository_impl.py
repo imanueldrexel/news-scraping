@@ -18,7 +18,9 @@ class DataFlowRepositoryImpl(DataFlowRepository):
     def __init__(self, write_news_data_source: NewsDataSource):
         self.write_news_data_source = write_news_data_source
 
-    def save_news_data(self, news_information) -> NewsInformationModel:
+    def save_news_data(
+        self, news_information: NewsInformationDTO
+    ) -> NewsInformationModel:
         news_information_model = self.to_news_information_model(news_information)
         self.write_news_data_source.save(news_information_model.news)
         return news_information_model

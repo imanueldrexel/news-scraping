@@ -1,7 +1,10 @@
 import logging
+import os
+import pickle
 from abc import abstractmethod
 from concurrent.futures.thread import ThreadPoolExecutor
-from typing import List, Dict, Union
+from datetime import date
+from typing import List, Dict, Union, Tuple
 
 import pydantic
 
@@ -21,18 +24,16 @@ class Crawler:
         self.verbose = VERBOSE
         self.parallelize = PARALLELIZE
         self.date_time_reader = DateTimeReader()
+        self.main_path = os.path.dirname(os.path.realpath(__file__))
         self.default_time = self.date_time_reader.convert_date("2000-01-01 00:00:01")
         self.max_worker = MAX_WORKER
         self.page_loader = RequestsPageLoader()
+        self.website_name = None
 
-    @abstractmethod
-    def get_news_data(self, web_url: str) -> NewsInformationDTO:
-        pass
-
-    def batch_crawling(self, news: List[Dict[str, str]]) -> List[NewsDetailsDTO]:
+    def batch_crawling(self, news: List[Dict[str, str]]) -> NewsInformationDTO:
         news_data = []
         if not news:
-            return news_data
+            return NewsInformationDTO(scraped_news=[])
         if self.parallelize:
             with ThreadPoolExecutor(max_workers=self.max_worker) as executor:
                 results = executor.map(self._get_content, news)
@@ -50,7 +51,13 @@ class Crawler:
                         logger.info(result)
                     news_data.append(result)
 
-        return news_data
+        return NewsInformationDTO(scraped_news=news_data)
+
+    @abstractmethod
+    def get_news_in_bulk(
+        self, web_url: str, last_crawling_time: Dict[str, date]
+    ) -> Tuple[Dict[str, any], List[Dict[str, any]]]:
+        raise NotImplementedError
 
     @staticmethod
     def _get_whole_text(soup):
@@ -79,3 +86,27 @@ class Crawler:
         except AttributeError as e:
             logger.info(f"Error in get_content {url}. Reason: {e}")
             return None
+
+    def get_last_crawling_time(self) -> Dict[str, date]:
+        try:
+            pickle_name = f"{self.website_name.lower()}.pkl"
+            pickle_path = os.path.join(self.main_path, pickle_name)
+            file = open(pickle_path, "rb")
+            last_crawling_time = pickle.load(file)
+            return last_crawling_time
+        except IOError:
+            return {}
+
+    def set_last_crawling_time(
+        self,
+        last_crawling_time: Union[Dict[str, str], None],
+        dir_path: str,
+    ) -> None:
+        try:
+            pickle_name = f"{self.website_name.lower()}.pkl"
+            pickle_path = os.path.join(dir_path, pickle_name)
+            file = open(pickle_path, "wb")
+            pickle.dump(last_crawling_time, file)
+            logger.info(f"Successfully save the data into {pickle_path}")
+        except BaseException as e:
+            logger.error(f"Fail to save the data to dump file.\n Reason: {e}")

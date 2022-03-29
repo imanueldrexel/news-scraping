@@ -19,7 +19,7 @@ class S3RepositoryNewsDataSource:
 
     def save(self, key: str, news_source: str, batch_results: List[Dict[str, Any]]):
         if batch_results:
-            csv_path = self._list_of_dict_to_csv(key=key, batch_results=batch_results)
+            csv_path = self._list_of_dict_to_csv(news_source=news_source,key=key, batch_results=batch_results)
             # offers_csv_path = f"{news_source}/{csv_path}"
 
             # # Upload to s3
@@ -41,8 +41,8 @@ class S3RepositoryNewsDataSource:
             logger.info("Empty data found. Cancel saving process")
 
     @staticmethod
-    def _list_of_dict_to_csv(key: str, batch_results: List[Dict[str, Any]]):
-        csv_path = f"{key}.csv"
+    def _list_of_dict_to_csv(news_source:str, key: str, batch_results: List[Dict[str, Any]]):
+        csv_path = f"{news_source}_{key}.csv"
         if batch_results:
             with open(csv_path, "w", encoding="utf8", newline="") as output_file:
                 fc = csv.DictWriter(output_file, fieldnames=batch_results[0].keys())

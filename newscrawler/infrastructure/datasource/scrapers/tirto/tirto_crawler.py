@@ -1,18 +1,13 @@
 import logging
-import os
 import re
 from datetime import date
 from typing import List, Tuple, Dict
 
-from newscrawler.core.page_loader.requests_page_loader import RequestsPageLoader
-from newscrawler.domain.dtos.dataflow.news_information_dto import NewsInformationDTO
+from newscrawler.domain.entities.extraction.website_name import WebsiteName
 from newscrawler.infrastructure.datasource.scrapers.crawler import Crawler
 from newscrawler.core.utils.utils import (
-    get_last_crawling_time,
-    set_last_crawling_time,
     preprocess_text,
 )
-from newscrawler.domain.entities.extraction.website_name import WebsiteName
 from newscrawler.domain.utils.date_time_reader import DateTimeReader
 
 logging.basicConfig()
@@ -23,26 +18,11 @@ logger.setLevel(logging.INFO)
 class TirtoCrawler(Crawler):
     def __init__(self):
         super(TirtoCrawler, self).__init__()
-        self.date_time_reader = DateTimeReader()
         self.website_name = WebsiteName.TIRTO.value
-        self.main_path = os.path.dirname(os.path.realpath(__file__))
-        self.page_loader = RequestsPageLoader()
 
-    def get_news_data(self, web_url: str) -> NewsInformationDTO:
-        last_crawling_time, news = self.get_news_in_bulk(web_url)
-        news_data = self.batch_crawling(news)
-        set_last_crawling_time(
-            last_crawling_time=last_crawling_time,
-            dir_path=self.main_path,
-            website_name=self.website_name,
-        )
-
-        return NewsInformationDTO(scraped_news=news_data)
-
-    def get_news_in_bulk(self, web_url) -> Tuple[Dict[str, any], List[Dict[str, any]]]:
-        last_crawling_time = get_last_crawling_time(
-            dir_path=self.main_path, website_name=self.website_name
-        )
+    def get_news_in_bulk(
+        self, web_url: str, last_crawling_time: Dict[str, date]
+    ) -> Tuple[Dict[str, any], List[Dict[str, any]]]:
         branch_name = "news"
         branch_link = web_url
         links_to_crawl = []
@@ -62,7 +42,10 @@ class TirtoCrawler(Crawler):
         return last_crawling_time, links_to_crawl
 
     def _scrape(
-        self, branch_link, branch_name, last_stamped_crawling=None
+        self,
+        branch_link: str,
+        branch_name: str,
+        last_stamped_crawling=None,
     ) -> Tuple[date, List]:
         soup = self.page_loader.get_soup(branch_link)
         articles = []

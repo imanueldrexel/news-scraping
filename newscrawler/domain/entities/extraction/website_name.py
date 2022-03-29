@@ -23,3 +23,4 @@ class WebsiteName(Enum):
     TIRTO = "TIRTO"
     INVESTORID = "INVESTORID"
     BERITASATU = "BERITASATU"
+    SUARA = "SUARA"

@@ -1,21 +1,16 @@
-import os
 from datetime import date
 
-from newscrawler.core.page_loader.requests_page_loader import RequestsPageLoader
-from newscrawler.domain.dtos.dataflow.news_information_dto import NewsInformationDTO
+from newscrawler.domain.entities.extraction.website_name import WebsiteName
 from newscrawler.infrastructure.datasource.scrapers.antara_news.antaranews_branch import (
     AntaraNewsNetwork,
 )
 from newscrawler.infrastructure.datasource.scrapers.crawler import Crawler
-from newscrawler.domain.entities.extraction.website_name import WebsiteName
 from newscrawler.domain.utils.date_time_reader import DateTimeReader
 from typing import List, Tuple, Dict, Union
 import re
 import logging
 
 from newscrawler.core.utils.utils import (
-    set_last_crawling_time,
-    get_last_crawling_time,
     preprocess_text,
 )
 
@@ -27,35 +22,22 @@ logger.setLevel(logging.INFO)
 class AntaraNewsCrawler(Crawler):
     def __init__(self):
         super(AntaraNewsCrawler, self).__init__()
-        self.date_time_reader = DateTimeReader()
         self.website_name = WebsiteName.ANTARANEWS.value
-        self.page_loader = RequestsPageLoader()
-        self.main_path = os.path.dirname(os.path.realpath(__file__))
-
-    def get_news_data(self, web_url: str) -> NewsInformationDTO:
-        last_crawling_time, news = self.get_news_in_bulk(web_url)
-        news_data = self.batch_crawling(news)
-        set_last_crawling_time(
-            last_crawling_time=last_crawling_time,
-            dir_path=self.main_path,
-            website_name=self.website_name,
-        )
-        return NewsInformationDTO(scraped_news=news_data)
 
     def get_news_in_bulk(
-        self, web_url: str
+        self, web_url: str, last_crawling_time: Dict[str, date]
     ) -> Tuple[Dict[str, any], List[Dict[str, any]]]:
         branches_to_crawl = AntaraNewsNetwork().get_all_url()
-        last_crawling_time = get_last_crawling_time(
-            dir_path=self.main_path, website_name=self.website_name
-        )
         links_to_crawl = []
         for branch_name, branch_link in branches_to_crawl.items():
             if isinstance(branch_link, str):
                 logger.info(f"Scrape {branch_name} on {self.website_name}")
                 soup = self.page_loader.get_soup(branch_link)
                 if soup:
-                    last_crawling, links = self._scrape(soup, last_crawling_time)
+                    last_crawling, links = self._scrape(
+                        soup,
+                        last_crawling_time=last_crawling_time,
+                    )
                     if links:
                         links_to_crawl.extend(links)
                     for branch_name_details, last_update in last_crawling.items():
