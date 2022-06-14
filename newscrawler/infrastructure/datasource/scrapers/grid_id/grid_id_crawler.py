@@ -97,21 +97,6 @@ class GridIdCrawler(Crawler):
             return link
 
     @staticmethod
-    def _get_title(news_soup) -> str:
-        title = news_soup.find("news:title")
-        if title:
-            title = title.get_text(" ").strip()
-            return title
-
-    @staticmethod
-    def _get_keywords(news_soup) -> List[str]:
-        keyword_div = news_soup.find("news:keywords")
-        if keyword_div:
-            keywords = keyword_div.get_text(" ").strip()
-            keywords = [x.strip() for x in keywords.split()]
-            return keywords
-
-    @staticmethod
     def _get_timestamp(news_soup, date_time_reader: DateTimeReader):
         timestamp = news_soup.find("news:publication_date")
         if timestamp:

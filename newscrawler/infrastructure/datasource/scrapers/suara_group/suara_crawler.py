@@ -30,26 +30,29 @@ class SuaraCrawler(Crawler):
         branches_to_crawl = SuaraNetwork().get_all_url()
         links_to_crawl = []
         for branch_name, branch_link in branches_to_crawl.items():
-            print(branch_name, branch_link)
-        #     if isinstance(branch_link, str):
-        #         logger.info(f"Scrape {branch_name} on {self.website_name}")
-        #         soup = self.page_loader.get_soup(branch_link)
-        #         if soup:
-        #             last_crawling, links = self._scrape(soup)
-        #             if links:
-        #                 links_to_crawl.extend(links)
-        #             for branch_name_details, last_update in last_crawling.items():
-        #                 if last_update:
-        #                     last_crawling_time[branch_name_details] = last_update
-        #
-        # logger.info(f"Get {len(links_to_crawl)} to crawl in {self.website_name} crawler")
-        # return last_crawling_time, links_to_crawl
+            if isinstance(branch_link, str):
+                logger.info(f"Scrape {branch_name} on {self.website_name}")
+                soup = self.page_loader.get_soup(branch_link)
+                if soup:
+                    last_crawling, links = self._scrape(soup, last_crawling_time)
+                    if links:
+                        links_to_crawl.extend(links)
+                    for branch_name_details, last_update in last_crawling.items():
+                        if last_update:
+                            last_crawling_time[branch_name_details] = last_update
+                break
+
+        logger.info(
+            f"Get {len(links_to_crawl)} to crawl in {self.website_name} crawler"
+        )
+        return last_crawling_time, links_to_crawl
 
     def _scrape(self, soup, last_crawling_time) -> Tuple[Dict[str, date], List]:
         articles = []
         latest_news_time = {k: [] for k, v in last_crawling_time.items()}
         for idx, url in enumerate(soup.find_all("url")):
             link = self._get_link(url)
+            link += "?page=all"
             branch_name = self._get_branch_name(link)
             title = self._get_title(url)
             keywords = self._get_keywords(url)
@@ -89,28 +92,6 @@ class SuaraCrawler(Crawler):
         return branch_name
 
     @staticmethod
-    def _get_link(news_soup) -> str:
-        link = news_soup.find("loc")
-        if link:
-            link = link.get_text(" ").strip()
-            return link
-
-    @staticmethod
-    def _get_title(news_soup) -> str:
-        title = news_soup.find("news:title")
-        if title:
-            title = title.get_text(" ").strip()
-            return title
-
-    @staticmethod
-    def _get_keywords(news_soup) -> List[str]:
-        keyword_div = news_soup.find("news:keywords")
-        if keyword_div:
-            keywords = keyword_div.get_text(" ").strip()
-            keywords = [x.strip() for x in keywords.split()]
-            return keywords
-
-    @staticmethod
     def _get_timestamp(news_soup, date_time_reader: DateTimeReader):
         timestamp = news_soup.find("news:publication_date")
         if timestamp:
@@ -140,7 +121,7 @@ class SuaraCrawler(Crawler):
 
     @staticmethod
     def _get_text(soup):
-        layer = soup.find("div", attrs={"class": ["col-bs12-9"]})
+        layer = soup.find("div", attrs={"class": ["detail--content"]})
         if layer:
             sentences = layer.find_all("p")
             if not sentences:
@@ -172,3 +153,11 @@ class SuaraCrawler(Crawler):
                         texts.append(extracted_text)
 
             return texts
+
+    @staticmethod
+    def _get_category(news_soup) -> str:
+        header_div = news_soup.find("div", {"class": "header-breadcrumb"})
+        if header_div:
+            active_header = header_div.find("li", {"class": "active"})
+            if active_header:
+                return active_header.get_text(" ").strip().lower()

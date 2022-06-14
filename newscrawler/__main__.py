@@ -29,7 +29,7 @@ def main():
         "VIVA",
         "GRIDID",
     ]
-    WEBSITES = SLOW
+    WEBSITES = FAST + SLOW
     if isinstance(WEBSITES, list):
         WEBSITES = ",".join(WEBSITES)
     elif isinstance(WEBSITES, str):

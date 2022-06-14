@@ -12,6 +12,7 @@ from newscrawler.core.constants import VERBOSE, PARALLELIZE, MAX_WORKER
 from newscrawler.core.page_loader.requests_page_loader import RequestsPageLoader
 from newscrawler.domain.dtos.dataflow.details.news_details_dto import NewsDetailsDTO
 from newscrawler.domain.dtos.dataflow.news_information_dto import NewsInformationDTO
+from newscrawler.domain.entities.extraction.website_name import WebsiteName
 from newscrawler.domain.utils.date_time_reader import DateTimeReader
 
 logging.basicConfig()
@@ -79,6 +80,9 @@ class Crawler:
             data_field_dict["link"] = articles_data.get("link")
             data_field_dict["sources"] = articles_data.get("sources")
 
+            if data_field_dict["sources"] == WebsiteName.SUARA.name:
+                data_field_dict["category"] = self._get_category(soup)
+
             return NewsDetailsDTO(**data_field_dict)
         except pydantic.error_wrappers.ValidationError:
             logger.info(f"Error in get_content {url}. Reason: extracted_text is None")
@@ -110,3 +114,47 @@ class Crawler:
             logger.info(f"Successfully save the data into {pickle_path}")
         except BaseException as e:
             logger.error(f"Fail to save the data to dump file.\n Reason: {e}")
+
+    @staticmethod
+    def _get_delta_and_delta_in_second(
+        timestamp, last_crawling, date_time_reader: DateTimeReader
+    ):
+        time_posted = timestamp.replace("T", " ").replace("+07:00", "")
+        time_posted = date_time_reader.convert_date(time_posted)
+        delta = time_posted - last_crawling
+        delta_in_seconds = delta.days * 86400 + delta.seconds
+        return time_posted, delta, delta_in_seconds
+
+    @staticmethod
+    def _get_timestamp(news_soup, date_time_reader: DateTimeReader):
+        timestamp = news_soup.find("news:publication_date")
+        if timestamp:
+            timestamp_string = timestamp.get_text(" ").strip()
+            timestamp_datetime = date_time_reader.convert_date(timestamp_string)
+            return timestamp_string, timestamp_datetime
+
+    @staticmethod
+    def _get_title(news_soup, news_title_element_name: str = "news:title") -> str:
+        title = news_soup.find(news_title_element_name)
+        if title:
+            title = title.get_text(" ").strip()
+            return title
+
+    @staticmethod
+    def _get_link(news_soup) -> str:
+        link = news_soup.find("loc")
+        if link:
+            link = link.get_text(" ").strip()
+            return link
+
+    @staticmethod
+    def _get_keywords(news_soup) -> List[str]:
+        keyword_div = news_soup.find("news:keywords")
+        if keyword_div:
+            keywords = keyword_div.get_text(" ").strip()
+            keywords = [x.strip() for x in keywords.split()]
+            return keywords
+
+    @staticmethod
+    def _get_category(news_soup) -> str:
+        raise NotImplementedError

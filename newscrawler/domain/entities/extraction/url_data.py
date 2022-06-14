@@ -1,5 +1,5 @@
 class URL:
-    KOMPAS = "https://www.kompas.com/sitemap.xml"
+    KOMPAS = "https://news.kompas.com/news/sitemap.xml"
     DETIK = "https://news.detik.com/sitemap.xml"
     TRIBUN = "https://www.tribunnews.com/sitemap.xml"
     TEMPO = "https://www.tempo.co/sitemap.xml"
@@ -17,7 +17,7 @@ class URL:
     BISNIS = "https://www.bisnis.com/sitemap-post.xml"
     BATAMPOS = "https://batampos.co.id/news-sitemap.xml"
     LIPUTAN6 = "https://www.liputan6.com/sitemap_news.xml"
-    IDXCHANNEL = "https://www.idxchannel.com/sitemap_news.xml"
+    IDXCHANNEL = "https://www.idxchannel.com/market-news/sitemap.xml"
     MEDIAINDONESIA = "https://mediaindonesia.com/sitemap_news.xml"
     TIRTO = "https://tirto.id/s/sitemap-content.xml"
     INVESTORID = "https://investor.id/sitemap_news.xml"

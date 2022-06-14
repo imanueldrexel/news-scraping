@@ -63,6 +63,7 @@ class BeritaSatuCrawler(Crawler):
         latest_news_time = {k: [] for k, v in last_crawling_time.items()}
         for idx, url in enumerate(soup.find_all("url")):
             link = self._get_link(url)
+            link += "?page=all"
             branch_name = self._get_branch_name(link)
             title = self._get_title(url)
             keywords = self._get_keywords(url)
@@ -99,28 +100,6 @@ class BeritaSatuCrawler(Crawler):
         branch_name = re.sub(r"(https://www.beritasatu.com/)(.*)(/)", r"\1", url)
         if branch_name:
             return branch_name.strip()
-
-    @staticmethod
-    def _get_link(news_soup) -> str:
-        link = news_soup.find("loc")
-        if link:
-            link = link.get_text(" ").strip()
-            return f"{link}?page=all"
-
-    @staticmethod
-    def _get_title(news_soup) -> str:
-        title = news_soup.find("news:title")
-        if title:
-            title = title.get_text(" ").strip()
-            return title
-
-    @staticmethod
-    def _get_keywords(news_soup) -> List[str]:
-        keyword_div = news_soup.find("news:keywords")
-        if keyword_div:
-            keywords = keyword_div.get_text(" ").strip()
-            keywords = [x.strip() for x in keywords.split()]
-            return keywords
 
     @staticmethod
     def _get_timestamp(news_soup, date_time_reader: DateTimeReader) -> Tuple[str, date]:

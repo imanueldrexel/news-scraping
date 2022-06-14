@@ -20,13 +20,13 @@ logger.setLevel(logging.INFO)
 class LiputanEnamCrawler(Crawler):
     def __init__(self):
         super(LiputanEnamCrawler, self).__init__()
-        self.headless_page_loader = HeadlessPageLoader()
         self.website_name = WebsiteName.LIPUTAN6.value
 
     def get_news_in_bulk(
         self, web_url: str, last_crawling_time: Dict[str, date]
     ) -> Tuple[Dict[str, any], List[Dict[str, any]]]:
-        soup = self.headless_page_loader.get_soup(web_url)
+        headless_page_loader = HeadlessPageLoader()
+        soup = headless_page_loader.get_soup(web_url)
         links_to_crawl = []
         last_crawling, links = self._scrape(soup, last_crawling_time=last_crawling_time)
         if links:
@@ -38,9 +38,7 @@ class LiputanEnamCrawler(Crawler):
         logger.info(f"get {len(links_to_crawl)} to scrape for {self.website_name}")
         return last_crawling_time, links_to_crawl
 
-    def _scrape(
-        self, soup,last_crawling_time=None
-    ) -> Tuple[Dict[str, date], List]:
+    def _scrape(self, soup, last_crawling_time=None) -> Tuple[Dict[str, date], List]:
         articles = []
         latest_news_time = {k: [] for k, v in last_crawling_time.items()}
 
@@ -76,28 +74,6 @@ class LiputanEnamCrawler(Crawler):
             k: max(v) if len(v) > 0 else None for k, v in latest_news_time.items()
         }
         return latest_news_time, articles
-
-    @staticmethod
-    def _get_link(news_soup) -> str:
-        link = news_soup.find("loc")
-        if link:
-            link = link.get_text(" ").strip()
-            return link
-
-    @staticmethod
-    def _get_title(news_soup) -> str:
-        title = news_soup.find("news:title")
-        if title:
-            title = title.get_text(" ").strip()
-            return title
-
-    @staticmethod
-    def _get_keywords(news_soup) -> List[str]:
-        keyword_div = news_soup.find("news:keywords")
-        if keyword_div:
-            keywords = keyword_div.get_text(" ").strip()
-            keywords = [x.strip() for x in keywords.split()]
-            return keywords
 
     @staticmethod
     def _get_timestamp(news_soup, date_time_reader: DateTimeReader):

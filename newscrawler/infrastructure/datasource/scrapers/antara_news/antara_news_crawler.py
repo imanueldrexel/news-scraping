@@ -52,7 +52,7 @@ class AntaraNewsCrawler(Crawler):
         latest_news_time = {k: [] for k, v in last_crawling_time.items()}
         for idx, url in enumerate(soup.find_all("item")):
             link = self._get_link(url)
-            title = self._get_title(url)
+            title = self._get_title(url, news_title_element_name="title")
             keywords = self._get_keywords(url)
             last_stamped_crawling = last_crawling_time.get(branch_name)
             if not last_stamped_crawling:
@@ -96,21 +96,6 @@ class AntaraNewsCrawler(Crawler):
         if link:
             link = link.get_text(" ").strip()
             return link
-
-    @staticmethod
-    def _get_title(news_soup) -> str:
-        title = news_soup.find("title")
-        if title:
-            title = title.get_text(" ").strip()
-            return title
-
-    @staticmethod
-    def _get_keywords(news_soup) -> List[str]:
-        keyword_div = news_soup.find("news:keywords")
-        if keyword_div:
-            keywords = keyword_div.get_text(" ").strip()
-            keywords = [x.strip() for x in keywords.split()]
-            return keywords
 
     @staticmethod
     def _get_timestamp(news_soup, date_time_reader: DateTimeReader):

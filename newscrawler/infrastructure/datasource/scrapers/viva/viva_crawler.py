@@ -8,7 +8,6 @@ from newscrawler.infrastructure.datasource.scrapers.crawler import Crawler
 from newscrawler.core.utils.utils import (
     preprocess_text,
 )
-from newscrawler.domain.utils.date_time_reader import DateTimeReader
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)
@@ -106,39 +105,6 @@ class VivaCrawler(Crawler):
         if link:
             link = link.get_text(" ").strip()
             return f"{link}?page=all"
-
-    @staticmethod
-    def _get_title(news_soup) -> str:
-        title = news_soup.find("news:title")
-        if title:
-            title = title.get_text(" ").strip()
-            return title
-
-    @staticmethod
-    def _get_keywords(news_soup) -> List[str]:
-        keyword_div = news_soup.find("news:keywords")
-        if keyword_div:
-            keywords = keyword_div.get_text(" ").strip()
-            keywords = [x.strip() for x in keywords.split()]
-            return keywords
-
-    @staticmethod
-    def _get_timestamp(news_soup, date_time_reader: DateTimeReader):
-        timestamp = news_soup.find("news:publication_date")
-        if timestamp:
-            timestamp_string = timestamp.get_text(" ").strip()
-            timestamp_datetime = date_time_reader.convert_date(timestamp_string)
-            return timestamp_string, timestamp_datetime
-
-    @staticmethod
-    def _get_delta_and_delta_in_second(
-        timestamp, last_crawling, date_time_reader: DateTimeReader
-    ):
-        time_posted = timestamp.replace("T", " ").replace("+07:00", "")
-        time_posted = date_time_reader.convert_date(time_posted)
-        delta = time_posted - last_crawling
-        delta_in_seconds = delta.days * 86400 + delta.seconds
-        return time_posted, delta, delta_in_seconds
 
     @staticmethod
     def _get_whole_text(soup) -> List[str]:

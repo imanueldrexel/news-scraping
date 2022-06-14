@@ -14,9 +14,7 @@ logger.setLevel(logging.INFO)
 class RequestsPageLoader(PageLoader):
     def __init__(self):
         self.max_retries = REQUEST_MAX_RETRIES
-
-    def get_soup(self, url_path: str):
-        headers = {
+        self.headers = {
             "Accept-Encoding": "gzip, deflate, sdch",
             "Accept-Language": "en-US,en;q=0.8",
             "Upgrade-Insecure-Requests": "1",
@@ -26,29 +24,41 @@ class RequestsPageLoader(PageLoader):
             "Cache-Control": "max-age=0",
             "Connection": "keep-alive",
         }
+
+    def get_url(self, url_path):
         try:
-            response = requests.get(url_path, headers=headers, timeout=(10, 27))
-            soup = BeautifulSoup(response.content, "html.parser")
-            counter = 0
-            while soup is None and counter < self.max_retries:
-                logger.info("Retrying to connect")
-                response = requests.get(url_path, headers=headers, timeout=(10, 27))
-                soup = BeautifulSoup(response.content, "html.parser")
-            return soup
-        except requests.exceptions.ReadTimeout:
+            response = requests.get(
+                url_path, headers=self.headers, timeout=(10, 27), stream=True
+            )
+            return response
+        except requests.exceptions.ReadTimeout or requests.exceptions.ConnectionError:
             for idx in range(self.max_retries):
                 logger.info(f"Retry {idx} to connect")
                 try:
-                    response = requests.get(url_path, headers=headers, timeout=(10, 27))
-                    soup = BeautifulSoup(response.content, "html.parser")
-                    return soup
-                except requests.exceptions.ReadTimeout:
+                    response = requests.get(
+                        url_path, headers=self.headers, timeout=(10, 27)
+                    )
+                    return response
+                except requests.exceptions.ReadTimeout or requests.exceptions.ConnectionError:
                     continue
-
-            logger.info(
-                f"Failed to fetch {url_path}. Reason: ReadTimeout, Returning None"
-            )
             return None
         except BaseException as e:
-            logger.info(f"Failed to fetch {url_path}. Reason: {e}. Returning None")
+            logger.info(f"Failed to get {url_path}. Reason {e}, Returning None")
+            return None
+
+    def get_soup(self, url_path: str):
+        response = self.get_url(url_path)
+        if response and response.status_code == 200:
+            try:
+                soup = BeautifulSoup(response.content, "html.parser")
+                return soup
+            except BaseException as e:
+                logger.info(
+                    f"Failed to get the HTML for {url_path}. Reason: {e}, Returning None"
+                )
+                return None
+        elif response:
+            logger.info(
+                f"Failed to get {url_path}. Status Code: {response.status_code}, Returning None"
+            )
             return None
