@@ -135,10 +135,10 @@ class CrawlerServiceImpl(CrawlerService):
             last_crawling_time=last_crawling_time,
         )
         news_data = web_crawler.batch_crawling(news)
-        web_crawler.set_last_crawling_time(
-            last_crawling_time=last_crawling_time,
-            dir_path=web_crawler.main_path,
-        )
+        # web_crawler.set_last_crawling_time(
+        #     last_crawling_time=last_crawling_time,
+        #     dir_path=web_crawler.main_path,
+        # )
 
         return news_data
 

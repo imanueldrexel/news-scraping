@@ -1,0 +1,3 @@
+import os
+
+SUMMARY_MAX_SENTENCES = int(os.getenv("SUMMARY_MAX_SENTENCES", 5))

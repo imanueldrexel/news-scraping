@@ -97,7 +97,7 @@ class BeritaSatuCrawler(Crawler):
 
     @staticmethod
     def _get_branch_name(url) -> str:
-        branch_name = re.sub(r"(https://www.beritasatu.com/)(.*)(/)", r"\1", url)
+        branch_name = re.sub(r"(https://www.beritasatu.com/)([A-z].*)(/)(.*)(/.*)", r"\2", url)
         if branch_name:
             return branch_name.strip()
 

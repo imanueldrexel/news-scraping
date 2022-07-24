@@ -37,6 +37,7 @@ class KompasCrawler(Crawler):
             )
             links_to_crawl.extend(links)
             last_crawling_time[branch_name] = last_crawling
+            break
 
         logger.info(f"get {len(links_to_crawl)} to scrape for {self.website_name}")
         return last_crawling_time, links_to_crawl

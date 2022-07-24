@@ -12,6 +12,7 @@ from newscrawler.infrastructure.datasource.dataflow.model.news_information_model
 from newscrawler.infrastructure.datasource.dataflow.write.news_data_source import (
     NewsDataSource,
 )
+from extractivenewssummarizer import nlp
 
 
 class DataFlowRepositoryImpl(DataFlowRepository):
@@ -38,6 +39,8 @@ class DataFlowRepositoryImpl(DataFlowRepository):
     def _to_news_data_model(
         news_details: NewsDetailsDTO,
     ) -> NewsDataModel:
+        summary = nlp.summarize(title=news_details.headline,
+                                text= " ".join(news_details.extracted_text))
         return NewsDataModel(
             headline=news_details.headline,
             extracted_text=news_details.extracted_text,
