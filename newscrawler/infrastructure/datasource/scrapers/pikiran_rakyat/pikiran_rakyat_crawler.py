@@ -3,6 +3,7 @@ import logging
 from datetime import date
 from typing import List, Tuple, Dict, Any
 
+from newscrawler.domain.entities.extraction.url_data import URL
 from newscrawler.domain.entities.extraction.website_name import WebsiteName
 from newscrawler.infrastructure.datasource.scrapers.crawler import Crawler
 from newscrawler.domain.utils.date_time_reader import DateTimeReader
@@ -22,9 +23,10 @@ class PikiranRakyatCrawler(Crawler):
     def __init__(self):
         super(PikiranRakyatCrawler, self).__init__()
         self.website_name = WebsiteName.PIKIRANRAKYAT.value
+        self.website_url = URL.PIKIRANRAKYAT.value
 
     def get_news_in_bulk(
-        self, web_url: str, last_crawling_time: Dict[str, date]
+        self, last_crawling_time: Dict[str, date]
     ) -> Tuple[Dict[str, any], List[Dict[str, any]]]:
         branches_to_crawl = PikiranRakyatNetwork().get_all_url()
         links_to_crawl = []

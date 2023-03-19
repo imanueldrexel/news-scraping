@@ -73,8 +73,8 @@ from newscrawler.infrastructure.datasource.scrapers.viva.viva_crawler import Viv
 
 class CrawlerServiceImpl(CrawlerService):
     def __init__(
-        self,
-        data_flow_repo: DataFlowRepository,
+            self,
+            data_flow_repo: DataFlowRepository,
     ):
         self.crawler_dict = {
             WebsiteName.SINDONEWS.value: SindonewsCrawler(),
@@ -127,19 +127,13 @@ class CrawlerServiceImpl(CrawlerService):
         self.data_flow_repo = data_flow_repo
 
     def crawl_url(self, website_name: str) -> NewsInformationDTO:
-        web_url: str = self.web_url_dict.get(website_name)
         web_crawler: Crawler = self.crawler_dict.get(website_name)
         last_crawling_time = web_crawler.get_last_crawling_time()
         last_crawling_time, news = web_crawler.get_news_in_bulk(
-            web_url=web_url,
             last_crawling_time=last_crawling_time,
         )
         news_data = web_crawler.batch_crawling(news)
-        # web_crawler.set_last_crawling_time(
-        #     last_crawling_time=last_crawling_time,
-        #     dir_path=web_crawler.main_path,
-        # )
-
+        web_crawler.set_last_crawling_time(last_crawling_time)
         return news_data
 
     def save_scraped_data(self, scraped_data) -> Union[None, NewsInformationModel]:

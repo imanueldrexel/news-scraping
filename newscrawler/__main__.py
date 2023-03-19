@@ -7,16 +7,13 @@ logger = logging.getLogger(__name__)
 
 def main():
     FAST = [
-        "BERITASATU",
         "TIRTO",
         "INVESTORID",
-        "MEDIAINDONESIA",
-        "IDXCHANNEL",
-        "LIPUTAN6",
+        "MEDIAINDONESIA", #unstable
+        # "LIPUTAN6",
         "BATAMPOS",
-        "JPNN",
-        "KAPANLAGI",
-        "BISNIS",
+        # "KAPANLAGI",
+        "BISNIS", # yang free bisa, yang premium ga bisa,
     ]
     SLOW = [
         "KONTAN",
@@ -25,11 +22,14 @@ def main():
         "CNBC",
         "TRIBUN",
         "ANTARANEWS",
+        "JPNN",
         "PIKIRANRAKYAT",
         "VIVA",
         "GRIDID",
+        "IDXCHANNEL",
+        "KOMPAS"
     ]
-    WEBSITES = "KONTAN"
+    WEBSITES = 'TEMPO'
     if isinstance(WEBSITES, list):
         WEBSITES = ",".join(WEBSITES)
     elif isinstance(WEBSITES, str):

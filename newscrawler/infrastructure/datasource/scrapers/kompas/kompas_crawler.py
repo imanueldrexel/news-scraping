@@ -3,6 +3,7 @@ import re
 from datetime import date
 from typing import List, Tuple, Dict
 
+from newscrawler.domain.entities.extraction.url_data import URL
 from newscrawler.infrastructure.datasource.scrapers.crawler import Crawler
 from newscrawler.core.utils.utils import (
     preprocess_text,
@@ -18,11 +19,12 @@ class KompasCrawler(Crawler):
     def __init__(self):
         super(KompasCrawler, self).__init__()
         self.website_name = WebsiteName.KOMPAS.value
+        self.website_url = URL.KOMPAS.value
 
     def get_news_in_bulk(
-        self, web_url: str, last_crawling_time: Dict[str, date]
+        self, last_crawling_time: Dict[str, date]
     ) -> Tuple[Dict[str, any], List[Dict[str, any]]]:
-        soup = self.page_loader.get_soup(web_url)
+        soup = self.page_loader.get_soup(self.website_url)
         branches_to_crawl = self._get_branches(soup)
         links_to_crawl = []
 
@@ -37,8 +39,6 @@ class KompasCrawler(Crawler):
             )
             links_to_crawl.extend(links)
             last_crawling_time[branch_name] = last_crawling
-            break
-
         logger.info(f"get {len(links_to_crawl)} to scrape for {self.website_name}")
         return last_crawling_time, links_to_crawl
 

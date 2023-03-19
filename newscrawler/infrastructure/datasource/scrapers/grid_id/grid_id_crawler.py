@@ -1,3 +1,4 @@
+from newscrawler.domain.entities.extraction.url_data import URL
 from newscrawler.domain.entities.extraction.website_name import WebsiteName
 from newscrawler.infrastructure.datasource.scrapers.crawler import Crawler
 from newscrawler.infrastructure.datasource.scrapers.grid_id.grid_id_branch import (
@@ -21,9 +22,10 @@ class GridIdCrawler(Crawler):
     def __init__(self):
         super(GridIdCrawler, self).__init__()
         self.website_name = WebsiteName.GRIDID.value
+        self.website_url = URL.GRIDID.value
 
     def get_news_in_bulk(
-        self, web_url: str, last_crawling_time: Dict[str, date]
+            self, last_crawling_time: Dict[str, date]
     ) -> Tuple[Dict[str, any], List[Dict[str, any]]]:
         branches_to_crawl = GridIdNetwork().get_all_url()
         links_to_crawl = []

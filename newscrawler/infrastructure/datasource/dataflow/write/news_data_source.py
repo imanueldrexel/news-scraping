@@ -19,16 +19,16 @@ class NewsDataSource:
     def __init__(self):
         self.s3_repository = S3RepositoryNewsDataSource()
 
-    def save(self, news: List[NewsDataModel]):
-        if news:
-            source = news[0].sources
+    def save(self, articles: List[NewsDataModel]):
+        if articles:
+            source = articles[0].sources
             logger.info("Saving to S3...")
             date_now = str(datetime.datetime.utcnow()).split(".")[0]
             date_now = re.sub(r"([\s:,-])", r"_", date_now)
             key_name = f"{date_now}"
-            merchants_dict = []
-            for merchant in news:
-                merchants_dict.append(merchant.to_dict())
+            article_dict = []
+            for article in articles:
+                article_dict.append(article.to_dict())
             self.s3_repository.save(
-                key=key_name, batch_results=merchants_dict, news_source=source
+                key=key_name, batch_results=article_dict, news_source=source
             )

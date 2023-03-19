@@ -3,6 +3,7 @@ import re
 from datetime import date
 from typing import List, Tuple, Dict
 
+from newscrawler.domain.entities.extraction.url_data import URL
 from newscrawler.domain.entities.extraction.website_name import WebsiteName
 from newscrawler.infrastructure.datasource.scrapers.crawler import Crawler
 from newscrawler.core.utils.utils import (
@@ -19,11 +20,12 @@ class BisnisCrawler(Crawler):
     def __init__(self):
         super(BisnisCrawler, self).__init__()
         self.website_name = WebsiteName.BISNIS.value
+        self.website_url = URL.BISNIS.value
 
     def get_news_in_bulk(
-            self, web_url: str, last_crawling_time: Dict[str, date]
+        self, last_crawling_time: Dict[str, date]
     ) -> Tuple[Dict[str, any], List[Dict[str, any]]]:
-        soup = self.page_loader.get_soup(web_url)
+        soup = self.page_loader.get_soup(self.website_url)
         branches_to_crawl = self._get_branches(soup)
         links_to_crawl = []
 
@@ -92,11 +94,11 @@ class BisnisCrawler(Crawler):
             link = sitemap.find("loc")
             if link:
                 link = link.get_text(" ").strip()
-                if "/news/" in link:
+                if "sitemap-news" in link:
                     branch_name = re.sub(r"(.*)(//)(.*)(.bisnis)(.*)", r"\3", link)
                     if branch_name == "www":
                         branch_name = re.sub(
-                            r"(https://www.bisnis.com/)(.*)(/news/sitemap.xml)",
+                            r"(https://www.bisnis.com/)(.*)(/sitemap-news.xml)",
                             r"\2",
                             link,
                         )

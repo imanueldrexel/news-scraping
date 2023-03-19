@@ -29,6 +29,7 @@ class Crawler:
         self.default_time = self.date_time_reader.convert_date("2000-01-01 00:00:01")
         self.max_worker = MAX_WORKER
         self.page_loader = RequestsPageLoader()
+        self.website_url = None
         self.website_name = None
 
     def batch_crawling(self, news: List[Dict[str, str]]) -> NewsInformationDTO:
@@ -56,7 +57,7 @@ class Crawler:
 
     @abstractmethod
     def get_news_in_bulk(
-        self, web_url: str, last_crawling_time: Dict[str, date]
+        self, last_crawling_time: Dict[str, date]
     ) -> Tuple[Dict[str, any], List[Dict[str, any]]]:
         raise NotImplementedError
 
@@ -100,15 +101,16 @@ class Crawler:
             return last_crawling_time
         except IOError:
             return {}
+        except BaseException as e:
+            logger.info(f'Fail to open last crawling time pickle file. Reason: {e}')
 
     def set_last_crawling_time(
         self,
-        last_crawling_time: Union[Dict[str, str], None],
-        dir_path: str,
+        last_crawling_time: Union[Dict[str, str], None]
     ) -> None:
         try:
             pickle_name = f"{self.website_name.lower()}.pkl"
-            pickle_path = os.path.join(dir_path, pickle_name)
+            pickle_path = os.path.join(self.main_path, pickle_name)
             file = open(pickle_path, "wb")
             pickle.dump(last_crawling_time, file)
             logger.info(f"Successfully save the data into {pickle_path}")
@@ -145,6 +147,7 @@ class Crawler:
         link = news_soup.find("loc")
         if link:
             link = link.get_text(" ").strip()
+            link = link+"?page=all"
             return link
 
     @staticmethod

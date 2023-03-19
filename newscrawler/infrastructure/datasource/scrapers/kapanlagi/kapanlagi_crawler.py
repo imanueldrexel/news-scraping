@@ -4,6 +4,7 @@ from datetime import date
 from typing import List, Tuple, Dict
 
 from newscrawler.core.page_loader.headless_page_loader import HeadlessPageLoader
+from newscrawler.domain.entities.extraction.url_data import URL
 from newscrawler.domain.entities.extraction.website_name import WebsiteName
 from newscrawler.infrastructure.datasource.scrapers.crawler import Crawler
 from newscrawler.domain.utils.date_time_reader import DateTimeReader
@@ -20,12 +21,13 @@ class KapanlagiCrawler(Crawler):
     def __init__(self):
         super(KapanlagiCrawler, self).__init__()
         self.website_name = WebsiteName.KAPANLAGI.value
+        self.website_url = URL.KAPANLAGI.value
 
     def get_news_in_bulk(
-        self, web_url: str, last_crawling_time: Dict[str, date]
+        self, last_crawling_time: Dict[str, date]
     ) -> Tuple[Dict[str, any], List[Dict[str, any]]]:
         headless_page_loader = HeadlessPageLoader()
-        soup = headless_page_loader.get_soup(web_url)
+        soup = headless_page_loader.get_soup(self.website_url)
         links_to_crawl = []
         last_crawling, links = self._scrape(soup, last_crawling_time=last_crawling_time)
         if links:

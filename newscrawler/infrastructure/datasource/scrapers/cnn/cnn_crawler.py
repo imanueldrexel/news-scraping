@@ -3,6 +3,7 @@ import logging
 from datetime import date
 from typing import List, Tuple, Dict
 
+from newscrawler.domain.entities.extraction.url_data import URL
 from newscrawler.domain.entities.extraction.website_name import WebsiteName
 from newscrawler.infrastructure.datasource.scrapers.crawler import Crawler
 from newscrawler.core.utils.utils import (
@@ -18,11 +19,12 @@ class CNNCrawler(Crawler):
     def __init__(self):
         super(CNNCrawler, self).__init__()
         self.website_name = WebsiteName.CNN.value
+        self.website_url = URL.CNN.value
 
     def get_news_in_bulk(
-        self, web_url: str, last_crawling_time: Dict[str, date]
+            self, last_crawling_time: Dict[str, date]
     ) -> Tuple[Dict[str, any], List[Dict[str, any]]]:
-        soup = self.page_loader.get_soup(web_url)
+        soup = self.page_loader.get_soup(self.website_url)
         branches_to_crawl = self._get_branches(soup)
 
         links_to_crawl = []
@@ -37,7 +39,6 @@ class CNNCrawler(Crawler):
             )
             links_to_crawl.extend(links)
             last_crawling_time[branch_name] = last_crawling
-
         logger.info(f"get {len(links_to_crawl)} to scrape for {self.website_name}")
         return last_crawling_time, links_to_crawl
 
@@ -49,20 +50,17 @@ class CNNCrawler(Crawler):
             link = sitemap.find("loc")
             if link:
                 link = link.get_text(" ").strip()
-                if "sitemap_news" in link:
+                if "sitemap_news" in link and "longform" not in link:
                     branch_name = re.sub(
-                        r"(https://www.cnnindonesia.com/)(.*)(/)(.*)(/*)", r"\2", link
+                        r"(https://www.cnnindonesia.com/)(.*)(/.*/sitemap_news.xml)", r"\2", link
                     )
                     branch_name = branch_name.strip()
                     branches[branch_name] = link.strip()
         return branches
 
     def _scrape(
-        self,
-        branch_link: str,
-        branch_name: str,
-        last_stamped_crawling=None,
-    ) -> Tuple[Dict[str, date], List]:
+        self, branch_link, branch_name, last_stamped_crawling=None
+    ) -> Tuple[date, List]:
         logger.info(f"Scrape {branch_name} on {self.website_name}")
         soup = self.page_loader.get_soup(branch_link)
         articles = []
@@ -76,19 +74,17 @@ class CNNCrawler(Crawler):
                 title = self._get_title(url)
                 keywords = self._get_keywords(url)
                 timestamp_string, timestamp_datetime = self._get_timestamp(
-                    news_soup=url, date_time_reader=self.date_time_reader
+                    url, date_time_reader=self.date_time_reader
                 )
                 (
                     time_posted,
                     delta,
-                    delta_in_second,
+                    delta_in_seconds,
                 ) = self._get_delta_and_delta_in_second(
-                    timestamp=timestamp_string,
-                    last_crawling=last_stamped_crawling,
-                    date_time_reader=self.date_time_reader,
+                    timestamp_string, last_stamped_crawling, self.date_time_reader
                 )
-                if delta_in_second < latest_news_delta:
-                    latest_news_delta = delta_in_second
+                if delta_in_seconds < latest_news_delta:
+                    latest_news_delta = delta_in_seconds
                 if idx == 0:
                     latest_news_time = time_posted
                 if delta.days >= 0 and delta.seconds > 0:
@@ -97,7 +93,7 @@ class CNNCrawler(Crawler):
                         "headline": title,
                         "keywords": keywords,
                         "timestamp": timestamp_datetime,
-                        "branch_name": branch_name,
+                        "category": branch_name,
                         "sources": self.website_name,
                     }
                     articles.append(attributes)

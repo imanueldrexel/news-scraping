@@ -39,8 +39,6 @@ class DataFlowRepositoryImpl(DataFlowRepository):
     def _to_news_data_model(
         news_details: NewsDetailsDTO,
     ) -> NewsDataModel:
-        summary = nlp.summarize(title=news_details.headline,
-                                text= " ".join(news_details.extracted_text))
         return NewsDataModel(
             headline=news_details.headline,
             extracted_text=news_details.extracted_text,

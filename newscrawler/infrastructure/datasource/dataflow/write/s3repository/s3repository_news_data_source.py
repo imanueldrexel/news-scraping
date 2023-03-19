@@ -2,7 +2,7 @@ import logging
 from typing import List, Dict, Any
 
 import csv
-import boto3
+# import boto3
 from pathlib import Path
 
 from newscrawler.core.constants import S3_BUCKET, REGION

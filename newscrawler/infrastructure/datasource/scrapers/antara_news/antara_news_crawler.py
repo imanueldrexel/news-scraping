@@ -1,5 +1,6 @@
 from datetime import date
 
+from newscrawler.domain.entities.extraction.url_data import URL
 from newscrawler.domain.entities.extraction.website_name import WebsiteName
 from newscrawler.infrastructure.datasource.scrapers.antara_news.antaranews_branch import (
     AntaraNewsNetwork,
@@ -23,9 +24,10 @@ class AntaraNewsCrawler(Crawler):
     def __init__(self):
         super(AntaraNewsCrawler, self).__init__()
         self.website_name = WebsiteName.ANTARANEWS.value
+        self.website_url = URL.ANTARANEWS.value
 
     def get_news_in_bulk(
-        self, web_url: str, last_crawling_time: Dict[str, date]
+            self, last_crawling_time: Dict[str, date]
     ) -> Tuple[Dict[str, any], List[Dict[str, any]]]:
         branches_to_crawl = AntaraNewsNetwork().get_all_url()
         links_to_crawl = []

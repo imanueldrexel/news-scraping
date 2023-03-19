@@ -6,6 +6,7 @@ from typing import List, Tuple, Dict
 from newscrawler.core.utils.utils import (
     preprocess_text,
 )
+from newscrawler.domain.entities.extraction.url_data import URL
 from newscrawler.domain.entities.extraction.website_name import WebsiteName
 from newscrawler.infrastructure.datasource.scrapers.crawler import Crawler
 from newscrawler.domain.utils.date_time_reader import DateTimeReader
@@ -19,12 +20,13 @@ class BatamposCrawler(Crawler):
     def __init__(self):
         super(BatamposCrawler, self).__init__()
         self.website_name = WebsiteName.BATAMPOS.value
+        self.website_url = URL.BATAMPOS.value
 
     def get_news_in_bulk(
-        self, web_url: str, last_crawling_time: Dict[str, date]
+        self, last_crawling_time: Dict[str, date]
     ) -> Tuple[Dict[str, any], List[Dict[str, any]]]:
         branch_name = "news"
-        branch_link = web_url
+        branch_link = self.website_url
         links_to_crawl = []
         last_stamped_crawling = last_crawling_time.get(branch_name)
         if not last_stamped_crawling:

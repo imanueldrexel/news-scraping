@@ -3,6 +3,7 @@ import re
 from datetime import date
 from typing import List, Tuple, Dict
 
+from newscrawler.domain.entities.extraction.url_data import URL
 from newscrawler.domain.entities.extraction.website_name import WebsiteName
 from newscrawler.infrastructure.datasource.scrapers.crawler import Crawler
 from newscrawler.core.utils.utils import (
@@ -18,20 +19,19 @@ class KontanCrawler(Crawler):
     def __init__(self):
         super(KontanCrawler, self).__init__()
         self.website_name = WebsiteName.KONTAN.value
+        self.website_url = URL.KONTAN.value
 
     def get_news_in_bulk(
-        self, web_url: str, last_crawling_time: Dict[str, date]
+            self, last_crawling_time: Dict[str, date]
     ) -> Tuple[Dict[str, any], List[Dict[str, any]]]:
-        soup = self.page_loader.get_soup(web_url)
+        soup = self.page_loader.get_soup(self.website_url)
         branches_to_crawl = self._get_branches(soup)
-
         links_to_crawl = []
 
         for branch_name, branch_link in branches_to_crawl.items():
-            last_stamped_crawling = last_crawling_time.get(branch_name)
-            if not last_stamped_crawling:
-                last_stamped_crawling = self.default_time
-
+            last_stamped_crawling = last_crawling_time.get(
+                branch_name, self.default_time
+            )
             last_crawling, links = self._scrape(
                 branch_link=branch_link,
                 branch_name=branch_name,
@@ -39,8 +39,7 @@ class KontanCrawler(Crawler):
             )
             links_to_crawl.extend(links)
             last_crawling_time[branch_name] = last_crawling
-
-        logger.info(f"get {len(links_to_crawl)} to scrape for {self.website_name}")
+        logger.info(f"get {len(links_to_crawl)} to scrape for {self.website_url}")
         return last_crawling_time, links_to_crawl
 
     @staticmethod
@@ -78,11 +77,8 @@ class KontanCrawler(Crawler):
         return branches
 
     def _scrape(
-        self,
-        branch_link: str,
-        branch_name: str,
-        last_stamped_crawling=None,
-    ) -> Tuple[Dict[str, date], List]:
+            self, branch_link, branch_name, last_stamped_crawling=None
+    ) -> Tuple[date, List]:
         logger.info(f"Scrape {branch_name} on {self.website_name}")
         soup = self.page_loader.get_soup(branch_link)
         articles = []

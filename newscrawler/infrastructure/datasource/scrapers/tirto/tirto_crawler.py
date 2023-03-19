@@ -3,6 +3,7 @@ import re
 from datetime import date
 from typing import List, Tuple, Dict
 
+from newscrawler.domain.entities.extraction.url_data import URL
 from newscrawler.domain.entities.extraction.website_name import WebsiteName
 from newscrawler.infrastructure.datasource.scrapers.crawler import Crawler
 from newscrawler.core.utils.utils import (
@@ -19,12 +20,13 @@ class TirtoCrawler(Crawler):
     def __init__(self):
         super(TirtoCrawler, self).__init__()
         self.website_name = WebsiteName.TIRTO.value
+        self.website_url = URL.TIRTO.value
 
     def get_news_in_bulk(
-        self, web_url: str, last_crawling_time: Dict[str, date]
+        self, last_crawling_time: Dict[str, date]
     ) -> Tuple[Dict[str, any], List[Dict[str, any]]]:
         branch_name = "news"
-        branch_link = web_url
+        branch_link = self.website_url
         links_to_crawl = []
 
         last_stamped_crawling = last_crawling_time.get(branch_name)

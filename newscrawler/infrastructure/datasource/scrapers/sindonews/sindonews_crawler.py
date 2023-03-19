@@ -5,6 +5,7 @@ from typing import List, Tuple, Dict
 
 from bs4.element import NavigableString
 
+from newscrawler.domain.entities.extraction.url_data import URL
 from newscrawler.domain.entities.extraction.website_name import WebsiteName
 from newscrawler.infrastructure.datasource.scrapers.crawler import Crawler
 from newscrawler.core.utils.utils import (
@@ -21,19 +22,20 @@ class SindonewsCrawler(Crawler):
     def __init__(self):
         super(SindonewsCrawler, self).__init__()
         self.website_name = WebsiteName.SINDONEWS.value
+        self.website_url = URL.SINDONEWS.value
 
     def get_news_in_bulk(
-        self, web_url: str, last_crawling_time: Dict[str, date]
+            self, last_crawling_time: Dict[str, date]
     ) -> Tuple[Dict[str, any], List[Dict[str, any]]]:
-        links_to_crawl = []
-        soup = self.page_loader.get_soup(web_url)
+        soup = self.page_loader.get_soup(self.website_url)
         branches_to_crawl = self._get_branches(soup)
+        links_to_crawl = []
 
         # up to branch -4, because there's no text in the categories afterwards
         for branch_name, branch_link in list(branches_to_crawl.items())[:-4]:
-            last_stamped_crawling = last_crawling_time.get(branch_name)
-            if not last_stamped_crawling:
-                last_stamped_crawling = self.default_time
+            last_stamped_crawling = last_crawling_time.get(
+                branch_name, self.default_time
+            )
             last_crawling, links = self._scrape(
                 branch_link=branch_link,
                 branch_name=branch_name,
@@ -41,7 +43,7 @@ class SindonewsCrawler(Crawler):
             )
             links_to_crawl.extend(links)
             last_crawling_time[branch_name] = last_crawling
-        logger.info(f"get {len(links_to_crawl)} to scrape for {self.website_name}")
+        logger.info(f"get {len(links_to_crawl)} to scrape for {self.website_url}")
         return last_crawling_time, links_to_crawl
 
     @staticmethod
@@ -50,20 +52,18 @@ class SindonewsCrawler(Crawler):
         sitemaps = soup.find_all("sitemap")
         for sitemap in sitemaps:
             link = sitemap.find("loc")
-            if link:
+            if link and "sitemap-" not in link.get_text(" "):
                 link = link.get_text(" ").strip()
+                link = link.replace("sitemap.xml","sitemap-news.xml")
                 branch_name = re.sub(r"(.*)(//)(.*)(.sindonews)(.*)", r"\3", link)
                 branch_name = branch_name.strip()
-                branches[branch_name] = link.strip()
+                branches[branch_name] = link
 
         return branches
 
     def _scrape(
-        self,
-        branch_link: str,
-        branch_name: str,
-        last_stamped_crawling=None,
-    ) -> Tuple[Dict[str, date], List]:
+        self, branch_link, branch_name, last_stamped_crawling=None
+    ) -> Tuple[date, List]:
         logger.info(f"Scrape {branch_name} on {self.website_name}")
         soup = self.page_loader.get_soup(branch_link)
         articles = []
@@ -127,7 +127,7 @@ class SindonewsCrawler(Crawler):
         if layer is None:
             layer = soup.find(
                 "div",
-                attrs={"class": ["article", "desc-artikel-detail"], "itemprop": None},
+                attrs={"class": ["article", "desc-artikel-detail", "detail-desc"], "itemprop": None},
             )
         if layer is None:
             layer = soup.find("section", attrs={"class": "article col-md-11"})

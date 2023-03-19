@@ -3,6 +3,7 @@ import re
 from datetime import date
 from typing import List, Tuple, Dict
 
+from newscrawler.domain.entities.extraction.url_data import URL
 from newscrawler.domain.entities.extraction.website_name import WebsiteName
 from newscrawler.infrastructure.datasource.scrapers.crawler import Crawler
 from newscrawler.core.utils.utils import (
@@ -19,15 +20,16 @@ class MediaIndonesiaCrawler(Crawler):
     def __init__(self):
         super(MediaIndonesiaCrawler, self).__init__()
         self.website_name = WebsiteName.MEDIAINDONESIA.value
+        self.website_url = URL.MEDIAINDONESIA.value
 
     def get_news_in_bulk(
-        self, web_url: str, last_crawling_time: Dict[str, date]
+        self, last_crawling_time: Dict[str, date]
     ) -> Tuple[Dict[str, any], List[Dict[str, any]]]:
-        soup = self.page_loader.get_soup(web_url)
+        soup = self.page_loader.get_soup(self.website_url)
 
         counter = 0
         while not soup.find("div", {"class": "pretty-print"}) and counter < 5:
-            soup = self.page_loader.get_soup(web_url)
+            soup = self.page_loader.get_soup(self.website_url)
             counter += 1
         links_to_crawl = []
         last_crawling, links = self._scrape(
