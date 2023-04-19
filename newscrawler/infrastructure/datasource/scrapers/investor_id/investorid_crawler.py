@@ -32,13 +32,6 @@ class InvestorIDCrawler(Crawler):
             return branch_name.strip()
 
     @staticmethod
-    def _get_link(news_soup) -> str:
-        link = news_soup.find("loc")
-        if link:
-            link = link.get_text(" ").strip()
-            return f"{link}?page=all"
-
-    @staticmethod
     def _get_whole_text(soup) -> List[str]:
         article_layer = soup.find("div", {"class": ["col fsbody"]})
         if article_layer:

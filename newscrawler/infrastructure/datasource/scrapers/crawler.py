@@ -148,7 +148,8 @@ class Crawler:
         link = news_soup.find("loc")
         if link:
             link = link.get_text(" ").strip()
-            link = link + "?page=all"
+            if "?page=all" not in link:
+                link += "?page=all"
             return link
 
     @staticmethod

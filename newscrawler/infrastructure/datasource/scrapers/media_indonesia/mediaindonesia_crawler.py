@@ -33,7 +33,7 @@ class MediaIndonesiaCrawler(Crawler):
         return branches
 
     @staticmethod
-    def _get_branch_name(url) -> str:
+    def _get_branch_name_from_url(url) -> str:
         branch_name = re.sub(r"(https://www.mediaindonesia.com/)(.*)(/)", r"\1", url)
         if branch_name:
             return branch_name.strip()

@@ -34,15 +34,6 @@ class GridIdCrawler(Crawler):
             return branch_name.strip()
 
     @staticmethod
-    def _get_link(news_soup) -> str:
-        link = news_soup.find("loc")
-        if link:
-            link = link.get_text(" ").strip()
-            if "?page=all" not in link:
-                link += "?page=all"
-            return link
-
-    @staticmethod
     def _get_whole_text(soup):
         layer = soup.find("div", {"class": ["read__article"]})
         if layer:
