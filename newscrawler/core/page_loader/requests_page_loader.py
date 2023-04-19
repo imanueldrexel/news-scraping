@@ -36,7 +36,7 @@ class RequestsPageLoader(PageLoader):
                 logger.info(f"Retry {idx} to connect")
                 try:
                     response = requests.get(
-                        url_path, headers=self.headers, timeout=(10, 27)
+                        url_path, headers=self.headers, timeout=(20, 30)
                     )
                     return response
                 except requests.exceptions.ReadTimeout or requests.exceptions.ConnectionError:

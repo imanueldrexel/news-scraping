@@ -9,7 +9,7 @@ from newscrawler.infrastructure.datasource.dataflow.model.news_information_model
 
 class CrawlerService:
     @abstractmethod
-    def crawl_url(self, website_name: str) -> NewsInformationDTO:
+    def crawl_sitemaps(self, website_name: str) -> NewsInformationDTO:
         raise NotImplementedError
 
     @abstractmethod

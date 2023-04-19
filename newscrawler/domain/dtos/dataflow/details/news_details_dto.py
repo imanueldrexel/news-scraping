@@ -1,14 +1,11 @@
-from typing import List, Union
-from datetime import date
+from typing import List
 from pydantic.dataclasses import dataclass
+
+from newscrawler.domain.dtos.dataflow.details.site_map_dto import SitemapDTO
 
 
 @dataclass(frozen=True)
 class NewsDetailsDTO:
-    headline: str
-    link: str
-    sources: str
+    sitemap: SitemapDTO
     extracted_text: List[str]
-    category: str = None
-    timestamp: date = None
-    keywords: Union[None, List[str]] = None
+    reporter: List[str]

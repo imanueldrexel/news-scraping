@@ -1,0 +1,11 @@
+version: '3'
+
+services:
+  news-aggregator-postgres-local:
+    build: ./postgresql_tables
+    ports:
+      - 5431:5432
+    environment:
+      - POSTGRES_DB=newsaggregator
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres

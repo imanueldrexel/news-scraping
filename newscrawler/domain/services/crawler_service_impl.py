@@ -44,6 +44,7 @@ from newscrawler.infrastructure.datasource.scrapers.kompas.kompas_crawler import
 from newscrawler.infrastructure.datasource.scrapers.kontan.kontan_crawler import (
     KontanCrawler,
 )
+from newscrawler.infrastructure.datasource.scrapers.kumparan.kumparan_crawler import KumparanCrawler
 from newscrawler.infrastructure.datasource.scrapers.liputan_enam.liputan_enam_crawler import (
     LiputanEnamCrawler,
 )
@@ -99,6 +100,7 @@ class CrawlerServiceImpl(CrawlerService):
             WebsiteName.INVESTORID.value: InvestorIDCrawler(),
             WebsiteName.BERITASATU.value: BeritaSatuCrawler(),
             WebsiteName.SUARA.value: SuaraCrawler(),
+            WebsiteName.KUMPARAN.value: KumparanCrawler()
         }
         self.web_url_dict = {
             WebsiteName.GRIDID.value: URL.GRIDID,
@@ -123,17 +125,14 @@ class CrawlerServiceImpl(CrawlerService):
             WebsiteName.INVESTORID.value: URL.INVESTORID,
             WebsiteName.BERITASATU.value: URL.BERITASATU,
             WebsiteName.SUARA.value: URL.SUARA,
+            WebsiteName.KUMPARAN.value: URL.KUMPARAN
         }
         self.data_flow_repo = data_flow_repo
 
-    def crawl_url(self, website_name: str) -> NewsInformationDTO:
+    def crawl_sitemaps(self, website_name: str) -> NewsInformationDTO:
         web_crawler: Crawler = self.crawler_dict.get(website_name)
-        last_crawling_time = web_crawler.get_last_crawling_time()
-        last_crawling_time, news = web_crawler.get_news_in_bulk(
-            last_crawling_time=last_crawling_time,
-        )
-        news_data = web_crawler.batch_crawling(news)
-        web_crawler.set_last_crawling_time(last_crawling_time)
+        news = web_crawler.get_news_in_bulk()
+        news_data = web_crawler.batch_crawling(news, website_name)
         return news_data
 
     def save_scraped_data(self, scraped_data) -> Union[None, NewsInformationModel]:

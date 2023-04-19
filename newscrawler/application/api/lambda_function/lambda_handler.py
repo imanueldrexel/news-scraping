@@ -5,6 +5,7 @@ from newscrawler.infrastructure.datasource.dataflow.write.news_data_source impor
     NewsDataSource,
 )
 from newscrawler.domain.services.crawler_service_impl import CrawlerServiceImpl
+from newscrawler.infrastructure.network.clients.sqlalchemy_client import SQLAlchemyClient
 from newscrawler.infrastructure.repositories.dataflow.data_flow_repository_impl import (
     DataFlowRepositoryImpl,
 )
@@ -15,8 +16,9 @@ logger.setLevel(logging.INFO)
 
 
 def init_crawler():
-    data_flow_repo = DataFlowRepositoryImpl(NewsDataSource())
-    crawler_service = CrawlerServiceImpl(data_flow_repo=data_flow_repo)
+    sql_alchemy_client = SQLAlchemyClient()
+    data_flow_repo = DataFlowRepositoryImpl(NewsDataSource(sql_alchemy_client))
+    crawler_service = CrawlerServiceImpl(data_flow_repo)
 
     return CrawlerAPI(crawler_service)
 

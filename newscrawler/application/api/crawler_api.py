@@ -14,7 +14,7 @@ class CrawlerAPI:
         self.crawler_service = crawler_service
 
     def crawl_website(self, website_name: str) -> NewsInformationDTO:
-        return self.crawler_service.crawl_url(website_name)
+        return self.crawler_service.crawl_sitemaps(website_name)
 
     def crawl_website_in_batch(self, website_names: List[str]):
         for idx, website_name in enumerate(website_names):
