@@ -48,3 +48,14 @@ class MediaIndonesiaCrawler(Crawler):
                 sentence = preprocess_text(sentence.get_text())
                 texts.append(sentence)
             return texts
+
+    def _get_reporter_from_text(self, soup) -> List[str]:
+        reporters = []
+        reporter = soup.find("div", attrs={"class": "author", "style": None})
+        if reporter:
+            reporter.a.decompose()
+            reporter = reporter.get_text(" ").strip()
+            if reporter:
+                reporter = reporter.replace(" |")
+                reporters.append(reporter)
+        return reporters

@@ -55,3 +55,16 @@ class KompasCrawler(Crawler):
                 if sentence and "Baca juga" not in sentence:
                     texts.append(sentence)
             return texts
+
+    def _get_reporter_from_text(self, soup) -> List[str]:
+        reporters = []
+        layers = soup.find_all("div", attrs={"class": "read__credit__item"})
+        for reporter in layers:
+            reporter = reporter.find("a")
+            if reporter:
+                reporter = reporter.get_text(" ")
+                if reporter:
+                    reporter = reporter.strip()
+                    reporters.append(reporter)
+
+        return reporters

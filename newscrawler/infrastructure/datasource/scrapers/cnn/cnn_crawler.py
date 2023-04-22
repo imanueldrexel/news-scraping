@@ -46,3 +46,6 @@ class CNNCrawler(Crawler):
                 sentence = preprocess_text(sentence.get_text(" ").strip())
                 texts.append(sentence)
             return texts
+
+    def _get_reporter_from_text(self, soup) -> List[str]:
+        return []

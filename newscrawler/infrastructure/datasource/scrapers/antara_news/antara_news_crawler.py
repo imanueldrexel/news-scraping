@@ -107,3 +107,19 @@ class AntaraNewsCrawler(Crawler):
                 if sentence:
                     texts.append(sentence)
             return texts
+
+    def _get_reporter_from_text(self, soup) -> List[str]:
+        try:
+            layer = soup.find("div", attrs={"class": ["post-content clearfix"]})
+            if layer:
+                paragraph = soup.find("p", attrs={"class": ["text-muted small mt10"]})
+                if paragraph:
+                    paragraph = paragraph.get_text(" ").split("\t")
+                    if paragraph:
+                        paragraph = paragraph[0]
+                        paragraph = paragraph.replace("Pewarta: ","").replace("Editor: ", "\n")
+                        paragraph = [x.strip() for x in paragraph.split("\n")]
+                        return paragraph
+        except BaseException as e:
+            logger.info(f'Error while get reporter from text\nReason:{e}')
+            return []

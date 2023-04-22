@@ -3,6 +3,8 @@ from newscrawler.infrastructure.datasource.dataflow.model.news_data_model import
 from datetime import date
 from sqlalchemy import Column, String, BigInteger, Integer, TIMESTAMP, JSON, ForeignKey
 
+from newscrawler.infrastructure.datasource.dataflow.model.news_details_model import NewsDetailsModel
+
 Base = declarative_base()
 
 
@@ -34,6 +36,12 @@ class NewsArticlesTable(Base):
     extracted_text = Column(String, nullable=False)
     meta_data = Column(JSON)
     writer = Column(JSON)
+
+    def __init__(self, sitemap: NewsDetailsModel):
+        self.sitemap_id = sitemap.sitemap_id
+        self.extracted_text = sitemap.extracted_text
+        self.writer = sitemap.reporter
+        self.meta_data = sitemap.meta_data
 
 
 # class SourceDictionary(Base):

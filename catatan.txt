@@ -1,0 +1,6 @@
+1. sindonews bagian "https://scope.sindonews.com/artikel/33/tren-artis-beli-klub-sepak-bola-demi-gengsi-atau-prestasi?page=all" tidak bisa scrape text
+2. suara.com tidak bisa scrape text
+3. kumparan tidak bisa scrape text
+4. kumparan tidak bisa scrape reporter
+5. JPNN harus masukin pagination. Reporter ada di halaman kedua.
+6.

@@ -1,7 +1,6 @@
 import re
 import logging
-from typing import Dict
-
+from typing import Dict, List
 
 from newscrawler.infrastructure.datasource.scrapers.crawler import Crawler
 from newscrawler.domain.entities.extraction.website_name import WebsiteName
@@ -83,3 +82,12 @@ class SuaraCrawler(Crawler):
                         texts.append(extracted_text)
 
             return texts
+
+    def _get_reporter_from_text(self, soup) -> List[str]:
+        reporters = []
+        reporter = soup.find("div", attrs={"class": "writer"})
+        if reporter:
+            reporter = reporter.get_text(" ").strip()
+            if reporter:
+                reporters.append(reporter)
+        return list(set(reporters))

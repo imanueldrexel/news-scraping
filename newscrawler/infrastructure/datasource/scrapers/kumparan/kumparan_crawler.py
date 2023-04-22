@@ -48,3 +48,15 @@ class KumparanCrawler(Crawler):
             if sentence:
                 texts.append(sentence)
         return texts
+
+    def _get_reporter_from_text(self, soup) -> List[str]:
+
+        reporters = []
+        layers = soup.find_all("span", {"data-qa-id": "editor-name"})
+
+        if layers:
+            for layer in layers:
+                reporter = layer.get_text(" ").strip()
+                if reporter:
+                    reporters.append(reporter)
+        return reporters

@@ -72,3 +72,18 @@ class BisnisCrawler(Crawler):
                     if tmp_text:
                         texts.append(tmp_text)
             return texts
+
+    def _get_reporter_from_text(self, soup) -> List[str]:
+        reporters = []
+        reporter = soup.find("a", attrs={"class": "auth"})
+        if reporter:
+            reporter = reporter.get_text(" ").strip()
+            if reporter:
+                reporters.append(reporter)
+        editor = soup.find("div", attrs={"class": "editor"})
+        if editor:
+            editor = editor.get_text(" ").strip()
+            if editor:
+                editor = editor.replace("Editor :", "")
+                reporters.append(editor.strip())
+        return list(set(reporters))

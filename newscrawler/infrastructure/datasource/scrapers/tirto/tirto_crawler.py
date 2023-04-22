@@ -37,3 +37,16 @@ class TirtoCrawler(Crawler):
                 sentence = preprocess_text(sentence.get_text(" ")).split(". ")
                 texts.extend(sentence)
             return texts
+
+    def _get_reporter_from_text(self, soup) -> List[str]:
+        reporters = []
+        layer = soup.find("div", {"class": "credit"})
+        if layer:
+            reporters_layers = soup.find_all("span", {"class":"reporter-grup"})
+            for reporters_layer in reporters_layers:
+                reporter = reporters_layer.get_text(" ").strip()
+                if reporter:
+                    reporter = reporter.replace("Kontributor: ","").replace("Penulis: ","").replace("Editor: ", "")
+                    if reporter:
+                        reporters.append(reporter)
+        return list(set(reporters))

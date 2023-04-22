@@ -1,6 +1,6 @@
 import re
 
-from typing import Dict
+from typing import Dict, List
 
 from bs4.element import NavigableString
 
@@ -103,3 +103,19 @@ class SindonewsCrawler(Crawler):
             if sentence:
                 texts.append(sentence)
         return texts
+
+    def _get_reporter_from_text(self, soup) -> List[str]:
+        reporters = []
+        layer = soup.find("div", attrs={"class":"detail-nama-redaksi"})
+        if layer:
+            reporter = layer.get_text(" ").strip()
+            if reporter:
+                reporters.append(reporter)
+        else:
+            layer = soup.find("div", attrs={"class": ["author-article"]})
+            if layer:
+                reporter = layer.find("strong")
+                if reporter:
+                    reporter = reporter.get_text(" ").strip()
+                    reporters.append(reporter)
+        return reporters
