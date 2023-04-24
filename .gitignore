@@ -131,3 +131,5 @@ dmypy.json
 #Data Result
 /newscrawler/*.csv
 /news_result/*
+/news-package/
+/.serverless/

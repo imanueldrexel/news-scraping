@@ -26,35 +26,9 @@ def init_crawler():
 def process_event(event, context):
     logger.info(event)
     scraper_api = init_crawler()
-    websites = event.get("website")
-    sitemap_ids = [189118,
-                   174457,
-                   196817,
-                   193270,
-                   179272,
-                   179334,
-                   192603,
-                   170971,
-                   182335,
-                   177438,
-                   171889,
-                   181439,
-                   171658,
-                   175004,
-                   188471,
-                   181125,
-                   196416,
-                   193416,
-                   175334,
-                   178868,
-                   176511]
+    sitemap_ids = event.get("sitemap_ids")
     if sitemap_ids:
         try:
             scraper_api.craw_full_text(sitemap_ids)
         except BaseException as e:
             logger.info(f"Failed to crawl. Reason: {e}")
-
-
-if __name__ == "__main__":
-    event={}
-    process_event(event,None)
