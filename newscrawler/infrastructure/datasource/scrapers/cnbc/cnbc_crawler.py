@@ -1,6 +1,6 @@
 import re
 import logging
-from typing import Dict
+from typing import Dict, List
 
 from newscrawler.domain.entities.extraction.url_data import URL
 from newscrawler.domain.entities.extraction.website_name import WebsiteName
@@ -47,3 +47,16 @@ class CNBCCrawler(Crawler):
                 if sentence:
                     texts.append(sentence)
             return texts
+
+    def _get_reporter_from_text(self, soup) -> List[str]:
+        reporters = []
+        layer = soup.find("div", {"class": "author"})
+        if layer:
+            reporter = layer.get_text(" ")
+            if reporter:
+                reporter = reporter.split(",")
+                if reporter:
+                    reporter = reporter[0].split("-")
+                    if reporter:
+                        reporters.append(reporter[1].strip())
+        return reporters

@@ -48,3 +48,18 @@ class BeritaSatuCrawler(Crawler):
                     sentence = preprocess_text(sentence.get_text(" ").strip())
                     texts.append(sentence)
         return texts
+
+    def _get_reporter_from_text(self, soup) -> List[str]:
+        reporters = []
+        layers = soup.find_all("div", {"class": "row mb-3"})
+        for layer in layers:
+            col = layer.find("div", {"class": "col"})
+            col = col.find("b")
+            col = col.get_text(" ").strip()
+            if col:
+                reporter = col.split("/")[0]
+                reporter = reporter.split(",")
+                reporter = [r.strip() for r in reporter]
+                reporters.extend(reporter)
+
+        return reporters

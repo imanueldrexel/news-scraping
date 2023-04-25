@@ -1,11 +1,10 @@
-from typing import List
+from typing import List, Any, Dict
 from pydantic.dataclasses import dataclass
-
-from newscrawler.domain.dtos.dataflow.details.site_map_dto import SitemapDTO
 
 
 @dataclass(frozen=True)
 class NewsDetailsDTO:
-    sitemap: SitemapDTO
+    sitemap_id: int
     extracted_text: List[str]
     reporter: List[str]
+    meta_data: Dict[str, Any]

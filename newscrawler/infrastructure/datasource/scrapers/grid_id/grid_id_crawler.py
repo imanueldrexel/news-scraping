@@ -7,7 +7,7 @@ from newscrawler.infrastructure.datasource.scrapers.grid_id.grid_id_branch impor
 from newscrawler.core.utils.utils import (
     preprocess_text,
 )
-from typing import Dict
+from typing import Dict, List
 import re
 import logging
 
@@ -49,3 +49,12 @@ class GridIdCrawler(Crawler):
                         if sentence and "Baca Juga" not in sentence:
                             texts.append(sentence)
                 return texts
+
+    def _get_reporter_from_text(self, soup) -> List[str]:
+        reporters = []
+        layer = soup.find("span", {"class": ["read__author"]})
+        if layer:
+            reporter = layer.get_text(" ")
+            if reporter:
+                reporters.append(reporter.strip())
+        return reporters

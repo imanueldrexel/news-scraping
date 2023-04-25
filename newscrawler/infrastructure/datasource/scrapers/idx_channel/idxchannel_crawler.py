@@ -46,3 +46,14 @@ class IdxChannelCrawler(Crawler):
                 sentence = preprocess_text(sentence.get_text(" ").strip())
                 texts.append(sentence)
             return texts
+
+    def _get_reporter_from_text(self, soup) -> List[str]:
+        reporters = []
+        layer = soup.find("div", {"class": "text-body--2"})
+        if layer:
+            reporter = layer.get_text(" ")
+            if reporter:
+                reporter = reporter.strip().split("/")
+                if reporter:
+                    reporters.append(reporter[0])
+        return reporters

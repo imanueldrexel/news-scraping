@@ -33,7 +33,7 @@ class InvestorIDCrawler(Crawler):
 
     @staticmethod
     def _get_whole_text(soup) -> List[str]:
-        article_layer = soup.find("div", {"class": ["col fsbody"]})
+        article_layer = soup.find("div", {"class": ["body-content"]})
         if article_layer:
             while article_layer.find_all("div"):
                 article_layer.div.decompose()
@@ -45,3 +45,14 @@ class InvestorIDCrawler(Crawler):
                 sentence = preprocess_text(sentence.get_text())
                 texts.append(sentence)
             return texts
+
+    def _get_reporter_from_text(self, soup) -> List[str]:
+        reporters = []
+        layer = soup.find("div", {"class": ["col small pt-1"]})
+        if layer:
+            reporter = layer.find("b")
+            if reporter:
+                reporter = reporter.get_text(" ")
+                if reporter:
+                    reporters.append(reporter.strip())
+        return reporters

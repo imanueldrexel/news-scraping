@@ -12,7 +12,7 @@ def main():
         "CNN",
         "CNBC",
         "TRIBUN",
-        "ANTARANEWS",
+        "ANTARANEWS", #done
         "JPNN",
         "PIKIRANRAKYAT",
         "VIVA",
@@ -26,12 +26,12 @@ def main():
         # "LIPUTAN6",
         # "KAPANLAGI",
         "BATAMPOS",
-        "BISNIS",
+        "BISNIS", #done
         "TEMPO",
         "SUARA",
         "BERITASATU"
     ]
-    WEBSITES = "BERITASATU"
+    WEBSITES = SLOW
     if isinstance(WEBSITES, list):
         WEBSITES = ",".join(WEBSITES)
     elif isinstance(WEBSITES, str):

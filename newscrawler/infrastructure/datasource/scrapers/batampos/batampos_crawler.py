@@ -41,3 +41,12 @@ class BatamposCrawler(Crawler):
             if sentence:
                 texts.append(sentence)
         return texts
+
+    def _get_reporter_from_text(self, soup) -> List[str]:
+        reporters = []
+        reporter = soup.find("a", attrs={"class": "tdb-author-name"})
+        if reporter:
+            reporter = reporter.get_text(" ").strip()
+            if reporter:
+                reporters.append(reporter)
+        return reporters

@@ -1,0 +1,24 @@
+service: newscrawler
+
+provider:
+  name: aws
+  runtime: python3.9
+  region: ap-southeast-1
+
+package:
+  exclude:
+    - ./**
+  include:
+    - newscrawler/**
+    - venv/**
+
+functions:
+  SitemapScraper:
+    name: SitemapScraper
+    handler: newscrawler.application.api.lambda_function.lambda_handler.process_event
+    description: crawling engine
+    runtime: python3.9
+    memorySize: 1024
+    timeout: 600
+    tracing: PassThrough
+    role: arn:aws:iam::481177810866:role/service-role/SitemapScraper-role-bica5nf8

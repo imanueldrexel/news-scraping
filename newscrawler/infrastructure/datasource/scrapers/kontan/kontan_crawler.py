@@ -1,6 +1,6 @@
 import logging
 import re
-from typing import Dict
+from typing import Dict, List
 
 from newscrawler.domain.entities.extraction.url_data import URL
 from newscrawler.domain.entities.extraction.website_name import WebsiteName
@@ -88,3 +88,24 @@ class KontanCrawler(Crawler):
                     if sentence:
                         texts.append(sentence)
             return texts
+
+    def _get_reporter_from_text(self, soup) -> List[str]:
+        reporters = []
+        layer = soup.find(
+            "div",
+            attrs={
+                "itemprop": ["articleBody"],
+                "class": ["tmpt-desk-kon", "ctn", None],
+            },
+        )
+        if layer:
+            sentences = layer.find("p")
+            if sentences:
+                reporter = sentences.get_text(" ").strip()
+                if reporter:
+                    for r in reporter.split("|"):
+                        r = r.replace("Reporter:", "")
+                        r = r.replace("Editor:", "")
+                        r = r.strip()
+                        reporters.append(r)
+                    return reporters

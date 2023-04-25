@@ -1,12 +1,14 @@
 import logging
 import os
+from abc import abstractmethod
 from concurrent.futures.thread import ThreadPoolExecutor
-from typing import List, Dict, Union, Any
+from typing import List, Dict, Union, Any, Tuple
 
 import pydantic
 
 from newscrawler.core.constants import VERBOSE, PARALLELIZE, MAX_WORKER
 from newscrawler.core.page_loader.requests_page_loader import RequestsPageLoader
+from newscrawler.domain.dtos.dataflow.details.news_details_dto import NewsDetailsDTO
 from newscrawler.domain.dtos.dataflow.details.site_map_dto import SitemapDTO
 from newscrawler.domain.dtos.dataflow.news_information_dto import NewsInformationDTO
 from newscrawler.domain.entities.extraction.website_name import WebsiteName
@@ -29,28 +31,27 @@ class Crawler:
         self.website_url = None
         self.website_name = None
 
-    def batch_crawling(self, news: List[Dict[str, str]], website_name: str) -> NewsInformationDTO:
+    def batch_crawling_sitemap(self, news: List[Dict[str, str]], website_name: str) -> List[SitemapDTO]:
         news_data = []
-        if not news:
-            return NewsInformationDTO(scraped_news=[])
-        if self.parallelize and website_name != WebsiteName.MEDIAINDONESIA.value:
-            with ThreadPoolExecutor(max_workers=self.max_worker) as executor:
-                results = executor.map(self._get_sitemap, news)
-                for result in results:
+        if news:
+            if self.parallelize and website_name != WebsiteName.MEDIAINDONESIA.value:
+                with ThreadPoolExecutor(max_workers=self.max_worker) as executor:
+                    results = executor.map(self._get_sitemap, news)
+                    for result in results:
+                        if result:
+                            if self.verbose:
+                                logger.info(result)
+                            news_data.append(result)
+
+            else:
+                for n in news:
+                    result = self._get_sitemap(n)
                     if result:
                         if self.verbose:
                             logger.info(result)
                         news_data.append(result)
 
-        else:
-            for n in news:
-                result = self._get_sitemap(n)
-                if result:
-                    if self.verbose:
-                        logger.info(result)
-                    news_data.append(result)
-
-        return NewsInformationDTO(scraped_news=news_data)
+        return news_data
 
     @staticmethod
     def _get_branches(soup) -> Dict[str, str]:
@@ -71,7 +72,6 @@ class Crawler:
                 branch_name=branch_name
             )
             links_to_crawl.extend(links)
-        logger.info(f"get {len(links_to_crawl)} to scrape for {self.website_name}")
         return links_to_crawl
 
     def _scrape(
@@ -159,3 +159,47 @@ class Crawler:
             keywords = keyword_div.get_text(" ").strip()
             keywords = [x.strip() for x in keywords.split()]
             return keywords
+
+    def batch_crawling_details(self, news: List[Tuple[int, str]], website_name: str) -> List[NewsDetailsDTO]:
+        news_data = []
+        if news:
+            if self.parallelize and website_name != WebsiteName.MEDIAINDONESIA.value:
+                with ThreadPoolExecutor(max_workers=self.max_worker) as executor:
+                    results = executor.map(self._get_news_details, news)
+                    for result in results:
+                        if result:
+                            if self.verbose:
+                                logger.info(result)
+                            news_data.append(result)
+
+            else:
+                for n in news:
+                    result = self._get_news_details(n)
+                    if result:
+                        if self.verbose:
+                            logger.info(result)
+                        news_data.append(result)
+
+        return news_data
+
+    def _get_news_details(self, link: Tuple[int, str]) -> NewsDetailsDTO:
+        try:
+            sitemap_id = link[0]
+            url = link[1]
+            soup = self.page_loader.get_soup(url)
+            if soup:
+                reporter = self._get_reporter_from_text(soup)
+                extracted_text = self._get_whole_text(soup)
+                meta_data = {}
+                return NewsDetailsDTO(sitemap_id=sitemap_id,
+                                      extracted_text=extracted_text,
+                                      reporter=reporter,
+                                      meta_data=meta_data)
+        except pydantic.error_wrappers.ValidationError:
+            logger.info(f"Error in get_content {link[1]}. Reason: extracted_text is None")
+        except BaseException as e:
+            logger.info(f"Error in get_content {link[1]}. Reason: {e}")
+
+    @abstractmethod
+    def _get_reporter_from_text(self, soup) -> List[str]:
+        pass

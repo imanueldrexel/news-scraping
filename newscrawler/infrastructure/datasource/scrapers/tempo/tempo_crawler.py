@@ -1,5 +1,5 @@
 import re
-from typing import Dict
+from typing import Dict, List
 
 from newscrawler.domain.entities.extraction.url_data import URL
 from newscrawler.domain.entities.extraction.website_name import WebsiteName
@@ -59,7 +59,7 @@ class TempoCrawler(Crawler):
     def _get_text(soup):
         layer = soup.find("div", attrs={"id": "isi"})
         if layer is None:
-            layer = soup.find("div", attrs={"class","detail-in"})
+            layer = soup.find("div", attrs={"class", "detail-in"})
         if layer:
             sentences = layer.find_all("p")
             texts = []
@@ -69,3 +69,18 @@ class TempoCrawler(Crawler):
                     texts.append(sentence)
 
             return texts
+
+    def _get_reporter_from_text(self, soup) -> List[str]:
+        reporters = []
+        reporter = soup.find("span", attrs={"itemprop": "author"})
+        if reporter:
+            reporter = reporter.get_text(" ").strip()
+            if reporter:
+                reporters.append(reporter)
+        editor = soup.find("span", attrs={"itemprop": "editor"})
+        if editor:
+            editor = editor.get_text(" ").strip()
+            if editor:
+                editor = editor.replace("Editor :", "")
+                reporters.append(editor.strip())
+        return reporters

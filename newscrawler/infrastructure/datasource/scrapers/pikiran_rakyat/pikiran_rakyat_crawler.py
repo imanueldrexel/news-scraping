@@ -1,6 +1,6 @@
 import re
 import logging
-from typing import Dict
+from typing import Dict, List
 
 from newscrawler.domain.entities.extraction.url_data import URL
 from newscrawler.domain.entities.extraction.website_name import WebsiteName
@@ -85,3 +85,12 @@ class PikiranRakyatCrawler(Crawler):
                         texts.append(extracted_text)
 
             return texts
+
+    def _get_reporter_from_text(self, soup) -> List[str]:
+        reporters = []
+        reporter = soup.find("div", attrs={"class": ["read__info__author"]})
+        if reporter:
+            reporter = reporter.get_text(" ").strip()
+            if reporter:
+                reporters.append(reporter)
+        return reporters
