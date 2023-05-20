@@ -7,6 +7,10 @@ from newscrawler.infrastructure.datasource.scrapers.cnbc.cnbc_crawler import CNB
 from newscrawler.infrastructure.datasource.scrapers.cnn.cnn_crawler import CNNCrawler
 from newscrawler.infrastructure.datasource.scrapers.grid_id.grid_id_crawler import GridIdCrawler
 from newscrawler.infrastructure.datasource.scrapers.idx_channel.idxchannel_crawler import IdxChannelCrawler
+from newscrawler.infrastructure.datasource.scrapers.inews.inews_crawler import INewsCrawler
+from newscrawler.infrastructure.datasource.scrapers.detik.detik_crawler import DetikCrawler
+from newscrawler.infrastructure.datasource.scrapers.era_id.eraid_crawler import EraIDCrawler
+from newscrawler.infrastructure.datasource.scrapers.idntimes.idntimes_crawler import IDNTimesCrawler
 from newscrawler.infrastructure.datasource.scrapers.investor_id.investorid_crawler import InvestorIDCrawler
 from newscrawler.infrastructure.datasource.scrapers.jpnn.jpnn_crawler import JPNNCrawler
 from newscrawler.infrastructure.datasource.scrapers.kapanlagi.kapanlagi_crawler import KapanlagiCrawler
@@ -15,13 +19,17 @@ from newscrawler.infrastructure.datasource.scrapers.kontan.kontan_crawler import
 from newscrawler.infrastructure.datasource.scrapers.kumparan.kumparan_crawler import KumparanCrawler
 from newscrawler.infrastructure.datasource.scrapers.liputan_enam.liputan_enam_crawler import LiputanEnamCrawler
 from newscrawler.infrastructure.datasource.scrapers.media_indonesia.mediaindonesia_crawler import MediaIndonesiaCrawler
+from newscrawler.infrastructure.datasource.scrapers.merdeka.merdeka_crawler import MerdekaCrawler
+from newscrawler.infrastructure.datasource.scrapers.okezone.okezone_crawler import OkezoneCrawler
 from newscrawler.infrastructure.datasource.scrapers.pikiran_rakyat.pikiran_rakyat_crawler import PikiranRakyatCrawler
 from newscrawler.infrastructure.datasource.scrapers.sindonews.sindonews_crawler import SindonewsCrawler
 from newscrawler.infrastructure.datasource.scrapers.suara_group.suara_crawler import SuaraCrawler
 from newscrawler.infrastructure.datasource.scrapers.tempo.tempo_crawler import TempoCrawler
 from newscrawler.infrastructure.datasource.scrapers.tirto.tirto_crawler import TirtoCrawler
 from newscrawler.infrastructure.datasource.scrapers.tribun.tribun_crawler import TribunCrawler
+from newscrawler.infrastructure.datasource.scrapers.tvonenews.tvonenews_crawler import TVOneNewsCrawler
 from newscrawler.infrastructure.datasource.scrapers.viva.viva_crawler import VivaCrawler
+from newscrawler.infrastructure.datasource.scrapers.warta_ekonomi.warta_ekonomi_crawler import WartaEkonomiCrawler
 
 CRAWLER_DICT = {
             WebsiteName.SINDONEWS.value: SindonewsCrawler(),
@@ -46,5 +54,13 @@ CRAWLER_DICT = {
             WebsiteName.INVESTORID.value: InvestorIDCrawler(),
             WebsiteName.BERITASATU.value: BeritaSatuCrawler(),
             WebsiteName.SUARA.value: SuaraCrawler(),
-            WebsiteName.KUMPARAN.value: KumparanCrawler()
+            WebsiteName.KUMPARAN.value: KumparanCrawler(),
+            WebsiteName.DETIK.value: DetikCrawler(),
+            WebsiteName.MERDEKA.value: MerdekaCrawler(),
+            WebsiteName.ERAID.value: EraIDCrawler(),
+            WebsiteName.OKEZONE.value: OkezoneCrawler(),
+            WebsiteName.INEWS.value: INewsCrawler(),
+            WebsiteName.WARTAEKONOMI.value: WartaEkonomiCrawler(),
+            WebsiteName.TVONENEWS.value: TVOneNewsCrawler(),
+            WebsiteName.IDNTIMES.value: IDNTimesCrawler()
         }

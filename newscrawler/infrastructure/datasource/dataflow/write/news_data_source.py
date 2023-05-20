@@ -46,8 +46,9 @@ class NewsDataSource:
                         saved_articles.append(article)
                 except KeyError:
                     saved_articles.append(article)
-            logger.info(f"get {len(saved_articles)} to scrape for {article.sources[0]}")
-            self.sql_alchemy_sitemap.save_sitemaps(saved_articles)
+            if saved_articles:
+                logger.info(f"get {len(saved_articles)} to scrape for {saved_articles[0].sources}")
+                self.sql_alchemy_sitemap.save_sitemaps(saved_articles)
 
     def save_newsdetails(self, newsdetails: List[NewsDetailsModel]):
         if newsdetails:

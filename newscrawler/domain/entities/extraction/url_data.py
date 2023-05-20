@@ -3,7 +3,6 @@ import enum
 
 class URL(enum.Enum):
     KOMPAS = "https://news.kompas.com/news/sitemap.xml"
-    DETIK = "https://news.detik.com/sitemap.xml"
     TRIBUN = "https://www.tribunnews.com/sitemap.xml"
     TEMPO = "https://www.tempo.co/sitemap.xml"
     KAPANLAGI = "https://www.kapanlagi.com/sitemap.xml"
@@ -27,3 +26,11 @@ class URL(enum.Enum):
     BERITASATU = "https://www.beritasatu.com/sitemap.xml"
     SUARA = ""
     KUMPARAN = "https://kumparan.com/sitemap.xml"
+    MERDEKA = "https://www.merdeka.com/sitemap.xml"
+    DETIK = "https://www.detik.com/sitemap.xml"
+    ERAID = "https://era.id/sitemap_news.xml"
+    OKEZONE = "https://www.okezone.com/sitemap.xml"
+    INEWS = "https://www.inews.id/sitemap.xml"
+    WARTAEKONOMI = "https://wartaekonomi.co.id/sitemap.xml"
+    TVONENEWS = "https://www.tvonenews.com/sitemap.xml"
+    IDNTIMES = "https://www.idntimes.com/sitemap-news.xml"

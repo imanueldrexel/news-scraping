@@ -30,8 +30,6 @@ class CrawlerServiceImpl(CrawlerService):
     def crawl_newsdetails(self, target_sitemaps_id: List[int]):
         target_news = self.data_flow_repo.load_target_news(target_sitemaps_id)
         for website_name, links in target_news.items():
-            if website_name != "BATAMPOS":
-                continue
             web_crawler: Crawler = self.crawler_dict.get(website_name)
             newsdetails = web_crawler.batch_crawling_details(links, website_name)
             if newsdetails:

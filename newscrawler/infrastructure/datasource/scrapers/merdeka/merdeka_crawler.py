@@ -14,47 +14,43 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 
-class DetikCrawler(Crawler):
+class MerdekaCrawler(Crawler):
     def __init__(self):
-        super(DetikCrawler, self).__init__()
-        self.website_name = WebsiteName.DETIK.value
-        self.website_url = URL.DETIK.value
+        super(MerdekaCrawler, self).__init__()
+        self.website_name = WebsiteName.MERDEKA.value
+        self.website_url = URL.MERDEKA.value
 
     @staticmethod
     def _get_branches(soup) -> Dict[str, str]:
-        branches = {}
-        sitemaps = soup.find_all("sitemap")
-        for sitemap in sitemaps:
-            link = sitemap.find("loc")
-            if link:
-                link = link.get_text(" ").strip()
-                if "sitemap_news" in link:
-                    branch_name = re.sub(
-                        r"(https://)(.*)(.detik.com/)(.*)(/sitemap_news.xml)", r"\4", link
-                    )
-                    branch_name = branch_name.strip()
-                    branches[branch_name] = link.strip()
+        branches = {"news": URL.MERDEKA.value}
         return branches
 
     @staticmethod
     def _get_whole_text(soup) -> List[str]:
-        layer = soup.find("div", attrs={"class": "detail__body"})
-        if layer:
-            sentences = layer.find_all("p")
-            texts = []
+        paragraphs = soup.find_all("div", attrs={"class": "mdk-body-paragraph"})
+        texts = []
+        for paragraph in paragraphs:
+            sentences = paragraph.find_all("p")
             for sentence in sentences:
                 sentence = preprocess_text(sentence.get_text(" ").strip())
-                if sentence in ['ADVERTISEMENT', 'SCROLL TO RESUME CONTENT']:
-                    continue
-                texts.append(sentence)
-            return texts
+                if sentence:
+                    if sentence in ['Advertisement']:
+                        continue
+                    texts.append(sentence)
+        return texts
 
     def _get_reporter_from_text(self, soup) -> List[str]:
         reporters = []
-        layer = soup.find("div", {"class": ["detail__author"]})
+        layer = soup.find("span", {"class": ["reporter"]})
         if layer:
             reporter = layer.get_text(" ")
             if reporter:
-                reporter = reporter.split("-")[0]
+                reporter = reporter.replace("Reporter : ", "")
                 reporters.append(reporter.strip())
         return reporters
+
+    @staticmethod
+    def _get_branch_name_from_url(url) -> str:
+        branch_name = re.sub(r"(https://www.merdeka.com/)(\w+)(/.*)", r"\2", url)
+        if branch_name:
+            return branch_name.strip()
