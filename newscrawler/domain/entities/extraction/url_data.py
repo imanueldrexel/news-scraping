@@ -18,7 +18,7 @@ class URL(enum.Enum):
     VIVA = "https://www.viva.co.id/sitemap.xml"
     BISNIS = "https://www.bisnis.com/sitemap.xml"
     BATAMPOS = "https://batampos.co.id/news-sitemap.xml"
-    LIPUTAN6 = "https://www.liputan6.com/sitemap_news.xml"
+    LIPUTAN6 = "https://www.liputan6.com/sitemap.xml"
     IDXCHANNEL = "https://www.idxchannel.com/sitemap.xml"
     MEDIAINDONESIA = "https://mediaindonesia.com/sitemap.xml"
     TIRTO = "https://tirto.id/s/sitemap-content.xml"

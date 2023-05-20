@@ -3,4 +3,10 @@
 3. kumparan tidak bisa scrape text
 4. kumparan tidak bisa scrape reporter
 5. JPNN harus masukin pagination. Reporter ada di halaman kedua.
-6.
+6. Okezone belum scrape text
+7. Inews belum scrape text
+8. TVOneNews belum scrape text
+9. Warta Ekonomi belum scrape text
+10. IDNTIMES belum scrape text
+11. Kapan lagi belum scrape text (using headless)
+12. liputan6 belum scrape text (using headless)

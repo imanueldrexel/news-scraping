@@ -23,21 +23,21 @@ class LiputanEnamCrawler(Crawler):
         self.website_name = WebsiteName.LIPUTAN6.value
         self.website_url = URL.LIPUTAN6.value
 
-    def get_news_in_bulk(
-        self, last_crawling_time: Dict[str, date]
-    ) -> Tuple[Dict[str, any], List[Dict[str, any]]]:
-        headless_page_loader = HeadlessPageLoader()
-        soup = headless_page_loader.get_soup(self.website_url)
-        links_to_crawl = []
-        last_crawling, links = self._scrape(soup, last_crawling_time=last_crawling_time)
-        if links:
-            links_to_crawl.extend(links)
-        for branch_name_details, last_update in last_crawling.items():
-            if last_update:
-                last_crawling_time[branch_name_details] = last_update
-
-        logger.info(f"get {len(links_to_crawl)} to scrape for {self.website_name}")
-        return last_crawling_time, links_to_crawl
+    @staticmethod
+    def _get_branches(soup) -> Dict[str, str]:
+        branches = {}
+        sitemaps = soup.find_all("sitemap")
+        for sitemap in sitemaps:
+            link = sitemap.find("loc")
+            if link:
+                link = link.get_text(" ").strip()
+                if "sitemap_news" in link:
+                    try:
+                        branch_name = re.sub(r"(https://www.liputan6.com/)(.*)(/sitemap_news.xml)", r"\2", link)
+                    except BaseException:
+                        branch_name = "news"
+                    branches[branch_name] = link.strip()
+        return branches
 
     def _get_whole_text(self, soup):
         pages = soup.find_all(
@@ -62,12 +62,6 @@ class LiputanEnamCrawler(Crawler):
                 texts.append(sentence_text)
         return texts
 
-    @staticmethod
-    def _get_branch_name(text):
-        branch_name = re.sub(r"(.*)(//)(.*)(.liputan6)(.*)", r"\3", text)
-        if branch_name == "www":
-            branch_name = re.sub(
-                r"(https://www.liputan6.com/)(.*)(/read)(.*)", r"\2", text
-            )
 
-        return branch_name
+    def _get_reporter_from_text(self, soup) -> List[str]:
+        pass

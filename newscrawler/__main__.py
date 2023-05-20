@@ -23,8 +23,8 @@ def main():
         "TIRTO",
         "INVESTORID",
         "MEDIAINDONESIA",
-        # "LIPUTAN6",
-        # "KAPANLAGI",
+        "LIPUTAN6",
+        "KAPANLAGI",
         "BATAMPOS",
         "BISNIS",
         "TEMPO",
@@ -39,7 +39,8 @@ def main():
         "TVONENEWS",
         "IDNTIMES"
     ]
-    WEBSITES = "IDNTIMES"
+    WEBSITES = "LIPUTAN6"
+
     if isinstance(WEBSITES, list):
         WEBSITES = ",".join(WEBSITES)
     elif isinstance(WEBSITES, str):
