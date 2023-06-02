@@ -40,11 +40,7 @@ class TVOneNewsCrawler(Crawler):
 
     @staticmethod
     def _get_whole_text(soup) -> List[str]:
-        read_content_layer = soup.find("div", attrs={"class": "read__content"})
-        if not read_content_layer:
-            read_content_layer = soup.find(
-                "div", attrs={"class": "side-article txt-article"}
-            )
+        read_content_layer = soup.find("div", attrs={"class": "detail-content"})
         if read_content_layer:
             sentences = read_content_layer.find_all("p")
             texts = []
@@ -56,12 +52,13 @@ class TVOneNewsCrawler(Crawler):
 
     def _get_reporter_from_text(self, soup) -> List[str]:
         reporters = []
-        layers = soup.find_all("div", attrs={"class": "read__credit__item"})
+        layers = soup.find_all("div", attrs={"class": "detail-author-data"})
         for reporter in layers:
             reporter = reporter.find("a")
             if reporter:
                 reporter = reporter.get_text(" ")
-                if reporter:
+                if reporter and reporter != "Tim TvOne, Tim TvOne":
+                    reporter = reporter.replace("Tim TvOne, ", '')
                     reporter = reporter.strip()
                     reporters.append(reporter)
 

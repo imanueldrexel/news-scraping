@@ -36,31 +36,35 @@ class WartaEkonomiCrawler(Crawler):
                     branches[branch_name] = link.strip()
         return branches
 
-    @staticmethod
-    def _get_whole_text(soup) -> List[str]:
-        read_content_layer = soup.find("div", attrs={"class": "read__content"})
-        if not read_content_layer:
-            read_content_layer = soup.find(
-                "div", attrs={"class": "side-article txt-article"}
-            )
-        if read_content_layer:
-            sentences = read_content_layer.find_all("p")
+    def _get_whole_text(self, soup) -> List[str]:
+        layer = soup.find("div", attrs={"class": "articlePostContent"})
+        if layer:
+            sentences = layer.find_all("p")
             texts = []
             for sentence in sentences:
-                sentence = preprocess_text(sentence.get_text(" ").strip())
-                if sentence and "Baca juga" not in sentence:
-                    texts.append(sentence)
+                divs = sentence.find_all("div")
+                for div in divs:
+                    div.decompose()
+                if sentence.attrs != {}:
+                    continue
+                extracted_text = preprocess_text(sentence.text.strip())
+                if len(extracted_text) > 0 and "Baca Juga:" not in extracted_text:
+                    texts.append(extracted_text)
             return texts
 
     def _get_reporter_from_text(self, soup) -> List[str]:
-        reporters = []
-        layers = soup.find_all("div", attrs={"class": "read__credit__item"})
+        reporters = set()
+        layers = soup.find_all("div", attrs={"class": "articlePostAuthor"})
         for reporter in layers:
-            reporter = reporter.find("a")
+            reporter = reporter.find("p")
             if reporter:
                 reporter = reporter.get_text(" ")
                 if reporter:
+                    reporter = reporter.replace("Penulis:", '')
+                    reporter = reporter.replace("Editor:", '')
                     reporter = reporter.strip()
-                    reporters.append(reporter)
+                    reporter = reporter.split("\n")
+                    for r in reporter:
+                        reporters.add(r.strip())
 
-        return reporters
+        return list(reporters)

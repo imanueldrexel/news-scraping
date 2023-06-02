@@ -32,3 +32,6 @@ def process_event(event, context):
             scraper_api.craw_full_text(sitemap_ids)
         except BaseException as e:
             logger.info(f"Failed to crawl. Reason: {e}")
+
+if __name__ == "__main__":
+    process_event({"sitemap_ids":[82487]}, None)

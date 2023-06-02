@@ -30,7 +30,7 @@ class AntaraNewsCrawler(Crawler):
         return branches
 
     @staticmethod
-    def _get_branch_name_from_url(text):
+    def _get_branch_name_from_url(url):
         branch_name = "ANTARA News"
         return branch_name
 

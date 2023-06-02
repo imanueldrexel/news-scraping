@@ -5,6 +5,7 @@ from newscrawler.infrastructure.datasource.scrapers.berita_satu.beritasatu_crawl
 from newscrawler.infrastructure.datasource.scrapers.bisnis.bisnis_crawler import BisnisCrawler
 from newscrawler.infrastructure.datasource.scrapers.cnbc.cnbc_crawler import CNBCCrawler
 from newscrawler.infrastructure.datasource.scrapers.cnn.cnn_crawler import CNNCrawler
+from newscrawler.infrastructure.datasource.scrapers.emitennews.emitennews_crawler import EmitennewsCrawler
 from newscrawler.infrastructure.datasource.scrapers.grid_id.grid_id_crawler import GridIdCrawler
 from newscrawler.infrastructure.datasource.scrapers.idx_channel.idxchannel_crawler import IdxChannelCrawler
 from newscrawler.infrastructure.datasource.scrapers.inews.inews_crawler import INewsCrawler
@@ -62,5 +63,6 @@ CRAWLER_DICT = {
             WebsiteName.INEWS.value: INewsCrawler(),
             WebsiteName.WARTAEKONOMI.value: WartaEkonomiCrawler(),
             WebsiteName.TVONENEWS.value: TVOneNewsCrawler(),
-            WebsiteName.IDNTIMES.value: IDNTimesCrawler()
+            WebsiteName.IDNTIMES.value: IDNTimesCrawler(),
+            WebsiteName.EMITENNEWS.value: EmitennewsCrawler()
         }

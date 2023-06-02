@@ -34,3 +34,4 @@ class URL(enum.Enum):
     WARTAEKONOMI = "https://wartaekonomi.co.id/sitemap.xml"
     TVONENEWS = "https://www.tvonenews.com/sitemap.xml"
     IDNTIMES = "https://www.idntimes.com/sitemap-news.xml"
+    EMITENNEWS = "https://www.emitennews.com/sitemap.xml"

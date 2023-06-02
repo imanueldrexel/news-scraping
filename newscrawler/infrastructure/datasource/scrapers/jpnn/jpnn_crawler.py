@@ -1,6 +1,6 @@
 import logging
 import re
-from typing import Dict
+from typing import Dict, List
 
 from newscrawler.domain.entities.extraction.url_data import URL
 from newscrawler.domain.entities.extraction.website_name import WebsiteName
@@ -35,21 +35,20 @@ class JPNNCrawler(Crawler):
         return branches
 
     def _get_whole_text(self, soup):
-        multiple_pages = soup.find("div", attrs={"class": ["pagination"]})
         full_text = []
-
-        if multiple_pages:
-            list_soup = [soup]
-            next_page = multiple_pages.find("a", {"class": "page larger"})
-            if next_page:
-                next_page = next_page["href"]
-                next_page_soup = self.page_loader.get_soup(next_page)
-                list_soup.append(next_page_soup)
-            for s in list_soup:
-                text = self._get_text(s)
+        while soup:
+            text = self._get_text(soup)
+            if text:
                 full_text.extend(text)
-        else:
-            full_text = self._get_text(soup)
+            multiple_pages = soup.find("div", attrs={"class": ["pagination"]})
+            soup = None
+            if multiple_pages:
+                next_page = multiple_pages.find_all("a")
+                for page in next_page:
+                    if page.text == "Next":
+                        next_page_link = page['href']
+                        if next_page_link:
+                            soup = self.page_loader.get_soup(next_page_link)
 
         return full_text
 
@@ -73,3 +72,25 @@ class JPNNCrawler(Crawler):
                 if tmp_text not in text:
                     text += tmp_text.strip()
             return [t.strip() for t in text.split(". ")]
+
+    def _get_reporter_from_text(self, soup) -> List[str]:
+        multiple_pages = soup.find("div", attrs={"class": ["pagination"]})
+        reporters = []
+
+        if multiple_pages:
+            next_page = multiple_pages.find_all("a")
+            for page in next_page:
+                if page.text == "Last »":
+                    next_page = page['href']
+                    soup = self.page_loader.get_soup(next_page)
+                    reporter = soup.find_all("p", {"class": "waktu"})
+                    for r in reporter:
+                        if "Redaktur & Reporter : " in r.text:
+                            r = r.text.replace("Redaktur & Reporter : ", "")
+                            reporters.append(r)
+                        elif "Redaktur :" in r.text:
+                            r = r.text.replace("Redaktur :", '')
+                            r = r.replace("Reporter :", '\n')
+                            r = [x.strip() for x in r.split('\n')]
+                            reporters.extend(r)
+        return reporters

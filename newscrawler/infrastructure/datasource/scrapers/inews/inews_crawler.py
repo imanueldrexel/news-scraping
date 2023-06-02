@@ -37,29 +37,27 @@ class INewsCrawler(Crawler):
 
     @staticmethod
     def _get_whole_text(soup) -> List[str]:
-        read_content_layer = soup.find("div", attrs={"class": "read__content"})
-        if not read_content_layer:
-            read_content_layer = soup.find(
-                "div", attrs={"class": "side-article txt-article"}
-            )
+        read_content_layer = soup.find("div", attrs={"itemprop": "articleBody"})
         if read_content_layer:
             sentences = read_content_layer.find_all("p")
             texts = []
             for sentence in sentences:
-                sentence = preprocess_text(sentence.get_text(" ").strip())
-                if sentence and "Baca juga" not in sentence:
-                    texts.append(sentence)
+                if sentence.attrs == {}:
+                    sentence = preprocess_text(sentence.get_text(" ").strip())
+                    if sentence and "Baca juga" not in sentence and "Editor :" not in sentence and "Bagikan Artikel:" not in sentence:
+                        texts.append(sentence)
             return texts
 
     def _get_reporter_from_text(self, soup) -> List[str]:
         reporters = []
-        layers = soup.find_all("div", attrs={"class": "read__credit__item"})
+        layers = soup.find_all("div", attrs={"class": "author"})
         for reporter in layers:
             reporter = reporter.find("a")
             if reporter:
-                reporter = reporter.get_text(" ")
+                reporter = reporter.find("img")
                 if reporter:
-                    reporter = reporter.strip()
-                    reporters.append(reporter)
-
+                    reporter = reporter['title']
+                    if reporter:
+                        reporter = reporter.strip()
+                        reporters.append(reporter)
         return reporters

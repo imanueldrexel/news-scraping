@@ -38,23 +38,19 @@ class IDNTimesCrawler(Crawler):
 
     @staticmethod
     def _get_whole_text(soup) -> List[str]:
-        read_content_layer = soup.find("div", attrs={"class": "read__content"})
-        if not read_content_layer:
-            read_content_layer = soup.find(
-                "div", attrs={"class": "side-article txt-article"}
-            )
-        if read_content_layer:
-            sentences = read_content_layer.find_all("p")
+        article_content = soup.find("div", attrs={"class": "article-content"})
+        if article_content:
+            sentences = article_content.find_all("p")
             texts = []
             for sentence in sentences:
                 sentence = preprocess_text(sentence.get_text(" ").strip())
-                if sentence and "Baca juga" not in sentence:
+                if sentence and "Baca Juga: " not in sentence:
                     texts.append(sentence)
             return texts
 
     def _get_reporter_from_text(self, soup) -> List[str]:
         reporters = []
-        layers = soup.find_all("div", attrs={"class": "read__credit__item"})
+        layers = soup.find_all("div", attrs={"class": "author-name"})
         for reporter in layers:
             reporter = reporter.find("a")
             if reporter:

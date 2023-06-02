@@ -1,12 +1,12 @@
-1. sindonews bagian "https://scope.sindonews.com/artikel/33/tren-artis-beli-klub-sepak-bola-demi-gengsi-atau-prestasi?page=all" tidak bisa scrape text
-2. suara.com tidak bisa scrape text
-3. kumparan tidak bisa scrape text
-4. kumparan tidak bisa scrape reporter
-5. JPNN harus masukin pagination. Reporter ada di halaman kedua.
-6. Okezone belum scrape text
-7. Inews belum scrape text
-8. TVOneNews belum scrape text
-9. Warta Ekonomi belum scrape text
-10. IDNTIMES belum scrape text
+1. sindonews bagian "https://scope.sindonews.com/artikel/33/tren-artis-beli-klub-sepak-bola-demi-gengsi-atau-prestasi?page=all" tidak bisa scrape text -- Done
+2. suara.com tidak bisa scrape text -- Done
+3. kumparan tidak bisa scrape text -- Done
+4. TVOneNews belum scrape text -- Done
+5. Warta Ekonomi belum scrape text -- Done
+6. IDNTIMES belum scrape text -- Done
+7. Inews belum scrape text -- Done
+8. kumparan tidak bisa scrape reporter -- Done
+9. JPNN harus masukin pagination. Reporter ada di halaman kedua. -- Done
+10. Okezone belum scrape text
 11. Kapan lagi belum scrape text (using headless)
 12. liputan6 belum scrape text (using headless)

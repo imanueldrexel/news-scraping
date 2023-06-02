@@ -37,9 +37,10 @@ def main():
         "INEWS",
         "WARTAEKONOMI",
         "TVONENEWS",
-        "IDNTIMES"
+        "IDNTIMES",
+        "EMITENNEWS"
     ]
-    WEBSITES = "LIPUTAN6"
+    WEBSITES = "EMITENNEWS"
 
     if isinstance(WEBSITES, list):
         WEBSITES = ",".join(WEBSITES)

@@ -50,7 +50,7 @@ class SuaraCrawler(Crawler):
 
     @staticmethod
     def _get_text(soup):
-        layer = soup.find("div", attrs={"class": ["detail--content"]})
+        layer = soup.find("article", attrs={"class": "detail-content"})
         if layer:
             sentences = layer.find_all("p")
             if not sentences:
@@ -80,7 +80,6 @@ class SuaraCrawler(Crawler):
                     extracted_text = preprocess_text(sentence.get_text(" ").strip())
                     if len(extracted_text) > 0:
                         texts.append(extracted_text)
-
             return texts
 
     def _get_reporter_from_text(self, soup) -> List[str]:

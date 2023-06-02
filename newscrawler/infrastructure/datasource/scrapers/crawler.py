@@ -10,7 +10,6 @@ from newscrawler.core.constants import VERBOSE, PARALLELIZE, MAX_WORKER
 from newscrawler.core.page_loader.requests_page_loader import RequestsPageLoader
 from newscrawler.domain.dtos.dataflow.details.news_details_dto import NewsDetailsDTO
 from newscrawler.domain.dtos.dataflow.details.site_map_dto import SitemapDTO
-from newscrawler.domain.dtos.dataflow.news_information_dto import NewsInformationDTO
 from newscrawler.domain.entities.extraction.website_name import WebsiteName
 from newscrawler.domain.utils.date_time_reader import DateTimeReader
 
@@ -59,7 +58,7 @@ class Crawler:
 
     @staticmethod
     def _get_branch_name_from_url(url) -> str:
-        return url
+        return "news"
 
     def get_news_in_bulk(self) -> List:
         soup = self.page_loader.get_soup(self.website_url)
@@ -143,12 +142,11 @@ class Crawler:
             title = title.get_text(" ").strip()
             return title
 
-    @staticmethod
-    def _get_link(news_soup) -> str:
+    def _get_link(self, news_soup) -> str:
         link = news_soup.find("loc")
         if link:
             link = link.get_text(" ").strip()
-            if "?page=all" not in link:
+            if "?page=all" not in link and self.website_name != "JPNN":
                 link += "?page=all"
             return link
 
@@ -186,6 +184,8 @@ class Crawler:
         try:
             sitemap_id = link[0]
             url = link[1]
+            if self.website_name == "JPNN":
+                url = url.replace("?page=all", '')
             soup = self.page_loader.get_soup(url)
             if soup:
                 reporter = self._get_reporter_from_text(soup)

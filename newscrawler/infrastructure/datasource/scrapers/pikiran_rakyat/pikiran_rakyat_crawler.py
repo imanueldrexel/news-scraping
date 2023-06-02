@@ -29,9 +29,9 @@ class PikiranRakyatCrawler(Crawler):
         return branches
 
     @staticmethod
-    def _get_branch_name_from_url(text):
+    def _get_branch_name_from_url(url):
         branch_name = re.sub(
-            r"(https://)(.*)(.pikiran-rakyat.com/)(\w+)(/pr.*)(.*)", r"\4", text
+            r"(https://)(.*)(.pikiran-rakyat.com/)(\w+)(/pr.*)(.*)", r"\4", url
         )
         return branch_name
 

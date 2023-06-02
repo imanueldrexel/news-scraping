@@ -67,6 +67,9 @@ class SindonewsCrawler(Crawler):
         if layer is None:
             layer = soup.find("section", attrs={"class": "article col-md-11"})
 
+        if layer is None:
+            layer = soup.find("div", attrs= {'class': 'list-article-scope'})
+
         layer_contents = sorted(layer.contents, key=lambda x: len(x), reverse=True)[0]
         if not isinstance(layer_contents, NavigableString):
             layer = layer_contents

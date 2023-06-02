@@ -1,14 +1,10 @@
 import logging
 import re
-from datetime import date
-from typing import List, Tuple, Dict
+from typing import List, Dict
 
 from newscrawler.domain.entities.extraction.url_data import URL
 from newscrawler.domain.entities.extraction.website_name import WebsiteName
 from newscrawler.infrastructure.datasource.scrapers.crawler import Crawler
-from newscrawler.core.utils.utils import (
-    preprocess_text,
-)
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)
@@ -36,7 +32,7 @@ class KumparanCrawler(Crawler):
 
     @staticmethod
     def _get_whole_text(soup):
-        sentences = soup.find(
+        sentences = soup.find_all(
             "span",
             attrs={
                 "data-qa-id": "story-paragraph",
@@ -50,13 +46,19 @@ class KumparanCrawler(Crawler):
         return texts
 
     def _get_reporter_from_text(self, soup) -> List[str]:
-
         reporters = []
-        layers = soup.find_all("span", {"data-qa-id": "editor-name"})
-
-        if layers:
-            for layer in layers:
-                reporter = layer.get_text(" ").strip()
-                if reporter:
-                    reporters.append(reporter)
+        scripts = soup.find_all("script", attrs={"data-rh":"true","type":"application/ld+json"})
+        for script in scripts:
+            try:
+                script = str(script).replace('<script data-rh="true" type="application/ld+json">', '')
+                script = script.replace('</script>', '')
+                script = eval(script)
+                try:
+                    author = script['author']['name']
+                    reporters.append(author)
+                    break
+                except KeyError:
+                    continue
+            except BaseException as e:
+                logger.info(f'Error while getting reporter on  {self.website_name}. Reason: {e}')
         return reporters
