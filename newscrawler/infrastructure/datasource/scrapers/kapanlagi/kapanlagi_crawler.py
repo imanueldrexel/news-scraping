@@ -36,10 +36,10 @@ class KapanlagiCrawler(Crawler):
         texts = []
         layer = soup.find(
             "div",
-            attrs={"class": ["body-paragraph clearfix", "body-paragraph pagging_on"]},
+            attrs={"class": "body-paragraph clearfix mainpart trial-html"},
         )
         if layer:
-            sentences = layer.find_all(["p", "div"])
+            sentences = layer.find_all("p")
             for sentence in sentences:
                 sentence_text = preprocess_text(sentence.get_text(" ").strip())
                 sentence_caption = sentence.find(
@@ -52,5 +52,6 @@ class KapanlagiCrawler(Crawler):
                     if sentence_text:
                         texts.append(sentence_text)
             return texts
+
     def _get_reporter_from_text(self, soup) -> List[str]:
         pass

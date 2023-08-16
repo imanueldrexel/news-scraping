@@ -16,7 +16,7 @@ class URL(enum.Enum):
     GRIDID = "https://www.grid.id/sitemap/news/sitemap.xml"
     KONTAN = "https://www.kontan.co.id/sitemap.xml/"
     VIVA = "https://www.viva.co.id/sitemap.xml"
-    BISNIS = "https://www.bisnis.com/sitemap.xml"
+    BISNIS = "https://www.bisnis.com/sitemap-news.xml"
     BATAMPOS = "https://batampos.co.id/news-sitemap.xml"
     LIPUTAN6 = "https://www.liputan6.com/sitemap.xml"
     IDXCHANNEL = "https://www.idxchannel.com/sitemap.xml"
