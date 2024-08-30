@@ -42,11 +42,15 @@ class TirtoCrawler(Crawler):
         reporters = []
         layer = soup.find("div", {"class": "credit"})
         if layer:
-            reporters_layers = soup.find_all("span", {"class":"reporter-grup"})
+            reporters_layers = soup.find_all("span", {"class": "reporter-grup"})
             for reporters_layer in reporters_layers:
                 reporter = reporters_layer.get_text(" ").strip()
                 if reporter:
-                    reporter = reporter.replace("Kontributor: ","").replace("Penulis: ","").replace("Editor: ", "")
+                    reporter = (
+                        reporter.replace("Kontributor: ", "")
+                        .replace("Penulis: ", "")
+                        .replace("Editor: ", "")
+                    )
                     if reporter:
                         reporters.append(reporter)
         return list(set(reporters))

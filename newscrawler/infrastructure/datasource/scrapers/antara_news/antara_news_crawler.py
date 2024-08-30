@@ -34,9 +34,7 @@ class AntaraNewsCrawler(Crawler):
         branch_name = "ANTARA News"
         return branch_name
 
-    def _scrape(
-            self, branch_link, branch_name
-    ) -> List:
+    def _scrape(self, branch_link, branch_name) -> List:
         logger.info(f"Scrape {branch_name} on {self.website_name}")
         soup = self.page_loader.get_soup(branch_link)
         articles = []
@@ -51,7 +49,9 @@ class AntaraNewsCrawler(Crawler):
                     url, date_time_reader=self.date_time_reader
                 )
                 new_branch_name = self._get_branch_name_from_url(link)
-                branch_name = new_branch_name if new_branch_name != link else new_branch_name
+                branch_name = (
+                    new_branch_name if new_branch_name != link else new_branch_name
+                )
                 attributes = {
                     "link": link,
                     "headline": title,
@@ -117,9 +117,11 @@ class AntaraNewsCrawler(Crawler):
                     paragraph = paragraph.get_text(" ").split("\t")
                     if paragraph:
                         paragraph = paragraph[0]
-                        paragraph = paragraph.replace("Pewarta: ","").replace("Editor: ", "\n")
+                        paragraph = paragraph.replace("Pewarta: ", "").replace(
+                            "Editor: ", "\n"
+                        )
                         paragraph = [x.strip() for x in paragraph.split("\n")]
                         return paragraph
         except BaseException as e:
-            logger.info(f'Error while get reporter from text\nReason:{e}')
+            logger.info(f"Error while get reporter from text\nReason:{e}")
             return []

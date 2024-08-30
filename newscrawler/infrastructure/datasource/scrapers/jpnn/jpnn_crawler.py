@@ -46,7 +46,7 @@ class JPNNCrawler(Crawler):
                 next_page = multiple_pages.find_all("a")
                 for page in next_page:
                     if page.text == "Next":
-                        next_page_link = page['href']
+                        next_page_link = page["href"]
                         if next_page_link:
                             soup = self.page_loader.get_soup(next_page_link)
 
@@ -81,7 +81,7 @@ class JPNNCrawler(Crawler):
             next_page = multiple_pages.find_all("a")
             for page in next_page:
                 if page.text == "Last »":
-                    next_page = page['href']
+                    next_page = page["href"]
                     soup = self.page_loader.get_soup(next_page)
                     reporter = soup.find_all("p", {"class": "waktu"})
                     for r in reporter:
@@ -89,8 +89,8 @@ class JPNNCrawler(Crawler):
                             r = r.text.replace("Redaktur & Reporter : ", "")
                             reporters.append(r)
                         elif "Redaktur :" in r.text:
-                            r = r.text.replace("Redaktur :", '')
-                            r = r.replace("Reporter :", '\n')
-                            r = [x.strip() for x in r.split('\n')]
+                            r = r.text.replace("Redaktur :", "")
+                            r = r.replace("Reporter :", "\n")
+                            r = [x.strip() for x in r.split("\n")]
                             reporters.extend(r)
         return reporters

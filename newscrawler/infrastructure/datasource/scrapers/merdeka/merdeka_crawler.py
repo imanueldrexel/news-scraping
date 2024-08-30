@@ -34,7 +34,7 @@ class MerdekaCrawler(Crawler):
             for sentence in sentences:
                 sentence = preprocess_text(sentence.get_text(" ").strip())
                 if sentence:
-                    if sentence in ['Advertisement']:
+                    if sentence in ["Advertisement"]:
                         continue
                     texts.append(sentence)
         return texts

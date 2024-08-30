@@ -25,8 +25,7 @@ class HeadlessPageLoader:
         options.add_argument("--disable-extensions")
         options.add_argument("--disable-infobars")
 
-        self.driver = Chrome(options=options,
-                             executable_path=EXECUTABLE_PATH)
+        self.driver = Chrome(options=options, executable_path=EXECUTABLE_PATH)
 
     def get_soup(self, url_path: str, scroll_to_bottom=True, element_to_wait=None):
         try:
@@ -67,10 +66,13 @@ class HeadlessPageLoader:
         self.driver.close()
         self.driver.quit()
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     x = HeadlessPageLoader()
-    soup = x.get_soup("https://m.nomor.net/_kodepos.php?_i=kota-kodepos&daerah=Provinsi&jobs=&urut=&asc=0000111&sby=010000&no1=2&prov=Papua")
+    soup = x.get_soup(
+        "https://m.nomor.net/_kodepos.php?_i=kota-kodepos&daerah=Provinsi&jobs=&urut=&asc=0000111&sby=010000&no1=2&prov=Papua"
+    )
     print(soup)
-    rows = soup.find_all("tr",{"class":"cstr"})
+    rows = soup.find_all("tr", {"class": "cstr"})
     for row in rows:
         print(row)

@@ -30,7 +30,9 @@ class Crawler:
         self.website_url = None
         self.website_name = None
 
-    def batch_crawling_sitemap(self, news: List[Dict[str, str]], website_name: str) -> List[SitemapDTO]:
+    def batch_crawling_sitemap(
+        self, news: List[Dict[str, str]], website_name: str
+    ) -> List[SitemapDTO]:
         news_data = []
         if news:
             if self.parallelize and website_name != WebsiteName.MEDIAINDONESIA.value:
@@ -66,16 +68,11 @@ class Crawler:
         links_to_crawl = []
 
         for branch_name, branch_link in branches_to_crawl.items():
-            links = self._scrape(
-                branch_link=branch_link,
-                branch_name=branch_name
-            )
+            links = self._scrape(branch_link=branch_link, branch_name=branch_name)
             links_to_crawl.extend(links)
         return links_to_crawl
 
-    def _scrape(
-            self, branch_link, branch_name
-    ) -> List:
+    def _scrape(self, branch_link, branch_name) -> List:
         logger.info(f"Scrape {branch_name} on {self.website_name}")
         soup = self.page_loader.get_soup(branch_link)
         articles = []
@@ -90,13 +87,12 @@ class Crawler:
                     url, date_time_reader=self.date_time_reader
                 )
                 new_branch_name = self._get_branch_name_from_url(link)
-                branch_name = new_branch_name if new_branch_name != link else branch_name
                 attributes = {
                     "link": link,
                     "headline": title,
                     "keywords": keywords,
                     "timestamp": timestamp_datetime,
-                    "category": branch_name,
+                    "category": new_branch_name if branch_name == link else branch_name,
                     "sources": self.website_name,
                 }
                 articles.append(attributes)
@@ -109,7 +105,9 @@ class Crawler:
     @staticmethod
     def _get_sitemap(articles_data: Dict[str, Any]) -> Union[SitemapDTO, None]:
         try:
-            data_field_dict = {field: None for field in SitemapDTO.__dataclass_fields__.keys()}
+            data_field_dict = {
+                field: None for field in SitemapDTO.__dataclass_fields__.keys()
+            }
             data_field_dict["headline"] = articles_data.get("headline")
             data_field_dict["keywords"] = articles_data.get("keywords")
             data_field_dict["timestamp"] = articles_data.get("timestamp")
@@ -121,10 +119,14 @@ class Crawler:
 
             return SitemapDTO(**data_field_dict)
         except pydantic.error_wrappers.ValidationError:
-            logger.info(f"Error in get_content {articles_data.get('link')}. Reason: extracted_text is None")
+            logger.info(
+                f"Error in get_content {articles_data.get('link')}. Reason: extracted_text is None"
+            )
             return None
         except BaseException as e:
-            logger.info(f"Error in get_content {articles_data.get('link')}. Reason: {e}")
+            logger.info(
+                f"Error in get_content {articles_data.get('link')}. Reason: {e}"
+            )
             return None
 
     @staticmethod
@@ -133,7 +135,7 @@ class Crawler:
         if timestamp:
             timestamp_string = timestamp.get_text(" ").strip()
             timestamp_datetime = date_time_reader.convert_date(timestamp_string)
-            return timestamp_datetime
+            return timestamp_datetime.astimezone(date_time_reader.gmt_offset)
 
     @staticmethod
     def _get_title(news_soup, news_title_element_name: str = "news:title") -> str:
@@ -158,7 +160,9 @@ class Crawler:
             keywords = [x.strip() for x in keywords.split()]
             return keywords
 
-    def batch_crawling_details(self, news: List[Tuple[int, str]], website_name: str) -> List[NewsDetailsDTO]:
+    def batch_crawling_details(
+        self, news: List[Tuple[int, str]], website_name: str
+    ) -> List[NewsDetailsDTO]:
         news_data = []
         if news:
             if self.parallelize and website_name != WebsiteName.MEDIAINDONESIA.value:
@@ -185,18 +189,22 @@ class Crawler:
             sitemap_id = link[0]
             url = link[1]
             if self.website_name == "JPNN":
-                url = url.replace("?page=all", '')
+                url = url.replace("?page=all", "")
             soup = self.page_loader.get_soup(url)
             if soup:
                 reporter = self._get_reporter_from_text(soup)
                 extracted_text = self._get_whole_text(soup)
                 meta_data = {}
-                return NewsDetailsDTO(sitemap_id=sitemap_id,
-                                      extracted_text=extracted_text,
-                                      reporter=reporter,
-                                      meta_data=meta_data)
+                return NewsDetailsDTO(
+                    sitemap_id=sitemap_id,
+                    extracted_text=extracted_text,
+                    reporter=reporter,
+                    meta_data=meta_data,
+                )
         except pydantic.error_wrappers.ValidationError:
-            logger.info(f"Error in get_content {link[1]}. Reason: extracted_text is None")
+            logger.info(
+                f"Error in get_content {link[1]}. Reason: extracted_text is None"
+            )
         except BaseException as e:
             logger.info(f"Error in get_content {link[1]}. Reason: {e}")
 

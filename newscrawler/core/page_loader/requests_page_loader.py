@@ -39,7 +39,10 @@ class RequestsPageLoader(PageLoader):
                         url_path, headers=self.headers, timeout=(20, 30)
                     )
                     return response
-                except requests.exceptions.ReadTimeout or requests.exceptions.ConnectionError:
+                except (
+                    requests.exceptions.ReadTimeout
+                    or requests.exceptions.ConnectionError
+                ):
                     continue
             return None
         except BaseException as e:
@@ -62,50 +65,3 @@ class RequestsPageLoader(PageLoader):
                 f"Failed to get {url_path}. Status Code: {response.status_code}, Returning None"
             )
             return None
-
-
-
-if __name__ == '__main__':
-    import pandas as pd
-    x = RequestsPageLoader()
-    level_1_data = []
-    level_2_data = []
-    level_3_data = []
-    level_4_data = []
-    postal_code = []
-    soup = x.get_soup("https://kodepos.id/")
-    h3_headers = soup.find_all(["td"])
-    for h3_header in h3_headers:
-        province = f"{h3_header.find('a')['href']}"
-        province_soup = x.get_soup(province)
-        last_page_element = province_soup.find('div',{'class':'pagination'})
-        last_page = last_page_element.find_all('a')
-        if last_page:
-            last_page = last_page[-2]['href']
-            last_page = int(last_page.replace("?page=",''))
-        else:
-            last_page = 1
-        for n in range(1, last_page+1):
-            province = f"{h3_header.find('a')['href']}?page={n}"
-            province_soup = x.get_soup(province)
-            table = province_soup.find("tbody")
-            if table:
-                rows = table.find_all("tr")
-                for row in rows:
-                    data = [x.text for x in row.find_all('td')]
-                    data = [x for x in data if len(x)>0]
-                    if len(data) == 5:
-                        print(data)
-                        level_1_data.append(data[0])
-                        level_2_data.append(data[1])
-                        level_3_data.append(data[2])
-                        level_4_data.append(data[3])
-                        postal_code.append(data[4])
-        #     break
-        # break
-    df = pd.DataFrame({"level_1_data":level_1_data,
-                       "level_2_data":level_2_data,
-                       "level_3_data":level_3_data,
-                       "level_4_data":level_4_data,
-                       "postal_code":postal_code})
-    df.to_csv("C:/Users/bdrex/Documents/provinsi.csv")

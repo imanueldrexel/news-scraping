@@ -6,15 +6,14 @@ from newscrawler.domain.repositories.data_flow_repository.data_flow_repository i
     DataFlowRepository,
 )
 from newscrawler.domain.services.crawler_service import CrawlerService
-from typing import List
 
 from newscrawler.infrastructure.datasource.scrapers.crawler import Crawler
 
 
 class CrawlerServiceImpl(CrawlerService):
     def __init__(
-            self,
-            data_flow_repo: DataFlowRepository,
+        self,
+        data_flow_repo: DataFlowRepository,
     ):
         self.crawler_dict = CRAWLER_DICT
         self.web_url_dict = WEB_URL_DICT
@@ -27,10 +26,11 @@ class CrawlerServiceImpl(CrawlerService):
         if sitemaps:
             self.save_scraped_data(sitemaps)
 
-    def crawl_newsdetails(self, target_sitemaps_id: List[int]):
-        target_news = self.data_flow_repo.load_target_news(target_sitemaps_id)
+    def crawl_newsdetails(self, website_name: str):
+        web_crawler: Crawler = self.crawler_dict.get(website_name)
+        target_news = self.data_flow_repo.load_target_news(website=website_name)
+        print(len(target_news))
         for website_name, links in target_news.items():
-            web_crawler: Crawler = self.crawler_dict.get(website_name)
             newsdetails = web_crawler.batch_crawling_details(links, website_name)
             if newsdetails:
                 self.save_scraped_data(newsdetails)

@@ -14,8 +14,10 @@ class DataFlowRepository:
         raise NotImplementedError
 
     @abstractmethod
-    def save_newsdetails_data(self, sitemaps: List[NewsDetailsDTO]) -> NewsInformationModel:
+    def save_newsdetails_data(
+        self, sitemaps: List[NewsDetailsDTO]
+    ) -> NewsInformationModel:
         raise NotImplementedError
 
-    def load_target_news(self, target_sitemaps_id: List[int]) -> Dict[str, List[Tuple[int, str]]]:
+    def load_target_news(self, website: str) -> Dict[str, List[Tuple[int, str]]]:
         raise NotImplementedError

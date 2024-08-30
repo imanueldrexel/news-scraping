@@ -1,9 +1,21 @@
 from sqlalchemy.ext.declarative import declarative_base
-from newscrawler.infrastructure.datasource.dataflow.model.news_data_model import NewsSitemapModel
-from datetime import date
-from sqlalchemy import Column, String, BigInteger, Integer, TIMESTAMP, JSON, ForeignKey
+from sqlalchemy import (
+    Column,
+    Index,
+    String,
+    BigInteger,
+    Integer,
+    TIMESTAMP,
+    JSON,
+    ForeignKey,
+)
 
-from newscrawler.infrastructure.datasource.dataflow.model.news_details_model import NewsDetailsModel
+from newscrawler.infrastructure.datasource.dataflow.model.news_data_model import (
+    NewsSitemapModel,
+)
+from newscrawler.infrastructure.datasource.dataflow.model.news_details_model import (
+    NewsDetailsModel,
+)
 
 Base = declarative_base()
 
@@ -11,7 +23,7 @@ Base = declarative_base()
 class SitemapTable(Base):
     __tablename__ = "sitemaps"
 
-    sitemap_id = Column(BigInteger, primary_key=True)
+    sitemap_id = Column(BigInteger, primary_key=True, autoincrement=True)
     headline = Column(String)
     link = Column(String)
     sources = Column(String)
@@ -28,11 +40,18 @@ class SitemapTable(Base):
         self.keywords = sitemap.keywords
 
 
+# Create an index on sitemap_id
+Index("idx_sitemap_id", SitemapTable.sitemap_id.desc())
+
+
 class NewsArticlesTable(Base):
     __tablename__ = "articles"
 
-    articles_id = Column(BigInteger, primary_key=True)
-    sitemap_id = Column(Integer, ForeignKey(f"{SitemapTable.__tablename__}.{SitemapTable.sitemap_id.name}"))
+    articles_id = Column(BigInteger, primary_key=True, autoincrement=True)
+    sitemap_id = Column(
+        Integer,
+        ForeignKey(f"{SitemapTable.__tablename__}.{SitemapTable.sitemap_id.name}"),
+    )
     extracted_text = Column(String, nullable=False)
     meta_data = Column(JSON)
     writer = Column(JSON)

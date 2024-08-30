@@ -30,7 +30,9 @@ class DetikCrawler(Crawler):
                 link = link.get_text(" ").strip()
                 if "sitemap_news" in link:
                     branch_name = re.sub(
-                        r"(https://)(.*)(.detik.com/)(.*)(/sitemap_news.xml)", r"\4", link
+                        r"(https://)(.*)(.detik.com/)(.*)(/sitemap_news.xml)",
+                        r"\4",
+                        link,
                     )
                     branch_name = branch_name.strip()
                     branches[branch_name] = link.strip()
@@ -44,7 +46,7 @@ class DetikCrawler(Crawler):
             texts = []
             for sentence in sentences:
                 sentence = preprocess_text(sentence.get_text(" ").strip())
-                if sentence in ['ADVERTISEMENT', 'SCROLL TO RESUME CONTENT']:
+                if sentence in ["ADVERTISEMENT", "SCROLL TO RESUME CONTENT"]:
                     continue
                 texts.append(sentence)
             return texts

@@ -13,7 +13,7 @@ class CrawlerService:
         raise NotImplementedError
 
     @abstractmethod
-    def crawl_newsdetails(self, target_sitemaps_id: List[int]):
+    def crawl_newsdetails(self, website_name: str):
         raise NotImplementedError
 
     @abstractmethod

@@ -10,12 +10,18 @@ logger.setLevel(logging.INFO)
 
 
 class SQLAlchemyClient:
-    def __init__(self, isolation_level=None):
+    def __init__(self, isolation_level=None, sent_to_local: bool = False):
         database_host = os.getenv("POSTGRES_DB_HOST", "localhost")
         database_port = os.getenv("POSTGRES_DB_PORT", 5431)
         database_user = os.getenv("POSTGRES_DB_USER", "postgres")
         database_pass = os.getenv("POSTGRES_DB_PASS", "postgres")
         database_name = os.getenv("POSTGRES_DB_NAME", "newsaggregator")
+        if sent_to_local:
+            database_host = "localhost"
+            database_port = 5431
+            database_user = "postgres"
+            database_pass = "postgres"
+            database_name = "newsaggregator"
 
         self.database_uri = f"postgresql+psycopg2://{database_user}:{database_pass}@{database_host}:{database_port}/{database_name}"
 
@@ -30,7 +36,9 @@ class SQLAlchemyClient:
             yield session
 
         except Exception as e:  # noqa E722
-            logger.error(f"Error occurred when accessing database using SQLAlchemy. Rolling back...\nException: {e}")
+            logger.error(
+                f"Error occurred when accessing database using SQLAlchemy. Rolling back...\nException: {e}"
+            )
             session.rollback()
         finally:
             session.close()

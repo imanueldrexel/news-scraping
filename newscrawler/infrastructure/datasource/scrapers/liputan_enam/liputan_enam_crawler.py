@@ -33,7 +33,11 @@ class LiputanEnamCrawler(Crawler):
                 link = link.get_text(" ").strip()
                 if "sitemap_news" in link:
                     try:
-                        branch_name = re.sub(r"(https://www.liputan6.com/)(.*)(/sitemap_news.xml)", r"\2", link)
+                        branch_name = re.sub(
+                            r"(https://www.liputan6.com/)(.*)(/sitemap_news.xml)",
+                            r"\2",
+                            link,
+                        )
                     except BaseException:
                         branch_name = "news"
                     branches[branch_name] = link.strip()
@@ -61,7 +65,6 @@ class LiputanEnamCrawler(Crawler):
             elif sentence_text:
                 texts.append(sentence_text)
         return texts
-
 
     def _get_reporter_from_text(self, soup) -> List[str]:
         pass

@@ -35,7 +35,9 @@ class TempoCrawler(Crawler):
                         link = soup.find("loc")
                         if link:
                             link = link.get_text(" ").strip()
-                            branch_name = re.sub(r"(.*)(//)(.*)(.tempo)(.*)", r"\3", link)
+                            branch_name = re.sub(
+                                r"(.*)(//)(.*)(.tempo)(.*)", r"\3", link
+                            )
                             branch_name = branch_name.strip()
                             branches[branch_name] = link.strip()
         return branches

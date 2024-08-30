@@ -30,8 +30,12 @@ class WartaEkonomiCrawler(Crawler):
                 link = link.get_text(" ").strip()
                 if "/news/" in link:
                     try:
-                        branch_name = re.sub(r"(https://wartaekonomi.co.id/news/news-)(\w+)(.*)", r"\2", link)
-                    except BaseException :
+                        branch_name = re.sub(
+                            r"(https://wartaekonomi.co.id/news/news-)(\w+)(.*)",
+                            r"\2",
+                            link,
+                        )
+                    except BaseException:
                         branch_name = "news"
                     branches[branch_name] = link.strip()
         return branches
@@ -60,8 +64,8 @@ class WartaEkonomiCrawler(Crawler):
             if reporter:
                 reporter = reporter.get_text(" ")
                 if reporter:
-                    reporter = reporter.replace("Penulis:", '')
-                    reporter = reporter.replace("Editor:", '')
+                    reporter = reporter.replace("Penulis:", "")
+                    reporter = reporter.replace("Editor:", "")
                     reporter = reporter.strip()
                     reporter = reporter.split("\n")
                     for r in reporter:

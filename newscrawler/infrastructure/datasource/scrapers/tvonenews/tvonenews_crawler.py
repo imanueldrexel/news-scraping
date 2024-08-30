@@ -30,10 +30,14 @@ class TVOneNewsCrawler(Crawler):
                 link = link.get_text(" ").strip()
                 if "/news/" in link:
                     try:
-                        branch_name = re.sub(r"(https://www.tvonenews.com/sitemap/news/)(\w+)(.*)", r"\2", link)
+                        branch_name = re.sub(
+                            r"(https://www.tvonenews.com/sitemap/news/)(\w+)(.*)",
+                            r"\2",
+                            link,
+                        )
                         if branch_name in ["news-sitemap.xml", "berita"]:
                             branch_name = "news"
-                    except BaseException :
+                    except BaseException:
                         branch_name = "news"
                     branches[branch_name] = link.strip()
         return branches
@@ -58,7 +62,7 @@ class TVOneNewsCrawler(Crawler):
             if reporter:
                 reporter = reporter.get_text(" ")
                 if reporter and reporter != "Tim TvOne, Tim TvOne":
-                    reporter = reporter.replace("Tim TvOne, ", '')
+                    reporter = reporter.replace("Tim TvOne, ", "")
                     reporter = reporter.strip()
                     reporters.append(reporter)
 

@@ -62,13 +62,16 @@ class SindonewsCrawler(Crawler):
         if layer is None:
             layer = soup.find(
                 "div",
-                attrs={"class": ["article", "desc-artikel-detail", "detail-desc"], "itemprop": None},
+                attrs={
+                    "class": ["article", "desc-artikel-detail", "detail-desc"],
+                    "itemprop": None,
+                },
             )
         if layer is None:
             layer = soup.find("section", attrs={"class": "article col-md-11"})
 
         if layer is None:
-            layer = soup.find("div", attrs= {'class': 'list-article-scope'})
+            layer = soup.find("div", attrs={"class": "list-article-scope"})
 
         layer_contents = sorted(layer.contents, key=lambda x: len(x), reverse=True)[0]
         if not isinstance(layer_contents, NavigableString):
@@ -109,7 +112,7 @@ class SindonewsCrawler(Crawler):
 
     def _get_reporter_from_text(self, soup) -> List[str]:
         reporters = []
-        layer = soup.find("div", attrs={"class":"detail-nama-redaksi"})
+        layer = soup.find("div", attrs={"class": "detail-nama-redaksi"})
         if layer:
             reporter = layer.get_text(" ").strip()
             if reporter:

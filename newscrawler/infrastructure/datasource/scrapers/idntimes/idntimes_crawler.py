@@ -30,7 +30,11 @@ class IDNTimesCrawler(Crawler):
                 link = link.get_text(" ").strip()
                 if link:
                     try:
-                        branch_name = re.sub(r"(https://www.idntimes.com/)(\w+)(/sitemap-news.xml)", r"\2", link)
+                        branch_name = re.sub(
+                            r"(https://www.idntimes.com/)(\w+)(/sitemap-news.xml)",
+                            r"\2",
+                            link,
+                        )
                     except BaseException:
                         branch_name = "news"
                     branches[branch_name] = link.strip()

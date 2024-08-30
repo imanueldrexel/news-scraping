@@ -30,7 +30,9 @@ class INewsCrawler(Crawler):
                 link = link.get_text(" ").strip()
                 branch_name = re.sub(r"(https://)(\w+)(\.inews.id.*)", r"\2", link)
                 if branch_name == "www":
-                    branch_name = re.sub(r"(https://www.inews.id/)(\w+)(/)(.*)", r"\2", link)
+                    branch_name = re.sub(
+                        r"(https://www.inews.id/)(\w+)(/)(.*)", r"\2", link
+                    )
 
                 branches[branch_name] = link.strip()
         return branches
@@ -44,9 +46,30 @@ class INewsCrawler(Crawler):
             for sentence in sentences:
                 if sentence.attrs == {}:
                     sentence = preprocess_text(sentence.get_text(" ").strip())
-                    if sentence and "Baca juga" not in sentence and "Editor :" not in sentence and "Bagikan Artikel:" not in sentence:
+                    if (
+                        sentence
+                        and "Baca juga" not in sentence
+                        and "Editor :" not in sentence
+                        and "Bagikan Artikel:" not in sentence
+                    ):
                         texts.append(sentence)
             return texts
+        else:
+            read_content_layer = soup.find("div", attrs={"class": "caption"})
+            if read_content_layer:
+                sentences = read_content_layer.find_all("p")
+                texts = []
+                for sentence in sentences:
+                    if sentence.attrs == {}:
+                        sentence = preprocess_text(sentence.get_text(" ").strip())
+                        if (
+                            sentence
+                            and "Baca juga" not in sentence
+                            and "Editor :" not in sentence
+                            and "Bagikan Artikel:" not in sentence
+                        ):
+                            texts.append(sentence)
+                return texts
 
     def _get_reporter_from_text(self, soup) -> List[str]:
         reporters = []
@@ -56,7 +79,7 @@ class INewsCrawler(Crawler):
             if reporter:
                 reporter = reporter.find("img")
                 if reporter:
-                    reporter = reporter['title']
+                    reporter = reporter["title"]
                     if reporter:
                         reporter = reporter.strip()
                         reporters.append(reporter)

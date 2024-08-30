@@ -32,5 +32,5 @@ WEB_URL_DICT = {
     WebsiteName.WARTAEKONOMI.value: URL.WARTAEKONOMI.value,
     WebsiteName.TVONENEWS.value: URL.TVONENEWS.value,
     WebsiteName.IDNTIMES.value: URL.IDNTIMES.value,
-    WebsiteName.EMITENNEWS.value: URL.EMITENNEWS.value
+    WebsiteName.EMITENNEWS.value: URL.EMITENNEWS.value,
 }

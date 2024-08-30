@@ -30,7 +30,9 @@ class CNNCrawler(Crawler):
                 link = link.get_text(" ").strip()
                 if "sitemap_news" in link and "longform" not in link:
                     branch_name = re.sub(
-                        r"(https://www.cnnindonesia.com/)(.*)(/.*/sitemap_news.xml)", r"\2", link
+                        r"(https://www.cnnindonesia.com/)(.*)(/.*/sitemap_news.xml)",
+                        r"\2",
+                        link,
                     )
                     branch_name = branch_name.strip()
                     branches[branch_name] = link.strip()

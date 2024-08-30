@@ -30,7 +30,9 @@ class BeritaSatuCrawler(Crawler):
                 link = link.get_text(" ").strip()
                 if "/news" in link:
                     branch_name = re.sub(
-                        r"(https://www.beritasatu.com/sitemap/)(.*)(/news.xml)", r"\2", link
+                        r"(https://www.beritasatu.com/sitemap/)(.*)(/news.xml)",
+                        r"\2",
+                        link,
                     )
                     branch_name = branch_name.strip()
                     branches[branch_name] = link.strip()

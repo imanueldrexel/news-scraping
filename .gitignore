@@ -133,3 +133,6 @@ dmypy.json
 /news_result/*
 /news-package/
 /.serverless/
+
+
+package/*

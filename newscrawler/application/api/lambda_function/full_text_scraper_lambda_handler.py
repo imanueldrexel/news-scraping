@@ -5,7 +5,9 @@ from newscrawler.infrastructure.datasource.dataflow.write.news_data_source impor
     NewsDataSource,
 )
 from newscrawler.domain.services.crawler_service_impl import CrawlerServiceImpl
-from newscrawler.infrastructure.network.clients.sqlalchemy_client import SQLAlchemyClient
+from newscrawler.infrastructure.network.clients.sqlalchemy_client import (
+    SQLAlchemyClient,
+)
 from newscrawler.infrastructure.repositories.dataflow.data_flow_repository_impl import (
     DataFlowRepositoryImpl,
 )
@@ -26,12 +28,14 @@ def init_crawler():
 def process_event(event, context):
     logger.info(event)
     scraper_api = init_crawler()
-    sitemap_ids = event.get("sitemap_ids")
-    if sitemap_ids:
+    websites = event.get("website")
+    if websites:
+        websites = [website.strip() for website in websites.split(",")]
         try:
-            scraper_api.craw_full_text(sitemap_ids)
+            scraper_api.crawl_website_in_batch(website_names=websites, task="full_text")
         except BaseException as e:
             logger.info(f"Failed to crawl. Reason: {e}")
 
+
 if __name__ == "__main__":
-    process_event({"sitemap_ids":[82487]}, None)
+    process_event({"website": "INEWS"}, None)

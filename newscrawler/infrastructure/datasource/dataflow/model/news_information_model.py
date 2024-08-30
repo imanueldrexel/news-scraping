@@ -4,7 +4,9 @@ from pydantic.dataclasses import dataclass
 from newscrawler.infrastructure.datasource.dataflow.model.news_data_model import (
     NewsSitemapModel,
 )
-from newscrawler.infrastructure.datasource.dataflow.model.news_details_model import NewsDetailsModel
+from newscrawler.infrastructure.datasource.dataflow.model.news_details_model import (
+    NewsDetailsModel,
+)
 
 
 @dataclass(frozen=True)

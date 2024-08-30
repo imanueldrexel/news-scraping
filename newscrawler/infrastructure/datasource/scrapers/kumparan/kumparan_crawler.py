@@ -25,7 +25,11 @@ class KumparanCrawler(Crawler):
             if link:
                 link = link.get_text(" ").strip()
                 if "sitemap_channel_" in link:
-                    branch_name = re.sub(r"(https://kumparan.com/sitemap_channel_)(.*)(.xml)", r"\2", link)
+                    branch_name = re.sub(
+                        r"(https://kumparan.com/sitemap_channel_)(.*)(.xml)",
+                        r"\2",
+                        link,
+                    )
                     branch_name = branch_name.strip()
                     branches[branch_name] = link.strip()
         return branches
@@ -47,18 +51,24 @@ class KumparanCrawler(Crawler):
 
     def _get_reporter_from_text(self, soup) -> List[str]:
         reporters = []
-        scripts = soup.find_all("script", attrs={"data-rh":"true","type":"application/ld+json"})
+        scripts = soup.find_all(
+            "script", attrs={"data-rh": "true", "type": "application/ld+json"}
+        )
         for script in scripts:
             try:
-                script = str(script).replace('<script data-rh="true" type="application/ld+json">', '')
-                script = script.replace('</script>', '')
+                script = str(script).replace(
+                    '<script data-rh="true" type="application/ld+json">', ""
+                )
+                script = script.replace("</script>", "")
                 script = eval(script)
                 try:
-                    author = script['author']['name']
+                    author = script["author"]["name"]
                     reporters.append(author)
                     break
                 except KeyError:
                     continue
             except BaseException as e:
-                logger.info(f'Error while getting reporter on  {self.website_name}. Reason: {e}')
+                logger.info(
+                    f"Error while getting reporter on  {self.website_name}. Reason: {e}"
+                )
         return reporters

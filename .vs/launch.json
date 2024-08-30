@@ -1,0 +1,19 @@
+{
+	"version": "0.2.0",
+	"configurations": [
+		{
+			"name": "Python: Current File",
+			"type": "python",
+			"request": "launch",
+			"program": "${file}",
+			"console": "integratedTerminal",
+			"env": {
+				"POSTGRES_DB_HOST": "your_api_key_here",
+				"POSTGRES_DB_NAME": "your_database_url_here",
+                "POSTGRES_DB_USER": "your_database_user_here",
+                "POSTGRES_DB_PASS": "your_database_password_here",
+                "POSTGRES_DB_PORT": "your_database_port_here"
+			}
+		}
+	]
+}
