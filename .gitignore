@@ -136,3 +136,17 @@ dmypy.json
 
 
 package/*
+# IDE / OS
+.idea/
+.vs/
+.DS_Store
+
+# Claude Code local state
+.claude/worktrees/
+.claude/settings.local.json
+
+# Generated data: FAISS indexes, health reports, newsletter digests
+/NEWS_L1/
+/NEWS_L2/
+/crawler_health/*.json
+/digests/*.md
