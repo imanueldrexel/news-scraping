@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NewsAggregator Search</title>
+<link rel="stylesheet" href="/static/style.css">
+<script src="https://unpkg.com/htmx.org@1.9.10"></script>
+</head>
+<body>
+
+<div class="container">
+  <header>
+    <h1>NewsAggregator Search</h1>
+    <p class="subtitle">Cari & tanya berita ekonomi Indonesia</p>
+  </header>
+
+  <form id="search-form"
+        hx-post="/api/query/form"
+        hx-target="#result"
+        hx-swap="innerHTML"
+        hx-indicator="#spinner">
+
+    <div class="search-row">
+      <input type="text" name="query" id="query-input"
+             placeholder="Tanya apa saja tentang berita ekonomi Indonesia..."
+             required autocomplete="off">
+      <button type="submit">&#x2192;</button>
+    </div>
+
+    <div class="filters">
+      <input type="date" name="date_from" placeholder="Dari tanggal">
+      <input type="date" name="date_to"   placeholder="Sampai tanggal">
+      <select name="category">
+        <option value="">Semua Kategori</option>
+        <option value="macroeconomics">Makroekonomi</option>
+        <option value="capital_market">Pasar Modal</option>
+        <option value="banking">Perbankan</option>
+        <option value="corporate">Korporasi</option>
+        <option value="commodities">Komoditas</option>
+      </select>
+      <input type="text" name="source" placeholder="Filter sumber (mis. BISNIS)">
+      <input type="hidden" name="session_id" id="session-id" value="">
+    </div>
+  </form>
+
+  <div id="spinner" class="htmx-indicator">Mencari &amp; merangkum...</div>
+
+  <div id="result"></div>
+</div>
+
+<script>
+  // Persist session_id across follow-up questions
+  document.body.addEventListener('htmx:afterRequest', function(evt) {
+    const el = document.getElementById('new-session-id');
+    if (el) {
+      document.getElementById('session-id').value = el.dataset.sid;
+    }
+  });
+</script>
+</body>
+</html>

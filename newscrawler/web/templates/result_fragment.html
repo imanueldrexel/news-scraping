@@ -1,0 +1,46 @@
+<span id="new-session-id" data-sid="{{ result.session_id }}" style="display:none"></span>
+
+<div class="result-block">
+  <div class="question-echo">&#x2753; {{ question }}</div>
+
+  <div class="answer-section">
+    <h3>Jawaban</h3>
+    <div class="answer-text">{{ result.answer | replace('\n', '<br>') | safe }}</div>
+  </div>
+
+  {% if result.sources %}
+  <details class="sources-section">
+    <summary>Sumber yang digunakan ({{ result.chunks_used }} dari {{ result.sources | length }} chunks)</summary>
+    <ul class="sources-list">
+      {% for src in result.sources %}
+      <li>
+        <strong>
+          {% if src.link %}
+            <a href="{{ src.link }}" target="_blank" rel="noopener">{{ src.source }}, {{ src.posted_at }}</a>
+          {% else %}
+            {{ src.source }}, {{ src.posted_at }}
+          {% endif %}
+        </strong>
+        {% if src.title %} — {{ src.title }}{% endif %}
+        {% if src.snippet %}
+          <blockquote>{{ src.snippet }}...</blockquote>
+        {% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+  </details>
+  {% endif %}
+
+  <div class="meta">Waktu query: {{ result.query_ms }}ms</div>
+
+  <div class="followup">
+    <form hx-post="/api/query/form"
+          hx-target="#result"
+          hx-swap="innerHTML"
+          hx-indicator="#spinner">
+      <input type="text" name="query" placeholder="Pertanyaan lanjutan..." autocomplete="off">
+      <input type="hidden" name="session_id" value="{{ result.session_id }}">
+      <button type="submit">&#x2192;</button>
+    </form>
+  </div>
+</div>

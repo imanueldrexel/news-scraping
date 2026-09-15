@@ -30,28 +30,33 @@ class EmitennewsCrawler(Crawler):
         soup = self.page_loader.get_soup(branch_link)
         articles = []
         if soup is not None:
-            for idx, url in enumerate(soup.find_all("url")):
-                link = self._get_link(url)
-                if "/news/" not in link:
-                    continue
-                title = self._get_title(url, news_title_element_name="title")
-                keywords = self._get_keywords(url)
-                timestamp_datetime = self._get_timestamp(
-                    url, date_time_reader=self.date_time_reader
-                )
-                new_branch_name = self._get_branch_name_from_url(link)
-                branch_name = (
-                    new_branch_name if branch_name != link else new_branch_name
-                )
-                attributes = {
-                    "link": link,
-                    "headline": title,
-                    "keywords": keywords,
-                    "timestamp": timestamp_datetime,
-                    "category": branch_name,
-                    "sources": self.website_name,
-                }
-                articles.append(attributes)
+            sitemap_links = soup.find_all("loc")
+            if sitemap_links:
+                for sitemap_link in sitemap_links:
+                    sitemap_child_soup = self.page_loader.get_soup(sitemap_link.text)
+                    if sitemap_child_soup:
+                        for idx, url in enumerate(sitemap_child_soup.find_all("loc")):
+                            link = self._get_link(url)
+                            if "/news/" not in link:
+                                continue
+                            title = self._get_title(url, news_title_element_name="title")
+                            keywords = self._get_keywords(url)
+                            timestamp_datetime = self._get_timestamp(
+                                url, date_time_reader=self.date_time_reader
+                            )
+                            new_branch_name = self._get_branch_name_from_url(link)
+                            branch_name = (
+                                new_branch_name if branch_name != link else new_branch_name
+                            )
+                            attributes = {
+                                "link": link,
+                                "headline": title,
+                                "keywords": keywords,
+                                "timestamp": timestamp_datetime,
+                                "category": branch_name,
+                                "sources": self.website_name,
+                            }
+                            articles.append(attributes)
         return articles
 
     @staticmethod
@@ -79,9 +84,7 @@ class EmitennewsCrawler(Crawler):
 
     @staticmethod
     def _get_whole_text(soup) -> List[str]:
-        read_content_layer = soup.find("div", attrs={"class": "read__content"})
-        if not read_content_layer:
-            read_content_layer = soup.find("div", attrs={"class": "text-detail-news"})
+        read_content_layer = soup.find("div", attrs={"class": "news-page-item"})
         if read_content_layer:
             sentences = read_content_layer.find_all("p")
             texts = []

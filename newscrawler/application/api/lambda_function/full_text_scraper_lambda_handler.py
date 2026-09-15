@@ -35,7 +35,3 @@ def process_event(event, context):
             scraper_api.crawl_website_in_batch(website_names=websites, task="full_text")
         except BaseException as e:
             logger.info(f"Failed to crawl. Reason: {e}")
-
-
-if __name__ == "__main__":
-    process_event({"website": "INEWS"}, None)

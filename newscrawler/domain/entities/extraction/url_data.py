@@ -14,7 +14,7 @@ class URL(enum.Enum):
     SINDONEWS = "https://www.sindonews.com/sitemap.xml"
     ANTARANEWS = "https://en.antaranews.com/rss/spo.xml"
     GRIDID = "https://www.grid.id/sitemap/news/sitemap.xml"
-    KONTAN = "https://www.kontan.co.id/sitemap.xml/"
+    KONTAN = "https://www.kontan.co.id/sitemap.xml"
     VIVA = "https://www.viva.co.id/sitemap.xml"
     BISNIS = "https://www.bisnis.com/sitemap-news.xml"
     BATAMPOS = "https://batampos.co.id/news-sitemap.xml"

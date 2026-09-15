@@ -1,4 +1,4 @@
-from typing import List, Any, Dict
+from typing import List, Any, Dict, Optional
 from pydantic.dataclasses import dataclass
 
 
@@ -6,5 +6,5 @@ from pydantic.dataclasses import dataclass
 class NewsDetailsDTO:
     sitemap_id: int
     extracted_text: List[str]
-    reporter: List[str]
-    meta_data: Dict[str, Any]
+    reporter: Optional[List[str]]
+    meta_data: Optional[Dict[str, Any]]

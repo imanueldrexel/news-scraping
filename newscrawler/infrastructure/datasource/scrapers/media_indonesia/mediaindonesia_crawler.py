@@ -28,8 +28,14 @@ class MediaIndonesiaCrawler(Crawler):
             link = sitemap.find("loc")
             if link:
                 link = link.get_text(" ").strip()
-                if "sitemap_news" in link:
-                    branches["news"] = link.strip()
+                try:
+                    branch_name = re.sub(r"https://[^/]+/([^/]+)/.*",r"\1",link)
+                except BaseException:
+                    branch_name = "news"
+                if branch_name in ['galleries']:
+                    continue
+                else:
+                    branches[branch_name] = link.strip()
         return branches
 
     @staticmethod
@@ -40,7 +46,7 @@ class MediaIndonesiaCrawler(Crawler):
 
     @staticmethod
     def _get_whole_text(soup) -> List[str]:
-        article_layer = soup.find("div", {"class": "rows jap"})
+        article_layer = soup.find("div", {"class": "article"})
         if article_layer:
             sentences = article_layer.find_all("p")
             texts = []

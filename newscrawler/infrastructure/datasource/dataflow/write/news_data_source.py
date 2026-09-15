@@ -1,5 +1,5 @@
 import logging
-from typing import List, Dict, Tuple
+from typing import List
 
 from newscrawler.infrastructure.datasource.dataflow.model.news_data_model import (
     NewsSitemapModel,
@@ -31,7 +31,7 @@ class NewsDataSource:
         self.sql_alchemy_sitemap = SQLAlchemySitemapDataSource(sql_alchemy_client)
         self.sql_alchemy_article = SQLAlchemyArticleDataSource(SQLAlchemyClient())
 
-    def save_sitemap(self, sitemaps: List[NewsSitemapModel]):
+    def save_sitemap(self, sitemaps: List[NewsSitemapModel]) -> List[NewsSitemapModel]:
         saved_articles = []
         if sitemaps:
             for article in sitemaps:
@@ -41,7 +41,7 @@ class NewsDataSource:
                     last_time_crawling = self.sql_alchemy_sitemap.last_time_crawling[
                         source
                     ][branch]
-                    delta = article.timestamp - last_time_crawling
+                    delta = article.posted_at - last_time_crawling
                     if delta.days >= 0 and delta.seconds > 0:
                         saved_articles.append(article)
                 except KeyError:
@@ -50,15 +50,17 @@ class NewsDataSource:
                 logger.info(
                     f"get {len(saved_articles)} to scrape for {saved_articles[0].sources}"
                 )
-                self.sql_alchemy_sitemap.save_sitemaps(saved_articles)
+                return self.sql_alchemy_sitemap.save_sitemaps(saved_articles)
 
     def save_newsdetails(self, newsdetails: List[NewsDetailsModel]):
-        if newsdetails:
-            self.sql_alchemy_article.save_newsdetails(newsdetails)
+        self.sql_alchemy_article.save_newsdetails(newsdetails)
 
-    def load_target_news(
+    def mark_sitemaps_attempted(self, sitemap_ids: List[int]):
+        self.sql_alchemy_sitemap.mark_sitemaps_attempted(sitemap_ids)
+
+    def load_sitemap(
         self, website: str, n_limit: int
-    ) -> Dict[str, List[Tuple[int, str]]]:
+    ) -> List[NewsSitemapModel]:
         return self.sql_alchemy_sitemap.load_all_sitemaps(
             website=website, n_limit=n_limit
         )

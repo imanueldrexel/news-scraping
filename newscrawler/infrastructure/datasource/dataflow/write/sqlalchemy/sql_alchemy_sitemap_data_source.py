@@ -1,5 +1,6 @@
 from datetime import datetime, timezone, timedelta
 from sqlalchemy import text
+from dataclasses import replace
 import logging
 from typing import List, Dict, Tuple
 
@@ -16,6 +17,7 @@ from newscrawler.infrastructure.datasource.dataflow.write.sqlalchemy.table impor
 from newscrawler.infrastructure.network.clients.sqlalchemy_client import (
     SQLAlchemyClient,
 )
+from newscrawler.core.constants import SITEMAP_RECRAWL_COOLDOWN_DAYS
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -40,7 +42,7 @@ class SQLAlchemySitemapDataSource:
             for result in result:
                 source = result[0]
                 category = result[1]
-                last_stamped_crawling: datetime = result[2]
+                last_stamped_crawling = datetime.strptime(str(result[2]), "%Y%m%d").replace(tzinfo=timezone(timedelta(hours=7)))
                 try:
                     last_time_crawling[source][category] = (
                         last_stamped_crawling.replace(
@@ -56,58 +58,137 @@ class SQLAlchemySitemapDataSource:
                     )
         return last_time_crawling
 
-    def save_sitemaps(self, sitemaps: List[NewsSitemapModel]):
+    def save_sitemaps(self, sitemaps: List[NewsSitemapModel]) -> List[NewsSitemapModel]:
+        if not sitemaps:
+            return []
+
+        # This will hold our new, updated objects
+        updated_sitemaps_list = []
+
         with self.client.get_session() as session:
-            # Query the latest sitemap_id from the database
-            latest_sitemap = (
-                session.query(SitemapTable)
-                .order_by(SitemapTable.sitemap_id.desc())
-                .first()
+            # 1. Pre-fetch existing data (Optimization)
+            posted_dates = [
+                int(s.posted_at.strftime("%Y%m%d")) 
+                for s in sitemaps if s.posted_at
+            ]
+            earliest_posted_at = min(posted_dates) if posted_dates else 0
+            
+            existing_rows = (
+                session.query(SitemapTable.link, SitemapTable.posted_at, SitemapTable.sitemap_id)
+                .filter(SitemapTable.posted_at >= earliest_posted_at)
+                .all()
             )
-            latest_sitemap_id = latest_sitemap.sitemap_id if latest_sitemap else 0
+            
+            # Lookup Map: { (link, date) : id }
+            existing_map = {
+                (row.link, row.posted_at): row.sitemap_id 
+                for row in existing_rows
+            }
+
+            new_entries_count = 0
 
             for sitemap in sitemaps:
-                try:
-                    # Increment the sitemap_id
-                    new_sitemap_id = latest_sitemap_id + 1
-                    entry = SitemapTable(sitemap)
-                    entry.sitemap_id = new_sitemap_id
-                    latest_sitemap_id = new_sitemap_id  # Update the latest_sitemap_id for the next iteration
+                date_int = int(sitemap.posted_at.strftime("%Y%m%d")) if sitemap.posted_at else 0
+                lookup_key = (sitemap.link, date_int)
+                
+                final_id = None
 
-                    session.add(entry)
-                except BaseException as e:
-                    logger.error(
-                        f"Failed to add sitemap: {sitemap.link}\nException: {e}"
-                    )
+                # --- Scenario A: Check Cache/DB ---
+                if lookup_key in existing_map:
+                    final_id = existing_map[lookup_key]
+                
+                # --- Scenario B: Insert New ---
+                else:
+                    try:
+                        with session.begin_nested():
+                            entry = SitemapTable(sitemap)
+                            session.add(entry)
+                            session.flush() # Generate ID
+                            
+                            final_id = entry.sitemap_id
+                            
+                            # Update map for subsequent duplicates in this batch
+                            existing_map[lookup_key] = final_id
+                            new_entries_count += 1
+                            
+                    except Exception as e:
+                        logger.error(f"Failed to save {sitemap.link}: {e}")
+                        # If save fails, we can't get an ID. 
+                        # We append the original object (with sitemap_id=None) and continue.
+                        updated_sitemaps_list.append(sitemap)
+                        continue
 
-            session.commit()
+                # --- THE FIX: Create a new copy with the ID ---
+                if final_id is not None:
+                    # 'replace' creates a new instance of the frozen class
+                    new_sitemap_obj = replace(sitemap, sitemap_id=final_id)
+                    updated_sitemaps_list.append(new_sitemap_obj)
+                else:
+                    updated_sitemaps_list.append(sitemap)
+            
+            try:
+                session.commit()
+                logger.info(f"Batch complete. Saved {new_entries_count} new sitemaps.")
+            except Exception as e:
+                logger.error(f"Critical commit error: {e}")
+                session.rollback()
+                # If commit fails, the IDs generated in this transaction are technically invalid in DB,
+                # but we return what we attempted.
+            
+            return updated_sitemaps_list
 
     def load_all_sitemaps(
         self, website: str, n_limit: int
-    ) -> Dict[str, List[Tuple[int, str]]]:
+    ) -> List[NewsSitemapModel]:
         website = f"'{website}'"
-        target_news = {}
+        news_list = []
         with self.client.get_session() as session:
-            result = session.execute(
-                text(
-                    f"SELECT a.{SitemapTable.sources.name}, a.{SitemapTable.link.name}, a.{SitemapTable.sitemap_id.name}"
-                    f"  FROM {SitemapTable.__tablename__} as a"
-                    f"       LEFT JOIN (SELECT {NewsArticlesTable.sitemap_id.name} "
-                    f"                    FROM {NewsArticlesTable.__tablename__}"
-                    f"                 ) as b"
-                    f"       ON a.{SitemapTable.sitemap_id.name} = b.{NewsArticlesTable.sitemap_id.name}"
-                    f" WHERE {SitemapTable.sources.name} in ({website})"
-                    f"   AND b.{NewsArticlesTable.sitemap_id.name} is NULL"
-                    f" LIMIT {n_limit}"
-                )
+            query = (
+                f"SELECT a.{SitemapTable.link.name}, a.{SitemapTable.sitemap_id.name}, "
+                f"a.{SitemapTable.headline.name}, a.{SitemapTable.posted_at.name}, "
+                f"a.{SitemapTable.sources.name}, a.{SitemapTable.category.name}, a.{SitemapTable.keywords.name} "
+                f"FROM {SitemapTable.__tablename__} as a "
+                f"LEFT JOIN (SELECT {NewsArticlesTable.sitemap_id.name} "
+                f"FROM {NewsArticlesTable.__tablename__}) as b "
+                f"ON a.{SitemapTable.sitemap_id.name} = b.{NewsArticlesTable.sitemap_id.name} "
+                f"WHERE {SitemapTable.sources.name} = {website} "
+                f"AND b.{NewsArticlesTable.sitemap_id.name} is NULL "
+                f"AND (a.{SitemapTable.last_crawl_attempt.name} IS NULL "
+                f"     OR a.{SitemapTable.last_crawl_attempt.name} < NOW() - INTERVAL '{SITEMAP_RECRAWL_COOLDOWN_DAYS} days') "
+                f"ORDER BY a.{SitemapTable.posted_at.name} DESC "
+                f"LIMIT {n_limit}"
             )
 
-            for result in result:
-                source = result[0]
-                link = result[1]
-                id = result[2]
-                try:
-                    target_news[source].append((id, link))
-                except KeyError:
-                    target_news[source] = [(id, link)]
-        return target_news
+            result = session.execute(text(query))
+            for row in result:
+                # Convert posted_at from int (yyyyMMdd) to datetime
+                posted_at_dt = None
+                if row[3]:
+                    posted_at_dt = datetime.strptime(str(row[3]), "%Y%m%d")
+                news = NewsSitemapModel(
+                    link=row[0],
+                    sitemap_id=row[1],
+                    headline=row[2],
+                    posted_at=posted_at_dt,  # Use the converted datetime
+                    sources=row[4],
+                    category=row[5],
+                    keywords=row[6],
+                )
+                news_list.append(news)
+        return news_list
+
+    def mark_sitemaps_attempted(self, sitemap_ids):
+        """Stamp last_crawl_attempt=NOW() for the given sitemap_ids so they are not
+        re-crawled until the cooldown window elapses (Bug B fix)."""
+        if not sitemap_ids:
+            return
+        with self.client.get_session() as session:
+            session.execute(
+                text(
+                    f"UPDATE {SitemapTable.__tablename__} "
+                    f"SET {SitemapTable.last_crawl_attempt.name} = NOW() "
+                    f"WHERE {SitemapTable.sitemap_id.name} = ANY(:ids)"
+                ),
+                {"ids": list(sitemap_ids)},
+            )
+            session.commit()

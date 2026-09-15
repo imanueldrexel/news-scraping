@@ -1,5 +1,7 @@
 import logging
 import os
+import re
+from newspaper import Article
 from abc import abstractmethod
 from concurrent.futures.thread import ThreadPoolExecutor
 from typing import List, Dict, Union, Any, Tuple
@@ -64,9 +66,13 @@ class Crawler:
 
     def get_news_in_bulk(self) -> List:
         soup = self.page_loader.get_soup(self.website_url)
+        if not soup:
+            logger.warning(f"Could not load sitemap from {self.website_url}")
+            return []
+            
         branches_to_crawl = self._get_branches(soup)
         links_to_crawl = []
-
+        
         for branch_name, branch_link in branches_to_crawl.items():
             links = self._scrape(branch_link=branch_link, branch_name=branch_name)
             links_to_crawl.extend(links)
@@ -116,13 +122,7 @@ class Crawler:
             data_field_dict["sources"] = articles_data.get("sources")
             if data_field_dict["sources"] == WebsiteName.SUARA.name:
                 data_field_dict["category"] = None
-
             return SitemapDTO(**data_field_dict)
-        except pydantic.error_wrappers.ValidationError:
-            logger.info(
-                f"Error in get_content {articles_data.get('link')}. Reason: extracted_text is None"
-            )
-            return None
         except BaseException as e:
             logger.info(
                 f"Error in get_content {articles_data.get('link')}. Reason: {e}"
@@ -161,7 +161,7 @@ class Crawler:
             return keywords
 
     def batch_crawling_details(
-        self, news: List[Tuple[int, str]], website_name: str
+        self, news: List[SitemapDTO], website_name: str
     ) -> List[NewsDetailsDTO]:
         news_data = []
         if news:
@@ -184,29 +184,55 @@ class Crawler:
 
         return news_data
 
-    def _get_news_details(self, link: Tuple[int, str]) -> NewsDetailsDTO:
+    def _get_news_details(self, sitemap: SitemapDTO) -> NewsDetailsDTO:
         try:
-            sitemap_id = link[0]
-            url = link[1]
+            url = sitemap.link
             if self.website_name == "JPNN":
-                url = url.replace("?page=all", "")
+                url = sitemap.link.replace("?page=all", "")
             soup = self.page_loader.get_soup(url)
             if soup:
                 reporter = self._get_reporter_from_text(soup)
                 extracted_text = self._get_whole_text(soup)
-                meta_data = {}
+                
+                # --- Trafilatura Fallback ---
+                if (extracted_text is None or extracted_text == ""):
+                    logger.info(f"Standard extraction failed for {url}. Attempting Trafilatura fallback...")
+                    try:
+                        # We need the HTML string for trafilatura
+                        # soup.html might be None if soup is a fragment, but usually it works.
+                        # efficiently we might want to pass the raw response text if available, 
+                        # but soup is what we have here.
+                        import trafilatura
+                        html_string = str(soup) 
+                        extracted_text = trafilatura.extract(html_string)
+                        if extracted_text:
+                            # Trafilatura returns a single string, we might want to split it 
+                            # if the downstream expects a list, or keep it as string.
+                            # Looking at line 202: extracted_text = article.text.split("\n\n")
+                            # The DTO seems to accept List or String (based on other code), 
+                            # but line 207 passes it directly. 
+                            # Let's keep it consistent with the "Article" fallback below (line 202).
+                            extracted_text = extracted_text.split("\n\n")
+                            logger.info("Trafilatura extraction successful.")
+                    except Exception as t_err:
+                        logger.warning(f"Trafilatura fallback failed: {t_err}")
+
+                if(extracted_text is None or extracted_text == ""):
+                    article = Article(url)
+                    article.download()
+                    article.parse()
+                    if article.text:
+                        extracted_text = article.text.split("\n\n")
+
+                meta_data = {"title": sitemap.headline, "posted_at": sitemap.timestamp}
                 return NewsDetailsDTO(
-                    sitemap_id=sitemap_id,
+                    sitemap_id=sitemap.sitemap_id,
                     extracted_text=extracted_text,
                     reporter=reporter,
                     meta_data=meta_data,
                 )
-        except pydantic.error_wrappers.ValidationError:
-            logger.info(
-                f"Error in get_content {link[1]}. Reason: extracted_text is None"
-            )
         except BaseException as e:
-            logger.info(f"Error in get_content {link[1]}. Reason: {e}")
+            logger.info(f"Error in get_content {sitemap.link}. Reason: {e}")
 
     @abstractmethod
     def _get_reporter_from_text(self, soup) -> List[str]:

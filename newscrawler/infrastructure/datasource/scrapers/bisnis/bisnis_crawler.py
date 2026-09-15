@@ -22,23 +22,61 @@ class BisnisCrawler(Crawler):
 
     @staticmethod
     def _get_branches(soup) -> Dict[str, str]:
-        branches = {}
-        sitemaps = soup.find_all("sitemap")
-        for sitemap in sitemaps:
-            link = sitemap.find("loc")
-            if link:
-                link = link.get_text(" ").strip()
-                if "sitemap-news" in link:
-                    branch_name = re.sub(r"(.*)(//)(.*)(.bisnis)(.*)", r"\3", link)
-                    if branch_name == "www":
-                        branch_name = re.sub(
-                            r"(https://www.bisnis.com/)(.*)(/sitemap-news.xml)",
-                            r"\2",
-                            link,
-                        )
-                        branch_name = branch_name.strip()
-                    branches[branch_name] = link.strip()
+        branches = {"news": URL.BISNIS.value}
         return branches
+
+    def _scrape(self, branch_link, branch_name) -> List:
+        logger.info(f"Scrape {branch_name} on {self.website_name}")
+        soup = self.page_loader.get_soup(branch_link)
+        articles = []
+        if soup is not None:
+            for idx, url in enumerate(soup.find_all("url")):
+                link = self._get_link(url)
+                title = self._get_title(url)
+                keywords = self._get_keywords(url)
+                timestamp_datetime = self._get_timestamp(
+                    url, date_time_reader=self.date_time_reader
+                )
+                new_branch_name = self._get_branch_name_from_url(link)
+                branch_name = (
+                    new_branch_name if branch_name != link else new_branch_name
+                )
+                attributes = {
+                    "link": link,
+                    "headline": title,
+                    "keywords": keywords,
+                    "timestamp": timestamp_datetime,
+                    "category": branch_name,
+                    "sources": self.website_name,
+                }
+                articles.append(attributes)
+        return articles
+    
+    # @staticmethod
+    # def _get_branches(soup) -> Dict[str, str]:
+    #     branches = {}
+    #     sitemaps = soup.find_all("sitemap")
+    #     for sitemap in sitemaps:
+    #         link = sitemap.find("loc")
+    #         if link:
+    #             link = link.get_text(" ").strip()
+    #             if "sitemap-news" in link:
+    #                 branch_name = re.search(r"https://([^.]+)\.bisnis\.com", link)
+    #                 if branch_name:
+    #                     branch_name = branch_name.group(1)
+    #                 else:
+    #                     branch_name = ""
+
+    #                 if branch_name == "www":
+    #                     branch_name = re.sub(
+    #                         r"(https://www.bisnis.com/)(.*)(/sitemap-news.xml)",
+    #                         r"\2",
+    #                         link,
+    #                     )
+    #                     branch_name = branch_name.strip()
+    #                 branches[branch_name] = link.strip()
+    #     print(branches)
+    #     return branches
 
     @staticmethod
     def _get_whole_text(soup) -> List[str]:

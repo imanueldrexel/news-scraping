@@ -30,3 +30,5 @@ tqdm==4.54.1
 typing_extensions==4.5.0
 urllib3==1.26.15
 virtualenv==20.21.0
+trafilatura==1.6.1
+sentence-transformers==2.2.2

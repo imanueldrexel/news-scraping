@@ -1,4 +1,4 @@
-from typing import List, Union
+from typing import List, Union, Optional
 from datetime import datetime
 from pydantic.dataclasses import dataclass
 
@@ -8,6 +8,7 @@ class SitemapDTO:
     headline: str
     link: str
     sources: str
-    category: str = None
+    category: Optional[str] = None
     timestamp: datetime = None
     keywords: Union[None, List[str]] = None
+    sitemap_id: Optional[int] = None

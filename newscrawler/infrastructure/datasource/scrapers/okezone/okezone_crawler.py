@@ -79,24 +79,22 @@ class OkezoneCrawler(Crawler):
             for sentence in sentences[:1]:
                 divs = sentence.find_all("div")
                 for div in divs:
-                    print(div.attrs)
+
                     if div.attrs == {"class": ["first-paging"]} or div.attrs == {
                         "class": ["second-paging"]
                     }:
-                        print("AAAAA")
+
                         continue
                     else:
                         div.decompose()
                 divs = sentence.find_all("div")
-                print(len(divs))
-                print(sentence.attrs, sentence.get_text(" "))
-                print("=" * 100)
+
                 if sentence.attrs != {}:
                     continue
                 extracted_text = preprocess_text(sentence.text.strip())
                 if len(extracted_text) > 0:
                     texts.append(extracted_text)
-            # print(texts)
+
             return texts
 
         # read_content_layer = soup.find("div", attrs={"class": "read__content"})
