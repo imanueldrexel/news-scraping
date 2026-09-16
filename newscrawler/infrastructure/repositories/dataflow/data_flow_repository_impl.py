@@ -12,6 +12,7 @@ from newscrawler.domain.repositories.data_flow_repository.data_flow_repository i
 from newscrawler.infrastructure.datasource.dataflow.model.chunk_model import ChunkModel
 from newscrawler.infrastructure.datasource.dataflow.model.news_data_model import (
     NewsSitemapModel,
+    SitemapSaveResult,
 )
 from newscrawler.infrastructure.datasource.dataflow.model.news_details_model import (
     NewsDetailsModel,
@@ -44,7 +45,11 @@ class DataFlowRepositoryImpl(DataFlowRepository):
     def save_sitemap_data(self, sitemaps: List[NewsDetailsDTO]) -> List[SitemapDTO]:
         news_sitemap_model = self.to_news_information_model(sitemaps)
         saved_models = self.news_data_source.save_sitemap(news_sitemap_model)
-        return [self._to_sitemap_dto(m) for m in saved_models] if saved_models else []
+        dtos = [self._to_sitemap_dto(m) for m in saved_models] if saved_models else []
+        # SYS-07: carry the new-vs-existing count across the DTO conversion (a plain
+        # list comprehension would otherwise drop it) so crawl_log.article_count can
+        # reflect real new-row counts.
+        return SitemapSaveResult(dtos, new_count=getattr(saved_models, "new_count", len(dtos)))
 
     def save_newsdetails_data(self, newsdetails: List[NewsDetailsDTO]):
         newsdetail_model = self.to_news_information_model(newsdetails)

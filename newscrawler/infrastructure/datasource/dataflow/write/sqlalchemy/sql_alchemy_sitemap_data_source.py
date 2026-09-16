@@ -6,6 +6,7 @@ from typing import List, Dict, Tuple
 
 from newscrawler.infrastructure.datasource.dataflow.model.news_data_model import (
     NewsSitemapModel,
+    SitemapSaveResult,
 )
 from newscrawler.infrastructure.datasource.dataflow.model.news_details_model import (
     NewsDetailsModel,
@@ -141,7 +142,7 @@ class SQLAlchemySitemapDataSource:
             session.commit()
             logger.info(f"Batch complete. Saved {new_entries_count} new sitemaps.")
 
-            return updated_sitemaps_list
+            return SitemapSaveResult(updated_sitemaps_list, new_count=new_entries_count)
 
     def load_all_sitemaps(
         self, website: str, n_limit: int

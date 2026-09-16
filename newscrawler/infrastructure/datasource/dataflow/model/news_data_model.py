@@ -26,3 +26,17 @@ class NewsSitemapModel:
         doc_dict["sitemap_id"] = self.sitemap_id
 
         return doc_dict
+
+
+class SitemapSaveResult(list):
+    """The list save_sitemaps() has always returned (every scraped entry, new or
+    already in the DB, each with its sitemap_id populated) -- len(), iteration, and
+    indexing all work exactly as before for every existing caller. SYS-07: this
+    additionally remembers how many entries were newly inserted, so
+    crawl_log.article_count for task='sitemap' can reflect real new-row counts
+    instead of "entries listed" without changing what the list itself contains.
+    """
+
+    def __init__(self, items, new_count: int = 0):
+        super().__init__(items)
+        self.new_count = new_count

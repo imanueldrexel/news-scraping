@@ -45,11 +45,16 @@ class CrawlerServiceImpl(CrawlerService):
             raw_sitemaps  = web_crawler.get_news_in_bulk()
             sitemaps_dtos = web_crawler.batch_crawling_sitemap(raw_sitemaps, website_name)
 
+            # SYS-07: log the number of newly-inserted rows, not "entries listed" --
+            # a healthy source re-lists most of its sitemap on every run, so the old
+            # len(sitemaps_dtos) told you nothing about whether new articles showed up.
+            new_count = 0
             if sitemaps_dtos:
                 sitemaps_dtos = self.save_scraped_data(sitemaps_dtos)
+                new_count = getattr(sitemaps_dtos, "new_count", len(sitemaps_dtos))
                 logger.info(f"Saved {len(sitemaps_dtos)} sitemaps. IDs populated.")
 
-            self.data_flow_repo.log_crawl_complete(log_id, len(sitemaps_dtos or []))
+            self.data_flow_repo.log_crawl_complete(log_id, new_count)
             return sitemaps_dtos
         except Exception as e:
             self.data_flow_repo.log_crawl_failed(log_id, str(e))

@@ -19,9 +19,18 @@ class CrawlerAPI:
         elif task == "full_text":
             self.crawler_service.crawl_newsdetails(website_name=website_name)
         elif task == "all":
-            sitemaps_dtos = self.crawler_service.crawl_sitemaps(website_name=website_name)
-            # Load sitemaps from DB (not from in-memory) to ensure sitemap_id is populated
-            self.crawler_service.crawl_newsdetails(website_name=website_name, specific_sitemaps=sitemaps_dtos)
+            self.crawler_service.crawl_sitemaps(website_name=website_name)
+            # SYS-07: don't hand crawl_sitemaps' own return value to crawl_newsdetails
+            # as specific_sitemaps -- that list is every sitemap the site currently
+            # lists (existing rows included, since save_sitemaps' dedup returns their
+            # ids too), so it bypassed load_all_sitemaps' "no articles row yet AND
+            # cooldown elapsed" filter entirely and re-fetched every URL a site lists
+            # on every single run (no articles row -> duplicate row every time,
+            # since articles has no per-sitemap uniqueness before DBT-07, and even
+            # after it, wasted full-text fetches forever). Passing no specific_sitemaps
+            # makes crawl_newsdetails load from the DB instead, which gives the
+            # cooldown + no-article filter + 1,000-row limit for free.
+            self.crawler_service.crawl_newsdetails(website_name=website_name)
         elif task == "extract_knowledge":
             # website-agnostic: processes all pending articles across all sources
             self.crawler_service.extract_knowledge()
