@@ -36,5 +36,11 @@ def process_event(event, context):
 
     try:
         scraper_api.crawl_websites_in_batch(website_names=websites, task=task)
-    except BaseException as e:
-        logger.info(f"Failed to process task '{task}'. Reason: {e}")
+    except Exception:
+        # SYS-06: this used to catch BaseException, log at INFO, and swallow it,
+        # so a scheduler always saw exit 0 no matter what happened. Narrowing to
+        # Exception lets KeyboardInterrupt/SystemExit propagate immediately (their
+        # normal behaviour), and re-raising after logging makes any other failure
+        # both loud in the log and a non-zero exit for __main__.py / the scheduler.
+        logger.exception(f"Failed to process task '{task}'")
+        raise
