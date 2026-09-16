@@ -242,6 +242,69 @@ class TestExtractionFallback:
         traf.assert_called_once()
 
 
+class _RaisingCrawler(_FixedTextCrawler):
+    """Site extractors that blow up the way OKEZONE's do on a missing container."""
+    def __init__(self, site_text=None, raise_body=False, raise_reporter=False):
+        super().__init__(site_text)
+        self._raise_body = raise_body
+        self._raise_reporter = raise_reporter
+
+    def _get_whole_text(self, soup):
+        if self._raise_body:
+            return soup.find("div", attrs={"class": "does-not-exist"}).find("p")  # AttributeError
+        return self._site_text
+
+    def _get_reporter_from_text(self, soup) -> List[str]:
+        if self._raise_reporter:
+            raise AttributeError("'NoneType' object has no attribute 'find'")
+        return ["Reporter A"]
+
+
+class TestExtractorCrashFallsThrough:
+    """SYS-02: a crash inside a site extractor must not discard the article."""
+
+    def _sitemap(self):
+        from newscrawler.domain.dtos.dataflow.details.site_map_dto import SitemapDTO
+        return SitemapDTO(headline="t", link="http://ex.com/a", sources="TEST", sitemap_id=1)
+
+    def _run(self, crawler, trafilatura_text=_LONG):
+        import unittest.mock as _mock
+        with _mock.patch(f"{_CRAWLER_MOD}.MIN_ARTICLE_CHARS", 200), \
+             _mock.patch("trafilatura.extract", return_value=trafilatura_text) as traf, \
+             _mock.patch(f"{_CRAWLER_MOD}.Article") as art:
+            art.return_value.text = ""
+            dto = crawler._get_news_details(self._sitemap())
+        return dto, traf
+
+    def test_XC01_body_extractor_raises_uses_trafilatura(self):
+        dto, traf = self._run(_RaisingCrawler(raise_body=True))
+        assert dto is not None
+        traf.assert_called_once()
+        assert dto.extracted_text == _LONG.split("\n\n")
+        assert dto.reporter == ["Reporter A"]
+
+    def test_XC02_reporter_extractor_raises_keeps_site_text_and_empty_reporter(self):
+        dto, traf = self._run(_RaisingCrawler(site_text=[_LONG], raise_reporter=True))
+        assert dto is not None
+        traf.assert_not_called()
+        assert dto.extracted_text == [_LONG]
+        assert dto.reporter == []
+
+    def test_XC03_both_raise_still_yields_dto_via_fallback(self):
+        dto, traf = self._run(_RaisingCrawler(raise_body=True, raise_reporter=True))
+        assert dto is not None
+        traf.assert_called_once()
+        assert dto.extracted_text == _LONG.split("\n\n")
+        assert dto.reporter == []
+        assert dto.sitemap_id == 1  # so mark_sitemaps_attempted can stamp it
+
+    def test_XC04_crash_is_logged_as_warning(self, caplog):
+        import logging
+        with caplog.at_level(logging.WARNING, logger=_CRAWLER_MOD):
+            self._run(_RaisingCrawler(raise_body=True))
+        assert any("Site extractor raised" in r.message for r in caplog.records)
+
+
 class TestHasUsableText:
     def test_UT01_none_empty_string_empty_list_are_unusable(self):
         for v in (None, "", [], [""], ["  "]):

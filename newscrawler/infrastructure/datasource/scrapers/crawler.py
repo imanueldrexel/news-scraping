@@ -191,8 +191,20 @@ class Crawler:
                 url = sitemap.link.replace("?page=all", "")
             soup = self.page_loader.get_soup(url)
             if soup:
-                reporter = self._get_reporter_from_text(soup)
-                extracted_text = self._get_whole_text(soup)
+                # Site extractors are hand-written selectors that raise (typically
+                # AttributeError on a missing container) when the layout drifts. A crash
+                # must count as "extractor failed", not discard the article, so the
+                # fallback chain still runs and the sitemap still gets marked attempted.
+                try:
+                    reporter = self._get_reporter_from_text(soup)
+                except Exception as r_err:
+                    logger.warning(f"Reporter extraction raised for {url}: {r_err!r}")
+                    reporter = []
+                try:
+                    extracted_text = self._get_whole_text(soup)
+                except Exception as x_err:
+                    logger.warning(f"Site extractor raised for {url}: {x_err!r}")
+                    extracted_text = None
 
                 # Site extractors return None when their container is missing and [] when
                 # it exists but no paragraph matched (layout drift). Both, and anything
