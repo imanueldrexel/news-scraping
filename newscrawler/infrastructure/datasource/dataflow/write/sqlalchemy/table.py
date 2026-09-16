@@ -66,7 +66,13 @@ class NewsArticlesTable(Base):
 
     def __init__(self, sitemap: NewsDetailsModel):
         self.sitemap_id = sitemap.sitemap_id
-        self.extracted_text = sitemap.extracted_text
+        # SYS-18: join paragraphs into prose -- see the matching comment in
+        # sql_alchemy_articles_data_source.py's save_newsdetails (the actual write
+        # path); this constructor is kept consistent even though it is presently
+        # only exercised by tests, not the pg_insert(...).values(...) call.
+        self.extracted_text = "\n\n".join(
+            p.strip() for p in (sitemap.extracted_text or []) if p and p.strip()
+        )
         self.writer = sitemap.reporter
         self.meta_data = sitemap.meta_data
         self.is_embedded = sitemap.is_embedded

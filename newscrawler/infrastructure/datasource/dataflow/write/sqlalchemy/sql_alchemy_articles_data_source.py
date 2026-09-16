@@ -90,7 +90,15 @@ class SQLAlchemyArticleDataSource:
                     with session.begin_nested():
                         stmt = pg_insert(NewsArticlesTable).values(
                             sitemap_id=newsdetail.sitemap_id,
-                            extracted_text=newsdetail.extracted_text,
+                            # SYS-18: extracted_text is a List[str] of paragraphs but
+                            # the column is `text`; binding the list directly lets
+                            # psycopg2 adapt it as a Postgres array literal
+                            # (`{"para1","para2"}`), not prose. Join it the same way
+                            # the trafilatura fallback's output is split back apart
+                            # (crawler.py: `text.split("\n\n")`), so this round-trips.
+                            extracted_text="\n\n".join(
+                                p.strip() for p in (newsdetail.extracted_text or []) if p and p.strip()
+                            ),
                             writer=newsdetail.reporter,
                             meta_data=newsdetail.meta_data,
                             is_embedded=newsdetail.is_embedded,
