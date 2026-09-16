@@ -49,6 +49,10 @@ GEMINI_API_KEY        = os.getenv("GEMINI_API_KEY")
 GEMINI_MODEL          = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 DAILY_API_CALL_LIMIT  = int(os.getenv("DAILY_API_CALL_LIMIT", 1400))
 KNOWLEDGE_BATCH_SIZE  = int(os.getenv("KNOWLEDGE_BATCH_SIZE", 50))
+# SYS-19: a poison article (unparseable Gemini response, or a response whose shape
+# crashes _process_extraction) burns one Gemini call per run forever without this --
+# it's re-selected as part of the newest-first pending query every single time.
+KNOWLEDGE_EXTRACT_MAX_ATTEMPTS = int(os.getenv("KNOWLEDGE_EXTRACT_MAX_ATTEMPTS", 3))
 
 # ── Newsletter (Phase 3) ─────────────────────────────────────────────────────
 DBSCAN_EPS         = float(os.getenv("DBSCAN_EPS", 0.25))

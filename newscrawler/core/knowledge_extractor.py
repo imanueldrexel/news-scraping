@@ -95,21 +95,33 @@ class KnowledgeExtractor:
                 self.ds.increment_api_call_count(self.model_name)
 
                 if extraction is None:
-                    # API error (e.g. transient 503) or unparseable response. Do NOT mark
-                    # the article extracted -- leave it pending so it is retried on a later
-                    # run instead of being silently lost with zero entities.
+                    # API error (e.g. transient 503) or unparseable response. SYS-19:
+                    # this used to leave knowledge_extract_attempts untouched, so a
+                    # deterministically-unparseable response burned one Gemini call
+                    # every run forever. Recording the failure means it eventually
+                    # drops out of get_articles_pending_extraction instead.
                     logger.warning(
                         f"Article {article_id}: no usable extraction (API/parse failure) "
                         "- leaving pending for retry"
                     )
+                    self.ds.record_extraction_failure(article_id, "no usable extraction (API/parse failure)")
                     continue
 
-                self._process_extraction(extraction, article_meta)
-                self.ds.mark_article_extracted(article_id)
+                # SYS-19: persons/organizations/locations + mark_article_extracted all
+                # happen in one transaction now -- a malformed entity (or any other
+                # mid-article failure) rolls back every mention this article would
+                # have written instead of leaving some committed while the article
+                # stays knowledge_extracted=0 (which would double-count them via
+                # upsert_entity's mention_count += 1 on the next attempt).
+                with self.ds.atomic_extraction_session() as session:
+                    self._process_extraction(extraction, article_meta, session)
+                    self.ds.mark_article_extracted(article_id, session=session)
+                    session.commit()
                 processed += 1
                 logger.debug(f"Processed article {article_id}")
             except Exception as e:
                 logger.error(f"Error processing article {article_id}: {e}")
+                self.ds.record_extraction_failure(article_id, str(e))
 
         logger.info(f"Knowledge extraction complete: {processed} articles processed.")
         return processed
@@ -120,11 +132,20 @@ class KnowledgeExtractor:
         truncated = article_text[:3000]
         prompt    = _PROMPT_TEMPLATE.format(article_text=truncated)
         try:
-            # response = self._model.generate_content(prompt)
+            # SYS-19: ask Gemini to constrain its own output to JSON. Doesn't
+            # eliminate every failure mode (a safety block still returns no text;
+            # the model can still emit JSON with the wrong shape), but removes the
+            # "prose prefix before the JSON" class of parse failure at the source
+            # instead of only handling it after the fact.
             response = self._client.models.generate_content(
                 model=self.model_name,
-                contents=prompt
+                contents=prompt,
+                config={"response_mime_type": "application/json"},
             )
+            if response.text is None:
+                # Safety block or an otherwise empty response -- nothing to parse.
+                logger.warning("Gemini returned no text (likely a safety block)")
+                return None
             raw = response.text.strip()
             # Strip markdown code fences if present
             if raw.startswith("```"):
@@ -141,21 +162,21 @@ class KnowledgeExtractor:
 
     # ── Extraction processing ────────────────────────────────────────────────
 
-    def _process_extraction(self, extraction: dict, article_meta: dict) -> None:
+    def _process_extraction(self, extraction: dict, article_meta: dict, session) -> None:
         event_type   = extraction.get("event_type") or None
         article_text = article_meta["extracted_text"]
 
-        for person in extraction.get("persons") or []:
+        for person in self._valid_dicts(extraction.get("persons")):
             name = person.get("name", "").strip()
             if not name:
                 continue
             entity_id = self._resolve_or_upsert(
                 name, "PERSON", subtype=None, ticker=None,
-                posted_at=self._posted_at_to_date(article_meta["posted_at"])
+                posted_at=self._posted_at_to_date(article_meta["posted_at"]), session=session,
             )
-            self._insert_mention(entity_id, article_meta, event_type, article_text, name)
+            self._insert_mention(entity_id, article_meta, event_type, article_text, name, session)
 
-        for org in extraction.get("organizations") or []:
+        for org in self._valid_dicts(extraction.get("organizations")):
             name = org.get("name", "").strip()
             if not name:
                 continue
@@ -163,23 +184,37 @@ class KnowledgeExtractor:
                 name, "ORGANIZATION",
                 subtype=self._infer_subtype(org),
                 ticker=org.get("ticker") or None,
-                posted_at=self._posted_at_to_date(article_meta["posted_at"])
+                posted_at=self._posted_at_to_date(article_meta["posted_at"]), session=session,
             )
-            self._insert_mention(entity_id, article_meta, event_type, article_text, name)
+            self._insert_mention(entity_id, article_meta, event_type, article_text, name, session)
 
-        for loc in extraction.get("locations") or []:
+        for loc in self._valid_dicts(extraction.get("locations")):
             name = loc.get("name", "").strip()
             if not name:
                 continue
             entity_id = self._resolve_or_upsert(
                 name, "LOCATION", subtype=None, ticker=None,
-                posted_at=self._posted_at_to_date(article_meta["posted_at"])
+                posted_at=self._posted_at_to_date(article_meta["posted_at"]), session=session,
             )
-            self._insert_mention(entity_id, article_meta, event_type, article_text, name)
+            self._insert_mention(entity_id, article_meta, event_type, article_text, name, session)
+
+    @staticmethod
+    def _valid_dicts(items) -> list:
+        """SYS-19: Gemini occasionally returns a list of bare strings instead of
+        {"name": ...} objects for one of the three entity lists (still valid JSON,
+        so _call_gemini doesn't catch it) -- person.get("name") on a str raises
+        AttributeError and used to abort the whole article. Skip malformed entries
+        instead of letting one bad shape crash entities that parsed fine."""
+        if not items:
+            return []
+        valid = [item for item in items if isinstance(item, dict)]
+        if len(valid) != len(items):
+            logger.warning(f"Skipped {len(items) - len(valid)} non-object entit(y/ies) in extraction response")
+        return valid
 
     def _resolve_or_upsert(self, name: str, entity_type: str,
                             subtype: Optional[str], ticker: Optional[str],
-                            posted_at: date) -> int:
+                            posted_at: date, session) -> int:
         entity_id = self.normalizer.resolve_alias(name, self.alias_map)
         if entity_id:
             return entity_id
@@ -194,13 +229,13 @@ class KnowledgeExtractor:
             first_seen_at=posted_at,
             last_seen_at=posted_at,
         )
-        entity_id = self.ds.upsert_entity(model)
+        entity_id = self.ds.upsert_entity(model, session=session)
         self.alias_map[normalized] = entity_id
         return entity_id
 
     def _insert_mention(self, entity_id: int, article_meta: dict,
                          event_type: Optional[str], article_text: str,
-                         entity_name: str) -> None:
+                         entity_name: str, session) -> None:
         posted_at  = self._posted_at_to_date(article_meta["posted_at"])
         chunk_id   = self.ds.get_l1_chunk_id_for_article(article_meta["sitemap_id"])
         snippet    = self.normalizer.extract_context_snippet(article_text, entity_name)
@@ -215,7 +250,7 @@ class KnowledgeExtractor:
             posted_at=posted_at,
             source=article_meta["source"],
         )
-        self.ds.insert_entity_mention(model)
+        self.ds.insert_entity_mention(model, session=session)
 
     # ── Helpers ──────────────────────────────────────────────────────────────
 

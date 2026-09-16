@@ -64,6 +64,8 @@ class NewsArticlesTable(Base):
     is_embedded = Column(Boolean, nullable=False, default=False)
     knowledge_extracted    = Column(Integer, nullable=False, default=0)
     knowledge_extracted_at = Column(TIMESTAMP, nullable=True)
+    knowledge_extract_attempts = Column(Integer, nullable=False, default=0)
+    last_extract_error         = Column(String, nullable=True)
 
     def __init__(self, sitemap: NewsDetailsModel):
         self.sitemap_id = sitemap.sitemap_id

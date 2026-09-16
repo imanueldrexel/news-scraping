@@ -20,8 +20,19 @@ class SQLAlchemyKnowledgeDataSource:
 
     # ── Article loading ──────────────────────────────────────────────────────
 
-    def get_articles_pending_extraction(self, batch_size: int) -> List[dict]:
-        """Returns up to batch_size articles where knowledge_extracted = 0."""
+    def get_articles_pending_extraction(self, batch_size: int, max_attempts: int = None) -> List[dict]:
+        """Returns up to batch_size articles where knowledge_extracted = 0.
+
+        SYS-19: excludes articles that have already failed knowledge_extract_attempts
+        times (a poison article -- unparseable response, or a shape that crashes
+        _process_extraction -- would otherwise be re-selected by the newest-first
+        order every run, burning one Gemini call each time and starving every other
+        pending article). Orders by attempts first so a once-failed article sinks
+        behind fresh ones instead of being retried ahead of them.
+        """
+        if max_attempts is None:
+            from newscrawler.core.constants import KNOWLEDGE_EXTRACT_MAX_ATTEMPTS
+            max_attempts = KNOWLEDGE_EXTRACT_MAX_ATTEMPTS
         sql = text("""
             SELECT a.articles_id, a.sitemap_id, a.extracted_text,
                    a.writer,
@@ -29,11 +40,12 @@ class SQLAlchemyKnowledgeDataSource:
             FROM articles a
             JOIN sitemaps s ON a.sitemap_id = s.sitemap_id
             WHERE a.knowledge_extracted = 0
-            ORDER BY s.posted_at DESC
+              AND a.knowledge_extract_attempts < :max_attempts
+            ORDER BY a.knowledge_extract_attempts ASC, s.posted_at DESC
             LIMIT :batch_size
         """)
         with self.client.get_session() as session:
-            rows = session.execute(sql, {"batch_size": batch_size}).fetchall()
+            rows = session.execute(sql, {"batch_size": batch_size, "max_attempts": max_attempts}).fetchall()
         return [
             {
                 "article_id":     row.articles_id,
@@ -46,21 +58,50 @@ class SQLAlchemyKnowledgeDataSource:
             for row in rows
         ]
 
-    def mark_article_extracted(self, article_id: int) -> None:
+    def mark_article_extracted(self, article_id: int, session=None) -> None:
         sql = text("""
             UPDATE articles
             SET knowledge_extracted = 1,
                 knowledge_extracted_at = NOW()
             WHERE articles_id = :article_id
         """)
+        if session is not None:
+            session.execute(sql, {"article_id": article_id})
+            return
         with self.client.get_session() as session:
             session.execute(sql, {"article_id": article_id})
             session.commit()
 
+    def record_extraction_failure(self, article_id: int, error_msg: str) -> None:
+        """SYS-19: increments knowledge_extract_attempts and records the error, on
+        its own commit -- this must survive even when the failure is a rolled-back
+        transaction from an atomic_extraction_session(), so it is never passed an
+        existing session."""
+        sql = text("""
+            UPDATE articles
+            SET knowledge_extract_attempts = knowledge_extract_attempts + 1,
+                last_extract_error = :error_msg
+            WHERE articles_id = :article_id
+        """)
+        with self.client.get_session() as session:
+            session.execute(sql, {"article_id": article_id, "error_msg": (error_msg or "")[:1000]})
+            session.commit()
+
+    def atomic_extraction_session(self):
+        """SYS-19: exposes a raw session so KnowledgeExtractor can write every
+        entity/mention for one article plus mark_article_extracted in a single
+        transaction -- a failure partway through (e.g. a malformed entity) must roll
+        back the whole article's writes, not leave some mentions committed while the
+        article stays knowledge_extracted=0 (which would double-count them via
+        upsert_entity's mention_count += 1 on the next attempt -- SYS-20)."""
+        return self.client.get_session()
+
     # ── Entity persistence ───────────────────────────────────────────────────
 
-    def upsert_entity(self, model: EntityModel) -> int:
-        """Insert or update entity; always returns the entity_id."""
+    def upsert_entity(self, model: EntityModel, session=None) -> int:
+        """Insert or update entity; always returns the entity_id. Pass an existing
+        session (from atomic_extraction_session()) to make this part of a larger
+        transaction instead of committing on its own."""
         sql = text("""
             INSERT INTO entities
                 (name, normalized_name, entity_type, subtype, ticker,
@@ -75,20 +116,23 @@ class SQLAlchemyKnowledgeDataSource:
                 updated_at    = NOW()
             RETURNING entity_id
         """)
+        params = {
+            "name":            model.name,
+            "normalized_name": model.normalized_name,
+            "entity_type":     model.entity_type,
+            "subtype":         model.subtype,
+            "ticker":          model.ticker,
+            "first_seen_at":   model.first_seen_at,
+            "last_seen_at":    model.last_seen_at,
+        }
+        if session is not None:
+            return session.execute(sql, params).fetchone().entity_id
         with self.client.get_session() as session:
-            row = session.execute(sql, {
-                "name":            model.name,
-                "normalized_name": model.normalized_name,
-                "entity_type":     model.entity_type,
-                "subtype":         model.subtype,
-                "ticker":          model.ticker,
-                "first_seen_at":   model.first_seen_at,
-                "last_seen_at":    model.last_seen_at,
-            }).fetchone()
+            row = session.execute(sql, params).fetchone()
             session.commit()
         return row.entity_id
 
-    def insert_entity_mention(self, model: EntityMentionModel) -> None:
+    def insert_entity_mention(self, model: EntityMentionModel, session=None) -> None:
         sql = text("""
             INSERT INTO entity_mentions
                 (entity_id, sitemap_id, article_id, chunk_id,
@@ -98,17 +142,21 @@ class SQLAlchemyKnowledgeDataSource:
                  :context_snippet, :event_type, :posted_at, :source, NOW())
             ON CONFLICT (entity_id, sitemap_id) DO NOTHING
         """)
+        params = {
+            "entity_id":       model.entity_id,
+            "sitemap_id":      model.sitemap_id,
+            "article_id":      model.article_id,
+            "chunk_id":        model.chunk_id,
+            "context_snippet": model.context_snippet,
+            "event_type":      model.event_type,
+            "posted_at":       model.posted_at,
+            "source":          model.source,
+        }
+        if session is not None:
+            session.execute(sql, params)
+            return
         with self.client.get_session() as session:
-            session.execute(sql, {
-                "entity_id":       model.entity_id,
-                "sitemap_id":      model.sitemap_id,
-                "article_id":      model.article_id,
-                "chunk_id":        model.chunk_id,
-                "context_snippet": model.context_snippet,
-                "event_type":      model.event_type,
-                "posted_at":       model.posted_at,
-                "source":          model.source,
-            })
+            session.execute(sql, params)
             session.commit()
 
     def insert_alias(self, alias_name: str, normalized_alias: str, entity_id: int) -> None:
