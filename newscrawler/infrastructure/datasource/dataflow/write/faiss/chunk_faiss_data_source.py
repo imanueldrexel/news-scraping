@@ -1,6 +1,7 @@
 import logging
 import os
-from typing import List
+from dataclasses import replace
+from typing import Dict, List, Tuple
 
 from langchain_community.vectorstores import FAISS
 from langchain_community.embeddings import HuggingFaceEmbeddings
@@ -36,40 +37,33 @@ class ChunkFAISSDatasource:
         return updated
 
     def _embed_batch(self, chunks: List[ChunkDTO], vs: FAISS, db_name: str) -> List[ChunkDTO]:
-        existing_ids = self._get_existing_sitemap_ids(vs)
-        new_chunks = [c for c in chunks if c.sitemap_id not in existing_ids]
-        already_done = [c for c in chunks if c.sitemap_id in existing_ids]
+        # SYS-17: key on (sitemap_id, chunk_level, chunk_index), not sitemap_id alone,
+        # so a chunk already present in FAISS is matched to its *real* embedding_id
+        # (the docstore key it was originally added under) instead of being returned
+        # with embedding_id=None. This is what makes save_chunk_data's SQL-based
+        # dedup (see DataFlowRepositoryImpl.save_chunk_data) self-healing: a sitemap
+        # whose SQL insert failed after FAISS already had its vectors gets retried,
+        # finds those exact vectors here, and reuses their ids instead of either
+        # skipping the SQL insert (the old bug) or adding duplicate vectors.
+        existing = self._get_existing_embedding_ids(vs)
+        new_chunks = [c for c in chunks if (c.sitemap_id, c.chunk_level, c.chunk_index) not in existing]
+        result = [
+            replace(c, embedding_id=existing[(c.sitemap_id, c.chunk_level, c.chunk_index)], chunk_status='embedded')
+            for c in chunks
+            if (c.sitemap_id, c.chunk_level, c.chunk_index) in existing
+        ]
 
         if not new_chunks:
             logger.info(f"  {db_name}: all {len(chunks)} chunks already embedded, skipping")
-            return already_done
+            return result
 
         docs = [self._to_document(c) for c in new_chunks]
         embedding_ids = vs.add_documents(docs)  # LangChain returns list of UUID strings
         vs.save_local(db_name)
         logger.info(f"  {db_name}: embedded {len(new_chunks)} new chunks")
 
-        # Attach embedding_ids back to the chunk objects
-        result = list(already_done)
         for chunk, eid in zip(new_chunks, embedding_ids):
-            result.append(ChunkDTO(
-                sitemap_id=chunk.sitemap_id,
-                chunk_level=chunk.chunk_level,
-                chunk_index=chunk.chunk_index,
-                chunk_total=chunk.chunk_total,
-                is_first_chunk=chunk.is_first_chunk,
-                is_last_chunk=chunk.is_last_chunk,
-                text_content=chunk.text_content,
-                token_count=chunk.token_count,
-                title=chunk.title,
-                source=chunk.source,
-                category=chunk.category,
-                posted_at=chunk.posted_at,
-                reporter=chunk.reporter,
-                chunk_id=chunk.chunk_id,
-                embedding_id=eid,
-                chunk_status='embedded',
-            ))
+            result.append(replace(chunk, embedding_id=eid, chunk_status='embedded'))
         return result
 
     def _to_document(self, chunk: ChunkDTO) -> Document:
@@ -129,9 +123,12 @@ class ChunkFAISSDatasource:
         return hits
 
     @staticmethod
-    def _get_existing_sitemap_ids(vs: FAISS) -> set:
-        return {
-            int(doc.metadata['sitemap_id'])
-            for doc in vs.docstore._dict.values()
-            if 'sitemap_id' in doc.metadata
-        }
+    def _get_existing_embedding_ids(vs: FAISS) -> Dict[Tuple[int, int, int], str]:
+        """Maps (sitemap_id, chunk_level, chunk_index) -> the docstore key (embedding_id)
+        it was stored under, for every document already in this index."""
+        result = {}
+        for doc_id, doc in vs.docstore._dict.items():
+            meta = doc.metadata
+            if {'sitemap_id', 'chunk_level', 'chunk_index'} <= meta.keys():
+                result[(int(meta['sitemap_id']), int(meta['chunk_level']), int(meta['chunk_index']))] = doc_id
+        return result

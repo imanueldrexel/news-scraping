@@ -56,16 +56,28 @@ class DataFlowRepositoryImpl(DataFlowRepository):
         self.news_data_source.save_newsdetails(newsdetail_model)
 
     def save_chunk_data(self, chunks: List[ChunkDTO]) -> List[int]:
-        chunks_with_ids = self.chunk_faiss_datasource.save(chunks)
-        # Persist only newly-embedded chunks to SQL. Chunks whose sitemap was already
-        # embedded in a prior run come back with embedding_id=None and already have rows
-        # in the chunks table -- re-inserting them would create duplicates.
-        new_models = [self._to_chunk_model(c) for c in chunks_with_ids if c.embedding_id]
-        self.sql_alchemy_chunk_datasource.save_chunks(new_models)
-        # Return ALL represented sitemap_ids (newly embedded AND already embedded) so the
-        # caller still saves the article row for already-embedded sitemaps. Filtering on
-        # embedding_id here used to strand already-embedded sitemaps without an article.
-        return list({c.sitemap_id for c in chunks_with_ids})
+        if not chunks:
+            return []
+        all_sitemap_ids = {c.sitemap_id for c in chunks}
+        # SYS-17: dedup against SQL (the source of truth for "do chunks rows exist"),
+        # not FAISS membership. FAISS is written to disk before the SQL commit; if
+        # that commit then fails (or is skipped for any reason), FAISS keeps the
+        # vectors and the chunks table has nothing -- treating FAISS membership as
+        # "already saved" made that permanent, since every later attempt saw the
+        # vectors and skipped the SQL insert again. Sitemaps already fully
+        # represented in `chunks` are skipped here instead; everything else goes
+        # through chunk_faiss_datasource.save(), which still checks FAISS on its own
+        # (keyed on sitemap_id+level+index) to avoid adding duplicate vectors and to
+        # recover the *real* embedding_id for anything already embedded there.
+        already_saved = self.sql_alchemy_chunk_datasource.get_existing_sitemap_ids(all_sitemap_ids)
+        to_process = [c for c in chunks if c.sitemap_id not in already_saved]
+
+        if to_process:
+            chunks_with_ids = self.chunk_faiss_datasource.save(to_process)
+            new_models = [self._to_chunk_model(c) for c in chunks_with_ids]
+            self.sql_alchemy_chunk_datasource.save_chunks(new_models)
+
+        return list(all_sitemap_ids)
 
     def mark_sitemaps_attempted(self, sitemap_ids: List[int]) -> None:
         self.news_data_source.mark_sitemaps_attempted(sitemap_ids)
