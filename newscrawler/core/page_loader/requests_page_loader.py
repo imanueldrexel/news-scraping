@@ -1,7 +1,9 @@
 import logging
+import re
 import requests
 
 from bs4 import BeautifulSoup
+from urllib.parse import urlparse
 
 from newscrawler.core.constants import REQUEST_MAX_RETRIES
 from newscrawler.core.page_loader.page_loader import PageLoader
@@ -9,6 +11,11 @@ from newscrawler.core.page_loader.page_loader import PageLoader
 logging.basicConfig()
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
+
+# SYS-14: a site can answer HTTP 200 for a missing article either by redirecting
+# to an error/home page or by rendering the error page in place. Same pattern
+# used by scripts/experiments/probe_soft404.py.
+ERROR_PATH_PATTERN = re.compile(r"/(404|not-?found|error)(/|$|\?)", re.I)
 
 
 class RequestsPageLoader(PageLoader):
@@ -52,14 +59,33 @@ class RequestsPageLoader(PageLoader):
     def get_soup(self, url_path: str):
         response = self.get_url(url_path)
         if response and response.status_code == 200:
+            # SYS-14: a 200 that was redirected to an error/home page is a soft-404,
+            # not a real article -- reject it before it reaches the extractor chain.
+            final_path = urlparse(response.url).path
+            if response.history and ERROR_PATH_PATTERN.search(final_path):
+                logger.info(
+                    f"Failed to get {url_path}. Redirected to error page {response.url}, Returning None"
+                )
+                return None
             try:
                 soup = BeautifulSoup(response.content, "html.parser")
-                return soup
             except BaseException as e:
                 logger.info(
                     f"Failed to get the HTML for {url_path}. Reason: {e}, Returning None"
                 )
                 return None
+
+            # Some sites render the error page in place (no redirect) but still
+            # mark it with a canonical link pointing at the real error/home page.
+            canonical = soup.find("link", rel="canonical")
+            canonical_href = canonical.get("href") if canonical else None
+            if canonical_href and ERROR_PATH_PATTERN.search(urlparse(canonical_href).path):
+                logger.info(
+                    f"Failed to get {url_path}. Canonical points to error page {canonical_href}, Returning None"
+                )
+                return None
+
+            return soup
         elif response:
             logger.info(
                 f"Failed to get {url_path}. Status Code: {response.status_code}, Returning None"
