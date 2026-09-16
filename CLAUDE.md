@@ -23,6 +23,16 @@ Every new bug and every new or changed requirement gets a GitHub issue **before*
 - If you discover a bug while working on something else, file it, tell the user the number, and keep going on the original task unless the new bug blocks it.
 - The 2026-09-15 audit is tracked in #25 (findings #2–#24, label `audit-2026-09-15`); the full write-up is `AUDIT_2026-09-15.md`. Scraper fixes should be re-verified with `scripts/check_crawlers.py --website <NAME>` and the resulting health line pasted into the issue before closing.
 
+## Workflow: log every experiment
+
+Whenever you probe a site, test a hypothesis, try an approach that might not work, benchmark, or compare options, add an entry to **`EXPERIMENTS.md`** in the same session — succeeded, failed, or inconclusive. Failed experiments are the most valuable entries.
+
+- Read the **"Traps & settled questions"** section at the top of `EXPERIMENTS.md` before starting any scraper or pipeline investigation; it lists what has already been ruled out.
+- Entry format is at the top of the file: date + title · Question/hypothesis · Method (exact command or `scripts/experiments/` path) · Result (numbers, exact errors) · Conclusion / do-not-repeat · Links (issue #, commit).
+- Reusable diagnostics go in `scripts/experiments/` (e.g. `probe_sitemap_ua.py`); throwaway repro code is inlined in the entry, not left in a scratchpad.
+- When a conclusion changes the default approach, add a one-liner to "Traps & settled questions" pointing at the entry.
+- Commit the log entry with the related work (`Refs #N`).
+
 ## Environment & commands
 
 Windows, PowerShell. Python 3.9 venv at `venv/`. **Always use the venv interpreter**; `requirements.txt` is stale (missing langchain, faiss, google-genai, fastapi, …) — the venv is the source of truth for dependencies.
