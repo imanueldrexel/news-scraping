@@ -8,10 +8,14 @@ Per outlet it runs the REAL production code paths on a tiny sample:
   Stage B (article): batch_crawling_sitemap -> batch_crawling_details, check extracted_text
 
 Status:
-  OK      listing returned links AND >=1 sample article extracted non-empty text
-  PARTIAL listing OK but 0 sample articles produced text (body extraction broken)
-  BROKEN  sitemap fetch/parse/listing failed
-  ERROR   unexpected exception (message captured)
+  OK       listing returned links AND >=1 sample article's text came from the site's
+           own selector (meta_data["extractor"] == "site")
+  FALLBACK listing OK, samples produced text, but EVERY sample was rescued by
+           trafilatura/newspaper -- the site selector is dead; needs attention but
+           not fatal (OPS-02)
+  PARTIAL  listing OK but 0 sample articles produced text (body extraction broken)
+  BROKEN   sitemap fetch/parse/listing failed
+  ERROR    unexpected exception (message captured)
 
 Usage:
     python scripts/check_crawlers.py
@@ -48,10 +52,14 @@ logger = logging.getLogger("check_crawlers")
 from newscrawler.core.crawler_dict_list import CRAWLER_DICT
 
 STATUS_OK = "OK"
+STATUS_FALLBACK = "FALLBACK"
 STATUS_PARTIAL = "PARTIAL"
 STATUS_BROKEN = "BROKEN"
 STATUS_ERROR = "ERROR"
+# UNHEALTHY drives the exit code -- FALLBACK is deliberately excluded (OPS-02:
+# "needs attention but non-fatal", since articles are still being produced).
 UNHEALTHY = {STATUS_PARTIAL, STATUS_BROKEN, STATUS_ERROR}
+NEEDS_ATTENTION = UNHEALTHY | {STATUS_FALLBACK}
 
 
 def _extracted_len(detail) -> int:
@@ -63,14 +71,19 @@ def _extracted_len(detail) -> int:
     return len(str(txt))
 
 
-def classify(sitemap_links: int, detail_ok: int, error: bool = False) -> str:
-    """Pure classification from sample-crawl counts."""
+def classify(sitemap_links: int, detail_ok: int, extractors: list = None, error: bool = False) -> str:
+    """Pure classification from sample-crawl counts. `extractors` is the
+    meta_data["extractor"] value (see crawler.py's _get_news_details) for each
+    sample that produced text -- OPS-02: if none of them is "site", the site's own
+    selector is dead and trafilatura/newspaper are quietly doing all the work."""
     if error:
         return STATUS_ERROR
     if sitemap_links <= 0:
         return STATUS_BROKEN
     if detail_ok <= 0:
         return STATUS_PARTIAL
+    if extractors and "site" not in extractors:
+        return STATUS_FALLBACK
     return STATUS_OK
 
 
@@ -79,7 +92,7 @@ def check_one(name: str, crawler, sample_size: int) -> dict:
     result = {
         "website": name, "sitemap_links": 0, "dto_count": 0,
         "detail_total": 0, "detail_ok": 0, "avg_chars": 0,
-        "status": STATUS_BROKEN, "note": "",
+        "status": STATUS_BROKEN, "note": "", "extractors": [],
     }
     try:
         soup = crawler.page_loader.get_soup(crawler.website_url)
@@ -122,9 +135,15 @@ def check_one(name: str, crawler, sample_size: int) -> dict:
         ok = [l for l in lengths if l > 0]
         result["detail_ok"] = len(ok)
         result["avg_chars"] = int(sum(ok) / len(ok)) if ok else 0
-        result["status"] = classify(result["sitemap_links"], result["detail_ok"])
+        # OPS-02: which extractor produced the text, for the samples that succeeded.
+        extractors = [(getattr(d, "meta_data", None) or {}).get("extractor") for d, l in zip(details, lengths) if l > 0]
+        result["extractors"] = extractors
+        result["status"] = classify(result["sitemap_links"], result["detail_ok"], extractors)
         if result["status"] == STATUS_PARTIAL:
             result["note"] = "listing OK but article body extraction returned empty"
+        elif result["status"] == STATUS_FALLBACK:
+            used = sorted({e for e in extractors if e} or {"unknown"})
+            result["note"] = "site selector produced nothing; rescued by " + "/".join(used)
         return result
     except Exception as e:
         result["status"] = STATUS_ERROR
@@ -147,8 +166,9 @@ def run_checks(targets: dict, sample_size: int, workers: int, timeout: int) -> l
                     "website": name, "sitemap_links": 0, "dto_count": 0,
                     "detail_total": 0, "detail_ok": 0, "avg_chars": 0,
                     "status": STATUS_ERROR, "note": "timeout after %ds" % timeout,
+                    "extractors": [],
                 })
-    order = {STATUS_BROKEN: 0, STATUS_ERROR: 1, STATUS_PARTIAL: 2, STATUS_OK: 3}
+    order = {STATUS_BROKEN: 0, STATUS_ERROR: 1, STATUS_PARTIAL: 2, STATUS_FALLBACK: 3, STATUS_OK: 4}
     results.sort(key=lambda r: (order.get(r["status"], 9), r["website"]))
     return results
 
@@ -169,12 +189,14 @@ def summary_line(results: list) -> str:
     counts = {}
     for r in results:
         counts[r["status"]] = counts.get(r["status"], 0) + 1
-    unhealthy = [r["website"] for r in results if r["status"] in UNHEALTHY]
+    # OPS-02: FALLBACK is "needs attention" (a dead site selector, silently rescued)
+    # but not fatal -- it's listed here, but does not affect the exit code below.
+    needs_attention = [r["website"] for r in results if r["status"] in NEEDS_ATTENTION]
     parts = ["%s=%d" % (s, counts.get(s, 0)) for s in
-             (STATUS_OK, STATUS_PARTIAL, STATUS_BROKEN, STATUS_ERROR)]
+             (STATUS_OK, STATUS_FALLBACK, STATUS_PARTIAL, STATUS_BROKEN, STATUS_ERROR)]
     line = "Crawler health: " + ", ".join(parts) + " (of %d)" % len(results)
-    if unhealthy:
-        line += " | needs attention: " + ", ".join(unhealthy)
+    if needs_attention:
+        line += " | needs attention: " + ", ".join(needs_attention)
     return line
 
 
@@ -185,6 +207,7 @@ def write_report(results: list, report_dir: str) -> str:
         "generated_at": datetime.now().isoformat(timespec="seconds"),
         "total": len(results),
         "unhealthy": [r["website"] for r in results if r["status"] in UNHEALTHY],
+        "needs_attention": [r["website"] for r in results if r["status"] in NEEDS_ATTENTION],
         "results": results,
     }
     with open(path, "w", encoding="utf-8") as f:
@@ -199,7 +222,9 @@ def log_to_db(results: list) -> None:
     # crawl_log.status CHECK allows only started/completed/failed.
     with client.get_session() as session:
         for r in results:
-            db_status = "completed" if r["status"] == STATUS_OK else "failed"
+            # FALLBACK still produced articles (non-fatal, OPS-02) -- record it as
+            # completed, with the note capturing that a fallback extractor was used.
+            db_status = "completed" if r["status"] in (STATUS_OK, STATUS_FALLBACK) else "failed"
             note = ("%s: %s" % (r["status"], r["note"])) if r["note"] else r["status"]
             session.execute(text(
                 "INSERT INTO crawl_log (website, task, status, article_count, error_msg, finished_at) "
@@ -248,7 +273,8 @@ def main() -> int:
 
     if args.json:
         print(json.dumps({"results": results,
-                          "unhealthy": [r["website"] for r in results if r["status"] in UNHEALTHY]},
+                          "unhealthy": [r["website"] for r in results if r["status"] in UNHEALTHY],
+                          "needs_attention": [r["website"] for r in results if r["status"] in NEEDS_ATTENTION]},
                          ensure_ascii=False, indent=2))
     elif args.quiet:
         print(summary_line(results))

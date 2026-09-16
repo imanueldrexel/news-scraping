@@ -33,12 +33,23 @@ def _load():
 cc = _load()
 
 
-def _detail(text):
-    return SimpleNamespace(extracted_text=text)
+def _detail(text, extractor="site"):
+    return SimpleNamespace(extracted_text=text, meta_data={"extractor": extractor})
 
 
 class TestClassify:
     def test_ok(self):
+        assert cc.classify(sitemap_links=10, detail_ok=2, extractors=["site", "site"]) == cc.STATUS_OK
+
+    def test_ok_when_at_least_one_sample_used_the_site_extractor(self):
+        assert cc.classify(sitemap_links=10, detail_ok=2, extractors=["site", "trafilatura"]) == cc.STATUS_OK
+
+    def test_fallback_when_no_sample_used_the_site_extractor(self):
+        assert cc.classify(sitemap_links=10, detail_ok=2, extractors=["trafilatura", "newspaper"]) == cc.STATUS_FALLBACK
+
+    def test_ok_when_extractors_not_provided(self):
+        """Backward-compatible default: no extractor info at all doesn't demote to
+        FALLBACK -- only a confirmed all-fallback sample set does."""
         assert cc.classify(sitemap_links=10, detail_ok=2) == cc.STATUS_OK
 
     def test_partial_when_no_extraction(self):
@@ -109,6 +120,22 @@ class TestCheckOne:
         assert r["status"] == cc.STATUS_ERROR
         assert "RuntimeError" in r["note"]
 
+    def test_fallback_when_every_sample_was_rescued(self):
+        """OPS-02: articles come through, but the site's own selector produced
+        nothing for any of them -- trafilatura/newspaper are doing all the work."""
+        c = _mock_crawler(details=[_detail(["rescued body"], extractor="trafilatura")])
+        r = cc.check_one("KOMPAS", c, sample_size=2)
+        assert r["status"] == cc.STATUS_FALLBACK
+        assert "trafilatura" in r["note"]
+
+    def test_ok_when_at_least_one_sample_used_the_site_selector(self):
+        c = _mock_crawler(details=[
+            _detail(["site body"], extractor="site"),
+            _detail(["rescued body"], extractor="trafilatura"),
+        ])
+        r = cc.check_one("KOMPAS", c, sample_size=2)
+        assert r["status"] == cc.STATUS_OK
+
 
 class TestReportingHelpers:
     def test_summary_line_flags_unhealthy(self):
@@ -118,6 +145,21 @@ class TestReportingHelpers:
         ]
         line = cc.summary_line(results)
         assert "DETIK" in line and "OK=1" in line
+
+    def test_summary_line_lists_fallback_as_needs_attention_but_counts_separately(self):
+        results = [
+            {"website": "KOMPAS", "status": cc.STATUS_OK, "note": ""},
+            {"website": "CNBC", "status": cc.STATUS_FALLBACK, "note": "x"},
+        ]
+        line = cc.summary_line(results)
+        assert "CNBC" in line
+        assert "FALLBACK=1" in line
+
+    def test_fallback_does_not_affect_exit_code(self):
+        """OPS-02: FALLBACK is needs-attention but non-fatal."""
+        results = [{"website": "CNBC", "status": cc.STATUS_FALLBACK, "note": "", "sitemap_links": 1}]
+        assert not any(r["status"] in cc.UNHEALTHY for r in results)
+        assert any(r["status"] in cc.NEEDS_ATTENTION for r in results)
 
     def test_render_table_has_header_and_rows(self):
         results = [{"website": "KOMPAS", "status": cc.STATUS_OK, "sitemap_links": 5,

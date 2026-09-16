@@ -125,6 +125,15 @@ LIMIT 20;
 ```
 Red flags: `status='failed'`, `article_count=0` for a source that normally produces articles.
 
+### Check which extractor is actually producing article text (OPS-02)
+```sql
+SELECT s.sources, a.meta_data->>'extractor' AS extractor, COUNT(*)
+FROM articles a JOIN sitemaps s ON s.sitemap_id = a.sitemap_id
+GROUP BY 1, 2
+ORDER BY 1, 3 DESC;
+```
+Only populated for articles crawled after OPS-02 landed (2026-09-16) — older rows show `NULL`, since the field wasn't recorded before. A source where every row is `trafilatura`/`newspaper` and none is `site` means the site's own selector is dead even though `check_crawlers.py` may still say `FALLBACK` (or, before this fix, a misleading `OK`) — see `scripts/check_crawlers.py`'s `FALLBACK` status.
+
 ### Check digest generation
 ```sql
 SELECT digest_date, cluster_count, article_count, generation_ms, generated_at

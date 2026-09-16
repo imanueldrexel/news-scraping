@@ -242,6 +242,50 @@ class TestExtractionFallback:
         traf.assert_called_once()
 
 
+class TestExtractorMetadata:
+    """OPS-02: meta_data["extractor"] must record which extractor's output actually
+    won, so check_crawlers.py (and articles.meta_data->>'extractor' in production)
+    can tell "site selector works" apart from "a fallback is quietly doing all the
+    work" -- both currently look identical as plain "OK"."""
+
+    def _sitemap(self):
+        from newscrawler.domain.dtos.dataflow.details.site_map_dto import SitemapDTO
+        return SitemapDTO(headline="t", link="http://ex.com/a", sources="TEST", sitemap_id=1)
+
+    def _run(self, site_text, trafilatura_text=_LONG, newspaper_text="", min_chars=200):
+        import unittest.mock as _mock
+        crawler = _FixedTextCrawler(site_text)
+        with _mock.patch(f"{_CRAWLER_MOD}.MIN_ARTICLE_CHARS", min_chars), \
+             _mock.patch("trafilatura.extract", return_value=trafilatura_text), \
+             _mock.patch(f"{_CRAWLER_MOD}.Article") as art:
+            art.return_value.text = newspaper_text
+            return crawler._get_news_details(self._sitemap())
+
+    def test_usable_site_text_is_labeled_site(self):
+        dto = self._run(site_text=[_LONG])
+        assert dto.meta_data["extractor"] == "site"
+
+    def test_trafilatura_rescue_is_labeled_trafilatura(self):
+        dto = self._run(site_text=[], trafilatura_text=_LONG)
+        assert dto.meta_data["extractor"] == "trafilatura"
+
+    def test_newspaper_rescue_is_labeled_newspaper(self):
+        dto = self._run(site_text=[], trafilatura_text=None, newspaper_text=_LONG)
+        assert dto.meta_data["extractor"] == "newspaper"
+
+    def test_all_extractors_failing_labels_none(self):
+        dto = self._run(site_text=[], trafilatura_text=None, newspaper_text="")
+        assert dto.meta_data["extractor"] is None
+
+    def test_nothing_usable_labels_none_even_if_a_short_candidate_won_best_of(self):
+        """_best_of keeps the current (site) text when the fallback is even
+        shorter, but neither is "usable" -- the final label is None (nothing usable
+        came out of this article at all), not a misleading "site" for text too
+        short to actually be useful."""
+        dto = self._run(site_text=["short"], trafilatura_text="x", newspaper_text="")
+        assert dto.meta_data["extractor"] is None
+
+
 class _RaisingCrawler(_FixedTextCrawler):
     """Site extractors that blow up the way OKEZONE's do on a missing container."""
     def __init__(self, site_text=None, raise_body=False, raise_reporter=False):

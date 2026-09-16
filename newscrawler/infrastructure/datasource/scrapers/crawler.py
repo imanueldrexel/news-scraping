@@ -209,18 +209,32 @@ class Crawler:
                 # Site extractors return None when their container is missing and [] when
                 # it exists but no paragraph matched (layout drift). Both, and anything
                 # shorter than MIN_ARTICLE_CHARS, must fall through to the next extractor.
-                if not self._has_usable_text(extracted_text):
-                    logger.info(f"Standard extraction failed for {url}. Attempting Trafilatura fallback...")
-                    extracted_text = self._best_of(extracted_text, self._trafilatura_fallback(soup))
+                # OPS-02: track which extractor's output actually won, so "OK" in
+                # check_crawlers.py can be told apart from "the site selector is dead
+                # and a fallback is quietly doing all the work".
+                extractor_used = "site"
 
                 if not self._has_usable_text(extracted_text):
-                    extracted_text = self._best_of(extracted_text, self._newspaper_fallback(url))
+                    logger.info(f"Standard extraction failed for {url}. Attempting Trafilatura fallback...")
+                    trafilatura_text = self._trafilatura_fallback(soup)
+                    combined = self._best_of(extracted_text, trafilatura_text)
+                    if trafilatura_text is not None and combined is trafilatura_text:
+                        extractor_used = "trafilatura"
+                    extracted_text = combined
+
+                if not self._has_usable_text(extracted_text):
+                    newspaper_text = self._newspaper_fallback(url)
+                    combined = self._best_of(extracted_text, newspaper_text)
+                    if newspaper_text is not None and combined is newspaper_text:
+                        extractor_used = "newspaper"
+                    extracted_text = combined
 
                 if not self._has_usable_text(extracted_text):
                     logger.warning(
                         f"All extractors returned empty or too-short text for {url} "
                         f"({self._text_length(extracted_text)} chars)"
                     )
+                    extractor_used = None
 
                 # The DTO requires a list. Leaving None here made the DTO fail validation,
                 # which returned None from this method and left the sitemap unmarked --
@@ -230,7 +244,11 @@ class Crawler:
                 elif isinstance(extracted_text, str):
                     extracted_text = [extracted_text] if extracted_text.strip() else []
 
-                meta_data = {"title": sitemap.headline, "posted_at": sitemap.timestamp}
+                meta_data = {
+                    "title": sitemap.headline,
+                    "posted_at": sitemap.timestamp,
+                    "extractor": extractor_used,
+                }
                 return NewsDetailsDTO(
                     sitemap_id=sitemap.sitemap_id,
                     extracted_text=extracted_text,
