@@ -30,15 +30,22 @@ class SQLAlchemyClient:
 
     @contextmanager
     def get_session(self):
+        """Yield a session; roll back on error and re-raise.
+
+        The error must propagate: swallowing it here made a DB outage look like a
+        successful crawl with zero rows (SYS-03). Callers that can tolerate a failure
+        (crawl_log writes, the web UI) wrap this in their own try/except.
+        """
         session = self.Session()
 
         try:
             yield session
 
-        except Exception as e:  # noqa E722
+        except Exception as e:
             logger.error(
-                f"Error occurred when accessing database using SQLAlchemy. Rolling back...\nException: {e}"
+                f"Database error, rolling back: {type(e).__name__}: {str(e).splitlines()[0][:300]}"
             )
             session.rollback()
+            raise
         finally:
             session.close()
