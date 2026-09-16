@@ -55,13 +55,18 @@ class SQLAlchemyNewsletterDataSource:
         source_ids: list,
         generation_ms: int,
     ) -> int:
+        # SYS-23: SQLAlchemy's text() does not recognize ":name" as a bind param
+        # when immediately followed by "::" (the Postgres cast operator) -- it left
+        # ":categories::jsonb"/":source_ids::jsonb" as literal, unsubstituted SQL
+        # text, so this INSERT was never syntactically valid and task=newsletter
+        # has never completed. CAST(:name AS jsonb) has no such ambiguity.
         sql = text("""
             INSERT INTO newsletter_digests
                 (digest_date, file_path, cluster_count, article_count,
                  categories, source_ids, generated_at, generation_ms)
             VALUES
                 (:digest_date, :file_path, :cluster_count, :article_count,
-                 :categories::jsonb, :source_ids::jsonb, NOW(), :generation_ms)
+                 CAST(:categories AS jsonb), CAST(:source_ids AS jsonb), NOW(), :generation_ms)
             ON CONFLICT (digest_date) DO UPDATE SET
                 file_path     = EXCLUDED.file_path,
                 cluster_count = EXCLUDED.cluster_count,
@@ -86,30 +91,29 @@ class SQLAlchemyNewsletterDataSource:
             session.commit()
         return row.digest_id
 
+    # OPS-05 (4): one metric's query and its (key, needs str()) pairing. Queried
+    # independently -- a single missing/broken table (e.g. newsletter_digests
+    # before its migration was applied, ~4 months undetected) used to blank all
+    # seven numbers via one statement of correlated sub-selects in a single
+    # try/except returning {}. Now every other metric still comes through.
+    _STATS_QUERIES = {
+        "total_articles":    ("SELECT COUNT(*) FROM articles", False),
+        "total_chunks":      ("SELECT COUNT(*) FROM chunks", False),
+        "total_entities":    ("SELECT COUNT(*) FROM entities", False),
+        "min_date":          ("SELECT MIN(posted_at) FROM sitemaps", True),
+        "max_date":          ("SELECT MAX(posted_at) FROM sitemaps", True),
+        "digests_generated": ("SELECT COUNT(*) FROM newsletter_digests", False),
+        "last_crawl":        ("SELECT MAX(started_at) FROM crawl_log WHERE status = 'completed'", True),
+    }
+
     def get_stats(self) -> dict:
-        sql = text("""
-            SELECT
-                (SELECT COUNT(*) FROM articles)              AS total_articles,
-                (SELECT COUNT(*) FROM chunks)                AS total_chunks,
-                (SELECT COUNT(*) FROM entities)              AS total_entities,
-                (SELECT MIN(posted_at) FROM sitemaps)        AS min_date,
-                (SELECT MAX(posted_at) FROM sitemaps)        AS max_date,
-                (SELECT COUNT(*) FROM newsletter_digests)    AS digests_generated,
-                (SELECT MAX(started_at) FROM crawl_log
-                 WHERE status = 'completed')                 AS last_crawl
-        """)
-        try:
-            with self.client.get_session() as session:
-                row = session.execute(sql).fetchone()
-            return {
-                "total_articles":   row.total_articles,
-                "total_chunks":     row.total_chunks,
-                "total_entities":   row.total_entities,
-                "min_date":         str(row.min_date) if row.min_date else None,
-                "max_date":         str(row.max_date) if row.max_date else None,
-                "digests_generated": row.digests_generated,
-                "last_crawl":       str(row.last_crawl) if row.last_crawl else None,
-            }
-        except Exception as e:
-            logger.warning(f"Stats query failed (crawl_log may not exist yet): {e}")
-            return {}
+        stats = {}
+        for key, (sql_text, stringify) in self._STATS_QUERIES.items():
+            try:
+                with self.client.get_session() as session:
+                    value = session.execute(text(sql_text)).scalar()
+            except Exception as e:
+                logger.warning(f"Stats query for '{key}' failed: {e}")
+                value = None
+            stats[key] = str(value) if (stringify and value is not None) else value
+        return stats
