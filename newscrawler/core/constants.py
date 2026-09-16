@@ -18,6 +18,12 @@ EXECUTABLE_PATH = os.getenv(
 MAX_WORKER = os.getenv("MAX_WORKER")
 if MAX_WORKER:
     MAX_WORKER = int(MAX_WORKER)
+
+# OPS-01: scripts/notify_telegram.py sends a message via the Bot API when the
+# scheduled crawler health check finds a broken source. Both unset means
+# notifications are silently skipped (logged, not raised) -- see that module.
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 TW_API_KEY = os.getenv("TW_API_KEY")
 TW_API_SECRET_KEY = os.getenv("TW_API_SECRET_KEY")
 TW_BEARER_TOKEN = os.getenv("TW_BEARER_TOKEN")

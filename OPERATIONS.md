@@ -78,11 +78,28 @@ python -m newscrawler.tools.kb_query --ticker GOTO --format json --output goto.j
 
 | Time (WIB) | Task | Command |
 |---|---|---|
+| 05:30 | Crawler health check (OPS-01) | `scripts/run_scheduled_health_check.py` — registered, see below |
 | 06:00 | Morning crawl | `python __main__.py` (task=all) |
 | 06:45 | Knowledge extraction | task=extract_knowledge |
 | 07:00 | Newsletter | task=newsletter |
 | 18:00 | Evening crawl | task=all |
 | 18:45 | Knowledge extraction | task=extract_knowledge |
+
+### Crawler health check (OPS-01)
+
+Registered as a Task Scheduler job named **"NewsAggregator Crawler Health Check"**, daily at 05:30 (`schtasks /Query /TN "NewsAggregator Crawler Health Check" /FO LIST /V` to inspect). It runs `scripts/run_scheduled_health_check.py`, which:
+1. Runs `scripts/check_crawlers.py --quiet --log-db` (exit 0 = all healthy, 1 = one or more BROKEN/PARTIAL/ERROR; also appends a `crawl_log` row per outlet and writes the dated JSON report to `crawler_health/`).
+2. On exit 1, sends a Telegram notification with the one-line summary via `scripts/notify_telegram.py`.
+3. Exits with `check_crawlers.py`'s own code, so the task's "Last Run Result" in Task Scheduler reflects the real outcome independent of whether the notification succeeded.
+
+**Telegram setup** (notifications are silently skipped, logged only, until this is done):
+1. In Telegram, message **@BotFather**, send `/newbot`, follow the prompts — gives a bot token.
+2. Message your new bot anything so it has a conversation with you.
+3. Visit `https://api.telegram.org/bot<TOKEN>/getUpdates` in a browser, find `"chat":{"id": ...}` — that's your chat ID.
+4. Add to `.env`: `TELEGRAM_BOT_TOKEN=...` and `TELEGRAM_CHAT_ID=...`.
+5. Test with `venv\Scripts\python.exe scripts\notify_telegram.py "test message"`.
+
+To re-create or modify the task: `schtasks /Delete /TN "NewsAggregator Crawler Health Check" /F` then re-run the `schtasks /Create` command in `scripts/run_scheduled_health_check.py`'s docstring.
 
 ---
 
