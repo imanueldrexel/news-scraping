@@ -13,6 +13,16 @@ NewsAggregator: crawls ~32 Indonesian news portals (sitemap-driven), keeps only 
 
 Always work in this main repo root, never under `.claude/worktrees/` — the app is run from here.
 
+## Workflow: issue first, then code
+
+Every new bug and every new or changed requirement gets a GitHub issue **before** any code is written — no matter how small the fix, and regardless of whether a human or Claude found it. Then reference the issue in the commit (`Fixes #N` closes it on merge; `Refs #N` links without closing).
+
+- Repo: `imanueldrexel/news-scraping`. Use `gh` (installed at `C:\Program Files\GitHub CLI\gh.exe`, authenticated). From Bash: `"/c/Program Files/GitHub CLI/gh.exe" issue create …`.
+- **Bug:** labels `bug` + one severity (`P0 - critical` silent data loss / nothing produced · `P1 - high` systemic · `P2 - medium` single source · `P3 - low` hygiene) + one area (`area: pipeline` / `area: observability` / `area: scraper` / `area: tech-debt`). Body: Where (`file:line`) · Symptom · Root cause · Evidence · Fix · Done when. Template: `.github/ISSUE_TEMPLATE/bug.md`.
+- **Requirement / improvement:** labels `enhancement` + area. Body: Motivation · Proposal · Done when. Template: `.github/ISSUE_TEMPLATE/requirement.md`.
+- If you discover a bug while working on something else, file it, tell the user the number, and keep going on the original task unless the new bug blocks it.
+- The 2026-09-15 audit is tracked in #25 (findings #2–#24, label `audit-2026-09-15`); the full write-up is `AUDIT_2026-09-15.md`. Scraper fixes should be re-verified with `scripts/check_crawlers.py --website <NAME>` and the resulting health line pasted into the issue before closing.
+
 ## Environment & commands
 
 Windows, PowerShell. Python 3.9 venv at `venv/`. **Always use the venv interpreter**; `requirements.txt` is stale (missing langchain, faiss, google-genai, fastapi, …) — the venv is the source of truth for dependencies.
