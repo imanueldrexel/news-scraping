@@ -164,6 +164,12 @@ FROM chunks WHERE embedding_id IS NULL;
 ```
 `orphan_articles` should be 0 -- an `articles` row with no `chunks` row means `save_chunk_data`'s SQL insert never landed even though the article was saved (SYS-17's exact bug: FAISS had the vectors, `chunks` did not). If nonzero, `scripts/backfill_orphan_chunks.py` repairs it by re-chunking from `articles.extracted_text` (no re-crawl needed) and reuses whatever FAISS already has. `pending_embedding_chunks` nonzero is the opposite direction (DBT-17, still open) -- a `chunks` row that was inserted but never actually embedded into FAISS.
 
+### Check migration status (OPS-05)
+```sql
+SELECT name, applied_at FROM schema_migrations ORDER BY applied_at;
+```
+Compare the row count against `scripts/migrate.py`'s `MIGRATIONS` list -- `tests/integration/test_schema.py::TestSchemaMigrationsTracksEveryFile` fails the suite if any known migration file has no row here. If a new `migrate_*.sql` file is added, add it to both `MIGRATIONS` and CLAUDE.md's documented order, then run `python scripts/migrate.py`.
+
 ### Check for duplicate article rows (DBT-07)
 ```sql
 SELECT COUNT(*) - COUNT(DISTINCT sitemap_id) AS duplicate_rows FROM articles;
@@ -189,11 +195,10 @@ GET http://localhost:8000/api/health
 ## One-Time Setup (first run)
 
 ```bash
-# 1. Run migrations
-psql -U postgres -d newsaggregator -f scripts/migrate_phase2.sql
-psql -U postgres -d newsaggregator -f scripts/migrate_phase3.sql
-psql -U postgres -d newsaggregator -f scripts/migrate_phase4.sql
-psql -U postgres -d newsaggregator -f scripts/migrate_phase5.sql
+# 1. Run migrations (OPS-05: applies every scripts/migrate_*.sql the DB doesn't
+#    already have, in CLAUDE.md's documented order, and records each one in a
+#    schema_migrations table so a second run is a no-op)
+python scripts/migrate.py
 
 # 2. Set GEMINI_API_KEY
 export GEMINI_API_KEY=your_key_here

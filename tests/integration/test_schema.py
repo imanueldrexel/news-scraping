@@ -323,3 +323,108 @@ class TestSitemapsCrawlAttemptColumn:
         assert row is not None, "Bug B: last_crawl_attempt column missing from sitemaps"
         assert row[0].startswith("timestamp"), f"expected timestamp, got {row[0]}"
         assert row[1] == "YES", "last_crawl_attempt must be nullable"
+
+
+# ---------------------------------------------------------------------------
+# OPS-05 (3): the ORM (table.py/knowledge_table.py) and the real schema must not
+# drift apart -- several past outages (is_embedded int vs bool, phase3 never
+# applied for ~4 months) were exactly this class of bug, caught only by a human
+# reading production data. Reflects the real DB and compares against every
+# ORM-declared table/column instead of hand-listing them one at a time.
+# ---------------------------------------------------------------------------
+
+class TestOrmMatchesRealSchema:
+    @pytest.fixture(scope="class")
+    def inspector(self):
+        from sqlalchemy import inspect
+        # Import both so Base.metadata is fully populated -- knowledge_table.py's
+        # tables (entities/entity_aliases/entity_mentions/api_usage_log) only
+        # register themselves as a side effect of being imported at all.
+        from newscrawler.infrastructure.datasource.dataflow.write.sqlalchemy import table  # noqa: F401
+        from newscrawler.infrastructure.datasource.dataflow.write.sqlalchemy import knowledge_table  # noqa: F401
+        from newscrawler.infrastructure.network.clients.sqlalchemy_client import SQLAlchemyClient
+        client = SQLAlchemyClient()
+        return inspect(client.Session().get_bind())
+
+    def test_every_orm_table_exists_in_the_real_schema(self, inspector):
+        from newscrawler.infrastructure.datasource.dataflow.write.sqlalchemy.table import Base
+        real_tables = set(inspector.get_table_names())
+        missing = sorted(t for t in Base.metadata.tables if t not in real_tables)
+        assert not missing, f"ORM declares table(s) missing from the real schema: {missing}"
+
+    def test_every_orm_column_exists_in_the_real_schema(self, inspector):
+        from newscrawler.infrastructure.datasource.dataflow.write.sqlalchemy.table import Base
+        problems = []
+        for table_name, table_obj in Base.metadata.tables.items():
+            try:
+                real_columns = {c["name"] for c in inspector.get_columns(table_name)}
+            except Exception:
+                continue  # table itself missing -- reported by the test above
+            for col in table_obj.columns:
+                if col.name not in real_columns:
+                    problems.append(f"{table_name}.{col.name}")
+        assert not problems, f"ORM declares column(s) missing from the real schema: {problems}"
+
+
+# ---------------------------------------------------------------------------
+# OPS-05: tables/columns touched only via raw text() SQL (not ORM-declared) --
+# newsletter_digests (phase3), sitemaps.cluster_id (phase3), crawl_log (phase5),
+# schema_migrations (the migration tracker itself).
+# ---------------------------------------------------------------------------
+
+class TestRawSqlOnlyArtifactsExist:
+    @pytest.mark.parametrize("column", [
+        "digest_id", "digest_date", "file_path", "cluster_count",
+        "article_count", "categories", "source_ids", "generated_at", "generation_ms",
+    ])
+    def test_newsletter_digests_column_exists(self, conn, column):
+        cur = _exec(conn, """
+            SELECT 1 FROM information_schema.columns
+            WHERE table_name = 'newsletter_digests' AND column_name = %s
+        """, (column,))
+        assert cur.fetchone() is not None, f"newsletter_digests.{column} missing (migrate_phase3.sql)"
+
+    def test_sitemaps_has_cluster_id_column(self, conn):
+        cur = _exec(conn, """
+            SELECT 1 FROM information_schema.columns
+            WHERE table_name = 'sitemaps' AND column_name = 'cluster_id'
+        """)
+        assert cur.fetchone() is not None, "sitemaps.cluster_id missing (migrate_phase3.sql)"
+
+    @pytest.mark.parametrize("column", [
+        "log_id", "website", "task", "status", "article_count", "error_msg", "started_at", "finished_at",
+    ])
+    def test_crawl_log_column_exists(self, conn, column):
+        cur = _exec(conn, """
+            SELECT 1 FROM information_schema.columns
+            WHERE table_name = 'crawl_log' AND column_name = %s
+        """, (column,))
+        assert cur.fetchone() is not None, f"crawl_log.{column} missing (migrate_phase5.sql)"
+
+
+# ---------------------------------------------------------------------------
+# OPS-05 (2): schema_migrations (scripts/migrate.py) must have a row for every
+# migration file the codebase knows about -- catches "the file exists in scripts/
+# but nobody ran scripts/migrate.py against this DB after adding it" before it
+# becomes a silent 4-month gap like phase3's.
+# ---------------------------------------------------------------------------
+
+class TestSchemaMigrationsTracksEveryFile:
+    @pytest.fixture(scope="class")
+    def migrate_module(self):
+        import importlib.util
+        path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+                            "scripts", "migrate.py")
+        spec = importlib.util.spec_from_file_location("migrate", path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+
+    def test_schema_migrations_has_a_row_for_every_known_migration(self, conn, migrate_module):
+        cur = _exec(conn, "SELECT name FROM schema_migrations")
+        recorded = {row[0] for row in cur.fetchall()}
+        missing = [m for m in migrate_module.MIGRATIONS if m not in recorded]
+        assert not missing, (
+            f"schema_migrations has no row for: {missing} -- "
+            f"run `python scripts/migrate.py` against this DB"
+        )

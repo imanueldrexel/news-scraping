@@ -18,7 +18,7 @@ Always work in this main repo root, never under `.claude/worktrees/` — the app
 Every new bug and every new or changed requirement gets a GitHub issue **before** any code is written — no matter how small the fix, and regardless of whether a human or Claude found it. Then reference the issue in the commit (`Fixes #N` closes it on merge; `Refs #N` links without closing).
 
 - Repo: `imanueldrexel/news-scraping`. Use `gh` (installed at `C:\Program Files\GitHub CLI\gh.exe`, authenticated). From Bash: `"/c/Program Files/GitHub CLI/gh.exe" issue create …`.
-- **Tickets are referred to by their ID, not the GitHub number.** Every issue title starts with `[AREA-NN]` — `SYS` pipeline · `OPS` observability/tooling · `SRC` per-source scraper · `DBT` tech debt — using the next free number for that prefix (`gh issue list --state all --search "[SYS-" --json title`). In conversation, commit subjects, `EXPERIMENTS.md` and issue comments write `SYS-01` (or `SYS-01 (#2)` when the link matters); the commit *footer* still needs `Fixes #N` / `Refs #N` for GitHub auto-linking. Current map: SYS-01..07 = #2..#8, OPS-01..03 = #9..#11, SRC-01..08 = #12..#19, DBT-01..05 = #20..#24, tracker #25 (2026-09-15 audit) and #56 (2026-09-16 deep audit), SYS-08 = #26, SYS-09 = #27, SYS-10 = #28, DBT-06 = #29, SYS-11 = #30, SYS-12 = #31, SYS-13 = #32, SYS-14 = #33, DBT-07 = #34, SYS-15 = #36, SYS-16..22 = #37..#43, DBT-09..16 = #44..#51, OPS-04..07 = #52..#55, SRC-09 = #57, DBT-17 = #58. (#35 was a duplicate of SYS-10, closed.)
+- **Tickets are referred to by their ID, not the GitHub number.** Every issue title starts with `[AREA-NN]` — `SYS` pipeline · `OPS` observability/tooling · `SRC` per-source scraper · `DBT` tech debt — using the next free number for that prefix (`gh issue list --state all --search "[SYS-" --json title`). In conversation, commit subjects, `EXPERIMENTS.md` and issue comments write `SYS-01` (or `SYS-01 (#2)` when the link matters); the commit *footer* still needs `Fixes #N` / `Refs #N` for GitHub auto-linking. Current map: SYS-01..07 = #2..#8, OPS-01..03 = #9..#11, SRC-01..08 = #12..#19, DBT-01..05 = #20..#24, tracker #25 (2026-09-15 audit) and #56 (2026-09-16 deep audit), SYS-08 = #26, SYS-09 = #27, SYS-10 = #28, DBT-06 = #29, SYS-11 = #30, SYS-12 = #31, SYS-13 = #32, SYS-14 = #33, DBT-07 = #34, SYS-15 = #36, SYS-16..22 = #37..#43, DBT-09..16 = #44..#51, OPS-04..07 = #52..#55, SRC-09 = #57, DBT-17 = #58, SYS-23 = #59. (#35 was a duplicate of SYS-10, closed.)
 - **Bug:** labels `bug` + one severity (`P0 - critical` silent data loss / nothing produced · `P1 - high` systemic · `P2 - medium` single source · `P3 - low` hygiene) + one area (`area: pipeline` / `area: observability` / `area: scraper` / `area: tech-debt`). Body: Where (`file:line`) · Symptom · Root cause · Evidence · Fix · Done when. Template: `.github/ISSUE_TEMPLATE/bug.md`.
 - **Requirement / improvement:** labels `enhancement` + area. Body: Motivation · Proposal · Done when. Template: `.github/ISSUE_TEMPLATE/requirement.md`.
 - If you discover a bug while working on something else, file it, tell the user the number, and keep going on the original task unless the new bug blocks it.
@@ -66,7 +66,12 @@ venv\Scripts\python.exe scripts/check_crawlers.py --website KOMPAS,DETIK --sampl
 # Re-crawl sitemaps that have no article row
 venv\Scripts\python.exe scripts/backfill_missing_articles.py --website WARTAEKONOMI
 
-# Schema migrations (hand-written SQL, run once, in this order on a fresh DB)
+# Schema migrations (hand-written SQL, run once, in this order on a fresh DB).
+# OPS-05: scripts/migrate.py applies whichever of these a DB doesn't yet have,
+# recording each in a schema_migrations table -- prefer it over running these by
+# hand; the list below is authoritative and scripts/migrate.py's MIGRATIONS must
+# match it. migrate_posted_at.sql is superseded/dead (references a nonexistent
+# init.sql bootstrap; not in this list on purpose) and kept only for reference.
 psql -U postgres -d newsaggregator -f scripts/migrate_phase1.sql
 psql -U postgres -d newsaggregator -f scripts/migrate_articles_columns.sql
 psql -U postgres -d newsaggregator -f scripts/migrate_sitemap_crawl_attempt.sql
@@ -75,6 +80,7 @@ psql -U postgres -d newsaggregator -f scripts/migrate_phase3.sql   # newsletter_
 psql -U postgres -d newsaggregator -f scripts/migrate_phase4.sql
 psql -U postgres -d newsaggregator -f scripts/migrate_phase5.sql   # crawl_log
 psql -U postgres -d newsaggregator -f scripts/migrate_articles_unique_sitemap.sql   # DBT-07: dedup + unique articles.sitemap_id (required by save_newsdetails' ON CONFLICT)
+psql -U postgres -d newsaggregator -f scripts/migrate_extracted_text_prose.sql   # SYS-18: rewrite articles.extracted_text from a Postgres array literal to prose
 psql -U postgres -d newsaggregator -f scripts/migrate_sitemap_crawl_status.sql   # SYS-16: sitemaps.crawl_status (pending/rejected_filter/empty_extraction/saved); run scripts/backfill_sitemap_crawl_status.py after to classify existing rows
 psql -U postgres -d newsaggregator -f scripts/migrate_knowledge_extract_attempts.sql   # SYS-19: articles.knowledge_extract_attempts/last_extract_error, poison-pill exclusion
 ```
