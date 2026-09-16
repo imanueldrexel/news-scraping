@@ -34,6 +34,25 @@ class CrawlerAPI:
             logger.info(f"Running task '{task}' (website-agnostic)...")
             self.crawl_website(website_name="", task=task)
             return
+
+        # One source must not take the rest of the run down with it (SYS-12). The
+        # service layer already records each failure in crawl_log and re-raises; here
+        # we isolate per source, keep going, and surface a single error at the end.
+        succeeded, failed = [], {}
         for website_name in website_names:
             logger.info(f"Start scraping data for {website_name}...")
-            self.crawl_website(website_name=website_name, task=task)
+            try:
+                self.crawl_website(website_name=website_name, task=task)
+                succeeded.append(website_name)
+            except Exception as e:
+                failed[website_name] = f"{type(e).__name__}: {str(e).splitlines()[0][:200] if str(e) else ''}"
+                logger.error(f"{website_name} failed ({task}): {failed[website_name]}", exc_info=True)
+
+        logger.info(
+            f"Batch '{task}' finished: ok={len(succeeded)} failed={len(failed)}"
+            + (f" | failed: {', '.join(f'{w} ({m})' for w, m in failed.items())}" if failed else "")
+        )
+        if failed:
+            raise RuntimeError(
+                f"{len(failed)} of {len(website_names)} sources failed: {', '.join(failed)}"
+            )
