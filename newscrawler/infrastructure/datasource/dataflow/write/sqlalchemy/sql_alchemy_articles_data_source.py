@@ -81,16 +81,23 @@ class SQLAlchemyArticleDataSource:
         with self.client.get_session() as session:
             for newsdetail in newsdetails:
                 try:
-                    stmt = pg_insert(NewsArticlesTable).values(
-                        sitemap_id=newsdetail.sitemap_id,
-                        extracted_text=newsdetail.extracted_text,
-                        writer=newsdetail.reporter,
-                        meta_data=newsdetail.meta_data,
-                        is_embedded=newsdetail.is_embedded,
-                        knowledge_extracted=0,
-                        knowledge_extracted_at=None,
-                    ).on_conflict_do_nothing(index_elements=[NewsArticlesTable.sitemap_id])
-                    session.execute(stmt)
+                    # SYS-15: isolate each row in its own savepoint (matching
+                    # save_sitemaps' begin_nested pattern) so a bad row rolls back
+                    # only itself instead of aborting the whole session's
+                    # transaction -- without this, one FK/constraint error here
+                    # poisons the transaction and every later row's execute()
+                    # (and the final commit) silently no-ops instead of persisting.
+                    with session.begin_nested():
+                        stmt = pg_insert(NewsArticlesTable).values(
+                            sitemap_id=newsdetail.sitemap_id,
+                            extracted_text=newsdetail.extracted_text,
+                            writer=newsdetail.reporter,
+                            meta_data=newsdetail.meta_data,
+                            is_embedded=newsdetail.is_embedded,
+                            knowledge_extracted=0,
+                            knowledge_extracted_at=None,
+                        ).on_conflict_do_nothing(index_elements=[NewsArticlesTable.sitemap_id])
+                        session.execute(stmt)
                 except BaseException as e:
                     logger.error(
                         f"Failed to add sitemap: {newsdetail}\nException: {e}"
