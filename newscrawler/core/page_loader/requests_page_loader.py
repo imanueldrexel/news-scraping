@@ -38,7 +38,11 @@ class RequestsPageLoader(PageLoader):
                 url_path, headers=self.headers, timeout=(10, 27), stream=True
             )
             return response
-        except requests.exceptions.ReadTimeout or requests.exceptions.ConnectionError:
+        except (requests.exceptions.ReadTimeout, requests.exceptions.ConnectionError):
+            # SYS-05: `A or B` on two exception classes evaluates to `A`, so this
+            # used to catch only ReadTimeout -- a ConnectionError (reset, DNS, TLS)
+            # fell straight through to the generic `except BaseException` below and
+            # got exactly one attempt instead of being retried.
             for idx in range(self.max_retries):
                 logger.info(f"Retry {idx} to connect")
                 try:
@@ -46,10 +50,7 @@ class RequestsPageLoader(PageLoader):
                         url_path, headers=self.headers, timeout=(20, 30)
                     )
                     return response
-                except (
-                    requests.exceptions.ReadTimeout
-                    or requests.exceptions.ConnectionError
-                ):
+                except (requests.exceptions.ReadTimeout, requests.exceptions.ConnectionError):
                     continue
             return None
         except BaseException as e:
