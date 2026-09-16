@@ -222,6 +222,14 @@ class Crawler:
                         f"({self._text_length(extracted_text)} chars)"
                     )
 
+                # The DTO requires a list. Leaving None here made the DTO fail validation,
+                # which returned None from this method and left the sitemap unmarked --
+                # the retry-forever loop SYS-02 was meant to close.
+                if extracted_text is None:
+                    extracted_text = []
+                elif isinstance(extracted_text, str):
+                    extracted_text = [extracted_text] if extracted_text.strip() else []
+
                 meta_data = {"title": sitemap.headline, "posted_at": sitemap.timestamp}
                 return NewsDetailsDTO(
                     sitemap_id=sitemap.sitemap_id,

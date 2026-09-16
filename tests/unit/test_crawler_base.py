@@ -304,6 +304,18 @@ class TestExtractorCrashFallsThrough:
             self._run(_RaisingCrawler(raise_body=True))
         assert any("Site extractor raised" in r.message for r in caplog.records)
 
+    def test_XC05_crash_plus_all_fallbacks_empty_still_yields_dto(self):
+        """Re-audit gap: None text failed DTO validation -> returned None -> never marked."""
+        dto, _ = self._run(_RaisingCrawler(raise_body=True), trafilatura_text=None)
+        assert dto is not None
+        assert dto.extracted_text == []
+        assert dto.sitemap_id == 1
+
+    def test_XC06_none_from_extractor_plus_all_fallbacks_empty_still_yields_dto(self):
+        dto, _ = self._run(_RaisingCrawler(site_text=None), trafilatura_text=None)
+        assert dto is not None
+        assert dto.extracted_text == []
+
 
 class TestHasUsableText:
     def test_UT01_none_empty_string_empty_list_are_unusable(self):
