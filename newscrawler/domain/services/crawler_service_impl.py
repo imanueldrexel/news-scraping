@@ -108,6 +108,13 @@ class CrawlerServiceImpl(CrawlerService):
             
             # --- Semantic Filtering ---
             important_newsdetails = []
+            # SYS-16: a rejection is either permanent (real text, but off-topic --
+            # the same headline/body will fail the same INTERESTS check every time)
+            # or transient (no extractor produced usable text this run -- a layout
+            # fix or a later attempt could still succeed). Only the former should
+            # stop being re-queued; the latter keeps the normal cooldown retry.
+            rejected_filter_ids = []
+            empty_extraction_ids = []
             for news in newsdetails:
                 try:
                     # Construct text for checking (Title + Content Snippet)
@@ -115,17 +122,24 @@ class CrawlerServiceImpl(CrawlerService):
                     # Clean/prepare text snippet
                     full_text = " ".join(news.extracted_text) if isinstance(news.extracted_text, list) else str(news.extracted_text)
                     check_text = f"{title} {full_text[:500]}"
-                    
+
                     if self.semantic_filter.is_important(check_text):
                         important_newsdetails.append(news)
-                    # else:
-                    #     logger.debug(f"Skipped unimportant article: {news.sitemap_id}")
+                    elif full_text.strip():
+                        rejected_filter_ids.append(news.sitemap_id)
+                    else:
+                        empty_extraction_ids.append(news.sitemap_id)
                 except Exception as e:
                     logger.warning(f"Error filtering news {news.sitemap_id}: {e}")
-                    
+
             passed_filter_total += len(important_newsdetails)
             logger.info(f"                  Filtered: {len(newsdetails) - len(important_newsdetails)} unimportant articles.")
             logger.info(f"                  Remaining: {len(important_newsdetails)} important articles.")
+
+            if rejected_filter_ids:
+                self.data_flow_repo.mark_sitemaps_status(rejected_filter_ids, "rejected_filter")
+            if empty_extraction_ids:
+                self.data_flow_repo.mark_sitemaps_status(empty_extraction_ids, "empty_extraction")
 
             if important_newsdetails:
                 try:
@@ -143,6 +157,7 @@ class CrawlerServiceImpl(CrawlerService):
                         logger.info(f"Embedded {len(embedded_sitemap_ids)} articles as chunks, batch {i//batch_size+1}")
                         to_save = [n for n in important_newsdetails if n.sitemap_id in set(embedded_sitemap_ids)]
                         self.save_scraped_data(to_save)
+                        self.data_flow_repo.mark_sitemaps_status([n.sitemap_id for n in to_save], "saved")
                         saved_total += len(to_save)
                         logger.info(f"Saved batch {i//batch_size+1} for {website_name}")
                 except Exception as e:

@@ -117,6 +117,16 @@ LIMIT 7;
 ```
 If today's digest is missing after 07:30 WIB, run newsletter task manually.
 
+### Check sitemap terminal-state distribution (SYS-16)
+```sql
+SELECT crawl_status, COUNT(*) AS sitemaps,
+       COUNT(*) FILTER (WHERE last_crawl_attempt < NOW() - INTERVAL '7 days') AS past_cooldown
+FROM sitemaps
+GROUP BY crawl_status
+ORDER BY sitemaps DESC;
+```
+`rejected_filter` rows are excluded from `load_all_sitemaps` permanently (off-topic, will fail the same semantic filter again) — a large and growing `pending`+`past_cooldown` count for a source that keeps producing few articles usually means its extractor is broken (`empty_extraction`), not that it has nothing to say; check `scripts/check_crawlers.py --website <NAME>` before assuming the source has gone quiet. If `INTERESTS` or the filter threshold changes, re-run `scripts/backfill_sitemap_crawl_status.py` to reclassify — `rejected_filter` is a one-time decision, not re-evaluated automatically.
+
 ### Check for duplicate article rows (DBT-07)
 ```sql
 SELECT COUNT(*) - COUNT(DISTINCT sitemap_id) AS duplicate_rows FROM articles;

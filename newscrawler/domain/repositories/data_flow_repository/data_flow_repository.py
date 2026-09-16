@@ -30,6 +30,9 @@ class DataFlowRepository:
     def mark_sitemaps_attempted(self, sitemap_ids: List[int]) -> None:
         raise NotImplementedError
 
+    def mark_sitemaps_status(self, sitemap_ids: List[int], status: str) -> None:
+        raise NotImplementedError
+
     def extract_knowledge(self, batch_size: Optional[int] = None) -> int:
         raise NotImplementedError
 

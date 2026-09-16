@@ -34,6 +34,7 @@ class SitemapTable(Base):
     posted_at = Column(Integer)  # Changed from TIMESTAMP to BigInteger
     keywords = Column(JSON, nullable=True)
     last_crawl_attempt = Column(TIMESTAMP, nullable=True)
+    crawl_status = Column(String, nullable=False, default='pending')
 
     def __init__(self, sitemap: NewsSitemapModel):
         self.headline = sitemap.headline

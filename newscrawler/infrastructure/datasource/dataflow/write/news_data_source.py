@@ -48,6 +48,9 @@ class NewsDataSource:
     def mark_sitemaps_attempted(self, sitemap_ids: List[int]):
         self.sql_alchemy_sitemap.mark_sitemaps_attempted(sitemap_ids)
 
+    def mark_sitemaps_status(self, sitemap_ids: List[int], status: str):
+        self.sql_alchemy_sitemap.mark_sitemaps_status(sitemap_ids, status)
+
     def load_sitemap(
         self, website: str, n_limit: int
     ) -> List[NewsSitemapModel]:

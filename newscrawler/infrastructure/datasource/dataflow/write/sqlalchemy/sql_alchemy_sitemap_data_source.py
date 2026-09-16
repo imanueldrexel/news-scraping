@@ -160,6 +160,13 @@ class SQLAlchemySitemapDataSource:
                 f"ON a.{SitemapTable.sitemap_id.name} = b.{NewsArticlesTable.sitemap_id.name} "
                 f"WHERE {SitemapTable.sources.name} = {website} "
                 f"AND b.{NewsArticlesTable.sitemap_id.name} is NULL "
+                # SYS-16: a sitemap the semantic filter already rejected is a
+                # deterministic, permanent "no" (same headline/text, same
+                # INTERESTS list) -- re-fetching it every cooldown window forever
+                # wastes the per-run budget that should go to genuinely-pending
+                # sitemaps. empty_extraction and pending both still retry normally,
+                # since a layout fix or a first attempt can change their outcome.
+                f"AND a.{SitemapTable.crawl_status.name} != 'rejected_filter' "
                 f"AND (a.{SitemapTable.last_crawl_attempt.name} IS NULL "
                 f"     OR a.{SitemapTable.last_crawl_attempt.name} < NOW() - INTERVAL '{SITEMAP_RECRAWL_COOLDOWN_DAYS} days') "
                 f"ORDER BY a.{SitemapTable.posted_at.name} DESC "
@@ -197,5 +204,27 @@ class SQLAlchemySitemapDataSource:
                     f"WHERE {SitemapTable.sitemap_id.name} = ANY(:ids)"
                 ),
                 {"ids": list(sitemap_ids)},
+            )
+            session.commit()
+
+    VALID_CRAWL_STATUSES = {"pending", "rejected_filter", "empty_extraction", "saved"}
+
+    def mark_sitemaps_status(self, sitemap_ids, status: str):
+        """SYS-16: set crawl_status for the given sitemap_ids, distinguishing a
+        permanent semantic-filter rejection from a transient empty-extraction
+        failure so load_all_sitemaps can exclude the former without changing the
+        retry cooldown for the latter."""
+        if not sitemap_ids:
+            return
+        if status not in self.VALID_CRAWL_STATUSES:
+            raise ValueError(f"Invalid crawl_status: {status!r}")
+        with self.client.get_session() as session:
+            session.execute(
+                text(
+                    f"UPDATE {SitemapTable.__tablename__} "
+                    f"SET {SitemapTable.crawl_status.name} = :status "
+                    f"WHERE {SitemapTable.sitemap_id.name} = ANY(:ids)"
+                ),
+                {"status": status, "ids": list(sitemap_ids)},
             )
             session.commit()
