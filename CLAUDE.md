@@ -74,6 +74,7 @@ psql -U postgres -d newsaggregator -f scripts/migrate_phase2.sql   # entities, e
 psql -U postgres -d newsaggregator -f scripts/migrate_phase3.sql   # newsletter_digests
 psql -U postgres -d newsaggregator -f scripts/migrate_phase4.sql
 psql -U postgres -d newsaggregator -f scripts/migrate_phase5.sql   # crawl_log
+psql -U postgres -d newsaggregator -f scripts/migrate_articles_unique_sitemap.sql   # DBT-07: dedup + unique articles.sitemap_id (required by save_newsdetails' ON CONFLICT)
 ```
 
 Known-broken test: `tests/test_agents.py` imports `newscrawler.agents`, which no longer exists — it fails at collection. Run `tests/unit` / `tests/integration` explicitly rather than bare `pytest`.
