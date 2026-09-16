@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 
 from sqlalchemy import text
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from newscrawler.infrastructure.datasource.dataflow.model.news_details_model import (
     NewsDetailsModel,
@@ -74,15 +75,25 @@ class SQLAlchemyArticleDataSource:
     # ── Article persistence ───────────────────────────────────────────────────
 
     def save_newsdetails(self, newsdetails: List[NewsDetailsModel]):
+        # DBT-07: a re-crawl of a sitemap that already has an article row must not
+        # create a duplicate -- upsert on the unique sitemap_id index instead of a
+        # plain insert.
         with self.client.get_session() as session:
             for newsdetail in newsdetails:
-
                 try:
-                    entry = NewsArticlesTable(newsdetail)
-                    session.add(entry)
+                    stmt = pg_insert(NewsArticlesTable).values(
+                        sitemap_id=newsdetail.sitemap_id,
+                        extracted_text=newsdetail.extracted_text,
+                        writer=newsdetail.reporter,
+                        meta_data=newsdetail.meta_data,
+                        is_embedded=newsdetail.is_embedded,
+                        knowledge_extracted=0,
+                        knowledge_extracted_at=None,
+                    ).on_conflict_do_nothing(index_elements=[NewsArticlesTable.sitemap_id])
+                    session.execute(stmt)
                 except BaseException as e:
                     logger.error(
-                        f"Failed to add sitemap: {newsdetails}\nException: {e}"
+                        f"Failed to add sitemap: {newsdetail}\nException: {e}"
                     )
 
             session.commit()

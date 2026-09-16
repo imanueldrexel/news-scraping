@@ -117,6 +117,12 @@ LIMIT 7;
 ```
 If today's digest is missing after 07:30 WIB, run newsletter task manually.
 
+### Check for duplicate article rows (DBT-07)
+```sql
+SELECT COUNT(*) - COUNT(DISTINCT sitemap_id) AS duplicate_rows FROM articles;
+```
+Should be 0 — `articles_sitemap_id_uq` (see `scripts/migrate_articles_unique_sitemap.sql`) prevents new duplicates; a nonzero count means the unique index is missing or was dropped.
+
 ### Check entity extraction progress
 ```sql
 SELECT

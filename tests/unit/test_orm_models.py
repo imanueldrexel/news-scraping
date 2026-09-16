@@ -106,3 +106,15 @@ class TestArticlesTableBooleanFields:
         assert isinstance(col.type, Boolean), (
             f"BUG 9: is_embedded column type should be Boolean, got {type(col.type).__name__}"
         )
+
+
+class TestArticlesTableUniqueSitemapId:
+    """DBT-07: one articles row per sitemap_id, enforced at the ORM level too so
+    the model doesn't drift from scripts/migrate_articles_unique_sitemap.sql."""
+
+    def test_sitemap_id_column_declares_unique(self):
+        col = NewsArticlesTable.__table__.c.sitemap_id
+        assert col.unique, (
+            "DBT-07: NewsArticlesTable.sitemap_id must declare unique=True to match "
+            "the articles_sitemap_id_uq index"
+        )

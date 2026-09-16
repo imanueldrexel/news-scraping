@@ -55,6 +55,7 @@ class NewsArticlesTable(Base):
     sitemap_id = Column(
         Integer,
         ForeignKey(f"{SitemapTable.__tablename__}.{SitemapTable.sitemap_id.name}"),
+        unique=True,
     )
     extracted_text = Column(String, nullable=False)
     meta_data = Column(JSON)
