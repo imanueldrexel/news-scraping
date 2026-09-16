@@ -8,7 +8,7 @@ from typing import List, Dict, Union, Any, Tuple
 
 import pydantic
 
-from newscrawler.core.constants import VERBOSE, PARALLELIZE, MAX_WORKER
+from newscrawler.core.constants import VERBOSE, PARALLELIZE, MAX_WORKER, MIN_ARTICLE_CHARS
 from newscrawler.core.page_loader.requests_page_loader import RequestsPageLoader
 from newscrawler.domain.dtos.dataflow.details.news_details_dto import NewsDetailsDTO
 from newscrawler.domain.dtos.dataflow.details.site_map_dto import SitemapDTO
@@ -193,36 +193,22 @@ class Crawler:
             if soup:
                 reporter = self._get_reporter_from_text(soup)
                 extracted_text = self._get_whole_text(soup)
-                
-                # --- Trafilatura Fallback ---
-                if (extracted_text is None or extracted_text == ""):
-                    logger.info(f"Standard extraction failed for {url}. Attempting Trafilatura fallback...")
-                    try:
-                        # We need the HTML string for trafilatura
-                        # soup.html might be None if soup is a fragment, but usually it works.
-                        # efficiently we might want to pass the raw response text if available, 
-                        # but soup is what we have here.
-                        import trafilatura
-                        html_string = str(soup) 
-                        extracted_text = trafilatura.extract(html_string)
-                        if extracted_text:
-                            # Trafilatura returns a single string, we might want to split it 
-                            # if the downstream expects a list, or keep it as string.
-                            # Looking at line 202: extracted_text = article.text.split("\n\n")
-                            # The DTO seems to accept List or String (based on other code), 
-                            # but line 207 passes it directly. 
-                            # Let's keep it consistent with the "Article" fallback below (line 202).
-                            extracted_text = extracted_text.split("\n\n")
-                            logger.info("Trafilatura extraction successful.")
-                    except Exception as t_err:
-                        logger.warning(f"Trafilatura fallback failed: {t_err}")
 
-                if(extracted_text is None or extracted_text == ""):
-                    article = Article(url)
-                    article.download()
-                    article.parse()
-                    if article.text:
-                        extracted_text = article.text.split("\n\n")
+                # Site extractors return None when their container is missing and [] when
+                # it exists but no paragraph matched (layout drift). Both, and anything
+                # shorter than MIN_ARTICLE_CHARS, must fall through to the next extractor.
+                if not self._has_usable_text(extracted_text):
+                    logger.info(f"Standard extraction failed for {url}. Attempting Trafilatura fallback...")
+                    extracted_text = self._best_of(extracted_text, self._trafilatura_fallback(soup))
+
+                if not self._has_usable_text(extracted_text):
+                    extracted_text = self._best_of(extracted_text, self._newspaper_fallback(url))
+
+                if not self._has_usable_text(extracted_text):
+                    logger.warning(
+                        f"All extractors returned empty or too-short text for {url} "
+                        f"({self._text_length(extracted_text)} chars)"
+                    )
 
                 meta_data = {"title": sitemap.headline, "posted_at": sitemap.timestamp}
                 return NewsDetailsDTO(
@@ -233,6 +219,51 @@ class Crawler:
                 )
         except BaseException as e:
             logger.info(f"Error in get_content {sitemap.link}. Reason: {e}")
+
+    @staticmethod
+    def _text_length(extracted_text) -> int:
+        """Total characters in an extraction result (None, str, or list of paragraphs)."""
+        if not extracted_text:
+            return 0
+        if isinstance(extracted_text, str):
+            return len(extracted_text.strip())
+        return sum(len(p.strip()) for p in extracted_text if p)
+
+    @classmethod
+    def _has_usable_text(cls, extracted_text) -> bool:
+        length = cls._text_length(extracted_text)
+        return length > 0 and length >= MIN_ARTICLE_CHARS
+
+    @classmethod
+    def _best_of(cls, current, candidate):
+        """Keep whichever extraction result has more text, so a failed fallback never
+        replaces a short-but-real result with nothing."""
+        return candidate if cls._text_length(candidate) > cls._text_length(current) else current
+
+    @staticmethod
+    def _trafilatura_fallback(soup) -> Union[List[str], None]:
+        try:
+            import trafilatura
+            text = trafilatura.extract(str(soup))
+        except Exception as t_err:
+            logger.warning(f"Trafilatura fallback failed: {t_err}")
+            return None
+        if not text:
+            return None
+        logger.info("Trafilatura extraction successful.")
+        # Split into paragraphs to match the shape site extractors return.
+        return text.split("\n\n")
+
+    @staticmethod
+    def _newspaper_fallback(url) -> Union[List[str], None]:
+        try:
+            article = Article(url)
+            article.download()
+            article.parse()
+        except Exception as n_err:
+            logger.warning(f"Newspaper fallback failed: {n_err}")
+            return None
+        return article.text.split("\n\n") if article.text else None
 
     @abstractmethod
     def _get_reporter_from_text(self, soup) -> List[str]:

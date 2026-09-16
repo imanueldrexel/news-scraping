@@ -24,7 +24,7 @@ One line each; read this before starting on a scraper or pipeline problem.
 - **Changing the User-Agent does not fix any current sitemap failure.** All 32 sitemap URLs return the same status with the 2017 default UA and a modern Chrome UA. 403s (BISNIS, IDNTIMES) are server-side bot protection, 404s are dead URLs. → [2026-09-15 UA probe](#2026-09-15--user-agent-is-not-why-sitemaps-fail)
 - **A "BROKEN" scraper is usually not a layout change.** Of 14 unhealthy outlets on 2026-09-15, only 2 were article-layout changes; 5 were dead URLs, 2 were 403s, 1 TLS, 3 sitemap-format changes, 1 crawler crash. Check the sitemap URL and index format first. → [2026-09-15 health check](#2026-09-15--full-health-check-of-all-32-crawlers)
 - **"OK" in `check_crawlers.py` can hide a dead selector.** CNBC, CNN, KONTAN, PIKIRANRAKYAT pass only because trafilatura rescued them. Until #10 lands, grep the run log for `Standard extraction failed`. → same entry
-- **A site extractor returning `[]` is NOT rescued by the fallback chain; only `None`/`""` is.** Don't "fix" a scraper by making it return an empty list. → [2026-09-15 mocked repros](#2026-09-15--mocked-repros-of-suspected-silent-failure-bugs) · #2
+- ~~A site extractor returning `[]` is NOT rescued by the fallback chain; only `None`/`""` is.~~ **Fixed 2026-09-16 (#2):** any result that is empty or under `MIN_ARTICLE_CHARS` (default 200) now falls through site → trafilatura → newspaper, and a failed fallback never replaces a shorter real result. → [2026-09-16 verification](#2026-09-16--does-the-2-fallback-fix-rescue-kumparan-live)
 - **`get_session()` swallows exceptions — a DB write that "succeeded" may not have.** Any test or script that reads back from Postgres must check the row exists; don't trust a non-raising call. → same entry · #4
 - **A missed crawl run cannot be backfilled from the sitemap** because of the pre-dedup date gate; `backfill_missing_articles.py` only re-crawls sitemaps already in the DB. → same entry · #8
 - **The `worktree-phase1-migration` branch is superseded; do not resurrect it.** Its chunker tests target a removed API (`_MIN_TOKENS`). Its only unique file was `scripts/migrate_posted_at.sql`, already carried over. → [2026-09-16 worktree check](#2026-09-16--is-the-orphaned-worktree-branch-still-needed)
@@ -93,9 +93,29 @@ One line each; read this before starting on a scraper or pipeline problem.
 - **Conclusion / do not repeat:** inconclusive on the original question — **still to do once the DB is up** (first step of #5). Incidentally proved #4 live: a DB outage looks like success.
 - **Links:** #4, #5.
 
+### 2026-09-16 — Production `crawl_log` and per-source gaps (follow-up to the 2026-09-15 attempt)
+- **Question / hypothesis:** how long has each source been dead, and do the audit's silent-failure signatures show up in real data?
+- **Method:** Postgres up (Docker). Read-only SQL: last 12 `crawl_log` rows; `article_count` distribution for `task='full_text'`; per source `sitemaps LEFT JOIN articles` counting `attempted_no_article` (`last_crawl_attempt IS NOT NULL`) vs `never_attempted`; duplicate `(sources, link)` rows.
+- **Result:**
+  - Last activity anywhere: **2026-06-03**. Last 12 `crawl_log` rows are all EMITENNEWS on 2026-06-02, final one `failed: argument of type 'NoneType' is not iterable` → #12 in production. 4 rows stuck at `started` (process died without `log_crawl_failed`).
+  - `full_text`: 107 `completed`, max `article_count` = **0** → #5.
+  - KUMPARAN 988 sitemaps / **988 attempted, 0 articles** → #2's signature (`[]` → no fallback → stamped attempted). OKEZONE 1,020 sitemaps / **0 attempted, 0 articles** → #3's signature (crash → `None` → never stamped).
+  - **VIVA 39,262 sitemaps / 37,381 attempted / 0 articles** although `check_crawlers.py` shows VIVA extracting fine (2/2, 2,444 chars). Unexplained — filed as #26.
+  - MEDIAINDONESIA 12,482 / 96 articles / 10,898 never attempted: serial (non-parallel) crawl + 1,000/run limit = permanent backlog, not a bug per se.
+  - Duplicate links: only 2 rows total (EMITENNEWS's `posted_at=now()` hasn't bitten because it never saved anything).
+- **Conclusion / do not repeat:** the pipeline has produced nothing for 3.5 months because the only enabled source crashes. The per-source `attempted_no_article` vs `never_attempted` split is a reliable fingerprint for "fallback skipped" vs "extractor crashes" — reuse it when triaging. Re-run this query after #2 and #3 land; VIVA needs its own investigation.
+- **Links:** #2, #3, #5, #12, #26.
+
 ### 2026-09-16 — Is the orphaned worktree branch still needed?
 - **Question / hypothesis:** `worktree-phase1-migration` (1 commit, 5 uncommitted edits, 3 untracked files) might contain work not in `dev`.
 - **Method:** `git diff --name-only dev worktree-phase1-migration` + per-file diff of the worktree's uncommitted edits against main; copied its `tests/unit/test_chunker.py` into main and ran pytest.
 - **Result:** every committed file already present in main in a newer form. Uncommitted edits were older versions of the sitemap datasource / `table.py`. `test_chunker.py` failed at collection: `ImportError: cannot import name '_MIN_TOKENS' from 'newscrawler.core.chunker'` (API since rewritten). Only unique asset: `scripts/migrate_posted_at.sql`.
 - **Conclusion / do not repeat:** superseded; worktree removed, branch deleted (recoverable via `git branch worktree-phase1-migration 0050e91`), migration carried over. Don't re-examine it.
 - **Links:** commit `9b08107`.
+
+### 2026-09-16 — Does the #2 fallback fix rescue KUMPARAN live?
+- **Question / hypothesis:** with `_has_usable_text()` gating the fallback chain (empty **or** < `MIN_ARTICLE_CHARS`), KUMPARAN — whose `span[data-qa-id=story-paragraph]` selector is dead and returns `[]` — should move from PARTIAL to OK via trafilatura. OKEZONE should *not* move (its extractor raises; that's #3).
+- **Method:** 12 new unit tests in `tests/unit/test_crawler_base.py::TestExtractionFallback` / `TestHasUsableText` (trafilatura and newspaper patched); then live `venv\Scripts\python.exe scripts/check_crawlers.py --website KUMPARAN,OKEZONE --sample-size 3`.
+- **Result:** unit suite 145 passed. Live: `KUMPARAN OK 100 links, 3/3 (9899ch)` — every sample logged `Standard extraction failed … Trafilatura extraction successful`. `OKEZONE PARTIAL 0/3` with `'NoneType' object has no attribute 'find'` on each, unchanged as predicted.
+- **Conclusion / do not repeat:** the fix is confirmed against a real broken layout. KUMPARAN is now "OK by fallback" — its selector is still dead, so it will show as FALLBACK once #10 lands and should get a selector refresh or be declared trafilatura-first (#18). The newspaper fallback is now also wrapped in try/except, so a `download()` failure no longer discards the whole article. Next: #3 for the OKEZONE-style crash.
+- **Links:** #2 (fixed), #3, #10, #18; commit below.

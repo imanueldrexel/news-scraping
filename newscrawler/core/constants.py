@@ -9,6 +9,9 @@ VERBOSE = os.getenv("VERBOSE", "False") == "True"
 PARALLELIZE = True
 REQUEST_MAX_RETRIES = int(os.getenv("REQUEST_MAX_RETRIES", 5))
 SITEMAP_RECRAWL_COOLDOWN_DAYS = int(os.getenv("SITEMAP_RECRAWL_COOLDOWN_DAYS", 7))
+# Article text shorter than this (total chars) is treated as an extraction failure and
+# handed to the next extractor (site selector -> trafilatura -> newspaper). 0 disables.
+MIN_ARTICLE_CHARS = int(os.getenv("MIN_ARTICLE_CHARS", 200))
 EXECUTABLE_PATH = os.getenv(
     "EXECUTABLE_PATH", "/Users/imanuel/Downloads/chromedriver_2"
 )
