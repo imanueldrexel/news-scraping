@@ -48,7 +48,7 @@ venv\Scripts\python.exe -m pytest "tests/unit/test_save_chunk_data.py::TestSaveC
 # tests/integration/conftest.py force-overrides POSTGRES_* env vars to that DB — never point them at `newsaggregator`.
 venv\Scripts\python.exe -m pytest tests/integration -q
 
-# Run a crawl (edit the SLOW list in __main__.py to pick sources), or dispatch a task directly:
+# Run a crawl over the HEALTHY list in __main__.py (override: CRAWL_WEBSITES=KOMPAS,CNBC CRAWL_TASK=sitemap), or dispatch a task directly:
 venv\Scripts\python.exe __main__.py
 venv\Scripts\python.exe -c "from dotenv import load_dotenv; load_dotenv(); from newscrawler.application.api.lambda_function import lambda_handler; lambda_handler.process_event({'task': 'all', 'website': 'BISNIS,KOMPAS'}, None)"
 
