@@ -37,6 +37,22 @@ class VivaCrawler(Crawler):
         return branches
 
     @staticmethod
+    def _get_reporter_from_text(soup) -> List[str]:
+        # SYS-08: VivaCrawler never implemented this, so every article's reporter
+        # came back None (the unenforced abstract base method's implicit return),
+        # which crashed NewsDetailsModel validation (reporter: List[str], not
+        # Optional) and silently dropped every single VIVA article before it
+        # could be saved -- 0 articles ever, despite the extractor working fine.
+        reporters = []
+        author_layer = soup.find("div", {"class": "main-content-author"})
+        if author_layer:
+            for link in author_layer.find_all("a"):
+                name = link.get_text(" ").strip()
+                if name:
+                    reporters.append(name)
+        return reporters
+
+    @staticmethod
     def _get_whole_text(soup) -> List[str]:
         article_layer = soup.find("div", {"class": "main-content-detail"})
         if article_layer:
