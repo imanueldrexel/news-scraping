@@ -32,25 +32,15 @@ class NewsDataSource:
         self.sql_alchemy_article = SQLAlchemyArticleDataSource(SQLAlchemyClient())
 
     def save_sitemap(self, sitemaps: List[NewsSitemapModel]) -> List[NewsSitemapModel]:
-        saved_articles = []
-        if sitemaps:
-            for article in sitemaps:
-                source = article.sources
-                branch = article.category
-                try:
-                    last_time_crawling = self.sql_alchemy_sitemap.last_time_crawling[
-                        source
-                    ][branch]
-                    delta = article.posted_at - last_time_crawling
-                    if delta.days >= 0 and delta.seconds > 0:
-                        saved_articles.append(article)
-                except KeyError:
-                    saved_articles.append(article)
-            if saved_articles:
-                logger.info(
-                    f"get {len(saved_articles)} to scrape for {saved_articles[0].sources}"
-                )
-                return self.sql_alchemy_sitemap.save_sitemaps(saved_articles)
+        # No pre-filter here (SYS-07): the old "newer than the last stored posted_at"
+        # gate ran before dedup and silently discarded never-seen entries from earlier
+        # days -- a missed run could never be backfilled, and date-only sitemaps
+        # (EMITENNEWS) lost everything after the first run. save_sitemaps() dedups on
+        # (link, posted_at), which is the check that actually matters.
+        if not sitemaps:
+            return []
+        logger.info(f"get {len(sitemaps)} to scrape for {sitemaps[0].sources}")
+        return self.sql_alchemy_sitemap.save_sitemaps(sitemaps)
 
     def save_newsdetails(self, newsdetails: List[NewsDetailsModel]):
         self.sql_alchemy_article.save_newsdetails(newsdetails)

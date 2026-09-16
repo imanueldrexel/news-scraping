@@ -26,9 +26,10 @@ logger.setLevel(logging.INFO)
 class SQLAlchemySitemapDataSource:
     def __init__(self, sql_alchemy_client: SQLAlchemyClient):
         self.client = sql_alchemy_client
-        self.last_time_crawling = self.load_last_time_crawling()
 
     def load_last_time_crawling(self) -> Dict[str, Dict[str, datetime]]:
+        """Max posted_at per (source, category). No longer used by the crawl path
+        (the pre-dedup date gate was removed in SYS-07); kept for ad-hoc tooling."""
         last_time_crawling = {}
         with self.client.get_session() as session:
             result = session.execute(
@@ -72,12 +73,17 @@ class SQLAlchemySitemapDataSource:
                 for s in sitemaps if s.posted_at
             ]
             earliest_posted_at = min(posted_dates) if posted_dates else 0
-            
-            existing_rows = (
-                session.query(SitemapTable.link, SitemapTable.posted_at, SitemapTable.sitemap_id)
-                .filter(SitemapTable.posted_at >= earliest_posted_at)
-                .all()
+            # Scope to this batch's source(s): without the old date gate a batch can
+            # span weeks (EMITENNEWS), and the range would otherwise pull every
+            # source's rows for that window.
+            batch_sources = {s.sources for s in sitemaps if s.sources}
+
+            query = session.query(SitemapTable.link, SitemapTable.posted_at, SitemapTable.sitemap_id).filter(
+                SitemapTable.posted_at >= earliest_posted_at
             )
+            if batch_sources:
+                query = query.filter(SitemapTable.sources.in_(batch_sources))
+            existing_rows = query.all()
             
             # Lookup Map: { (link, date) : id }
             existing_map = {
