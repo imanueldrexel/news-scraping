@@ -9,7 +9,8 @@ Registered as a daily 05:30 WIB Windows Task Scheduler job (see OPERATIONS.md):
     schtasks /Create /TN "NewsAggregator Crawler Health Check" /SC DAILY /ST 05:30 ^
         /TR "<repo>\venv\Scripts\python.exe <repo>\scripts\run_scheduled_health_check.py" ^
         /RU "<user>"
-    $s = New-ScheduledTaskSettingsSet -StartWhenAvailable -WakeToRun -ExecutionTimeLimit (New-TimeSpan -Hours 2)
+    $s = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
+            -StartWhenAvailable -WakeToRun -ExecutionTimeLimit (New-TimeSpan -Hours 2)
     Set-ScheduledTask -TaskName "NewsAggregator Crawler Health Check" -Settings $s
 
 -StartWhenAvailable runs the job late on next boot/logon if 05:30 was missed
@@ -17,6 +18,14 @@ Registered as a daily 05:30 WIB Windows Task Scheduler job (see OPERATIONS.md):
 the asleep case specifically. Without these two settings a missed window produces
 no alert, no exit code, no crawl_log row and no JSON report -- indistinguishable
 from a healthy run (OPS-01, #9, reopened 2026-09-17).
+
+-AllowStartIfOnBatteries and -DontStopIfGoingOnBatteries override Task Scheduler's
+defaults (DisallowStartIfOnBatteries=True, StopIfGoingOnBatteries=True), which
+neither of the two settings above touch. This machine is a laptop -- without these,
+the 05:30 trigger fires but the AC-power condition fails and the run is silently
+skipped (not "missed", so -StartWhenAvailable never queues a catch-up run), or a
+run in progress is killed mid-way if unplugged (OPS-01, #9, reopened a second time
+2026-09-17).
 
 Exits with check_crawlers.py's own exit code, so Task Scheduler's own history
 ("Last Run Result") also reflects success/failure independent of the notification.
