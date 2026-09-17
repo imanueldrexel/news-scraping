@@ -105,6 +105,61 @@ class TestPoisonArticleDropsOutAfterMaxAttempts:
             _cleanup(client, [sitemap_id])
 
 
+class TestTransientApiFailureDoesNotRetireTheQueue:
+    def test_simulated_three_run_outage_leaves_the_article_still_selectable(self, client):
+        """OPS-09 (#63) Done-when, against a real DB: a Gemini call that raises
+        (network error/5xx/timeout/rate-limit -- the API call itself never returned
+        a usable response) must leave knowledge_extract_attempts untouched across
+        repeated runs, unlike SYS-19's poison-pill case above where a response WAS
+        received but couldn't be used. Three consecutive extract_all() calls
+        simulating an outage must not retire the article."""
+        from newscrawler.core.knowledge_extractor import GeminiTransientError, KnowledgeExtractor
+        from newscrawler.infrastructure.datasource.dataflow.write.sqlalchemy.sql_alchemy_knowledge_data_source import (
+            SQLAlchemyKnowledgeDataSource,
+        )
+        from newscrawler.core.entity_normalizer import EntityNormalizer
+
+        sitemap_id = _insert_article(client, "http://ops09.test/outage")
+        try:
+            ds = SQLAlchemyKnowledgeDataSource(client)
+            with client.get_session() as s:
+                article_id = s.execute(
+                    text("SELECT articles_id FROM articles WHERE sitemap_id = :id"), {"id": sitemap_id}
+                ).scalar()
+
+            def outage(text_):
+                raise GeminiTransientError("503 Service Unavailable (simulated)")
+
+            for run in range(3):
+                kx = KnowledgeExtractor.__new__(KnowledgeExtractor)
+                kx.ds = ds
+                kx.model_name = "gemini-test"
+                kx.daily_limit = 1400
+                kx.batch_size = 1000
+                kx.normalizer = EntityNormalizer()
+                kx.alias_map = {}
+                kx._client = MagicMock()
+                kx._call_gemini = outage
+
+                processed = kx.extract_all()
+                assert processed == 0, f"run {run}: nothing should have been extractable during the outage"
+
+            with client.get_session() as s:
+                row = s.execute(
+                    text("SELECT knowledge_extract_attempts, last_extract_error FROM articles WHERE articles_id = :id"),
+                    {"id": article_id},
+                ).fetchone()
+            assert row.knowledge_extract_attempts == 0, (
+                "a transient API failure must never increment knowledge_extract_attempts"
+            )
+            assert row.last_extract_error is None
+
+            pending = {a["article_id"] for a in ds.get_articles_pending_extraction(1000000)}
+            assert article_id in pending, "the article must still be selectable after the outage"
+        finally:
+            _cleanup(client, [sitemap_id])
+
+
 class TestAtomicRollbackOnMidArticleFailure:
     def test_a_crash_mid_article_leaves_no_partial_mentions_but_does_not_block_others(self, client):
         # Distinct posted_at (both still far-future) makes fetch order deterministic:

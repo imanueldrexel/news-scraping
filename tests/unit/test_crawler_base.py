@@ -145,6 +145,56 @@ class TestGetNewsDetails:
         assert self.crawler._get_news_details(self._make_sitemap("http://ex.com")) is None
 
 
+class TestLooksLikeAName:
+    """SRC-10 (#65): a shared guard so a reporter selector that drifts onto a
+    timestamp or numeric id (like IDXCHANNEL's did) can't silently produce a
+    plausible-looking wrong value for any crawler."""
+
+    def test_plain_digits_rejected(self):
+        assert Crawler._looks_like_a_name("16") is False
+
+    def test_date_with_time_rejected(self):
+        assert Crawler._looks_like_a_name("16/09/2026 17:54 WIB") is False
+
+    def test_iso_date_rejected(self):
+        assert Crawler._looks_like_a_name("2026-09-16") is False
+
+    def test_dotted_date_rejected(self):
+        assert Crawler._looks_like_a_name("16.09.2026") is False
+
+    def test_real_name_accepted(self):
+        assert Crawler._looks_like_a_name("Desi Angriani") is True
+
+    def test_blank_rejected(self):
+        assert Crawler._looks_like_a_name("   ") is False
+
+    def test_none_rejected(self):
+        assert Crawler._looks_like_a_name(None) is False
+
+    def test_name_containing_a_digit_is_still_accepted(self):
+        """The guard rejects candidates that ARE a number/date, not ones that
+        merely contain a digit somewhere (e.g. a name with a suffix)."""
+        assert Crawler._looks_like_a_name("Tim Redaksi 2") is True
+
+
+class _NumericReporterCrawler(_ConcreteCrawler):
+    def _get_reporter_from_text(self, soup) -> List[str]:
+        return ["16", "Desi Angriani", "16/09/2026 17:54 WIB"]
+
+
+class TestReporterGuardWiredIntoGetNewsDetails:
+    def test_non_name_candidates_are_filtered_out_of_the_dto(self):
+        crawler = _NumericReporterCrawler()
+        crawler.website_name = "TEST"
+        crawler.page_loader = MagicMock()
+        crawler.page_loader.get_soup = MagicMock(
+            return_value=BeautifulSoup("<html><body><p>x</p></body></html>", "html.parser")
+        )
+        from newscrawler.domain.dtos.dataflow.details.site_map_dto import SitemapDTO
+        dto = crawler._get_news_details(SitemapDTO(headline="t", link="http://ex.com/a", sources="TEST", sitemap_id=1))
+        assert dto.reporter == ["Desi Angriani"]
+
+
 _LONG = "Bank Indonesia mempertahankan suku bunga acuan di level 5,75 persen pada rapat dewan gubernur. " * 3
 _CRAWLER_MOD = "newscrawler.infrastructure.datasource.scrapers.crawler"
 

@@ -1,13 +1,20 @@
 #!/usr/bin/env python3
 """
-SYS-17 repair: re-chunk articles that have zero `chunks` rows despite already
-having an `articles` row (and, usually, existing FAISS vectors from a prior run
-whose SQL insert never landed -- the SYS-17 bug). Re-chunks directly from
+SYS-17/SYS-25 repair: re-chunk articles missing chunks at any expected level (L1
+and/or L2) despite already having an `articles` row (and, usually, existing FAISS
+vectors from a prior run whose SQL insert never landed). Re-chunks directly from
 articles.extracted_text (prose since SYS-18) instead of re-crawling the network, so
 the exact text originally chunked is reused and the (sitemap_id, chunk_level,
 chunk_index) keys line up with whatever is already in FAISS -- the fixed
 save_chunk_data (DataFlowRepositoryImpl) then recovers those exact embedding_ids
 instead of creating duplicate vectors.
+
+SYS-25: a sitemap with chunks at one level and not the other used to be invisible
+to this script too -- it only selected sitemaps with *zero* chunks rows. The query
+below now selects "missing L1 OR missing L2"; save_chunk_data's own
+(sitemap_id, chunk_level) dedup (fixed the same day) then inserts only the level
+that's actually missing, so re-chunking a partially-saved article is a no-op for
+the level it already has.
 
 Usage:
     python scripts/backfill_orphan_chunks.py [--website NAME] [--dry-run]
@@ -41,7 +48,10 @@ _FETCH_SQL = text("""
            s.headline, s.sources, s.category, s.posted_at
     FROM articles a
     JOIN sitemaps s ON s.sitemap_id = a.sitemap_id
-    WHERE NOT EXISTS (SELECT 1 FROM chunks c WHERE c.sitemap_id = a.sitemap_id)
+    WHERE (
+        NOT EXISTS (SELECT 1 FROM chunks c WHERE c.sitemap_id = a.sitemap_id AND c.chunk_level = 1)
+        OR NOT EXISTS (SELECT 1 FROM chunks c WHERE c.sitemap_id = a.sitemap_id AND c.chunk_level = 2)
+      )
       AND (:website IS NULL OR s.sources = :website)
     ORDER BY a.sitemap_id
 """)

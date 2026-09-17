@@ -8,7 +8,7 @@ leaving some mentions committed.
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-from newscrawler.core.knowledge_extractor import KnowledgeExtractor
+from newscrawler.core.knowledge_extractor import GeminiTransientError, KnowledgeExtractor
 from newscrawler.core.entity_normalizer import EntityNormalizer
 
 _FENCE = chr(96) * 3  # triple backtick
@@ -72,11 +72,20 @@ class TestCallGemini:
         kx = _make(client=client)
         assert kx._call_gemini("article") is None
 
-    def test_api_error_returns_none(self):
+    def test_api_error_raises_transient_not_returns_none(self):
+        """OPS-09 (#63): an error from the API call itself (network/timeout/5xx/
+        rate-limit/auth) has nothing to do with this article's content and must be
+        told apart from a deterministic "got a response, couldn't use it" failure
+        -- silently returning None here is what let a transient outage count
+        against knowledge_extract_attempts the same as a poison article."""
         client = MagicMock()
         client.models.generate_content.side_effect = RuntimeError("503")
         kx = _make(client=client)
-        assert kx._call_gemini("article") is None
+        try:
+            kx._call_gemini("article")
+            assert False, "expected GeminiTransientError"
+        except GeminiTransientError as e:
+            assert "503" in str(e)
 
     def test_requests_json_mime_type(self):
         client = MagicMock()
@@ -197,6 +206,74 @@ class TestExtractAllGuards:
         assert ds.mark_article_extracted.call_args.args[0] == 9
         assert ds.mark_article_extracted.call_args.kwargs.get("session") is not None
         ds.record_extraction_failure.assert_not_called()
+
+    def test_transient_api_failure_does_not_record_attempt_or_consume_quota(self):
+        """OPS-09 (#63): a GeminiTransientError must leave knowledge_extract_attempts
+        and today's API call count untouched -- otherwise a Gemini outage spanning
+        a few runs permanently retires every article it touches."""
+        ds = MagicMock()
+        ds.get_today_api_call_count.return_value = 0
+        ds.load_alias_map.return_value = {}
+        ds.get_articles_pending_extraction.return_value = [
+            {"article_id": 9, "sitemap_id": 2, "posted_at": 20260101,
+             "source": "S", "extracted_text": "x"}
+        ]
+        kx = _make(ds=ds, client=MagicMock())
+
+        def raise_transient(text):
+            raise GeminiTransientError("503 Service Unavailable")
+        kx._call_gemini = raise_transient
+
+        assert kx.extract_all() == 0
+        ds.record_extraction_failure.assert_not_called()
+        ds.increment_api_call_count.assert_not_called()
+        ds.mark_article_extracted.assert_not_called()
+
+    def test_transient_failure_on_one_article_does_not_stop_the_rest_of_the_batch(self):
+        ds = MagicMock()
+        ds.get_today_api_call_count.return_value = 0
+        ds.load_alias_map.return_value = {}
+        ds.get_articles_pending_extraction.return_value = [
+            {"article_id": 1, "sitemap_id": 1, "posted_at": 20260101, "source": "S", "extracted_text": "x"},
+            {"article_id": 2, "sitemap_id": 2, "posted_at": 20260101, "source": "S", "extracted_text": "x"},
+        ]
+        ds.upsert_entity.return_value = 1
+        ds.get_l1_chunk_id_for_article.return_value = None
+        kx = _make(ds=ds, client=MagicMock())
+
+        def flaky(text):
+            flaky.calls += 1
+            if flaky.calls == 1:
+                raise GeminiTransientError("timeout")
+            return {"persons": [{"name": "Prabowo"}]}
+        flaky.calls = 0
+        kx._call_gemini = flaky
+
+        assert kx.extract_all() == 1
+        ds.mark_article_extracted.assert_called_once()
+        assert ds.mark_article_extracted.call_args.args[0] == 2
+        ds.record_extraction_failure.assert_not_called()
+
+    def test_simulated_three_run_outage_leaves_article_still_selectable(self):
+        """OPS-09 (#63) Done-when: a simulated 3-run API outage must leave the
+        article still selectable afterwards -- i.e. knowledge_extract_attempts
+        never moves, so get_articles_pending_extraction (mocked here as always
+        returning the same article, since attempts never changed) keeps offering it."""
+        ds = MagicMock()
+        ds.get_today_api_call_count.return_value = 0
+        ds.load_alias_map.return_value = {}
+        ds.get_articles_pending_extraction.return_value = [
+            {"article_id": 9, "sitemap_id": 2, "posted_at": 20260101,
+             "source": "S", "extracted_text": "x"}
+        ]
+        kx = _make(ds=ds, client=MagicMock())
+        kx._call_gemini = lambda text: (_ for _ in ()).throw(GeminiTransientError("outage"))
+
+        for _ in range(3):
+            assert kx.extract_all() == 0
+
+        ds.record_extraction_failure.assert_not_called()
+        assert ds.get_articles_pending_extraction.call_count == 3
 
     def test_process_extraction_raising_records_failure_and_rolls_back(self):
         """SYS-19: a mid-article crash (e.g. a malformed entity that still slips

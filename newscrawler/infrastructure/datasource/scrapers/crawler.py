@@ -197,6 +197,14 @@ class Crawler:
                 # fallback chain still runs and the sitemap still gets marked attempted.
                 try:
                     reporter = self._get_reporter_from_text(soup)
+                    # SRC-10 (#65): a hand-written selector can drift onto a
+                    # timestamp/id element instead of the byline (IDXCHANNEL's
+                    # matched the publication day, storing writer=["16"] on every
+                    # row) and still return a non-empty, plausible-looking string --
+                    # no "missing byline" check can catch that. Drop any candidate
+                    # that is purely digits or parses as a date, across every
+                    # crawler, not just the one caught so far.
+                    reporter = [r for r in reporter if self._looks_like_a_name(r)]
                 except Exception as r_err:
                     logger.warning(f"Reporter extraction raised for {url}: {r_err!r}")
                     reporter = []
@@ -306,3 +314,19 @@ class Crawler:
     @abstractmethod
     def _get_reporter_from_text(self, soup) -> List[str]:
         pass
+
+    @staticmethod
+    def _looks_like_a_name(candidate: str) -> bool:
+        """SRC-10 (#65): a reporter candidate that is purely digits or parses as a
+        date is not a name -- it's a selector that landed on a timestamp or an id.
+        A shared guard here catches this class of bug for every crawler's
+        _get_reporter_from_text, not just the one instance already found."""
+        if not candidate or not candidate.strip():
+            return False
+        stripped = candidate.strip()
+        if re.match(r"^\d+$", stripped):
+            return False
+        # Date-shaped strings: "16/09/2026 17:54 WIB", "2026-09-16", "16.09.2026".
+        if re.match(r"^\d{1,4}[/\-.]\d{1,2}[/\-.]\d{1,4}", stripped):
+            return False
+        return True

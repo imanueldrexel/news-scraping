@@ -18,6 +18,17 @@ from newscrawler.infrastructure.datasource.dataflow.model.entity_model import (
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
+class GeminiTransientError(Exception):
+    """OPS-09 (#63): raised by _call_gemini when the API call itself never
+    produced a usable response -- network error, timeout, rate limit, server
+    error, auth failure -- as opposed to a response we did receive but couldn't
+    use (a safety block, or a response that failed JSON parsing). The former has
+    nothing to do with this article's content and must never count against
+    knowledge_extract_attempts, or a Gemini outage spanning a few runs would
+    permanently retire every article it touched -- the exact failure mode SYS-19's
+    attempt cap was supposed to guard against, inverted."""
+
+
 _PROMPT_TEMPLATE = (
     "Extract entities from the following Indonesian news article.\n"
     "Return ONLY a JSON object with this exact schema and no other text:\n"
@@ -91,20 +102,33 @@ class KnowledgeExtractor:
             article_id = article_meta["article_id"]
             try:
                 extraction = self._call_gemini(article_meta["extracted_text"])
-                # Increment regardless of parse success (the API call was made)
-                self.ds.increment_api_call_count(self.model_name)
+            except GeminiTransientError as e:
+                # OPS-09 (#63): we never got a response to evaluate, so this has
+                # nothing to do with this article's content -- leave
+                # knowledge_extract_attempts and today's API call count untouched.
+                # continue (not break): the next article gets its own independent
+                # attempt rather than assuming one failure means a full outage.
+                logger.warning(
+                    f"Article {article_id}: transient Gemini API failure, leaving "
+                    f"attempts and call count untouched: {e}"
+                )
+                continue
 
+            # Increment regardless of parse success (the API call was made and got
+            # a response -- this is the boundary GeminiTransientError sits outside of).
+            self.ds.increment_api_call_count(self.model_name)
+
+            try:
                 if extraction is None:
-                    # API error (e.g. transient 503) or unparseable response. SYS-19:
-                    # this used to leave knowledge_extract_attempts untouched, so a
-                    # deterministically-unparseable response burned one Gemini call
-                    # every run forever. Recording the failure means it eventually
-                    # drops out of get_articles_pending_extraction instead.
+                    # Unparseable response or a safety block -- a response we DID
+                    # get back but couldn't use. SYS-19: this must count against
+                    # knowledge_extract_attempts, or a deterministically-unparseable
+                    # response burns one Gemini call every run forever.
                     logger.warning(
-                        f"Article {article_id}: no usable extraction (API/parse failure) "
+                        f"Article {article_id}: no usable extraction (safety block/parse failure) "
                         "- leaving pending for retry"
                     )
-                    self.ds.record_extraction_failure(article_id, "no usable extraction (API/parse failure)")
+                    self.ds.record_extraction_failure(article_id, "no usable extraction (safety block/parse failure)")
                     continue
 
                 # SYS-19: persons/organizations/locations + mark_article_extracted all
@@ -120,6 +144,9 @@ class KnowledgeExtractor:
                 processed += 1
                 logger.debug(f"Processed article {article_id}")
             except Exception as e:
+                # A deterministic, content-specific failure (malformed entity shape,
+                # a DB constraint this article's data violates) -- distinct from
+                # GeminiTransientError above, and legitimately counts against the cap.
                 logger.error(f"Error processing article {article_id}: {e}")
                 self.ds.record_extraction_failure(article_id, str(e))
 
@@ -129,6 +156,12 @@ class KnowledgeExtractor:
     # ── Gemini call ──────────────────────────────────────────────────────────
 
     def _call_gemini(self, article_text: str) -> Optional[dict]:
+        """Returns the parsed dict on success, or None for a deterministic failure
+        (a response we did receive but couldn't use -- a safety block, or JSON that
+        failed to parse). Raises GeminiTransientError for anything where the API
+        call itself never produced a usable response (network error, timeout, rate
+        limit, server error, auth failure) -- see GeminiTransientError's docstring
+        for why that boundary matters (OPS-09, #63)."""
         truncated = article_text[:3000]
         prompt    = _PROMPT_TEMPLATE.format(article_text=truncated)
         try:
@@ -142,22 +175,23 @@ class KnowledgeExtractor:
                 contents=prompt,
                 config={"response_mime_type": "application/json"},
             )
-            if response.text is None:
-                # Safety block or an otherwise empty response -- nothing to parse.
-                logger.warning("Gemini returned no text (likely a safety block)")
-                return None
-            raw = response.text.strip()
-            # Strip markdown code fences if present
-            if raw.startswith("```"):
-                raw = raw.split("```")[1]
-                if raw.startswith("json"):
-                    raw = raw[4:]
+        except Exception as e:
+            raise GeminiTransientError(str(e)) from e
+
+        if response.text is None:
+            # Safety block or an otherwise empty response -- nothing to parse.
+            logger.warning("Gemini returned no text (likely a safety block)")
+            return None
+        raw = response.text.strip()
+        # Strip markdown code fences if present
+        if raw.startswith("```"):
+            raw = raw.split("```")[1]
+            if raw.startswith("json"):
+                raw = raw[4:]
+        try:
             return json.loads(raw)
         except json.JSONDecodeError as e:
             logger.warning(f"JSON parse error from Gemini response: {e}")
-            return None
-        except Exception as e:
-            logger.error(f"Gemini API error: {e}")
             return None
 
     # ── Extraction processing ────────────────────────────────────────────────

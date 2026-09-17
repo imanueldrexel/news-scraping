@@ -64,13 +64,18 @@ class DataFlowRepositoryImpl(DataFlowRepository):
         # that commit then fails (or is skipped for any reason), FAISS keeps the
         # vectors and the chunks table has nothing -- treating FAISS membership as
         # "already saved" made that permanent, since every later attempt saw the
-        # vectors and skipped the SQL insert again. Sitemaps already fully
-        # represented in `chunks` are skipped here instead; everything else goes
-        # through chunk_faiss_datasource.save(), which still checks FAISS on its own
-        # (keyed on sitemap_id+level+index) to avoid adding duplicate vectors and to
-        # recover the *real* embedding_id for anything already embedded there.
-        already_saved = self.sql_alchemy_chunk_datasource.get_existing_sitemap_ids(all_sitemap_ids)
-        to_process = [c for c in chunks if c.sitemap_id not in already_saved]
+        # vectors and skipped the SQL insert again.
+        #
+        # SYS-25: the dedup key is (sitemap_id, chunk_level), not sitemap_id alone.
+        # A sitemap can hold chunks at one level and be missing the other (a partial
+        # prior write); keying on sitemap_id alone treated it as fully saved and
+        # permanently dropped the missing level from `to_process` on every retry.
+        # Everything not already represented goes through chunk_faiss_datasource
+        # .save(), which still checks FAISS on its own (keyed on
+        # sitemap_id+level+index) to avoid adding duplicate vectors and to recover
+        # the *real* embedding_id for anything already embedded there.
+        already_saved_pairs = self.sql_alchemy_chunk_datasource.get_existing_sitemap_level_pairs(all_sitemap_ids)
+        to_process = [c for c in chunks if (c.sitemap_id, c.chunk_level) not in already_saved_pairs]
 
         if to_process:
             chunks_with_ids = self.chunk_faiss_datasource.save(to_process)

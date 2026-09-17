@@ -48,12 +48,15 @@ class IdxChannelCrawler(Crawler):
             return texts
 
     def _get_reporter_from_text(self, soup) -> List[str]:
+        # SRC-10 (#65): the byline is an <a class="text-body--2 creator"> tag, not
+        # a <div>. `soup.find("div", {"class": "text-body--2"})` matched the
+        # timestamp <div> that shares the "text-body--2" class instead -- confirmed
+        # live across 5 categories (banking/economics/news/syariah/milenomic),
+        # "creator" uniquely identifies the byline in every case.
         reporters = []
-        layer = soup.find("div", {"class": "text-body--2"})
+        layer = soup.find(class_="creator")
         if layer:
-            reporter = layer.get_text(" ")
+            reporter = layer.get_text(" ").strip()
             if reporter:
-                reporter = reporter.strip().split("/")
-                if reporter:
-                    reporters.append(reporter[0])
+                reporters.append(reporter)
         return reporters
