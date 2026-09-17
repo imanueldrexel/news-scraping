@@ -118,3 +118,20 @@ class TestArticlesTableUniqueSitemapId:
             "DBT-07: NewsArticlesTable.sitemap_id must declare unique=True to match "
             "the articles_sitemap_id_uq index"
         )
+
+
+class TestChunksTableUniqueSitemapLevelIndex:
+    """DBT-09: one chunks row per (sitemap_id, chunk_level, chunk_index), enforced
+    at the ORM level too so the model doesn't drift from
+    scripts/migrate_chunks_unique.sql's chunks_sitemap_level_index_uq index."""
+
+    def test_declares_unique_constraint_on_sitemap_level_index(self):
+        constraint_columns = [
+            {c.name for c in uc.columns}
+            for uc in ChunksTable.__table__.constraints
+            if uc.__class__.__name__ == "UniqueConstraint"
+        ]
+        assert {"sitemap_id", "chunk_level", "chunk_index"} in constraint_columns, (
+            "DBT-09: ChunksTable must declare a UniqueConstraint on "
+            "(sitemap_id, chunk_level, chunk_index) to match chunks_sitemap_level_index_uq"
+        )

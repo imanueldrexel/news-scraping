@@ -46,12 +46,23 @@ class ChunkFAISSDatasource:
         # finds those exact vectors here, and reuses their ids instead of either
         # skipping the SQL insert (the old bug) or adding duplicate vectors.
         existing = self._get_existing_embedding_ids(vs)
-        new_chunks = [c for c in chunks if (c.sitemap_id, c.chunk_level, c.chunk_index) not in existing]
-        result = [
-            replace(c, embedding_id=existing[(c.sitemap_id, c.chunk_level, c.chunk_index)], chunk_status='embedded')
-            for c in chunks
-            if (c.sitemap_id, c.chunk_level, c.chunk_index) in existing
-        ]
+        result = []
+        new_chunks = []
+        seen_this_batch = set()
+        for c in chunks:
+            key = (c.sitemap_id, c.chunk_level, c.chunk_index)
+            if key in existing:
+                result.append(replace(c, embedding_id=existing[key], chunk_status='embedded'))
+            elif key not in seen_this_batch:
+                # DBT-09: existing/seen are the only two sources of truth this method
+                # checks. Without seen_this_batch, two chunks sharing a key *within
+                # the same call* (a caller passing the same sitemap's chunks twice --
+                # e.g. a specific_sitemaps list with a duplicate entry) would both
+                # miss `existing` and both get embedded, producing two vectors and
+                # two chunks rows for one logical chunk. A later duplicate of an
+                # already-queued key is dropped here instead -- one vector, one row.
+                seen_this_batch.add(key)
+                new_chunks.append(c)
 
         if not new_chunks:
             logger.info(f"  {db_name}: all {len(chunks)} chunks already embedded, skipping")

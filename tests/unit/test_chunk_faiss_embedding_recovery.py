@@ -93,6 +93,21 @@ class TestEmbedBatchRecoversRealEmbeddingId:
         assert len(added_docs) == 1
         assert added_docs[0].metadata["sitemap_id"] == 2
 
+    def test_duplicate_key_within_same_batch_is_embedded_once(self):
+        """DBT-09: two chunks sharing (sitemap_id, chunk_level, chunk_index) in the
+        SAME call (e.g. a specific_sitemaps list with a duplicate entry) must not
+        both be embedded -- that produced 1,035 duplicate rows/vectors in production."""
+        ds = _ds()
+        vs = _vs_with_docstore({})
+        vs.add_documents.return_value = ["only-uuid"]
+
+        result = ds._embed_batch([_chunk(9), _chunk(9)], vs, "NEWS_L1")
+
+        assert len(result) == 1
+        assert result[0].embedding_id == "only-uuid"
+        vs.add_documents.assert_called_once()
+        assert len(vs.add_documents.call_args[0][0]) == 1  # only one Document sent to FAISS
+
     def test_multiple_chunks_same_sitemap_different_index_are_matched_independently(self):
         """A sitemap can have several L2 chunks; each (level, index) pair must match
         its own docstore entry, not just the sitemap_id."""

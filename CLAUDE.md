@@ -83,6 +83,7 @@ psql -U postgres -d newsaggregator -f scripts/migrate_articles_unique_sitemap.sq
 psql -U postgres -d newsaggregator -f scripts/migrate_extracted_text_prose.sql   # SYS-18: rewrite articles.extracted_text from a Postgres array literal to prose
 psql -U postgres -d newsaggregator -f scripts/migrate_sitemap_crawl_status.sql   # SYS-16: sitemaps.crawl_status (pending/rejected_filter/empty_extraction/saved); run scripts/backfill_sitemap_crawl_status.py after to classify existing rows
 psql -U postgres -d newsaggregator -f scripts/migrate_knowledge_extract_attempts.sql   # SYS-19: articles.knowledge_extract_attempts/last_extract_error, poison-pill exclusion
+psql -U postgres -d newsaggregator -f scripts/migrate_chunks_unique.sql   # DBT-09: unique (sitemap_id, chunk_level, chunk_index) on chunks; run scripts/dedupe_chunks.py first or this fails on existing duplicates
 ```
 
 Known-broken test: `tests/test_agents.py` imports `newscrawler.agents`, which no longer exists — it fails at collection. Run `tests/unit` / `tests/integration` explicitly rather than bare `pytest`.

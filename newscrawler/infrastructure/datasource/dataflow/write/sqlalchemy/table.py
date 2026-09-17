@@ -9,6 +9,7 @@ from sqlalchemy import (
     TIMESTAMP,
     JSON,
     ForeignKey,
+    UniqueConstraint,
 )
 from datetime import datetime
 
@@ -85,6 +86,11 @@ class NewsArticlesTable(Base):
 
 class ChunksTable(Base):
     __tablename__ = "chunks"
+    __table_args__ = (
+        # DBT-09: one row per (sitemap_id, chunk_level, chunk_index) -- matches
+        # scripts/migrate_chunks_unique.sql's chunks_sitemap_level_index_uq index.
+        UniqueConstraint("sitemap_id", "chunk_level", "chunk_index", name="chunks_sitemap_level_index_uq"),
+    )
 
     chunk_id       = Column(BigInteger, primary_key=True, autoincrement=True)
     sitemap_id     = Column(BigInteger, ForeignKey(f"{SitemapTable.__tablename__}.{SitemapTable.sitemap_id.name}"), nullable=False)
