@@ -51,17 +51,21 @@ class ChunkFAISSDatasource:
         seen_this_batch = set()
         for c in chunks:
             key = (c.sitemap_id, c.chunk_level, c.chunk_index)
+            if key in seen_this_batch:
+                # SYS-26: DBT-09 only guarded the new-chunk branch below, so two
+                # chunks sharing a key where that key is ALREADY in FAISS (the
+                # SYS-17 recovery path) both fell into the `if key in existing`
+                # branch and both landed in `result` -- two rows appended to
+                # `result` for one logical chunk, which then violated
+                # chunks_sitemap_level_index_uq on the SQL insert and aborted the
+                # whole batch. Drop any repeat of an already-seen key up front,
+                # before either branch, so both the new-chunk and the
+                # already-embedded path are covered by one guard.
+                continue
+            seen_this_batch.add(key)
             if key in existing:
                 result.append(replace(c, embedding_id=existing[key], chunk_status='embedded'))
-            elif key not in seen_this_batch:
-                # DBT-09: existing/seen are the only two sources of truth this method
-                # checks. Without seen_this_batch, two chunks sharing a key *within
-                # the same call* (a caller passing the same sitemap's chunks twice --
-                # e.g. a specific_sitemaps list with a duplicate entry) would both
-                # miss `existing` and both get embedded, producing two vectors and
-                # two chunks rows for one logical chunk. A later duplicate of an
-                # already-queued key is dropped here instead -- one vector, one row.
-                seen_this_batch.add(key)
+            else:
                 new_chunks.append(c)
 
         if not new_chunks:

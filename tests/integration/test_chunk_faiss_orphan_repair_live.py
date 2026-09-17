@@ -156,3 +156,52 @@ class TestOrphanFaissVectorsAreRepairedOnRetry:
                 text("SELECT COUNT(*) FROM chunks WHERE sitemap_id = :id"), {"id": sitemap_id}
             ).scalar()
         assert count == 1, "no duplicate row"
+
+
+class TestDuplicateSitemapAlreadyInFaissDoesNotAbortTheBatch:
+    """SYS-26: DBT-09's own unique index (chunks_sitemap_level_index_uq) turned the
+    already-in-FAISS dedup gap from a silent duplicate row into a lost batch. This is
+    the exact repro from the ticket: embed into FAISS directly (as DBT-20's repair
+    would, going through the `existing` branch for every sitemap), then call
+    save_chunk_data with the SAME sitemap_id appearing twice in one list (a
+    specific_sitemaps caller with a duplicate, or a repair script's own list)."""
+
+    def test_duplicated_already_embedded_sitemap_leaves_exactly_one_row(
+        self, client, temp_faiss_dirs, sitemap_id
+    ):
+        from newscrawler.infrastructure.datasource.dataflow.write.faiss.chunk_faiss_data_source import (
+            ChunkFAISSDatasource,
+        )
+        from newscrawler.infrastructure.datasource.dataflow.write.sqlalchemy.sql_alchemy_chunk_data_source import (
+            SQLAlchemyChunkDataSource,
+        )
+        from newscrawler.infrastructure.repositories.dataflow.data_flow_repository_impl import (
+            DataFlowRepositoryImpl,
+        )
+
+        faiss_ds = ChunkFAISSDatasource()
+        chunk = _make_chunk(sitemap_id, level=1, index=0, text_content="Berita ekonomi tentang obligasi.")
+
+        # Pre-condition: FAISS already has the vector, SQL does not (the SYS-17 shape).
+        faiss_ds.save([chunk])
+        with client.get_session() as s:
+            assert s.execute(
+                text("SELECT COUNT(*) FROM chunks WHERE sitemap_id = :id"), {"id": sitemap_id}
+            ).scalar() == 0
+
+        repo = DataFlowRepositoryImpl.__new__(DataFlowRepositoryImpl)
+        repo.chunk_faiss_datasource = faiss_ds
+        repo.sql_alchemy_chunk_datasource = SQLAlchemyChunkDataSource(client)
+
+        # Before the fix: both copies passed the `existing` branch, save_chunks
+        # inserted two rows with the same (sitemap_id, chunk_level, chunk_index),
+        # and chunks_sitemap_level_index_uq raised psycopg2.errors.UniqueViolation,
+        # rolling back the whole batch and leaving the sitemap with 0 chunks rows.
+        result = repo.save_chunk_data([chunk, chunk])
+
+        assert sitemap_id in result
+        with client.get_session() as s:
+            rows = s.execute(
+                text("SELECT embedding_id FROM chunks WHERE sitemap_id = :id"), {"id": sitemap_id}
+            ).fetchall()
+        assert len(rows) == 1, f"expected exactly 1 chunks row, found {len(rows)}"

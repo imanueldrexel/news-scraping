@@ -108,6 +108,32 @@ class TestEmbedBatchRecoversRealEmbeddingId:
         vs.add_documents.assert_called_once()
         assert len(vs.add_documents.call_args[0][0]) == 1  # only one Document sent to FAISS
 
+    def test_duplicate_key_already_in_faiss_is_returned_once(self):
+        """SYS-26: DBT-09's guard only covered the new-chunk branch. When the
+        duplicated key is ALREADY in FAISS (the SYS-17 recovery path -- exactly
+        DBT-20's orphan-repair shape), both copies used to reach `result`, and
+        save_chunks' unique index then aborted the whole batch on the second row."""
+        ds = _ds()
+        vs = _vs_with_docstore({"real-uuid": _doc(9, 1, 0)})
+
+        result = ds._embed_batch([_chunk(9), _chunk(9)], vs, "NEWS_L1")
+
+        assert len(result) == 1
+        assert result[0].embedding_id == "real-uuid"
+        vs.add_documents.assert_not_called()
+
+    def test_duplicate_key_mixing_existing_and_new_within_same_batch(self):
+        """Three copies of the same key, one already in FAISS: still exactly one
+        result, and the two new-looking copies never both reach add_documents."""
+        ds = _ds()
+        vs = _vs_with_docstore({"real-uuid": _doc(9, 1, 0)})
+
+        result = ds._embed_batch([_chunk(9), _chunk(9), _chunk(9)], vs, "NEWS_L1")
+
+        assert len(result) == 1
+        assert result[0].embedding_id == "real-uuid"
+        vs.add_documents.assert_not_called()
+
     def test_multiple_chunks_same_sitemap_different_index_are_matched_independently(self):
         """A sitemap can have several L2 chunks; each (level, index) pair must match
         its own docstore entry, not just the sitemap_id."""
