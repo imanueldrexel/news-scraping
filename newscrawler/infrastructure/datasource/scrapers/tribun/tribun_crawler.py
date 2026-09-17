@@ -67,3 +67,24 @@ class TribunCrawler(Crawler):
                     sentence = re.sub(r"(\s+)(\1+)", r"\1", sentence)
                     texts.append(sentence)
             return texts
+
+    def _get_reporter_from_text(self, soup) -> List[str]:
+        # SRC-09 (#57): TribunCrawler never implemented this, so it silently
+        # inherited the base Crawler's no-op (returns None -- Crawler is a plain
+        # class, not an ABC, so nothing enforced the override). Every article's
+        # reporter=None crashed NewsDetailsModel construction (same class of bug as
+        # VIVA/SYS-08). The byline lives in <div id="penulis">Penulis: <a>Name</a>
+        # </div>; verified live across 5 categories (bisnis, nasional, regional,
+        # seleb, techno) -- new-economy syndicated/wire content has no
+        # individual byline at all (JSON-LD author is the "Tribunnews" org itself),
+        # which correctly returns [] here, not a crash.
+        reporters = []
+        layer = soup.find("div", {"id": "penulis"})
+        if layer:
+            link = layer.find("a")
+            name = link.get_text(" ").strip() if link else re.sub(
+                r"^\s*Penulis\s*:\s*", "", layer.get_text(" ").strip(), flags=re.IGNORECASE
+            ).strip()
+            if name:
+                reporters.append(name)
+        return reporters
