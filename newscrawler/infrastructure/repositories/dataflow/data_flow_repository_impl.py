@@ -51,9 +51,9 @@ class DataFlowRepositoryImpl(DataFlowRepository):
         # reflect real new-row counts.
         return SitemapSaveResult(dtos, new_count=getattr(saved_models, "new_count", len(dtos)))
 
-    def save_newsdetails_data(self, newsdetails: List[NewsDetailsDTO]):
+    def save_newsdetails_data(self, newsdetails: List[NewsDetailsDTO]) -> List[int]:
         newsdetail_model = self.to_news_information_model(newsdetails)
-        self.news_data_source.save_newsdetails(newsdetail_model)
+        return self.news_data_source.save_newsdetails(newsdetail_model)
 
     def save_chunk_data(self, chunks: List[ChunkDTO]) -> List[int]:
         if not chunks:

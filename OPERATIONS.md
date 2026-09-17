@@ -88,9 +88,10 @@ python -m newscrawler.tools.kb_query --ticker GOTO --format json --output goto.j
 ### Crawler health check (OPS-01)
 
 Registered as a Task Scheduler job named **"NewsAggregator Crawler Health Check"**, daily at 05:30 (`schtasks /Query /TN "NewsAggregator Crawler Health Check" /FO LIST /V` to inspect). It runs `scripts/run_scheduled_health_check.py`, which:
-1. Runs `scripts/check_crawlers.py --quiet --log-db` (exit 0 = all healthy, 1 = one or more BROKEN/PARTIAL/ERROR; also appends a `crawl_log` row per outlet and writes the dated JSON report to `crawler_health/`).
-2. On exit 1, sends a Telegram notification with the one-line summary via `scripts/notify_telegram.py`.
-3. Exits with `check_crawlers.py`'s own code, so the task's "Last Run Result" in Task Scheduler reflects the real outcome independent of whether the notification succeeded.
+1. Checks how long it's been since the last logged `task='health_check'` `crawl_log` row; if that gap exceeds 36h, sends a distinct Telegram alert flagging that the scheduled job itself may not be firing (OPS-01, #9, reopened 2026-09-17 — see "Detect a scheduler outage" below).
+2. Runs `scripts/check_crawlers.py --quiet --log-db` (exit 0 = all healthy, 1 = one or more BROKEN/PARTIAL/ERROR; also appends a `crawl_log` row per outlet and writes the dated JSON report to `crawler_health/`).
+3. On exit 1, sends a Telegram notification with the one-line summary via `scripts/notify_telegram.py`.
+4. Exits with `check_crawlers.py`'s own code, so the task's "Last Run Result" in Task Scheduler reflects the real outcome independent of whether the notification succeeded.
 
 **Telegram setup** (notifications are silently skipped, logged only, until this is done):
 1. In Telegram, message **@BotFather**, send `/newbot`, follow the prompts — gives a bot token.
@@ -99,7 +100,20 @@ Registered as a Task Scheduler job named **"NewsAggregator Crawler Health Check"
 4. Add to `.env`: `TELEGRAM_BOT_TOKEN=...` and `TELEGRAM_CHAT_ID=...`.
 5. Test with `venv\Scripts\python.exe scripts\notify_telegram.py "test message"`.
 
-To re-create or modify the task: `schtasks /Delete /TN "NewsAggregator Crawler Health Check" /F` then re-run the `schtasks /Create` command in `scripts/run_scheduled_health_check.py`'s docstring.
+**Task settings** (fixed 2026-09-17, OPS-01 reopened): the task has `-StartWhenAvailable` and `-WakeToRun` set, so a 05:30 window missed because the machine was off or asleep runs late on next boot/wake instead of being skipped outright for the day (`ExecutionTimeLimit` 2h). Without these, a missed window produced no alert, no exit code, no `crawl_log` row and no JSON report — indistinguishable from a healthy run. Verify with:
+```powershell
+(Get-ScheduledTask -TaskName "NewsAggregator Crawler Health Check").Settings | Select-Object StartWhenAvailable, WakeToRun, ExecutionTimeLimit
+```
+To re-apply after any re-creation of the task:
+```powershell
+$s = New-ScheduledTaskSettingsSet -StartWhenAvailable -WakeToRun -ExecutionTimeLimit (New-TimeSpan -Hours 2)
+Set-ScheduledTask -TaskName "NewsAggregator Crawler Health Check" -Settings $s
+```
+The task still runs under `LogonType=Interactive` (only while the user is logged on) — switching to a `ServiceAccount` logon so it doesn't depend on an interactive session was considered but deferred, since it requires re-registering the task with stored credentials; revisit if the machine starts running unattended for long stretches.
+
+To re-create the task from scratch: `schtasks /Delete /TN "NewsAggregator Crawler Health Check" /F` then re-run the `schtasks /Create` command in `scripts/run_scheduled_health_check.py`'s docstring, followed by the `Set-ScheduledTask` settings fix above (the `schtasks /Create` defaults do not include `-StartWhenAvailable`/`-WakeToRun`).
+
+**Detect a scheduler outage without opening Task Scheduler:** `-StartWhenAvailable` only helps if the job runs *at all* eventually — a deleted task, an expired credential, or the machine being off for longer than any catch-up window would still stay completely silent otherwise. `run_scheduled_health_check.py` now checks this itself on every run (step 1 above) and alerts on a >36h gap, but the same gap is also directly queryable — see "Detect a missed/broken schedule" below.
 
 ---
 
@@ -124,6 +138,15 @@ ORDER BY started_at DESC
 LIMIT 20;
 ```
 Red flags: `status='failed'`, `article_count=0` for a source that normally produces articles.
+
+### Detect a missed/broken schedule (OPS-01, #9)
+```sql
+SELECT MAX(finished_at) AS last_health_check,
+       EXTRACT(EPOCH FROM (NOW() - MAX(finished_at))) / 3600 AS hours_since
+FROM crawl_log
+WHERE task = 'health_check';
+```
+Red flag: `hours_since > 36` (or a NULL `last_health_check`) — the scheduled job (05:30 daily) has stopped firing, from Task Scheduler, credentials, or the machine being off longer than its catch-up window. This is the same query `scripts/run_scheduled_health_check.py` runs on every invocation to alert on a gap by itself, but it's checkable here directly, without opening Task Scheduler — the point being that a broken *notifier* (no Telegram alert) must not also be a silent one.
 
 ### Check which extractor is actually producing article text (OPS-02)
 ```sql

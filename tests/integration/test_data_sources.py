@@ -81,21 +81,33 @@ def make_details_model(sitemap_id, text=None, reporter=None):
 
 class TestSaveSitemaps:
     def test_DS01_insert_3_sitemaps_sequential_ids(self, db_client, raw_conn):
+        """save_sitemaps() must insert exactly these 3 rows, with sequential ids.
+
+        Assert by link (unique per run), not "the last 3 rows by sitemap_id DESC":
+        a fixed link colliding with a leftover row from a prior run would make
+        save_sitemaps()'s (link, posted_at) dedup skip the insert entirely, and
+        "last 3 by id" would then silently grab unrelated leftover rows instead
+        of failing loudly (DBT-06, #29) -- the same pattern DS02 already uses.
+        """
+        import uuid
         from newscrawler.infrastructure.datasource.dataflow.write.sqlalchemy.sql_alchemy_sitemap_data_source import (
             SQLAlchemySitemapDataSource,
         )
         ds = SQLAlchemySitemapDataSource(db_client)
 
+        run = uuid.uuid4().hex[:8]
+        links = [f"http://ex.com/{run}/{i}" for i in range(3)]
         models = [
-            make_sitemap_model(headline=f"Article {i}", link=f"http://ex.com/{i}")
+            make_sitemap_model(headline=f"Article {i}", link=links[i])
             for i in range(3)
         ]
         ds.save_sitemaps(models)
 
         with raw_conn.cursor() as cur:
-            cur.execute("SELECT sitemap_id FROM sitemaps ORDER BY sitemap_id DESC LIMIT 3")
+            cur.execute("SELECT sitemap_id FROM sitemaps WHERE link = ANY(%s)", (links,))
             rows = cur.fetchall()
         ids = sorted(r[0] for r in rows)
+        assert len(ids) == 3, f"expected all 3 links inserted, found {len(ids)}: {ids}"
         assert ids == list(range(ids[0], ids[0] + 3)), f"IDs not sequential: {ids}"
 
     def test_DS02_save_sitemaps_inserts_record(self, db_client, raw_conn):

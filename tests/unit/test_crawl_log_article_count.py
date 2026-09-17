@@ -19,6 +19,14 @@ def service():
         svc = CrawlerServiceImpl(data_flow_repo=MagicMock())
     svc.semantic_filter.is_important.return_value = True
     svc.crawler_dict = {"TEST_SITE": MagicMock()}
+    # SYS-04: save_newsdetails_data's return value now drives saved_total and the
+    # 'saved' status stamp (what actually committed), not len(to_save). Default the
+    # mock to "everything handed in commits" so tests about the extraction/filter
+    # funnel don't also have to restate the persistence layer's behavior; tests
+    # about partial/total persistence failure override this per-test.
+    svc.data_flow_repo.save_newsdetails_data.side_effect = (
+        lambda dtos: [d.sitemap_id for d in dtos]
+    )
     return svc
 
 
@@ -96,3 +104,65 @@ class TestCrawlLogArticleCount:
 
         assert result == 0
         service.data_flow_repo.save_newsdetails_data.assert_not_called()
+
+    def test_all_rows_failing_persistence_reports_zero_and_stamps_nothing_saved(self, service):
+        """SYS-04 (reopened): save_newsdetails_data can commit fewer rows than it
+        was handed (each row fails inside its own SYS-15 savepoint). If every row
+        fails, article_count must be 0 and no sitemap may be stamped 'saved' --
+        before this fix, both reported the rows as saved regardless."""
+        service.data_flow_repo.load_sitemap_data.return_value = [
+            MagicMock(sitemap_id=1), MagicMock(sitemap_id=2)
+        ]
+
+        def fake_batch_crawling_details(news, website_name):
+            return [make_article(n.sitemap_id) for n in news]
+
+        service.crawler_dict["TEST_SITE"].batch_crawling_details.side_effect = fake_batch_crawling_details
+        service.data_flow_repo.save_chunk_data.side_effect = (
+            lambda chunks: list({c.sitemap_id for c in chunks})
+        )
+        # Every row fails its own savepoint inside save_newsdetails_data -- nothing
+        # actually committed, even though both were handed to persistence.
+        service.data_flow_repo.save_newsdetails_data.side_effect = None
+        service.data_flow_repo.save_newsdetails_data.return_value = []
+
+        service.crawl_newsdetails("TEST_SITE")
+
+        service.data_flow_repo.log_crawl_complete.assert_called_once_with(
+            service.data_flow_repo.log_crawl_start.return_value, 0
+        )
+        saved_calls = [
+            c for c in service.data_flow_repo.mark_sitemaps_status.call_args_list
+            if c.args[1] == "saved"
+        ]
+        assert saved_calls == [], f"no sitemap should be stamped 'saved': {saved_calls}"
+
+    def test_partial_persistence_failure_counts_only_the_committed_half(self, service):
+        """SYS-04 (reopened): if half the rows fail their savepoint, article_count
+        and the 'saved' stamp must reflect only the half that actually committed."""
+        service.data_flow_repo.load_sitemap_data.return_value = [
+            MagicMock(sitemap_id=1), MagicMock(sitemap_id=2)
+        ]
+
+        def fake_batch_crawling_details(news, website_name):
+            return [make_article(n.sitemap_id) for n in news]
+
+        service.crawler_dict["TEST_SITE"].batch_crawling_details.side_effect = fake_batch_crawling_details
+        service.data_flow_repo.save_chunk_data.side_effect = (
+            lambda chunks: list({c.sitemap_id for c in chunks})
+        )
+        # sitemap_id=2's row fails its savepoint; only sitemap_id=1 ever commits.
+        service.data_flow_repo.save_newsdetails_data.side_effect = (
+            lambda dtos: [d.sitemap_id for d in dtos if d.sitemap_id == 1]
+        )
+
+        result = service._crawl_newsdetails_inner("TEST_SITE")
+
+        assert result == 1
+        saved_calls = [
+            c for c in service.data_flow_repo.mark_sitemaps_status.call_args_list
+            if c.args[1] == "saved"
+        ]
+        assert [c.args[0] for c in saved_calls] == [[1]], (
+            f"only the committed sitemap should be stamped 'saved': {saved_calls}"
+        )

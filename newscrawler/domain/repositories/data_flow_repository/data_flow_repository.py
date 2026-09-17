@@ -18,7 +18,10 @@ class DataFlowRepository:
     @abstractmethod
     def save_newsdetails_data(
         self, sitemaps: List[NewsDetailsDTO]
-    ) -> NewsInformationModel:
+    ) -> List[int]:
+        """Returns the sitemap_ids actually committed, not the ids handed in
+        (SYS-04, #5) -- a row can be skipped (already has an article) or fail its
+        own savepoint without raising here."""
         raise NotImplementedError
 
     def load_sitemap_data(self, website: str, n_limit: int) -> Dict[str, List[Tuple[int, str]]]:

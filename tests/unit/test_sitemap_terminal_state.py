@@ -21,6 +21,13 @@ def service():
         svc = CrawlerServiceImpl(data_flow_repo=MagicMock())
     svc.crawler_dict = {"TEST_SITE": MagicMock()}
     svc.data_flow_repo.load_sitemap_data.return_value = [MagicMock(sitemap_id=i) for i in (1, 2, 3)]
+    # SYS-04: the 'saved' stamp is now driven by what save_newsdetails_data reports
+    # as actually committed, not by what was handed to it -- default to "everything
+    # handed in commits" so this file's classification tests (not about persistence
+    # failure) don't also have to restate the persistence layer's behavior.
+    svc.data_flow_repo.save_newsdetails_data.side_effect = (
+        lambda dtos: [d.sitemap_id for d in dtos]
+    )
     return svc
 
 

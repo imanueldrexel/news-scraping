@@ -43,6 +43,10 @@ class TestArticleCountPersistedForFullText:
         mock_repo.log_crawl_failed = real_article_ds.log_crawl_failed
         mock_repo.load_sitemap_data.return_value = [MagicMock(sitemap_id=1)]
         mock_repo.save_chunk_data.return_value = [1]  # 1 sitemap_id embedded
+        # SYS-04: save_newsdetails_data now returns the sitemap_ids actually
+        # committed, not the DTOs handed to it -- simulate a real, fully-successful
+        # write so this test still exercises "1 article saved -> article_count=1".
+        mock_repo.save_newsdetails_data.return_value = [1]
 
         with patch("newscrawler.domain.services.crawler_service_impl.SemanticImportanceFilter"):
             service = CrawlerServiceImpl(data_flow_repo=mock_repo)

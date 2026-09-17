@@ -156,10 +156,19 @@ class CrawlerServiceImpl(CrawlerService):
                     if embedded_sitemap_ids:
                         logger.info(f"Embedded {len(embedded_sitemap_ids)} articles as chunks, batch {i//batch_size+1}")
                         to_save = [n for n in important_newsdetails if n.sitemap_id in set(embedded_sitemap_ids)]
-                        self.save_scraped_data(to_save)
-                        self.data_flow_repo.mark_sitemaps_status([n.sitemap_id for n in to_save], "saved")
-                        saved_total += len(to_save)
-                        logger.info(f"Saved batch {i//batch_size+1} for {website_name}")
+                        # SYS-04: drive both the count and the 'saved' stamp from what
+                        # actually committed, not from what was handed to persistence
+                        # -- save_newsdetails_data can commit fewer rows than to_save
+                        # (a per-row savepoint failure, or on_conflict_do_nothing for
+                        # a sitemap that already has an article).
+                        committed_sitemap_ids = list(self.save_scraped_data(to_save) or [])
+                        if committed_sitemap_ids:
+                            self.data_flow_repo.mark_sitemaps_status(committed_sitemap_ids, "saved")
+                        saved_total += len(committed_sitemap_ids)
+                        logger.info(
+                            f"Saved batch {i//batch_size+1} for {website_name}: "
+                            f"{len(committed_sitemap_ids)}/{len(to_save)} rows actually committed"
+                        )
                 except Exception as e:
                     logger.error(f"Error saving batch {i//batch_size+1} for {website_name}: {e}")
                     continue
@@ -189,6 +198,8 @@ class CrawlerServiceImpl(CrawlerService):
         if isinstance(scraped_data[0], SitemapDTO):
             return self.data_flow_repo.save_sitemap_data(scraped_data)  # add return
         elif isinstance(scraped_data[0], NewsDetailsDTO):
-            self.data_flow_repo.save_newsdetails_data(scraped_data)
-            return scraped_data
+            # SYS-04: return what was actually committed (a list of sitemap_ids),
+            # not the input DTOs -- callers need to know what landed, not what was
+            # attempted.
+            return self.data_flow_repo.save_newsdetails_data(scraped_data)
 

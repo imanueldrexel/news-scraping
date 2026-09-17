@@ -42,8 +42,8 @@ class NewsDataSource:
         logger.info(f"get {len(sitemaps)} to scrape for {sitemaps[0].sources}")
         return self.sql_alchemy_sitemap.save_sitemaps(sitemaps)
 
-    def save_newsdetails(self, newsdetails: List[NewsDetailsModel]):
-        self.sql_alchemy_article.save_newsdetails(newsdetails)
+    def save_newsdetails(self, newsdetails: List[NewsDetailsModel]) -> List[int]:
+        return self.sql_alchemy_article.save_newsdetails(newsdetails)
 
     def mark_sitemaps_attempted(self, sitemap_ids: List[int]):
         self.sql_alchemy_sitemap.mark_sitemaps_attempted(sitemap_ids)

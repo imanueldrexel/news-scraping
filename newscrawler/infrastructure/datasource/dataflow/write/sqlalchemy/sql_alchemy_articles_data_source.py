@@ -74,10 +74,19 @@ class SQLAlchemyArticleDataSource:
 
     # ── Article persistence ───────────────────────────────────────────────────
 
-    def save_newsdetails(self, newsdetails: List[NewsDetailsModel]):
+    def save_newsdetails(self, newsdetails: List[NewsDetailsModel]) -> List[int]:
         # DBT-07: a re-crawl of a sitemap that already has an article row must not
         # create a duplicate -- upsert on the unique sitemap_id index instead of a
         # plain insert.
+        #
+        # SYS-04: return the sitemap_ids that were *actually committed*, not the
+        # sitemap_ids handed in. A row that raises inside its savepoint never
+        # persists; a row that hits on_conflict_do_nothing (the sitemap already has
+        # an article) persists nothing new either. Callers (crawl_log.article_count,
+        # the 'saved' crawl_status stamp) must be driven by what landed in the
+        # table, or both can report rows that were never written.
+        committed_sitemap_ids: List[int] = []
+        skipped_existing = 0
         with self.client.get_session() as session:
             for newsdetail in newsdetails:
                 try:
@@ -104,11 +113,27 @@ class SQLAlchemyArticleDataSource:
                             is_embedded=newsdetail.is_embedded,
                             knowledge_extracted=0,
                             knowledge_extracted_at=None,
-                        ).on_conflict_do_nothing(index_elements=[NewsArticlesTable.sitemap_id])
-                        session.execute(stmt)
+                        ).on_conflict_do_nothing(
+                            index_elements=[NewsArticlesTable.sitemap_id]
+                        ).returning(NewsArticlesTable.sitemap_id)
+                        # RETURNING gives back a row only when the INSERT actually
+                        # happened; on_conflict_do_nothing skips it silently, which
+                        # is how a real insert is told apart from a no-op skip.
+                        row = session.execute(stmt).fetchone()
+                        if row is not None:
+                            committed_sitemap_ids.append(row.sitemap_id)
+                        else:
+                            skipped_existing += 1
                 except BaseException as e:
                     logger.error(
                         f"Failed to add sitemap: {newsdetail}\nException: {e}"
                     )
 
             session.commit()
+
+        if skipped_existing:
+            logger.info(
+                f"save_newsdetails: {skipped_existing} row(s) already had an "
+                "article (on_conflict_do_nothing no-op) -- not counted as newly saved"
+            )
+        return committed_sitemap_ids
