@@ -13,8 +13,14 @@ would otherwise stay completely silent (no alert, no exit code, no crawl_log row
 _hours_since_last_health_check() itself does a live DB query and is always mocked
 out below -- unit tests must not touch a database (see
 tests/integration/test_run_scheduled_health_check_live.py for the live round-trip).
+
+OPS-13 (#76): the wrapper now reads check_crawlers.py's --json payload and decides
+from its `delta` block -- a recovery on a green day still notifies, and a red day
+whose statuses all match the previous run can be muted with
+HEALTH_ALERT_ON_NO_CHANGE=false. The decision is a pure function, tested directly.
 """
 import importlib.util
+import json
 import os
 from unittest.mock import MagicMock, patch
 
@@ -63,7 +69,9 @@ class TestMain:
         assert result == 1
         mock_send.assert_called_once()
 
-    def test_check_crawlers_is_invoked_with_quiet_and_log_db(self):
+    def test_check_crawlers_is_invoked_with_json_and_log_db(self):
+        """OPS-13: --json (not --quiet) so the delta block is readable here; --log-db
+        both writes the rows and implies the --diff-db baseline read."""
         mod = _load()
         with patch.object(mod, "_hours_since_last_health_check", return_value=None), \
              patch.object(mod.subprocess, "run") as mock_run, \
@@ -71,8 +79,90 @@ class TestMain:
             mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
             mod.main()
         args = mock_run.call_args[0][0]
-        assert "--quiet" in args
+        assert "--json" in args
         assert "--log-db" in args
+        # The summary carries emoji; Windows' cp1252 default would mangle or raise.
+        assert mock_run.call_args[1].get("encoding") == "utf-8"
+
+    def test_json_payload_message_is_the_summary_not_the_whole_blob(self):
+        mod = _load()
+        payload = json.dumps({"summary": "Crawler health 2026-09-18: \U0001F534 NEW: KOMPAS (BROKEN, was OK)\nTotals: OK=31, FALLBACK=0, PARTIAL=0, BROKEN=1, ERROR=0 (of 32)",
+                              "delta": {"new": [{"website": "KOMPAS"}], "changed": [], "recovered": [],
+                                        "baseline": [], "unchanged": [], "no_change": False},
+                              "results": [{"website": "KOMPAS", "status": "BROKEN"}]})
+        with patch.object(mod, "_hours_since_last_health_check", return_value=None), \
+             patch.object(mod.subprocess, "run") as mock_run, \
+             patch("notify_telegram.send") as mock_send:
+            mock_run.return_value = MagicMock(returncode=1, stdout=payload, stderr="")
+            result = mod.main()
+        assert result == 1
+        message = mock_send.call_args[0][0]
+        assert "NEW: KOMPAS (BROKEN, was OK)" in message
+        assert '"results"' not in message
+
+
+def _report(new=(), changed=(), recovered=(), baseline=(), unchanged=(), no_change=False):
+    def entries(names):
+        return [{"website": n, "status": "BROKEN", "previous": "OK"} for n in names]
+    return {"summary": "s", "delta": {
+        "new": entries(new), "changed": entries(changed), "recovered": entries(recovered),
+        "baseline": entries(baseline), "unchanged": entries(unchanged), "no_change": no_change}}
+
+
+class TestDecideNotification:
+    """OPS-13: exit-code semantics are unchanged (exit 1 still notifies); the delta
+    adds recoveries on green days and lets the operator mute no-change red days."""
+
+    def test_unhealthy_with_movement_sends_the_problem_headline(self):
+        mod = _load()
+        d = mod.decide_notification(1, _report(new=["KOMPAS"], unchanged=["A"]), alert_on_no_change=True)
+        assert d["send"] and "found a problem" in d["headline"]
+
+    def test_unhealthy_no_change_sends_by_default(self):
+        mod = _load()
+        d = mod.decide_notification(1, _report(unchanged=["A", "B"], no_change=True), alert_on_no_change=True)
+        assert d["send"]
+
+    def test_unhealthy_no_change_is_muted_when_operator_opts_out(self):
+        mod = _load()
+        d = mod.decide_notification(1, _report(unchanged=["A", "B"], no_change=True), alert_on_no_change=False)
+        assert not d["send"]
+        assert "HEALTH_ALERT_ON_NO_CHANGE" in d["reason"]
+
+    def test_opt_out_does_not_mute_a_day_with_movement(self):
+        """The knob mutes *unchanged* red days only -- a NEW breakage always goes out."""
+        mod = _load()
+        d = mod.decide_notification(1, _report(new=["KOMPAS"], unchanged=["A"]), alert_on_no_change=False)
+        assert d["send"]
+
+    def test_healthy_with_a_recovery_sends_the_green_headline(self):
+        """A recovery must be visible without opening crawl_log, even on exit 0."""
+        mod = _load()
+        d = mod.decide_notification(0, _report(recovered=["TEMPO"], unchanged=["A"]), alert_on_no_change=True)
+        assert d["send"] and "healthy" in d["headline"]
+
+    def test_healthy_unchanged_stays_silent(self):
+        mod = _load()
+        d = mod.decide_notification(0, _report(unchanged=["A", "B"], no_change=True), alert_on_no_change=True)
+        assert not d["send"]
+
+    def test_unparseable_output_falls_back_to_exit_code_only(self):
+        """A crash trace instead of JSON: exit 1 still notifies (with the raw text),
+        exit 0 stays silent -- the pre-OPS-13 behaviour."""
+        mod = _load()
+        assert mod._parse_report("Traceback (most recent call last): boom") is None
+        assert mod.decide_notification(1, None, True)["send"]
+        assert not mod.decide_notification(0, None, True)["send"]
+
+    def test_env_knob_parses_false_variants(self, monkeypatch):
+        for raw in ("false", "False", "0", "no", " FALSE "):
+            monkeypatch.setenv("HEALTH_ALERT_ON_NO_CHANGE", raw)
+            assert _load().HEALTH_ALERT_ON_NO_CHANGE is False, raw
+        for raw in ("true", "1", "yes", ""):
+            monkeypatch.setenv("HEALTH_ALERT_ON_NO_CHANGE", raw)
+            assert _load().HEALTH_ALERT_ON_NO_CHANGE is True, raw
+        monkeypatch.delenv("HEALTH_ALERT_ON_NO_CHANGE")
+        assert _load().HEALTH_ALERT_ON_NO_CHANGE is True
 
 
 class TestMissedRunGapDetection:

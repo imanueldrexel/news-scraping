@@ -20,6 +20,8 @@
 | `DBSCAN_EPS` | `0.25` | Cluster similarity threshold |
 | `DBSCAN_MIN_SAMPLES` | `2` | Min articles per cluster |
 | `RAG_TOP_K` | `5` | Chunks used for RAG answer |
+| `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` | — | Health-check alerts (OPS-01); unset = notifications skipped, logged only |
+| `HEALTH_ALERT_ON_NO_CHANGE` | `true` | OPS-13: `false` mutes the daily alert on a red day whose per-outlet statuses all match the previous run (exit code unaffected; NEW/CHANGED/RECOVERED always notify) |
 
 ---
 
@@ -89,9 +91,11 @@ python -m newscrawler.tools.kb_query --ticker GOTO --format json --output goto.j
 
 Registered as a Task Scheduler job named **"NewsAggregator Crawler Health Check"**, daily at 05:30 (`schtasks /Query /TN "NewsAggregator Crawler Health Check" /FO LIST /V` to inspect). It runs `scripts/run_scheduled_health_check.py`, which:
 1. Checks how long it's been since the last logged `task='health_check'` `crawl_log` row; if that gap exceeds 36h, sends a distinct Telegram alert flagging that the scheduled job itself may not be firing (OPS-01, #9, reopened 2026-09-17 — see "Detect a scheduler outage" below).
-2. Runs `scripts/check_crawlers.py --quiet --log-db` (exit 0 = all healthy, 1 = one or more BROKEN/PARTIAL/ERROR; also appends a `crawl_log` row per outlet and writes the dated JSON report to `crawler_health/`).
-3. On exit 1, sends a Telegram notification with the one-line summary via `scripts/notify_telegram.py`.
+2. Runs `scripts/check_crawlers.py --json --log-db` (exit 0 = all healthy, 1 = one or more BROKEN/PARTIAL/ERROR; also appends a `crawl_log` row per outlet — `started_at`/`finished_at` are that outlet's own check window (OPS-12) — and writes the dated JSON report to `crawler_health/`). `--log-db` implies `--diff-db`: before writing, it reads each outlet's most recent prior `health_check` row and classifies it as `new` (was OK, now needs attention — including OK→FALLBACK), `changed` (e.g. BROKEN→FALLBACK), `recovered`, `unchanged`, or `baseline` (no prior row). The comparison is per outlet, not per batch, so a manual `--website X --log-db` only moves X's baseline.
+3. Sends a Telegram notification via `scripts/notify_telegram.py` when the exit code is 1 **or** the delta shows any movement (so a recovery on an all-green day is visible without opening `crawl_log`). The message is the `summary` from the JSON payload and leads with the delta, e.g. `Crawler health 2026-09-18: 🔴 NEW: KOMPAS (BROKEN, was OK) · 🟢 RECOVERED: TEMPO (OK, was ERROR) · unchanged: 16 known (10 BROKEN, 6 FALLBACK)` then a `Totals:` line; on a no-change day the first line is `no change since <previous run, WIB> — 17 known (10 BROKEN, 1 ERROR, 6 FALLBACK)`. `HEALTH_ALERT_ON_NO_CHANGE=false` in `.env` mutes the no-change red days only (OPS-13).
 4. Exits with `check_crawlers.py`'s own code, so the task's "Last Run Result" in Task Scheduler reflects the real outcome independent of whether the notification succeeded.
+
+To verify a scraper fix against the baseline without disturbing it: `venv\Scripts\python.exe scripts\check_crawlers.py --website KOMPAS --diff-db --report-dir <somewhere else>` — no `--log-db`, so no row is written, but the summary still says `RECOVERED: KOMPAS (OK, was BROKEN)`. Note that a one-off flap is reported as NEW on the day it happens and RECOVERED the next (observed 2026-09-18: IDXCHANNEL `BROKEN: first branch scraped 0 article links` after 21 s under 8-way concurrency, OK again 1.6 s later); there is deliberately no multi-run suppression — a same-day `--website X --diff-db` re-check settles it.
 
 **Telegram setup** (notifications are silently skipped, logged only, until this is done):
 1. In Telegram, message **@BotFather**, send `/newbot`, follow the prompts — gives a bot token.
@@ -112,7 +116,7 @@ Set-ScheduledTask -TaskName "NewsAggregator Crawler Health Check" -Settings $s
 ```
 The task still runs under `LogonType=Interactive` (only while the user is logged on) — switching to a `ServiceAccount` logon so it doesn't depend on an interactive session was considered but deferred, since it requires re-registering the task with stored credentials; revisit if the machine starts running unattended for long stretches.
 
-**First unattended run observed 2026-09-18** (OPS-01 closed): Task Scheduler `LastRunTime 05:30:02 WIB`, one `health_check` batch of 32 `crawl_log` rows at 22:32 UTC, Telegram alert received on the device. Two caveats remain: (1) catch-up after a genuinely *missed* window has not been exercised — if `-StartWhenAvailable` does not queue the daily trigger, the next successful run's 36 h gap check (below) fires instead, so a missed day surfaces late rather than silently; (2) the `Microsoft-Windows-TaskScheduler/Operational` event log is disabled on this machine, so `Get-ScheduledTaskInfo`'s `LastRunTime` plus the `crawl_log` batch is the only scheduled-vs-manual evidence — `wevtutil sl Microsoft-Windows-TaskScheduler/Operational /e:true` (admin) turns the history on. Note also that `health_check` rows currently carry `started_at = finished_at` (the run's end, OPS-12 #75), and that the alert lists every known-broken outlet every day with no new-vs-known distinction (OPS-13 #76).
+**First unattended run observed 2026-09-18** (OPS-01 closed): Task Scheduler `LastRunTime 05:30:02 WIB`, one `health_check` batch of 32 `crawl_log` rows at 22:32 UTC, Telegram alert received on the device. Two caveats remain: (1) catch-up after a genuinely *missed* window has not been exercised — if `-StartWhenAvailable` does not queue the daily trigger, the next successful run's 36 h gap check (below) fires instead, so a missed day surfaces late rather than silently; (2) the `Microsoft-Windows-TaskScheduler/Operational` event log is disabled on this machine, so `Get-ScheduledTaskInfo`'s `LastRunTime` plus the `crawl_log` batch is the only scheduled-vs-manual evidence — `wevtutil sl Microsoft-Windows-TaskScheduler/Operational /e:true` (admin) turns the history on. Two things that first run exposed were fixed the same day: `health_check` rows written before 2026-09-18 06:14 WIB (`log_id ≤ 308`) carry `started_at = finished_at` = the run's end, so read `finished_at` and ignore their zero durations (OPS-12 #75; rows after that have real per-outlet windows), and the alert now leads with what changed instead of re-listing every known-broken outlet (OPS-13 #76, step 3 above).
 
 To re-create the task from scratch: `schtasks /Delete /TN "NewsAggregator Crawler Health Check" /F` then re-run the `schtasks /Create` command in `scripts/run_scheduled_health_check.py`'s docstring, followed by the `Set-ScheduledTask` settings fix above (the `schtasks /Create` defaults do not include `-StartWhenAvailable`/`-WakeToRun`).
 
@@ -141,6 +145,25 @@ ORDER BY started_at DESC
 LIMIT 20;
 ```
 Red flags: `status='failed'`, `article_count=0` for a source that normally produces articles.
+
+### Which outlet is slow, and what changed since the previous health check (OPS-12, OPS-13)
+```sql
+-- Latest health_check row per outlet with its real check duration (rows from 2026-09-18 06:14 WIB on).
+SELECT DISTINCT ON (website) website, split_part(error_msg, ':', 1) AS status,
+       ROUND(EXTRACT(EPOCH FROM (finished_at - started_at))::numeric, 1) AS duration_sec, finished_at
+FROM crawl_log WHERE task = 'health_check'
+ORDER BY website, finished_at DESC, log_id DESC;
+
+-- Status of each outlet in its last two health_check rows; rows where they differ are the delta the alert led with.
+WITH ranked AS (
+  SELECT website, split_part(error_msg, ':', 1) AS status, finished_at,
+         ROW_NUMBER() OVER (PARTITION BY website ORDER BY finished_at DESC, log_id DESC) AS rn
+  FROM crawl_log WHERE task = 'health_check')
+SELECT a.website, b.status AS previous, a.status AS current, a.finished_at
+FROM ranked a JOIN ranked b ON b.website = a.website AND b.rn = 2
+WHERE a.rn = 1 AND a.status <> b.status;
+```
+The 60 s per-outlet budget in `check_crawlers.py` shows up as `ERROR: timeout after 60s` with a ~60–66 s duration (the sequential wait on the futures adds a few seconds); TEMPO's is SRC-06, not a slow site. A `duration_sec` of 0.0–1 s on a `BROKEN: sitemap fetch failed` row is a refused/404 sitemap URL, not a timeout. `started_at` is also the outlet's start, so `MIN(started_at)` of a batch is within a couple of seconds of the process start (Task Scheduler's `LastRunTime` + module import).
 
 ### Detect a missed/broken schedule (OPS-01, #9)
 ```sql
