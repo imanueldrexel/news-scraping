@@ -466,3 +466,23 @@ One line each; read this before starting on a scraper or pipeline problem.
   - 4 new unit tests (`tests/unit/test_backfill_pending_embeddings.py`): dry-run never constructs `ChunkFAISSDatasource` or writes a backup; a real run backs up the pre-repair rows and issues an `UPDATE` keyed by `chunk_id` (never an insert); a chunk that somehow comes back from `.save()` without an `embedding_id` is skipped, not written as NULL. Full suite: 339 passed.
 - **Conclusion / do not repeat:** when a "why does this bad row exist" ticket's own code-history check comes back clean (every version of the write path structurally can't produce the shape), stop looking for a code bug and treat it as a one-off data event -- the fix is a data repair, not a guard. Also: `backfill_orphan_chunks.py`'s "missing row" query and a "row exists but embedding_id is NULL" query are two different repair shapes; don't assume one script's `NOT EXISTS` check covers both.
 - **Links:** DBT-17 (#58) fixed · `scripts/backfill_pending_embeddings.py` (new) · `tests/unit/test_backfill_pending_embeddings.py` (new) · `backups/dbt17_pending_embeddings_20260917T145239Z.json` (gitignored) · DBT-09 (#44), still open, unrelated duplicates noticed in passing
+
+### 2026-09-17 — refreshing OPS-04's store-consistency snapshot after DBT-17
+- **Question / hypothesis:** OPS-04 (#52)'s divergence table is from 2026-09-16, before SYS-25's MEDIAINDONESIA repair, the 50-sitemap VIVA backfill test, and today's DBT-17 fix. What does it look like now, and is the "1,183 sitemap_ids in L1 but not L2" row (never drilled into) actually a new bug or a restated view of something already known?
+- **Method:** wrote `scripts/experiments/probe_store_consistency.py` -- reads both FAISS docstores directly via `pickle.load` (per OPS-04's own repro note, no embedding model needed) and set-diffs against Postgres for all 9 rows of OPS-04's table. Then, for the unexplained "1,183" row specifically, checked whether those sitemap_ids also lack an `articles` row, a `chunks` row of any kind, and which `sources` they belong to.
+- **Result:**
+  | check | 2026-09-16 | now |
+  |---|---|---|
+  | L1 FAISS, no `articles` row | 10,680 | 10,630 (-50, the VIVA backfill test) |
+  | L2 FAISS, no `articles` row | 9,497 | 9,447 (-50, same) |
+  | L1 FAISS, no `chunks` row | 1,335 | 1,183 |
+  | L2 FAISS, no `chunks` row | 152 | **0** |
+  | `articles` rows, no `chunks` row | 152 | **0** |
+  | L1 but not L2 | 1,183 | 1,183 (unchanged) |
+  | sitemap_ids with 2+ L1 vectors | 187 | 187 (unchanged -- DBT-09, untouched) |
+  | `chunks` status `pending_embedding` | 142 | **0** (DBT-17) |
+  | `chunks` sitemap_ids not in FAISS | 0 | 0 (SYS-17 holding) |
+
+  **The "1,183 L1 but not L2" row is not three separate findings -- it's one population, seen from three angles.** `only_l1 - chunks_any` = 1,183 (exact match), `only_l1 - articles` = 1,183 (exact match), and `SELECT DISTINCT sources FROM sitemaps WHERE sitemap_id = ANY(only_l1)` = **only `MEDIAINDONESIA`**. So all three "L1 FAISS no chunks / L1 not L2 / (implicitly) no articles" rows in OPS-04's table describe the same 1,183 MEDIAINDONESIA sitemap_ids: an L1 vector exists and *nothing else does* -- no L2 vector, no `chunks` row, no `articles` row.
+- **Conclusion / do not repeat:** DBT-17 + SYS-25 + the 50-sitemap VIVA test fully explain every row that moved; nothing moved by accident. The 1,183-MEDIAINDONESIA population is materially different from both DBT-17 (which had a full `chunks` row with real text_content to reuse) and the VIVA backlog (which has full `chunks` rows, just no `articles` row) -- these have *only* an L1 vector, so a DBT-17-style in-place repair doesn't apply; the L1 docstore's own `page_content` (the two-paragraph summary) is recoverable, but the full article text needed for L2/`articles` is not, without a re-crawl. Posted as a refresh to OPS-04 (#52) rather than filing a new ticket, since it's a drill-down of a row already in that ticket's own table, not a new symptom. DBT-09's 187 duplicate-L1-vector sitemaps are completely unaffected by anything fixed today -- still needs its own migration.
+- **Links:** OPS-04 (#52), refreshed, not fixed · `scripts/experiments/probe_store_consistency.py` (new, reusable) · DBT-09 (#44), confirmed unchanged
