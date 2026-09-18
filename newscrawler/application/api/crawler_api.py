@@ -1,12 +1,22 @@
 import logging
 from typing import List
 
+from newscrawler.core.crawler_dict_list import CRAWLER_DICT
 from newscrawler.domain.dtos.dataflow.news_information_dto import NewsInformationDTO
 from newscrawler.domain.services.crawler_service import CrawlerService
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
+
+# SYS-21: crawl_website dispatched on a free-form string with no exhaustive
+# else/validation, so a typo'd CRAWL_TASK or a missing "task" key ran the whole
+# website list, called no service method, wrote no crawl_log row, raised nothing,
+# and exited 0 -- indistinguishable from a healthy run everywhere we look.
+VALID_TASKS = ("sitemap", "full_text", "all", "extract_knowledge", "newsletter")
+# These two ignore website_name entirely (process everything pending across all
+# sources), so an empty/absent website list is expected for them, not an error.
+WEBSITE_AGNOSTIC_TASKS = ("extract_knowledge", "newsletter")
 
 
 class CrawlerAPI:
@@ -37,9 +47,25 @@ class CrawlerAPI:
         elif task == "newsletter":
             # website-agnostic: generates today's digest
             self.crawler_service.generate_newsletter()
+        else:
+            # Backstop: crawl_websites_in_batch already validates task up front, but
+            # this method can be called directly too, and a silent no-op here is
+            # exactly the SYS-21 bug -- fail loudly instead.
+            raise ValueError(f"Unknown task {task!r}; must be one of {VALID_TASKS}")
 
     def crawl_websites_in_batch(self, website_names: List[str], task: str):
-        if task in ("extract_knowledge", "newsletter"):
+        if task not in VALID_TASKS:
+            raise ValueError(f"Unknown task {task!r}; must be one of {VALID_TASKS}")
+
+        if task not in WEBSITE_AGNOSTIC_TASKS:
+            # Validate every name before any work starts -- a batch that's already
+            # crawled 3 sites shouldn't discover the 4th name was a typo only when
+            # it crashes crawl_sitemaps with an AttributeError on None.
+            unknown = [w for w in website_names if w not in CRAWLER_DICT]
+            if unknown:
+                raise ValueError(f"Unknown website name(s): {', '.join(unknown)}")
+
+        if task in WEBSITE_AGNOSTIC_TASKS:
             logger.info(f"Running task '{task}' (website-agnostic)...")
             self.crawl_website(website_name="", task=task)
             return

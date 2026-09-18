@@ -73,3 +73,55 @@ class TestBatchIsolation:
         svc.extract_knowledge.assert_called_once()
         api.crawl_websites_in_batch([], task="newsletter")
         svc.generate_newsletter.assert_called_once()
+
+
+class TestTaskAndWebsiteValidation:
+    """SYS-21: a typo'd task or website name must raise before any service method
+    runs, not silently no-op with 'ok=N failed=0' and no crawl_log row."""
+
+    def test_unknown_task_raises_and_calls_no_service_method(self):
+        svc = MagicMock()
+        api = CrawlerAPI(svc)
+        with pytest.raises(ValueError, match="fulltext"):
+            api.crawl_websites_in_batch(["KOMPAS"], task="fulltext")
+        for method in ("crawl_sitemaps", "crawl_newsdetails", "extract_knowledge", "generate_newsletter"):
+            getattr(svc, method).assert_not_called()
+
+    def test_missing_task_raises_and_calls_no_service_method(self):
+        svc = MagicMock()
+        api = CrawlerAPI(svc)
+        with pytest.raises(ValueError, match="None"):
+            api.crawl_websites_in_batch(["KOMPAS"], task=None)
+        for method in ("crawl_sitemaps", "crawl_newsdetails", "extract_knowledge", "generate_newsletter"):
+            getattr(svc, method).assert_not_called()
+
+    def test_unknown_website_name_raises_before_crawl_sitemaps_is_entered(self):
+        svc = MagicMock()
+        api = CrawlerAPI(svc)
+        with pytest.raises(ValueError, match="NOTAREALSITE"):
+            api.crawl_websites_in_batch(["KOMPAS", "NOTAREALSITE"], task="sitemap")
+        svc.crawl_sitemaps.assert_not_called()
+
+    def test_multiple_unknown_website_names_are_all_listed(self):
+        svc = MagicMock()
+        api = CrawlerAPI(svc)
+        with pytest.raises(ValueError) as exc:
+            api.crawl_websites_in_batch(["FAKE1", "KOMPAS", "FAKE2"], task="sitemap")
+        assert "FAKE1" in str(exc.value) and "FAKE2" in str(exc.value)
+
+    def test_website_agnostic_tasks_skip_website_name_validation(self):
+        """extract_knowledge/newsletter legitimately pass an empty website list."""
+        svc = MagicMock()
+        api = CrawlerAPI(svc)
+        api.crawl_websites_in_batch([], task="extract_knowledge")  # must not raise
+        svc.extract_knowledge.assert_called_once()
+
+    def test_crawl_website_itself_rejects_an_unknown_task(self):
+        """Backstop: crawl_website is also callable directly, not just through
+        crawl_websites_in_batch's own validation."""
+        svc = MagicMock()
+        api = CrawlerAPI(svc)
+        with pytest.raises(ValueError, match="bogus"):
+            api.crawl_website(website_name="KOMPAS", task="bogus")
+        for method in ("crawl_sitemaps", "crawl_newsdetails", "extract_knowledge", "generate_newsletter"):
+            getattr(svc, method).assert_not_called()
