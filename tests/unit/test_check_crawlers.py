@@ -41,6 +41,42 @@ def _detail(text, extractor="site"):
     return SimpleNamespace(extracted_text=text, meta_data={"extractor": extractor})
 
 
+class TestPickBranch:
+    """OPS-03: sample the finance/economy section when one exists, not just
+    whichever branch a site's sitemap index happens to list first."""
+
+    def test_prefers_a_branch_matching_the_finance_pattern(self):
+        branches = {"Bobo": "http://e.com/bobo.xml", "ekonomi": "http://e.com/ekonomi.xml",
+                    "olahraga": "http://e.com/olahraga.xml"}
+        name, link = cc.pick_branch(branches)
+        assert name == "ekonomi" and link == "http://e.com/ekonomi.xml"
+
+    def test_falls_back_to_the_first_branch_when_none_match(self):
+        branches = {"Bobo": "http://e.com/bobo.xml", "olahraga": "http://e.com/olahraga.xml"}
+        name, link = cc.pick_branch(branches)
+        assert name == "Bobo"
+
+    def test_matches_case_insensitively_and_substrings(self):
+        branches = {"AksaraJabar": "x", "EkonomiBisnis": "http://e.com/eb.xml"}
+        name, _ = cc.pick_branch(branches)
+        assert name == "EkonomiBisnis"
+
+    def test_single_branch_is_returned_regardless_of_name(self):
+        branches = {"www": "http://e.com/www.xml"}
+        assert cc.pick_branch(branches) == ("www", "http://e.com/www.xml")
+
+    def test_matches_any_of_the_documented_finance_keywords(self):
+        for keyword in ("ekonomi", "bisnis", "market", "finance", "keuangan", "money", "uang"):
+            branches = {"other": "x", keyword: "y"}
+            name, _ = cc.pick_branch(branches)
+            assert name == keyword, keyword
+
+    def test_first_match_wins_when_multiple_finance_branches_exist(self):
+        branches = {"olahraga": "x", "bisnis": "http://e.com/bisnis.xml", "market": "http://e.com/market.xml"}
+        name, _ = cc.pick_branch(branches)
+        assert name == "bisnis"
+
+
 class TestClassify:
     def test_ok(self):
         assert cc.classify(sitemap_links=10, detail_ok=2, extractors=["site", "site"]) == cc.STATUS_OK
@@ -95,6 +131,19 @@ class TestCheckOne:
         assert r["status"] == cc.STATUS_OK
         assert r["sitemap_links"] == 1
         assert r["detail_ok"] == 1
+
+    def test_scrapes_the_finance_branch_not_just_the_first_one(self):
+        """OPS-03: TEMPO-style crawler whose sitemap index lists a non-finance
+        branch first ('www') but does have an 'ekonomi' branch further along."""
+        c = _mock_crawler(branches={"www": "http://e.com/www.xml", "ekonomi": "http://e.com/ekonomi.xml"})
+        r = cc.check_one("TEMPO", c, sample_size=2)
+        assert r["branch"] == "ekonomi"
+        c._scrape.assert_called_once_with(branch_link="http://e.com/ekonomi.xml", branch_name="ekonomi")
+
+    def test_branch_recorded_even_when_no_finance_branch_exists(self):
+        c = _mock_crawler(branches={"suara-pembaca": "http://e.com/x.xml"})
+        r = cc.check_one("DETIK", c, sample_size=2)
+        assert r["branch"] == "suara-pembaca"
 
     def test_partial_when_extraction_empty(self):
         c = _mock_crawler(details=[_detail([]), _detail("")])

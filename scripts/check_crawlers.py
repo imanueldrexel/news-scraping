@@ -41,6 +41,7 @@ import argparse
 import json
 import logging
 import os
+import re
 import sys
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
 from datetime import datetime, timezone
@@ -99,6 +100,23 @@ def _extracted_len(detail) -> int:
     return len(str(txt))
 
 
+# OPS-03: sample the branch the pipeline actually cares about, not just whichever one
+# a site's sitemap index happens to list first ("Bobo" for GRIDID, "AksaraJabar" for
+# PIKIRANRAKYAT, "suara-pembaca" for DETIK, "www" for TEMPO) -- those are often a
+# different HTML template than the finance/economy section, so a health check that
+# only ever samples them isn't actually checking what matters to this pipeline.
+FINANCE_BRANCH_PATTERN = re.compile(r"ekonomi|bisnis|market|finance|keuangan|money|uang", re.IGNORECASE)
+
+
+def pick_branch(branches: dict):
+    """Pure: the first branch (dict insertion order) whose name matches
+    FINANCE_BRANCH_PATTERN, or the first branch overall if none matches."""
+    for name, link in branches.items():
+        if FINANCE_BRANCH_PATTERN.search(name):
+            return name, link
+    return next(iter(branches.items()))
+
+
 def classify(sitemap_links: int, detail_ok: int, extractors: list = None, error: bool = False) -> str:
     """Pure classification from sample-crawl counts. `extractors` is the
     meta_data["extractor"] value (see crawler.py's _get_news_details) for each
@@ -117,7 +135,7 @@ def classify(sitemap_links: int, detail_ok: int, extractors: list = None, error:
 
 def _blank_result(name: str, started_at: datetime = None) -> dict:
     return {
-        "website": name, "sitemap_links": 0, "dto_count": 0,
+        "website": name, "branch": "", "sitemap_links": 0, "dto_count": 0,
         "detail_total": 0, "detail_ok": 0, "avg_chars": 0,
         "status": STATUS_BROKEN, "note": "", "extractors": [],
         # OPS-12: the outlet's own check window, not the logging transaction's NOW().
@@ -144,8 +162,9 @@ def check_one(name: str, crawler, sample_size: int) -> dict:
             result["note"] = "no branches parsed from sitemap"
             return result
 
-        first_name, first_link = next(iter(branches.items()))
-        articles = crawler._scrape(branch_link=first_link, branch_name=first_name) or []
+        branch_name, branch_link = pick_branch(branches)
+        result["branch"] = branch_name
+        articles = crawler._scrape(branch_link=branch_link, branch_name=branch_name) or []
         result["sitemap_links"] = len(articles)
         if not articles:
             result["note"] = "first branch scraped 0 article links"
@@ -225,13 +244,13 @@ def run_checks(targets: dict, sample_size: int, workers: int, timeout: int) -> l
 
 
 def render_table(results: list) -> str:
-    rows = ["%-14s %-8s %-6s %-5s %-15s %-6s %s" % (
-        "SOURCE", "STATUS", "LINKS", "DTOs", "DETAIL(ok/tot)", "SECS", "NOTE"),
-        "-" * 106]
+    rows = ["%-14s %-8s %-14s %-6s %-5s %-15s %-6s %s" % (
+        "SOURCE", "STATUS", "BRANCH", "LINKS", "DTOs", "DETAIL(ok/tot)", "SECS", "NOTE"),
+        "-" * 120]
     for r in results:
         detail = "%d/%d (%dch)" % (r["detail_ok"], r["detail_total"], r["avg_chars"])
-        rows.append("%-14s %-8s %-6d %-5d %-15s %-6s %s" % (
-            r["website"][:14], r["status"], r["sitemap_links"],
+        rows.append("%-14s %-8s %-14s %-6d %-5d %-15s %-6s %s" % (
+            r["website"][:14], r["status"], r.get("branch", "")[:14], r["sitemap_links"],
             r["dto_count"], detail, "%.1f" % r["duration_sec"], r["note"][:60]))
     return "\n".join(rows)
 
