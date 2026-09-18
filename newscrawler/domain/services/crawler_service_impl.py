@@ -94,7 +94,19 @@ class CrawlerServiceImpl(CrawlerService):
             batch = target_news[i:i+batch_size]
             # Extract Articles from the batch
             newsdetails: List[NewsDetailsDTO] = web_crawler.batch_crawling_details(news=batch, website_name=website_name)
-            
+
+            # SYS-09: a sitemap in `batch` with no matching NewsDetailsDTO is exactly
+            # the sitemaps whose fetch/extraction failed this run (soup was None, or
+            # _get_news_details raised) -- mark_sitemaps_attempted below only covers
+            # the successes, so without this a permanently-dead URL was never marked
+            # at all and kept consuming a retry slot on every single run forever.
+            extracted_ids = {n.sitemap_id for n in newsdetails} if newsdetails else set()
+            failed_ids = [s.sitemap_id for s in batch if s.sitemap_id not in extracted_ids]
+            if failed_ids:
+                self.data_flow_repo.increment_fetch_failures(
+                    failed_ids, error_msg="fetch or extraction produced no result"
+                )
+
             if not newsdetails:
                 continue
 

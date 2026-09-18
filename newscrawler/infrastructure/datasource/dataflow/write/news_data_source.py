@@ -51,6 +51,9 @@ class NewsDataSource:
     def mark_sitemaps_status(self, sitemap_ids: List[int], status: str):
         self.sql_alchemy_sitemap.mark_sitemaps_status(sitemap_ids, status)
 
+    def increment_fetch_failures(self, sitemap_ids: List[int], error_msg: str = None):
+        self.sql_alchemy_sitemap.increment_fetch_failures(sitemap_ids, error_msg)
+
     def load_sitemap(
         self, website: str, n_limit: int
     ) -> List[NewsSitemapModel]:

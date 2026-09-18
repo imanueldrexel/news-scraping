@@ -36,6 +36,12 @@ class DataFlowRepository:
     def mark_sitemaps_status(self, sitemap_ids: List[int], status: str) -> None:
         raise NotImplementedError
 
+    def increment_fetch_failures(self, sitemap_ids: List[int], error_msg: str = None) -> None:
+        """SYS-09: bump the fetch-failure counter for sitemaps that produced no
+        NewsDetailsDTO this run, so load_all_sitemaps can eventually exclude a
+        permanently-dead URL instead of retrying it forever."""
+        raise NotImplementedError
+
     def extract_knowledge(self, batch_size: Optional[int] = None) -> int:
         raise NotImplementedError
 

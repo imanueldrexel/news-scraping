@@ -30,3 +30,24 @@ class TestNewsDataSourcePassthrough:
         nds.mark_sitemaps_attempted([4, 5])
 
         nds.sql_alchemy_sitemap.mark_sitemaps_attempted.assert_called_once_with([4, 5])
+
+
+class TestIncrementFetchFailuresPassthrough:
+    """SYS-09: same passthrough chain as mark_sitemaps_attempted, for the new
+    fetch-failure counter."""
+
+    def test_repo_delegates_to_news_data_source(self):
+        repo = DataFlowRepositoryImpl.__new__(DataFlowRepositoryImpl)
+        repo.news_data_source = MagicMock()
+
+        repo.increment_fetch_failures([1, 2], error_msg="x")
+
+        repo.news_data_source.increment_fetch_failures.assert_called_once_with([1, 2], "x")
+
+    def test_news_data_source_delegates_to_sitemap_source(self):
+        nds = NewsDataSource.__new__(NewsDataSource)
+        nds.sql_alchemy_sitemap = MagicMock()
+
+        nds.increment_fetch_failures([4, 5], "boom")
+
+        nds.sql_alchemy_sitemap.increment_fetch_failures.assert_called_once_with([4, 5], "boom")

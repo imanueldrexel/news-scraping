@@ -90,6 +90,9 @@ class DataFlowRepositoryImpl(DataFlowRepository):
     def mark_sitemaps_status(self, sitemap_ids: List[int], status: str) -> None:
         self.news_data_source.mark_sitemaps_status(sitemap_ids, status)
 
+    def increment_fetch_failures(self, sitemap_ids: List[int], error_msg: str = None) -> None:
+        self.news_data_source.increment_fetch_failures(sitemap_ids, error_msg)
+
     @staticmethod
     def _to_chunk_model(chunk: ChunkDTO) -> ChunkModel:
         return ChunkModel(

@@ -36,6 +36,11 @@ class SitemapTable(Base):
     keywords = Column(JSON, nullable=True)
     last_crawl_attempt = Column(TIMESTAMP, nullable=True)
     crawl_status = Column(String, nullable=False, default='pending')
+    # SYS-09: how many runs in a row produced no NewsDetailsDTO for this sitemap
+    # (fetch failure, or any exception in _get_news_details) -- load_all_sitemaps
+    # excludes it once this reaches SITEMAP_MAX_FETCH_FAILURES.
+    fetch_failures = Column(Integer, nullable=False, default=0)
+    last_fetch_error = Column(String, nullable=True)
 
     def __init__(self, sitemap: NewsSitemapModel):
         self.headline = sitemap.headline

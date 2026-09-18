@@ -9,6 +9,12 @@ VERBOSE = os.getenv("VERBOSE", "False") == "True"
 PARALLELIZE = True
 REQUEST_MAX_RETRIES = int(os.getenv("REQUEST_MAX_RETRIES", 5))
 SITEMAP_RECRAWL_COOLDOWN_DAYS = int(os.getenv("SITEMAP_RECRAWL_COOLDOWN_DAYS", 7))
+# SYS-09: a sitemap whose URL fails to fetch/extract this many times in a row (not
+# necessarily consecutive runs -- any run that doesn't produce a NewsDetailsDTO for
+# it counts) is excluded from load_all_sitemaps, so a permanently-dead link stops
+# consuming a retry slot forever. Still retried up to this many times first, since
+# most failures are transient (a timeout, a momentary block).
+SITEMAP_MAX_FETCH_FAILURES = int(os.getenv("SITEMAP_MAX_FETCH_FAILURES", 3))
 # Article text shorter than this (total chars) is treated as an extraction failure and
 # handed to the next extractor (site selector -> trafilatura -> newspaper). 0 disables.
 MIN_ARTICLE_CHARS = int(os.getenv("MIN_ARTICLE_CHARS", 200))

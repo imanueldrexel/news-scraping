@@ -200,6 +200,16 @@ LIMIT 7;
 ```
 If today's digest is missing after 07:30 WIB, run newsletter task manually.
 
+### Check dead-link accumulation (SYS-09)
+```sql
+SELECT sources, COUNT(*) FILTER (WHERE fetch_failures > 0) AS ever_failed,
+       COUNT(*) FILTER (WHERE fetch_failures >= 3) AS excluded_now,
+       MAX(fetch_failures) AS worst
+FROM sitemaps GROUP BY sources HAVING COUNT(*) FILTER (WHERE fetch_failures > 0) > 0
+ORDER BY excluded_now DESC;
+```
+`fetch_failures` counts runs in a row that produced no `NewsDetailsDTO` for that sitemap (fetch failure, or any exception in `_get_news_details`); `last_fetch_error` holds a note (coarse -- the service layer only knows *which* sitemap_ids came back empty, not each one's exception). Once `fetch_failures >= SITEMAP_MAX_FETCH_FAILURES` (env var, default 3), `load_all_sitemaps` excludes the row permanently instead of re-fetching a dead URL on every run forever. A high `excluded_now` for one source usually means a dead sitemap section or a source that needs SRC-02/03/04-style attention, not that its content ran out.
+
 ### Check sitemap terminal-state distribution (SYS-16)
 ```sql
 SELECT crawl_status, COUNT(*) AS sitemaps,

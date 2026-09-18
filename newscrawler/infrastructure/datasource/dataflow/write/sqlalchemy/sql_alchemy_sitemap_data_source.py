@@ -18,7 +18,7 @@ from newscrawler.infrastructure.datasource.dataflow.write.sqlalchemy.table impor
 from newscrawler.infrastructure.network.clients.sqlalchemy_client import (
     SQLAlchemyClient,
 )
-from newscrawler.core.constants import SITEMAP_RECRAWL_COOLDOWN_DAYS
+from newscrawler.core.constants import SITEMAP_RECRAWL_COOLDOWN_DAYS, SITEMAP_MAX_FETCH_FAILURES
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -169,6 +169,11 @@ class SQLAlchemySitemapDataSource:
                 f"AND a.{SitemapTable.crawl_status.name} != 'rejected_filter' "
                 f"AND (a.{SitemapTable.last_crawl_attempt.name} IS NULL "
                 f"     OR a.{SitemapTable.last_crawl_attempt.name} < NOW() - INTERVAL '{SITEMAP_RECRAWL_COOLDOWN_DAYS} days') "
+                # SYS-09: a URL that has failed to fetch/extract this many times in a
+                # row is excluded permanently instead of consuming a retry slot on
+                # every future run forever. A sitemap that has never been attempted,
+                # or failed fewer times, is unaffected (fetch_failures defaults to 0).
+                f"AND a.{SitemapTable.fetch_failures.name} < {SITEMAP_MAX_FETCH_FAILURES} "
                 f"ORDER BY a.{SitemapTable.posted_at.name} DESC "
                 f"LIMIT {n_limit}"
             )
@@ -204,6 +209,30 @@ class SQLAlchemySitemapDataSource:
                     f"WHERE {SitemapTable.sitemap_id.name} = ANY(:ids)"
                 ),
                 {"ids": list(sitemap_ids)},
+            )
+            session.commit()
+
+    def increment_fetch_failures(self, sitemap_ids, error_msg: str = None):
+        """SYS-09: bump fetch_failures for every sitemap_id that produced no
+        NewsDetailsDTO this run (fetch failure or any exception in
+        _get_news_details). Also stamps last_crawl_attempt=NOW() -- a permanently
+        dead URL must still leave the cooldown queue like a successful attempt
+        does, not just get counted. error_msg is necessarily coarse: the service
+        layer only knows *which* sitemap_ids are missing from the batch's
+        NewsDetailsDTO list, not each one's individual exception (that detail is
+        logged, not returned, by _get_news_details)."""
+        if not sitemap_ids:
+            return
+        with self.client.get_session() as session:
+            session.execute(
+                text(
+                    f"UPDATE {SitemapTable.__tablename__} "
+                    f"SET {SitemapTable.fetch_failures.name} = {SitemapTable.fetch_failures.name} + 1, "
+                    f"    {SitemapTable.last_fetch_error.name} = :error_msg, "
+                    f"    {SitemapTable.last_crawl_attempt.name} = NOW() "
+                    f"WHERE {SitemapTable.sitemap_id.name} = ANY(:ids)"
+                ),
+                {"ids": list(sitemap_ids), "error_msg": error_msg},
             )
             session.commit()
 
