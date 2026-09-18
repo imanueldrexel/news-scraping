@@ -22,16 +22,16 @@ import pytest
 
 psycopg2 = pytest.importorskip("psycopg2", reason="psycopg2 not installed")
 
-# SYS-10 (#28): backfill_chunks.py's EMBEDDING_MODEL defaults to "nomic-embed-text",
-# which 401s loading from HuggingFace instead of using the pipeline's real
-# EMBEDDING_MODEL_HF -- every non-dry-run test in this module fails at model load
-# on a pristine DB, unrelated to anything this suite's own fixtures do. Unblock by
-# fixing SYS-10, not by touching this file again. DBT-06 (#29).
-pytestmark = pytest.mark.xfail(
-    reason="SYS-10 (#28): backfill_chunks.py's EMBEDDING_MODEL=nomic-embed-text "
-           "401s against HuggingFace",
-    strict=False,
-)
+# SYS-10 (#28) fixed: backfill_chunks.py's EMBEDDING_MODEL used to default to
+# "nomic-embed-text", which 401s loading from HuggingFace instead of using the
+# pipeline's real EMBEDDING_MODEL_HF -- every non-dry-run test in this module
+# failed at model load. SYS-27 (#77) fixed a second, independent crash this
+# exposed once the model loaded: HierarchicalChunker.chunk()'s interface had
+# moved on to DTOs and the script still called it with the old (list, dict)
+# signature. SYS-28 (#78) fixed a third: --dry-run's fetch loop never wrote
+# anything, so nothing ever advanced its own "not yet chunked" query, and it
+# looped forever instead of returning. This module needed all three before it
+# could pass.
 
 DB_CONFIG = dict(
     host=os.getenv("POSTGRES_DB_HOST", "localhost"),
