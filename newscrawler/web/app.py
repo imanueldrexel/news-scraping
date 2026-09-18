@@ -163,9 +163,33 @@ async def api_health():
             "chunks_indexed":   stats.get("total_chunks", 0),
             "last_crawl":       stats.get("last_crawl"),
             "digests_generated": stats.get("digests_generated", 0),
+            # OPS-04: a gap between this and chunks_indexed is exactly the silent
+            # divergence check_store_consistency.py exists to catch -- read via raw
+            # pickle (same technique as that script), not ChunkFAISSDatasource, so a
+            # health check never forces the ~10s embedding-model/index load (DBT-15).
+            "faiss_docs":       _faiss_doc_counts(),
         }
     except Exception as e:
         return {"status": "degraded", "error": str(e)}
+
+
+def _faiss_doc_counts() -> dict:
+    """{"NEWS_L1": n, "NEWS_L2": n} document counts, or {"error": ...} if either
+    index can't be read. Never raises -- a broken FAISS dir must not turn a working
+    /api/health into a 500."""
+    import pickle
+    from newscrawler.core.constants import VECTOR_DB_NAME_L1, VECTOR_DB_NAME_L2
+    counts = {}
+    for name, db_name in (("NEWS_L1", VECTOR_DB_NAME_L1), ("NEWS_L2", VECTOR_DB_NAME_L2)):
+        path = os.path.join(db_name, "index.pkl")
+        try:
+            with open(path, "rb") as f:
+                docstore, _ = pickle.load(f)
+            counts[name] = len(docstore._dict)
+        except Exception as e:
+            counts[name] = None
+            logger.warning(f"Could not read {name} doc count: {e}")
+    return counts
 
 
 @app.get("/api/stats")

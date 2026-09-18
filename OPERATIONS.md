@@ -81,6 +81,7 @@ python -m newscrawler.tools.kb_query --ticker GOTO --format json --output goto.j
 | Time (WIB) | Task | Command |
 |---|---|---|
 | 05:30 | Crawler health check (OPS-01) | `scripts/run_scheduled_health_check.py` — registered, see below |
+| 05:45 | Store consistency check (OPS-04) | `scripts/check_store_consistency.py --quiet --report-dir crawler_health` — not yet wired to Task Scheduler/Telegram; run manually or add alongside OPS-01 |
 | 06:00 | Morning crawl | `python __main__.py` (task=all) |
 | 06:45 | Knowledge extraction | task=extract_knowledge |
 | 07:00 | Newsletter | task=newsletter |
@@ -230,6 +231,13 @@ SELECT COUNT(*) AS pending_embedding_chunks, COUNT(DISTINCT sitemap_id) AS affec
 FROM chunks WHERE embedding_id IS NULL;
 ```
 `orphan_articles` should be 0 -- an `articles` row with no `chunks` row means `save_chunk_data`'s SQL insert never landed even though the article was saved (SYS-17's exact bug: FAISS had the vectors, `chunks` did not). If nonzero, `scripts/backfill_orphan_chunks.py` repairs it by re-chunking from `articles.extracted_text` (no re-crawl needed) and reuses whatever FAISS already has. `pending_embedding_chunks` nonzero is the opposite direction (DBT-17, still open) -- a `chunks` row that was inserted but never actually embedded into FAISS.
+
+### Check full FAISS/chunks/articles consistency (OPS-04)
+```powershell
+venv\Scripts\python.exe scripts\check_store_consistency.py            # table + JSON report
+venv\Scripts\python.exe scripts\check_store_consistency.py --quiet    # one-line summary, for cron
+```
+The SQL-only queries above catch two of nine checks (`orphan_articles`, `pending_embedding_chunks`); this script also loads both `NEWS_L1`/`NEWS_L2` FAISS docstores directly via `pickle` (no embedding model, seconds not minutes) and cross-references sitemap_ids against `articles`/`chunks`, so it catches the divergences neither store alone can see -- e.g. a FAISS vector with no `articles` row at all, or a sitemap in L1 but not L2. Status per check is `OK` (zero), `KNOWN` (nonzero but at or below the 2026-09-16 audit baseline -- already-ticketed historical debris, not new), or `GROWING` (worse than the baseline -- investigate immediately, something is silently breaking again). Exit code 1 if any check is nonzero (not just GROWING ones) -- read the table, don't just trust the exit code, since most of today's nonzero checks are known and dormant. `/api/health`'s `faiss_docs` field (`{"NEWS_L1": n, "NEWS_L2": n}`) surfaces the same document counts in the web UI, read the same lightweight way (no model load). Not yet on the Task Scheduler/Telegram path OPS-01 uses -- run manually until that's wired up.
 
 ### Check chunk-level completeness (SYS-25)
 ```sql
