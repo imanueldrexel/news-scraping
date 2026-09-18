@@ -134,8 +134,16 @@ class Crawler:
         timestamp = news_soup.find("news:publication_date")
         if timestamp:
             timestamp_string = timestamp.get_text(" ").strip()
-            timestamp_datetime = date_time_reader.convert_date(timestamp_string)
-            return timestamp_datetime.astimezone(date_time_reader.gmt_offset)
+            # SYS-11: convert_date() already returns the correct +07:00 (WIB)
+            # instant -- re-expressing it in UTC here (date_time_reader.gmt_offset)
+            # shifted an article's stored calendar day backwards whenever it was
+            # published 00:00-06:59 WIB, since every downstream posted_at is
+            # int(dt.strftime("%Y%m%d")) on whatever tzinfo this method hands back.
+            # Return the WIB instant unchanged, matching what emitennews_crawler.py
+            # and antara_news_crawler.py's own _get_timestamp overrides already do
+            # (the latter independently avoiding this exact bug, the former with an
+            # explicit comment about it).
+            return date_time_reader.convert_date(timestamp_string)
 
     @staticmethod
     def _get_title(news_soup, news_title_element_name: str = "news:title") -> str:

@@ -38,7 +38,12 @@ class TestDateTimeReaderConvertDate:
         dt = DateTimeReader.convert_date("2024-06-15T08:00:00Z")
         assert dt.utcoffset() == timedelta(hours=7)
 
-    def test_DT07_crawler_astimezone_converts_to_utc0(self):
+    def test_DT07_gmt_offset_still_converts_dates_to_utc0_if_called_explicitly(self):
+        """SYS-11: Crawler._get_timestamp no longer applies this conversion itself
+        (that was the bug -- it shifted early-morning WIB articles onto the
+        previous calendar day) but gmt_offset is still a plain UTC tzinfo object,
+        usable the same way anyone might call .astimezone() with it directly. See
+        tests/unit/test_crawler_base.py::TestGetTimestamp for the actual fix."""
         dt = DateTimeReader.convert_date("2024-01-01T19:00:00+07:00")
         utc_dt = dt.astimezone(self.reader.gmt_offset)
         assert utc_dt.hour == 12

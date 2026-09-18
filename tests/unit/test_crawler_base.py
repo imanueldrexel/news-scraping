@@ -1,6 +1,6 @@
 """Tests for Crawler base class static methods. Coverage: GL, KW, GS, ND."""
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import List
 from unittest.mock import MagicMock
 
@@ -113,6 +113,42 @@ class TestGetSitemap:
         # so if articles_data has no .get(), the handler re-raises instead of returning None.
         with pytest.raises(AttributeError):
             Crawler._get_sitemap(object())
+
+
+class TestGetTimestamp:
+    """SYS-11: _get_timestamp must hand back the WIB instant DateTimeReader.convert_date()
+    already produced, not re-express it in UTC -- every downstream posted_at is
+    int(dt.strftime("%Y%m%d")) on whatever this returns, so a UTC re-expression
+    silently shifts 00:00-06:59 WIB articles onto the previous calendar day."""
+
+    def _reader(self):
+        from newscrawler.domain.utils.date_time_reader import DateTimeReader
+        return DateTimeReader()
+
+    def test_early_morning_wib_timestamp_keeps_its_own_calendar_day(self):
+        soup = make_xml_url(pub_date="2026-09-16T03:00:00+07:00")
+        dt = Crawler._get_timestamp(soup, self._reader())
+        assert dt.strftime("%Y%m%d") == "20260916"
+        assert dt.utcoffset() == timedelta(hours=7)
+
+    def test_date_only_lastmod_style_value_keeps_its_own_day(self):
+        soup = make_xml_url(pub_date="2026-09-16")
+        dt = Crawler._get_timestamp(soup, self._reader())
+        assert dt.strftime("%Y%m%d") == "20260916"
+
+    def test_utc_input_that_crosses_midnight_into_wib_still_lands_on_the_wib_day(self):
+        # 2026-09-15 17:30 UTC = 2026-09-16 00:30 WIB -- must store the WIB day.
+        soup = make_xml_url(pub_date="2026-09-15T17:30:00Z")
+        dt = Crawler._get_timestamp(soup, self._reader())
+        assert dt.strftime("%Y%m%d") == "20260916"
+
+    def test_no_publication_date_tag_returns_none(self):
+        xml = """<?xml version="1.0" encoding="UTF-8"?>
+        <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+          <url><loc>http://example.com/a</loc></url>
+        </urlset>"""
+        soup = BeautifulSoup(xml, "xml").find("url")
+        assert Crawler._get_timestamp(soup, self._reader()) is None
 
 
 class TestGetNewsDetails:
