@@ -103,9 +103,13 @@ class TestGetSitemap:
     def test_GS03_missing_link_returns_none(self):
         assert Crawler._get_sitemap(self._valid(link=None)) is None
 
-    def test_GS04_suara_category_forced_to_none(self):
-        result = Crawler._get_sitemap(self._valid(sources=WebsiteName.SUARA.name, category="x"))
-        assert result is not None and result.category is None
+    def test_GS04_suara_category_no_longer_forced_to_none(self):
+        # SRC-12 (#90): SUARA's category used to be forced to None because the
+        # branch list was 20 hardcoded stale regional sitemaps with no real
+        # section name; now _get_branches reads the real index and category is
+        # a genuine section ("bisnis"), same as every other source.
+        result = Crawler._get_sitemap(self._valid(sources=WebsiteName.SUARA.name, category="bisnis"))
+        assert result is not None and result.category == "bisnis"
 
 
     def test_GS05_generic_exception_handler_itself_crashes(self):

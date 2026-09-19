@@ -24,7 +24,7 @@ class URL(enum.Enum):
     TIRTO = "https://tirto.id/s/sitemap-content.xml"
     INVESTORID = "https://investor.id/sitemap_news.xml"
     BERITASATU = "https://www.beritasatu.com/sitemap.xml"
-    SUARA = ""
+    SUARA = "https://www.suara.com/sitemap.xml"
     KUMPARAN = "https://kumparan.com/sitemap.xml"
     MERDEKA = "https://www.merdeka.com/sitemap.xml"
     DETIK = "https://www.detik.com/sitemap.xml"

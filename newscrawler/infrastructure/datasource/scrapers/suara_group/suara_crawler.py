@@ -1,14 +1,11 @@
-import re
 import logging
 from typing import Dict, List
 
 from newscrawler.infrastructure.datasource.scrapers.crawler import Crawler
 from newscrawler.domain.entities.extraction.website_name import WebsiteName
+from newscrawler.domain.entities.extraction.url_data import URL
 from newscrawler.core.utils.utils import (
     preprocess_text,
-)
-from newscrawler.infrastructure.datasource.scrapers.suara_group.suara_branch import (
-    SuaraNetwork,
 )
 
 logging.basicConfig()
@@ -20,17 +17,24 @@ class SuaraCrawler(Crawler):
     def __init__(self):
         super(SuaraCrawler, self).__init__()
         self.website_name = WebsiteName.SUARA.value
+        # SRC-12 (#90): never set before -- _get_branches used to ignore the
+        # fetched index entirely (a hardcoded regional branch list instead),
+        # so nothing ever read this. get_news_in_bulk() needs it now.
+        self.website_url = URL.SUARA.value
 
     @staticmethod
     def _get_branches(soup) -> Dict[str, str]:
-        branches = SuaraNetwork().get_all_url()
+        # SRC-12 (#90): the old branch list was 20 hardcoded SuaraNetwork
+        # regional sitemaps, all frozen at 2022-10-23 -- never read from the
+        # site's actual index. The real index is a standard sitemapindex of
+        # <section>/sitemap-{news,web,image}.xml entries; keep bisnis's news
+        # leaf (the finance-relevant one -- see DBT-04 for widening this).
+        branches = {}
+        for sitemap in soup.find_all("sitemap"):
+            loc = sitemap.find("loc")
+            if loc and "/bisnis/sitemap-news.xml" in loc.get_text(" ").strip():
+                branches["bisnis"] = loc.get_text(" ").strip()
         return branches
-
-    @staticmethod
-    def _get_branch_name_from_url(url) -> str:
-        branch_name = re.sub(r"(https://)(\w+)(\..*)", r"\2", url)
-        if branch_name:
-            return branch_name.strip()
 
     def _get_whole_text(self, soup):
         multiple_pages = soup.find("div", attrs={"class": ["paging__wrap clearfix"]})

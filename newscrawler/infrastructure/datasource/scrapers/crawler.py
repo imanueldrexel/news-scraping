@@ -173,8 +173,6 @@ class Crawler:
             data_field_dict["category"] = articles_data.get("category")
             data_field_dict["link"] = articles_data.get("link")
             data_field_dict["sources"] = articles_data.get("sources")
-            if data_field_dict["sources"] == WebsiteName.SUARA.name:
-                data_field_dict["category"] = None
             return SitemapDTO(**data_field_dict)
         except BaseException as e:
             logger.info(
