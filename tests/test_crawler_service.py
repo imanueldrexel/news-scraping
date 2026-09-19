@@ -54,7 +54,7 @@ class TestCrawlerServiceImpl(unittest.TestCase):
         self.mock_crawler.batch_crawling_details.return_value = [article_important, article_unimportant]
 
         # 3. Mock Semantic Filter logic on the INSTANCE
-        def side_effect_is_important(text):
+        def side_effect_is_important(text, category=None):
             return "Economy" in text
             
         self.mock_filter_instance.is_important.side_effect = side_effect_is_important

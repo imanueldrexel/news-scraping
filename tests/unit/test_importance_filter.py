@@ -1,0 +1,95 @@
+"""SYS-31 (#86): the category deny-list must reject known off-topic categories
+without loading the embedding model, and the off-topic-anchor margin must be
+wired into SemanticImportanceFilter's constructor/is_important signature."""
+import unittest
+from unittest.mock import MagicMock, patch
+
+from newscrawler.core.importance_filter import (
+    SemanticImportanceFilter,
+    is_offtopic_category,
+    OFFTOPIC_CATEGORIES_EXACT,
+    OFFTOPIC_INTERESTS,
+)
+
+
+class TestIsOffTopicCategory(unittest.TestCase):
+    def test_none_and_empty_are_not_offtopic(self):
+        self.assertFalse(is_offtopic_category(None))
+        self.assertFalse(is_offtopic_category(""))
+
+    def test_known_offtopic_categories(self):
+        for cat in ("hiburan", "fashion", "lifestyle", "Sajian", "Nakita", "olahraga", "religi"):
+            self.assertTrue(is_offtopic_category(cat), f"{cat!r} should be off-topic")
+
+    def test_case_insensitive(self):
+        self.assertTrue(is_offtopic_category("HIBURAN"))
+        self.assertTrue(is_offtopic_category("GridID"))
+
+    def test_finance_categories_are_not_offtopic(self):
+        for cat in ("ekonomi", "bisnis", "market-news", "banking", "finansial", "syariah"):
+            self.assertFalse(is_offtopic_category(cat), f"{cat!r} should not be off-topic")
+
+    def test_url_shaped_jpnn_category_matched_by_keyword(self):
+        self.assertTrue(is_offtopic_category("https://bali.jpnn.com/sitemap_post_kriminal.xml"))
+        self.assertTrue(is_offtopic_category("https://jogja.jpnn.com/sitemap_post_olahraga.xml"))
+
+    def test_ambiguous_regional_category_not_denied(self):
+        # Regional/political categories are not in scope for this deny-list --
+        # they may contain finance content and are left to the semantic score.
+        self.assertFalse(is_offtopic_category("daerah"))
+        self.assertFalse(is_offtopic_category("nasional"))
+
+
+class TestSemanticImportanceFilterCategoryGate(unittest.TestCase):
+    """Category check must short-circuit before the model ever runs."""
+
+    def _make_filter_without_loading_model(self):
+        filt = SemanticImportanceFilter.__new__(SemanticImportanceFilter)
+        filt.model = MagicMock()
+        filt.interests = ["Ekonomi"]
+        filt.threshold = 0.35
+        filt.margin = 0.03
+        filt.interest_embeddings = MagicMock()
+        filt.offtopic_interests = OFFTOPIC_INTERESTS
+        filt.offtopic_embeddings = MagicMock()
+        return filt
+
+    def test_offtopic_category_rejected_without_encoding(self):
+        filt = self._make_filter_without_loading_model()
+        result = filt.is_important("some text", category="hiburan")
+        self.assertFalse(result)
+        filt.model.encode.assert_not_called()
+
+    def test_empty_text_rejected(self):
+        filt = self._make_filter_without_loading_model()
+        self.assertFalse(filt.is_important("", category=None))
+
+
+class TestSemanticImportanceFilterMargin(unittest.TestCase):
+    """Real model, real off-topic anchors: verifies the margin actually
+    separates a lifestyle/celebrity text from a finance one when category is
+    unavailable (category=None) -- the defense-in-depth path for sources whose
+    category is missing or not yet in the deny-list."""
+
+    @classmethod
+    def setUpClass(cls):
+        from newscrawler.core.constants import INTERESTS
+        cls.filt = SemanticImportanceFilter(
+            interests=INTERESTS,
+            model_name="paraphrase-multilingual-MiniLM-L12-v2",
+            offtopic_interests=OFFTOPIC_INTERESTS,
+        )
+
+    def test_celebrity_gossip_rejected_with_no_category(self):
+        text = ("Ria Ricis Nangis Lihat Sapi Kurbannya Disembelih. Selebgram itu tak kuasa "
+                "menahan tangis saat sapi kesayangannya disembelih di Idul Adha.")
+        self.assertFalse(self.filt.is_important(text, category=None))
+
+    def test_real_finance_headline_still_passes(self):
+        text = ("Bank Indonesia Naikkan Suku Bunga Acuan 25 Basis Poin. Rapat Dewan Gubernur BI "
+                "menahan inflasi yang masih tinggi di tengah pelemahan Rupiah.")
+        self.assertTrue(self.filt.is_important(text, category=None))
+
+
+if __name__ == "__main__":
+    unittest.main()

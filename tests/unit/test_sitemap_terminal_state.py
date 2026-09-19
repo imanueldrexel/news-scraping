@@ -70,7 +70,7 @@ class TestTerminalStateClassification:
         service.data_flow_repo.mark_sitemaps_status.assert_any_call([3], "saved")
 
     def test_mixed_batch_classifies_each_sitemap_independently(self, service):
-        def fake_is_important(text):
+        def fake_is_important(text, category=None):
             return "banking" in text
 
         service.semantic_filter.is_important.side_effect = fake_is_important

@@ -5,7 +5,7 @@ from newscrawler.core.chunker import HierarchicalChunker
 from newscrawler.core.crawler_dict_list import CRAWLER_DICT
 from newscrawler.core.crawler_url_list import WEB_URL_DICT
 from newscrawler.core.constants import INTERESTS, SITEMAP_SOURCE_FAILURE_RATIO
-from newscrawler.core.importance_filter import SemanticImportanceFilter
+from newscrawler.core.importance_filter import SemanticImportanceFilter, OFFTOPIC_INTERESTS
 from newscrawler.domain.dtos.dataflow.details.news_details_dto import NewsDetailsDTO
 from newscrawler.domain.dtos.dataflow.details.site_map_dto import SitemapDTO
 from newscrawler.domain.repositories.data_flow_repository.data_flow_repository import (
@@ -35,7 +35,8 @@ class CrawlerServiceImpl(CrawlerService):
         logger.info("Initializing Semantic Filter...")
         self.semantic_filter = SemanticImportanceFilter(
             interests=INTERESTS,
-            model_name='paraphrase-multilingual-MiniLM-L12-v2'
+            model_name='paraphrase-multilingual-MiniLM-L12-v2',
+            offtopic_interests=OFFTOPIC_INTERESTS,
         )
 
     def crawl_sitemaps(self, website_name: str) -> List[SitemapDTO]:
@@ -128,6 +129,10 @@ class CrawlerServiceImpl(CrawlerService):
             # is counted and everything stays eligible for the next run.
             self.data_flow_repo.mark_sitemaps_attempted([n.sitemap_id for n in newsdetails])
             
+            # Build sitemap lookup so the filter and the chunker both get
+            # source/category metadata for this batch.
+            sitemap_by_id = {s.sitemap_id: s for s in batch}
+
             # --- Semantic Filtering ---
             important_newsdetails = []
             # SYS-16: a rejection is either permanent (real text, but off-topic --
@@ -144,8 +149,10 @@ class CrawlerServiceImpl(CrawlerService):
                     # Clean/prepare text snippet
                     full_text = " ".join(news.extracted_text) if isinstance(news.extracted_text, list) else str(news.extracted_text)
                     check_text = f"{title} {full_text[:500]}"
+                    sitemap_meta = sitemap_by_id.get(news.sitemap_id)
+                    category = sitemap_meta.category if sitemap_meta else None
 
-                    if self.semantic_filter.is_important(check_text):
+                    if self.semantic_filter.is_important(check_text, category=category):
                         important_newsdetails.append(news)
                     elif full_text.strip():
                         rejected_filter_ids.append(news.sitemap_id)
@@ -165,9 +172,6 @@ class CrawlerServiceImpl(CrawlerService):
 
             if important_newsdetails:
                 try:
-                    # Build sitemap lookup so chunker gets source/category metadata
-                    sitemap_by_id = {s.sitemap_id: s for s in batch}
-
                     all_chunks = []
                     for news in important_newsdetails:
                         sitemap_meta = sitemap_by_id.get(news.sitemap_id)
