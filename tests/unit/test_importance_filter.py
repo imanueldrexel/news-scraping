@@ -39,6 +39,34 @@ class TestIsOffTopicCategory(unittest.TestCase):
         self.assertFalse(is_offtopic_category("daerah"))
         self.assertFalse(is_offtopic_category("nasional"))
 
+    def test_otomotif_is_not_denied(self):
+        """2026-09-20, found while verifying the SYS-31 cleanup before it ran:
+        sampled real saved titles under "otomotif" on WARTAEKONOMI and
+        SINDONEWS -- both were auto-market business coverage (EV subsidies,
+        car sales/market-share figures), not lifestyle reviews. A bare
+        "otomotif" category is not a reliable off-topic signal on this corpus."""
+        self.assertFalse(is_offtopic_category("otomotif"))
+        self.assertFalse(is_offtopic_category("Otomotif"))
+
+    def test_gridid_automotive_magazine_brands_still_denied(self):
+        # Unlike a bare "otomotif" news-portal section, these are unambiguous
+        # dedicated car-hobbyist magazine brands (GRIDID/Grid Network).
+        for cat in ("Gridoto", "Motorplus", "Otomotifnet"):
+            self.assertTrue(is_offtopic_category(cat), f"{cat!r} should still be off-topic")
+
+    def test_transportasi_is_not_a_false_positive_via_the_sport_substring(self):
+        """"transportasi" (Indonesian for "transportation") contains "sport"
+        purely by coincidence (tran-SPORT-asi) -- a plain substring check on
+        the "sport" keyword flagged real WARTAEKONOMI logistics/infrastructure
+        coverage as off-topic. Must not be denied."""
+        self.assertFalse(is_offtopic_category("transportasi"))
+
+    def test_sport_keyword_still_matches_real_sport_categories(self):
+        # The word-boundary fix for "sport" must still catch these.
+        self.assertTrue(is_offtopic_category("bola-sports"))
+        self.assertTrue(is_offtopic_category("https://bali.jpnn.com/sitemap_post_sport.xml"))
+        self.assertTrue(is_offtopic_category("sport"))
+
 
 class TestSemanticImportanceFilterCategoryGate(unittest.TestCase):
     """Category check must short-circuit before the model ever runs."""

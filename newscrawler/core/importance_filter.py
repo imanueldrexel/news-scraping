@@ -1,4 +1,5 @@
 import logging
+import re
 from typing import List, Optional
 from sentence_transformers import SentenceTransformer, util
 
@@ -15,24 +16,40 @@ logger.setLevel(logging.INFO)
 # economy news -- "Ria Ricis Nangis Lihat Sapi Kurbannya Disembelih" scores
 # 0.421 vs `Rupiah`, above the corpus median -- so no threshold on the cosine
 # score alone can separate them; the category is a free, reliable signal.
+#
+# NOTE (2026-09-20, pre-cleanup verification for SYS-31's data-deletion step):
+# "otomotif" was removed from both sets below after sampling actual saved
+# titles under it on WARTAEKONOMI and SINDONEWS -- both were real auto-market
+# business coverage (EV subsidies, fiscal risk, car sales/market-share
+# figures), not lifestyle car reviews. A bare "otomotif" category label does
+# not reliably mean off-topic on this corpus; GRIDID's dedicated car-hobbyist
+# magazine brands (Gridoto, Motorplus, Otomotifnet) are unambiguous and stay.
 OFFTOPIC_CATEGORIES_EXACT = {
     "hiburan", "fashion", "lifestyle", "olahraga", "bola", "sport", "sports",
-    "otomotif", "kuliner", "sajian", "travel", "wisata", "destinasi", "piknik",
+    "kuliner", "sajian", "travel", "wisata", "destinasi", "piknik",
     "religi", "kalam", "ramadan", "edukasi", "forum-mahasiswa", "kriminal",
     "entertainment", "gaya-hidup", "idxtainment", "ecotainment",
     "entertainment_life_style", "travelista", "sepak-bola", "jelita",
     # GRIDID: every category the source has ever saved under is a lifestyle/
     # hobby magazine brand (Grid Network), none finance.
     "gridid", "intisari", "fotokita", "idea", "nationalgeographic", "nakita",
-    "nova", "infokomputer", "gridoto", "hai", "motorplus", "gridhealth",
-    "nextren", "juara", "cewekbanget", "bolasport", "stylo",
+    "nova", "infokomputer", "gridoto", "otomotifnet", "hai", "motorplus",
+    "gridhealth", "nextren", "juara", "cewekbanget", "bolasport", "stylo",
 }
 # Substring match for category values that are not clean labels -- e.g. JPNN
 # stores a raw per-region sitemap URL as `category` for many rows
-# ("https://bali.jpnn.com/sitemap_post_kriminal.xml").
-OFFTOPIC_CATEGORY_KEYWORDS = (
-    "olahraga", "kriminal", "otomotif", "lifestyle", "hiburan", "kuliner",
-    "travel", "religi", "destinasi", "sport", "tainment",
+# ("https://bali.jpnn.com/sitemap_post_kriminal.xml"). Most of these are
+# checked as plain substrings; "sport" is checked with a word boundary
+# instead (see is_offtopic_category) because "transportasi" -- Indonesian for
+# "transportation", nothing to do with sports -- contains "sport" by pure
+# coincidence (tran-SPORT-asi) and was a real false positive on WARTAEKONOMI
+# caught by sampling actual titles before the SYS-31 cleanup delete ran.
+OFFTOPIC_CATEGORY_KEYWORDS_SUBSTRING = (
+    "olahraga", "kriminal", "lifestyle", "hiburan", "kuliner",
+    "travel", "religi", "destinasi", "tainment",
+)
+OFFTOPIC_CATEGORY_KEYWORDS_WORD = (
+    "sport",
 )
 
 # Short topic anchors for verticals that keep landing in the cosine noise band
@@ -40,10 +57,12 @@ OFFTOPIC_CATEGORY_KEYWORDS = (
 # check (SemanticImportanceFilter.margin): an article must score higher against
 # INTERESTS than against these, not merely clear the raw threshold. This is the
 # fallback for articles whose sitemap.category is missing, blank, or not (yet)
-# covered by the deny-list above.
+# covered by the deny-list above. No "Otomotif" entry, for the same reason
+# it isn't a category keyword -- real auto-market business content would
+# score close to it too.
 OFFTOPIC_INTERESTS = [
     "Hiburan dan Gosip Selebriti", "Gaya Hidup dan Fashion", "Kuliner dan Resep Masakan",
-    "Olahraga dan Sepak Bola", "Otomotif", "Wisata dan Travel", "Agama dan Religi",
+    "Olahraga dan Sepak Bola", "Wisata dan Travel", "Agama dan Religi",
     "Kriminal dan Kecelakaan", "Politik dan Pemilu",
 ]
 
@@ -56,7 +75,15 @@ def is_offtopic_category(category: Optional[str]) -> bool:
     normalized = category.strip().lower()
     if normalized in OFFTOPIC_CATEGORIES_EXACT:
         return True
-    return any(keyword in normalized for keyword in OFFTOPIC_CATEGORY_KEYWORDS)
+    if any(keyword in normalized for keyword in OFFTOPIC_CATEGORY_KEYWORDS_SUBSTRING):
+        return True
+    # Plain \b treats "_" as a word character, so it would not see a boundary
+    # in "post_sport" -- category/URL slugs use "_"/"-"/"." as separators just
+    # as often as they use letters, so the boundary is "not alphanumeric".
+    return any(
+        re.search(rf"(?:^|[^a-z0-9]){keyword}s?(?:[^a-z0-9]|$)", normalized)
+        for keyword in OFFTOPIC_CATEGORY_KEYWORDS_WORD
+    )
 
 
 class SemanticImportanceFilter:
