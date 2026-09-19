@@ -57,6 +57,10 @@ class TestFindMisclassified:
         assert result == [(1, "MEDIAINDONESIA"), (2, "MEDIAINDONESIA")]
         sql, params = session.execute.call_args[0]
         assert "rejected_filter" in str(sql)
+        # DBT-25: passing :ids is not the same as USING it -- the query must
+        # restrict on the L1 set, or the script flips every rejected_filter row.
+        # tests/integration/test_fix_rejected_filter_live.py proves it on a real table.
+        assert "sitemap_id = ANY(:ids)" in str(sql)
         assert sorted(params["ids"]) == [1, 2, 3]
         assert params["website"] == "MEDIAINDONESIA"
 
