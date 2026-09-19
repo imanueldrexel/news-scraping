@@ -1,5 +1,6 @@
 import logging
 import os
+import shutil
 from dataclasses import replace
 from typing import Dict, List, Tuple
 
@@ -74,12 +75,56 @@ class ChunkFAISSDatasource:
 
         docs = [self._to_document(c) for c in new_chunks]
         embedding_ids = vs.add_documents(docs)  # LangChain returns list of UUID strings
-        vs.save_local(db_name)
+        self._atomic_save_local(vs, db_name)
         logger.info(f"  {db_name}: embedded {len(new_chunks)} new chunks")
 
         for chunk, eid in zip(new_chunks, embedding_ids):
             result.append(replace(chunk, embedding_id=eid, chunk_status='embedded'))
         return result
+
+    @staticmethod
+    def _atomic_save_local(vs: FAISS, db_name: str) -> None:
+        """DBT-10 (#45): FAISS.save_local writes index.faiss then index.pkl
+        directly into db_name, with no temp-file + rename -- a crash, OOM, or
+        disk-full mid-write (or between the two files) leaves the only copy
+        truncated, or the two files mismatched (index.faiss with more vectors
+        than index.pkl's docstore has entries for). Writes the full pair into
+        a sibling temp directory first -- the live files are never touched
+        while save_local runs, however long that takes for the corpus's
+        current size -- then, per file, copies the current live file to
+        *.bak (one generation kept) and swaps the new one in with os.replace
+        (atomic on both POSIX and Windows). The backup step is a copy, not a
+        move: live_path must keep its old content until the instant
+        os.replace swaps it out, so a failed swap-in never leaves it empty.
+
+        Swap order matters: index.pkl before index.faiss. If a crash lands
+        between the two swaps, the live pair becomes (old index.faiss, new
+        index.pkl). LangChain's FAISS.add_documents only appends, so the new
+        docstore/index_to_docstore_id still correctly maps every internal id
+        the *old*, smaller index actually contains -- the reader gets a
+        stale-but-consistent view (as if this save hadn't happened yet), not
+        a corrupted one. The reverse order risks index.faiss containing
+        internal ids the old docstore has no entry for.
+        """
+        tmp_dir = f"{db_name}.tmp"
+        if os.path.exists(tmp_dir):
+            shutil.rmtree(tmp_dir)
+        vs.save_local(tmp_dir)
+
+        os.makedirs(db_name, exist_ok=True)
+        for fname in ("index.pkl", "index.faiss"):
+            tmp_path = os.path.join(tmp_dir, fname)
+            live_path = os.path.join(db_name, fname)
+            bak_path = live_path + ".bak"
+            if os.path.exists(live_path):
+                # Copy, not move/replace: live_path must keep its current
+                # content until the instant os.replace below swaps it out --
+                # if that swap-in then fails, live_path must still have
+                # *something* valid, not be left empty because the backup
+                # step already vacated it.
+                shutil.copy2(live_path, bak_path)
+            os.replace(tmp_path, live_path)
+        shutil.rmtree(tmp_dir, ignore_errors=True)
 
     def _to_document(self, chunk: ChunkDTO) -> Document:
         return Document(

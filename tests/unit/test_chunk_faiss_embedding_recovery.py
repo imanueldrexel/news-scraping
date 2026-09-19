@@ -8,7 +8,7 @@ had its vectors gets retried, finds those exact vectors, and reuses their real i
 instead of creating duplicates or leaving the SQL row unfillable.
 """
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from newscrawler.domain.dtos.dataflow.details.chunk_dto import ChunkDTO
 from newscrawler.infrastructure.datasource.dataflow.write.faiss.chunk_faiss_data_source import (
@@ -58,32 +58,38 @@ class TestEmbedBatchRecoversRealEmbeddingId:
         ds = _ds()
         vs = _vs_with_docstore({"real-uuid": _doc(7, 1, 0)})
 
-        result = ds._embed_batch([_chunk(7)], vs, "NEWS_L1")
+        with patch.object(ChunkFAISSDatasource, "_atomic_save_local") as mock_save:
+            result = ds._embed_batch([_chunk(7)], vs, "NEWS_L1")
 
         assert len(result) == 1
         assert result[0].embedding_id == "real-uuid"
         assert result[0].chunk_status == "embedded"
         vs.add_documents.assert_not_called()
-        vs.save_local.assert_not_called()
+        mock_save.assert_not_called()
 
     def test_new_chunk_is_embedded_and_index_saved(self):
+        # DBT-10 (#45): the index save now goes through _atomic_save_local
+        # (temp dir + os.replace), not vs.save_local(db_name) directly --
+        # that mechanism has its own dedicated tests (test_chunk_faiss_atomic_save.py).
         ds = _ds()
         vs = _vs_with_docstore({})
         vs.add_documents.return_value = ["new-uuid"]
 
-        result = ds._embed_batch([_chunk(9)], vs, "NEWS_L1")
+        with patch.object(ChunkFAISSDatasource, "_atomic_save_local") as mock_save:
+            result = ds._embed_batch([_chunk(9)], vs, "NEWS_L1")
 
         assert len(result) == 1
         assert result[0].embedding_id == "new-uuid"
         vs.add_documents.assert_called_once()
-        vs.save_local.assert_called_once_with("NEWS_L1")
+        mock_save.assert_called_once_with(vs, "NEWS_L1")
 
     def test_mixed_batch_splits_correctly(self):
         ds = _ds()
         vs = _vs_with_docstore({"real-uuid": _doc(1, 1, 0)})
         vs.add_documents.return_value = ["new-uuid"]
 
-        result = ds._embed_batch([_chunk(1), _chunk(2)], vs, "NEWS_L1")
+        with patch.object(ChunkFAISSDatasource, "_atomic_save_local"):
+            result = ds._embed_batch([_chunk(1), _chunk(2)], vs, "NEWS_L1")
 
         by_sitemap = {c.sitemap_id: c for c in result}
         assert by_sitemap[1].embedding_id == "real-uuid"
@@ -101,7 +107,8 @@ class TestEmbedBatchRecoversRealEmbeddingId:
         vs = _vs_with_docstore({})
         vs.add_documents.return_value = ["only-uuid"]
 
-        result = ds._embed_batch([_chunk(9), _chunk(9)], vs, "NEWS_L1")
+        with patch.object(ChunkFAISSDatasource, "_atomic_save_local"):
+            result = ds._embed_batch([_chunk(9), _chunk(9)], vs, "NEWS_L1")
 
         assert len(result) == 1
         assert result[0].embedding_id == "only-uuid"
@@ -156,7 +163,8 @@ class TestSaveRoutesByChunkLevel:
         ds.vs_l2 = _vs_with_docstore({})
         ds.vs_l2.add_documents.return_value = ["l2-uuid"]
 
-        result = ds.save([_chunk(1, chunk_level=1), _chunk(1, chunk_level=2)])
+        with patch.object(ChunkFAISSDatasource, "_atomic_save_local"):
+            result = ds.save([_chunk(1, chunk_level=1), _chunk(1, chunk_level=2)])
 
         by_level = {c.chunk_level: c for c in result}
         assert by_level[1].embedding_id == "l1-uuid"
