@@ -52,12 +52,15 @@ def db_client():
         pytest.skip(f"Cannot create SQLAlchemyClient: {exc}")
 
 
-def make_sitemap_model(headline="Test", link="http://example.com", sources="KOMPAS",
+def make_sitemap_model(headline="Test", link=None, sources="KOMPAS",
                        category="economy", ts=None, keywords=None):
     from newscrawler.infrastructure.datasource.dataflow.model.news_data_model import NewsSitemapModel
+    import uuid
+    # SYS-29: sitemaps.link is unique (sitemaps_link_uq); a fixed default committed
+    # by DS08 collided with every later default-link insert in the run.
     return NewsSitemapModel(
         headline=headline,
-        link=link,
+        link=link or f"http://example.com/{uuid.uuid4().hex}",
         sources=sources,
         category=category,
         posted_at=ts or datetime(2024, 1, 1),  # NewsSitemapModel uses posted_at

@@ -36,7 +36,8 @@ class NewsDataSource:
         # gate ran before dedup and silently discarded never-seen entries from earlier
         # days -- a missed run could never be backfilled, and date-only sitemaps
         # (EMITENNEWS) lost everything after the first run. save_sitemaps() dedups on
-        # (link, posted_at), which is the check that actually matters.
+        # link (SYS-29: not (link, posted_at) -- the date is not part of a URL's
+        # identity), which is the check that actually matters.
         if not sitemaps:
             return []
         logger.info(f"get {len(sitemaps)} to scrape for {sitemaps[0].sources}")

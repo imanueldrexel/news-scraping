@@ -2,7 +2,7 @@ from datetime import datetime, timezone, timedelta
 from sqlalchemy import text
 from dataclasses import replace
 import logging
-from typing import List, Dict, Tuple
+from typing import Iterable, List, Dict, Tuple
 
 from newscrawler.infrastructure.datasource.dataflow.model.news_data_model import (
     NewsSitemapModel,
@@ -25,6 +25,11 @@ logger.setLevel(logging.INFO)
 
 
 class SQLAlchemySitemapDataSource:
+    # SYS-29: how many links go into one `link IN (...)` lookup. A source's whole
+    # listing is saved in a single save_sitemaps call (VIVA lists 2,500+), so the
+    # pre-fetch is chunked rather than rendered as one giant IN list.
+    LINK_LOOKUP_CHUNK = 1000
+
     def __init__(self, sql_alchemy_client: SQLAlchemyClient):
         self.client = sql_alchemy_client
 
@@ -60,6 +65,37 @@ class SQLAlchemySitemapDataSource:
                     )
         return last_time_crawling
 
+    def find_existing_by_link(self, links: Iterable[str], session=None) -> Dict[str, int]:
+        """SYS-29: map link -> sitemap_id for every link already stored.
+
+        This is the exact lookup save_sitemaps dedups against -- exposed so
+        scripts/experiments/probe_sitemap_dedup_drift.py can ask "which of these
+        would save_sitemaps insert?" through the real code instead of re-deriving
+        the key (the probe's original copy of the (link, posted_at) key is what let
+        SYS-11's one-line change become a 3,817-row duplication event).
+
+        The lookup is by link only, chunked (LINK_LOOKUP_CHUNK links per query).
+        It is deliberately NOT scoped by posted_at or source: a stored row whose
+        posted_at differs from today's derivation (SYS-11's +1-day WIB fix, a
+        site re-stamping news:publication_date) still has to be found, and links
+        already carry their domain so a source filter adds nothing.
+        """
+        links = sorted({l for l in links if l})
+        if not links:
+            return {}
+        if session is None:
+            with self.client.get_session() as s:
+                return self.find_existing_by_link(links, session=s)
+        existing: Dict[str, int] = {}
+        for i in range(0, len(links), self.LINK_LOOKUP_CHUNK):
+            rows = (
+                session.query(SitemapTable.link, SitemapTable.sitemap_id)
+                .filter(SitemapTable.link.in_(links[i:i + self.LINK_LOOKUP_CHUNK]))
+                .all()
+            )
+            existing.update({row.link: row.sitemap_id for row in rows})
+        return existing
+
     def save_sitemaps(self, sitemaps: List[NewsSitemapModel]) -> List[NewsSitemapModel]:
         if not sitemaps:
             return []
@@ -68,42 +104,37 @@ class SQLAlchemySitemapDataSource:
         updated_sitemaps_list = []
 
         with self.client.get_session() as session:
-            # 1. Pre-fetch existing data (Optimization)
-            posted_dates = [
-                int(s.posted_at.strftime("%Y%m%d")) 
-                for s in sitemaps if s.posted_at
-            ]
-            earliest_posted_at = min(posted_dates) if posted_dates else 0
-            # Scope to this batch's source(s): without the old date gate a batch can
-            # span weeks (EMITENNEWS), and the range would otherwise pull every
-            # source's rows for that window.
-            batch_sources = {s.sources for s in sitemaps if s.sources}
-
-            query = session.query(SitemapTable.link, SitemapTable.posted_at, SitemapTable.sitemap_id).filter(
-                SitemapTable.posted_at >= earliest_posted_at
-            )
-            if batch_sources:
-                query = query.filter(SitemapTable.sources.in_(batch_sources))
-            existing_rows = query.all()
-            
-            # Lookup Map: { (link, date) : id }
-            existing_map = {
-                (row.link, row.posted_at): row.sitemap_id 
-                for row in existing_rows
-            }
+            # SYS-29: the dedup key is the link alone. A URL identifies an article;
+            # the date was never part of its identity. Keying on (link, posted_at)
+            # meant that any change in how posted_at is derived (SYS-11's WIB fix
+            # moved every 00:00-06:59 article forward a day) or a site re-stamping
+            # news:publication_date re-inserted a stored URL as a second sitemaps
+            # row, which then had no articles row, re-entered load_all_sitemaps,
+            # and produced a second articles row plus duplicate chunks and FAISS
+            # vectors. scripts/migrate_sitemaps_unique_link.sql enforces the same
+            # key in the database (sitemaps_link_uq), so this map is a fast path,
+            # not the constraint -- a race between two writers now ends in the
+            # per-row savepoint below, not in a duplicate row.
+            #
+            # An existing row's posted_at is deliberately left as first seen, even
+            # when the re-listed entry carries a different date: the articles row
+            # (meta_data.posted_at) was derived the same way at save time and would
+            # otherwise disagree with its sitemap, and re-stamping sites would churn
+            # the value on every crawl. Same rule as headline/keywords, which are
+            # not refreshed on re-listing either.
+            existing_map = self.find_existing_by_link((s.link for s in sitemaps), session=session)
 
             new_entries_count = 0
 
             for sitemap in sitemaps:
-                date_int = int(sitemap.posted_at.strftime("%Y%m%d")) if sitemap.posted_at else 0
-                lookup_key = (sitemap.link, date_int)
-                
+                lookup_key = sitemap.link
+
                 final_id = None
 
                 # --- Scenario A: Check Cache/DB ---
                 if lookup_key in existing_map:
                     final_id = existing_map[lookup_key]
-                
+
                 # --- Scenario B: Insert New ---
                 else:
                     try:

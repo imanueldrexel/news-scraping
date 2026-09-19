@@ -53,6 +53,10 @@ class SitemapTable(Base):
 
 # Create an index on sitemap_id
 Index("idx_sitemap_id", SitemapTable.sitemap_id.desc())
+# SYS-29: one sitemaps row per link -- matches scripts/migrate_sitemaps_unique_link.sql's
+# sitemaps_link_uq index. save_sitemaps dedups on the same key in Python; this is
+# the constraint that makes that map a fast path rather than the only guard.
+Index("sitemaps_link_uq", SitemapTable.link, unique=True)
 
 
 class NewsArticlesTable(Base):

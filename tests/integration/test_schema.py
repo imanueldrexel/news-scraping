@@ -15,6 +15,8 @@ Set connection via env vars (defaults match docker-compose.yaml):
   POSTGRES_DB_NAME  (always newsaggregator_test via conftest.py)
 """
 import os
+import uuid
+
 import pytest
 
 psycopg2 = pytest.importorskip("psycopg2", reason="psycopg2 not installed")
@@ -54,7 +56,11 @@ def _exec(conn, sql, params=None):
     return cur
 
 
-def _insert_sitemap(conn, headline="Test", link="http://example.com"):
+def _insert_sitemap(conn, headline="Test", link=None):
+    # SYS-29: sitemaps.link is unique (sitemaps_link_uq). A fixed default collided
+    # with rows other modules commit (test_data_sources DS08), so default to a
+    # fresh link per call -- no test here depends on the value.
+    link = link or f"http://example.com/{uuid.uuid4().hex}"
     cur = _exec(conn, """
         INSERT INTO sitemaps (headline, link, posted_at)
         VALUES (%s, %s, %s)
