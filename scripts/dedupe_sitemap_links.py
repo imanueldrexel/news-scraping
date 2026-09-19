@@ -123,7 +123,7 @@ def delete_faiss_vectors(loser_ids) -> dict:
         ids = _faiss_ids_for_sitemaps(vs, loser_ids)
         if ids:
             vs.delete(ids)
-            vs.save_local(name)
+            ChunkFAISSDatasource._atomic_save_local(vs, name)  # DBT-10: crash-safe swap, not a direct in-place overwrite
         deleted[name] = len(ids)
         logger.info("%s: deleted %d vector(s) for sitemap_ids %s", name, len(ids), sorted(loser_ids))
     return deleted

@@ -111,7 +111,7 @@ def write_off(client, rows, dry_run: bool) -> int:
                    for k, d in doomed.items()], f, default=str, indent=2)
     logger.info("Backed up %d docstore entries to %s", len(doomed), path)
     ds.vs_l1.delete(list(doomed))
-    ds.vs_l1.save_local(VECTOR_DB_NAME_L1)
+    ds._atomic_save_local(ds.vs_l1, VECTOR_DB_NAME_L1)  # DBT-10: crash-safe swap, not a direct in-place overwrite
     logger.info("Deleted %d vector(s) from %s", len(doomed), VECTOR_DB_NAME_L1)
     return len(doomed)
 

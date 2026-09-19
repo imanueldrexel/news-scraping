@@ -100,7 +100,8 @@ class TestMainRealRun:
 
         assert rc == 0
         faiss_instance.vs_l1.delete.assert_called_once_with(["uuid-loser"])
-        faiss_instance.vs_l1.save_local.assert_called_once()
+        # DBT-10: goes through the crash-safe swap now, not vs_l1.save_local directly.
+        faiss_instance._atomic_save_local.assert_called_once_with(faiss_instance.vs_l1, dedupe.VECTOR_DB_NAME_L1)
         faiss_instance.vs_l2.delete.assert_not_called()
 
         delete_call = session.execute.call_args_list[1]

@@ -123,11 +123,11 @@ def main():
     l2_ids = [r.embedding_id for r in losers if r.chunk_level == 2 and r.embedding_id]
     if l1_ids:
         faiss_datasource.vs_l1.delete(l1_ids)
-        faiss_datasource.vs_l1.save_local(VECTOR_DB_NAME_L1)
+        faiss_datasource._atomic_save_local(faiss_datasource.vs_l1, VECTOR_DB_NAME_L1)  # DBT-10: crash-safe swap
         logger.info("Deleted %d vector(s) from %s", len(l1_ids), VECTOR_DB_NAME_L1)
     if l2_ids:
         faiss_datasource.vs_l2.delete(l2_ids)
-        faiss_datasource.vs_l2.save_local(VECTOR_DB_NAME_L2)
+        faiss_datasource._atomic_save_local(faiss_datasource.vs_l2, VECTOR_DB_NAME_L2)  # DBT-10: crash-safe swap
         logger.info("Deleted %d vector(s) from %s", len(l2_ids), VECTOR_DB_NAME_L2)
 
     with client.get_session() as session:
