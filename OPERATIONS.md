@@ -20,6 +20,9 @@
 | `DBSCAN_EPS` | `0.25` | Cluster similarity threshold |
 | `DBSCAN_MIN_SAMPLES` | `2` | Min articles per cluster |
 | `RAG_TOP_K` | `5` | Chunks used for RAG answer |
+| `SITEMAP_RECRAWL_COOLDOWN_DAYS` | `7` | Days before a sitemap with no `articles` row is offered to the article crawl again |
+| `SITEMAP_MAX_FETCH_FAILURES` | `3` | SYS-09: runs that produced no article for a sitemap before `load_all_sitemaps` stops offering it; undo with `scripts/reset_fetch_failures.py` |
+| `SITEMAP_SOURCE_FAILURE_RATIO` | `1.0` | OPS-15: if at least this fraction of a run's attempted sitemaps fail for one source, it is logged at ERROR as a source-wide failure and `fetch_failures` is not touched (`1.0` = only when every one failed) |
 | `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` | — | Health-check alerts (OPS-01); unset = notifications skipped, logged only |
 | `HEALTH_ALERT_ON_NO_CHANGE` | `true` | OPS-13: `false` mutes the daily alert on a red day whose per-outlet statuses all match the previous run (exit code unaffected; NEW/CHANGED/RECOVERED always notify) |
 
@@ -209,7 +212,26 @@ SELECT sources, COUNT(*) FILTER (WHERE fetch_failures > 0) AS ever_failed,
 FROM sitemaps GROUP BY sources HAVING COUNT(*) FILTER (WHERE fetch_failures > 0) > 0
 ORDER BY excluded_now DESC;
 ```
-`fetch_failures` counts runs in a row that produced no `NewsDetailsDTO` for that sitemap (fetch failure, or any exception in `_get_news_details`); `last_fetch_error` holds a note (coarse -- the service layer only knows *which* sitemap_ids came back empty, not each one's exception). Once `fetch_failures >= SITEMAP_MAX_FETCH_FAILURES` (env var, default 3), `load_all_sitemaps` excludes the row permanently instead of re-fetching a dead URL on every run forever. A high `excluded_now` for one source usually means a dead sitemap section or a source that needs SRC-02/03/04-style attention, not that its content ran out.
+`fetch_failures` counts runs that produced no `NewsDetailsDTO` for that sitemap (fetch failure, or any exception in `_get_news_details`). Once `fetch_failures >= SITEMAP_MAX_FETCH_FAILURES` (env var, default 3), `load_all_sitemaps` excludes the row instead of re-fetching a dead URL on every run forever. A high `excluded_now` for one source usually means a dead sitemap section or a source that needs SRC-02/03/04-style attention, not that its content ran out.
+
+Since OPS-15 (#81) `last_fetch_error` is the real reason per row -- `HTTP 404`, `HTTP 403`, `ReadTimeout after 5 retries`, `ConnectionError after 5 retries`, `soft-404: redirected to …`, `soft-404: canonical …`, `HTML parse failed: …`, or the exception type raised inside the extractor -- so this tells a dead link from a block from a crash:
+```sql
+SELECT sources, last_fetch_error, COUNT(*) FROM sitemaps
+WHERE fetch_failures > 0 GROUP BY 1, 2 ORDER BY 3 DESC LIMIT 20;
+```
+Rows written before 2026-09-18 all carry the old constant `fetch or extraction produced no result` (none existed on that date -- `fetch_failures` was 0 everywhere).
+
+**A source-wide failure is not counted** (OPS-15): when at least `SITEMAP_SOURCE_FAILURE_RATIO` (default `1.0`, i.e. every one) of a run's attempted sitemaps for a source fail, `_crawl_newsdetails_inner` logs at ERROR (`<SOURCE>: N/N sitemaps failed to fetch/extract this run (100%) -- treating this as a source-wide failure …` with a per-reason breakdown) and leaves `fetch_failures` untouched, so a site blocking article pages, a TLS/DNS problem or a crawler regression cannot retire a source's whole queue three runs later. Everything stays eligible and is retried on the next run; the ERROR line is the signal to look at the source. Between 50% and the ratio the run logs a WARNING and still counts individually.
+
+**Bring retired sitemaps back** with `scripts/reset_fetch_failures.py` (always `--dry-run` first), after fixing whatever caused the failures:
+```powershell
+venv\Scripts\python.exe scripts\reset_fetch_failures.py --dry-run --website KOMPAS
+venv\Scripts\python.exe scripts\reset_fetch_failures.py --website KOMPAS              # every failed row of one source
+venv\Scripts\python.exe scripts\reset_fetch_failures.py --all-retired                 # only rows at/above the cap, all sources
+venv\Scripts\python.exe scripts\reset_fetch_failures.py --like "HTTP 403%"            # one failure mode
+venv\Scripts\python.exe scripts\reset_fetch_failures.py --sitemap-ids 123,456 --clear-cooldown
+```
+Resets `fetch_failures` to 0 and clears `last_fetch_error`. A reset row still waits out its cooldown (the failure stamped `last_crawl_attempt`); `--clear-cooldown` also nulls that so it is eligible on the very next run. Nothing else does this automatically -- retirement is otherwise permanent.
 
 ### Check sitemap terminal-state distribution (SYS-16)
 ```sql
@@ -221,7 +243,7 @@ ORDER BY sitemaps DESC;
 ```
 `rejected_filter` rows are excluded from `load_all_sitemaps` permanently (off-topic, will fail the same semantic filter again) — a large and growing `pending`+`past_cooldown` count for a source that keeps producing few articles usually means its extractor is broken (`empty_extraction`), not that it has nothing to say; check `scripts/check_crawlers.py --website <NAME>` before assuming the source has gone quiet. If `INTERESTS` or the filter threshold changes, re-run `scripts/backfill_sitemap_crawl_status.py` to reclassify — `rejected_filter` is a one-time decision, not re-evaluated automatically.
 
-**`rejected_filter` can be wrong when a sitemap already has FAISS evidence (DBT-20, #70):** `backfill_sitemap_crawl_status.py` approximates the classification from a fresh headline-only re-check, not a re-run of the original filter -- for 582 MEDIAINDONESIA sitemaps (2026-09-18) that approximation disagreed with direct evidence (a real L1 vector already existed, meaning the original filter passed). `scripts/fix_rejected_filter_with_faiss_evidence.py [--website NAME] [--dry-run]` finds and corrects any `rejected_filter` row whose `sitemap_id` has an L1 FAISS vector, flipping it back to `pending` so it re-enters the normal retry queue (no dedicated re-crawl step needed -- the next scheduled `task=all`/`full_text` run picks it up like any other pending sitemap). Safe to re-run any time; reports "Nothing to fix" once clean.
+**`rejected_filter` can be wrong when a sitemap already has FAISS evidence (DBT-20, #70):** `backfill_sitemap_crawl_status.py` approximates the classification from a fresh headline-only re-check, not a re-run of the original filter -- for 582 MEDIAINDONESIA sitemaps (2026-09-18) that approximation disagreed with direct evidence (a real L1 vector already existed, meaning the original filter passed). `scripts/fix_rejected_filter_with_faiss_evidence.py [--website NAME] [--dry-run]` finds and corrects any `rejected_filter` row whose `sitemap_id` has an L1 FAISS vector, flipping it back to `pending`. Safe to re-run any time; reports "Nothing to fix" once clean. That alone does **not** get the article crawled: a `pending` row re-enters `load_all_sitemaps`' `ORDER BY posted_at DESC LIMIT 1000` queue behind everything newer for that source (12,000+ rows for MEDIAINDONESIA), and nothing is scheduled to drain it. `scripts/recrawl_faiss_orphans.py --website NAME [--dry-run] [--limit N]` does the re-crawl directly: it selects every sitemap that has an L1 vector but no `chunks`/`articles` row and hands exactly those to `crawl_newsdetails(specific_sitemaps=...)`, so they go through the normal fetch → filter → chunk → save path (the existing L1 vector is reused, SYS-17) regardless of queue position. It reports what the targets became afterwards; a target the filter now rejects, or whose page is gone, keeps its orphan L1 vector -- write those off separately. DBT-26 (#85) tracks stopping `backfill_sitemap_crawl_status.py` from misclassifying evidenced rows in the first place.
 
 ### Check articles/chunks divergence (SYS-17, OPS-04)
 ```sql
@@ -239,7 +261,7 @@ FROM chunks WHERE embedding_id IS NULL;
 venv\Scripts\python.exe scripts\check_store_consistency.py            # table + JSON report
 venv\Scripts\python.exe scripts\check_store_consistency.py --quiet    # one-line summary, for cron
 ```
-The SQL-only queries above catch two of nine checks (`orphan_articles`, `pending_embedding_chunks`); this script also loads both `NEWS_L1`/`NEWS_L2` FAISS docstores directly via `pickle` (no embedding model, seconds not minutes) and cross-references sitemap_ids against `articles`/`chunks`, so it catches the divergences neither store alone can see -- e.g. a FAISS vector with no `articles` row at all, or a sitemap in L1 but not L2. Status per check is `OK` (zero), `KNOWN` (nonzero but at or below the 2026-09-16 audit baseline -- already-ticketed historical debris, not new), or `GROWING` (worse than the baseline -- investigate immediately, something is silently breaking again). Exit code 1 if any check is nonzero (not just GROWING ones) -- read the table, don't just trust the exit code, since most of today's nonzero checks are known and dormant. `/api/health`'s `faiss_docs` field (`{"NEWS_L1": n, "NEWS_L2": n}`) surfaces the same document counts in the web UI, read the same lightweight way (no model load). Not yet on the Task Scheduler/Telegram path OPS-01 uses -- run manually until that's wired up.
+The SQL-only queries above catch two of nine checks (`orphan_articles`, `pending_embedding_chunks`); this script also loads both `NEWS_L1`/`NEWS_L2` FAISS docstores directly via `pickle` (no embedding model, seconds not minutes) and cross-references sitemap_ids against `articles`/`chunks`, so it catches the divergences neither store alone can see -- e.g. a FAISS vector with no `articles` row at all, or a sitemap in L1 but not L2. Status per check is `OK` (zero), `KNOWN` (nonzero but at or below the 2026-09-16 audit baseline -- already-ticketed historical debris, not new), or `GROWING` (worse than the baseline -- investigate immediately, something is silently breaking again). Exit code 1 if any check is nonzero (not just GROWING ones) -- read the table, don't just trust the exit code, since most of today's nonzero checks are known and dormant. `/api/health`'s `faiss_docs` field (`{"NEWS_L1": n, "NEWS_L2": n}`) surfaces the same totals in the web UI, read from each `index.faiss` header (`faiss.read_index(..., IO_FLAG_MMAP).ntotal`, ~60 ms cold) and cached on the file's `(mtime, size)`, so polling it is free until the pipeline writes a new index; the whole payload runs in the threadpool (OPS-14 -- the first version unpickled both docstores per request, 2 s and 300 MB on the event loop). Not yet on the Task Scheduler/Telegram path OPS-01 uses -- run manually until that's wired up.
 
 ### Check chunk-level completeness (SYS-25)
 ```sql
@@ -272,6 +294,12 @@ SELECT COUNT(*) FROM (
 ) t;
 ```
 Should be 0 — `chunks_sitemap_level_index_uq` (see `scripts/migrate_chunks_unique.sql`) prevents new duplicates, and `ChunkFAISSDatasource._embed_batch` dedups within an incoming batch before embedding. A nonzero count means either the index was dropped or a duplicate was inserted through a path that bypasses `_embed_batch`; repair with `scripts/dedupe_chunks.py` (dry-run first — it also deletes the loser's now-orphaned FAISS vector).
+
+### Check for duplicate sitemap rows (SYS-29)
+```sql
+SELECT COUNT(*) FROM (SELECT 1 FROM sitemaps GROUP BY link HAVING COUNT(*) > 1) t;
+```
+Should be 0 — `sitemaps_link_uq` (see `scripts/migrate_sitemaps_unique_link.sql`) makes the link the identity of a sitemap row, and `save_sitemaps` dedups on the same key (link alone — **not** `(link, posted_at)`; the date was never part of a URL's identity, and keying on it let SYS-11's +1-day WIB correction and OKEZONE-style `news:publication_date` re-stamps each insert a second row → second `articles` row → duplicate chunks/FAISS vectors). A re-listed link whose `posted_at` moved is recognised and left as first seen; the stored date is not refreshed. A nonzero count means the index was dropped; repair with `scripts/dedupe_sitemap_links.py` (dry-run first — it also removes the losers' `articles`/`chunks` rows and FAISS vectors, backing everything up to `backups/`). Before any `task=sitemap`/`task=all` after a change to how `posted_at` or `link` is derived, run `scripts/experiments/probe_sitemap_dedup_drift.py` (network, read-only): it fetches each HEALTHY source's live sitemap and asks the real `find_existing_by_link` lookup which links it would insert — `would_insert_duplicate` must be 0 everywhere; `date_drift` is informational.
 
 ### Check entity extraction progress (OPS-09)
 ```sql

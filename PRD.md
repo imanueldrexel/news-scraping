@@ -319,6 +319,8 @@ Output: chunks table (text_content, metadata, embedding_id=NULL)
 
 ### 7.5 Phase 4 — Embedding (CHANGED)
 
+> **Superseded by the implementation.** The pipeline embeds with `EMBEDDING_MODEL_HF` (`paraphrase-multilingual-MiniLM-L12-v2`, 384-D) through `ChunkFAISSDatasource` into the LangChain FAISS stores `NEWS_L1/` and `NEWS_L2/` (UUID docstore keys), inline in `save_chunk_data` -- not as a separate phase over `embedding_id IS NULL`. The `faiss_l1.index`/`faiss_l2.index` layout below was only ever produced by `scripts/backfill_chunks.py`, which nothing read and which was deleted under DBT-24 (#79); the repair tool is `scripts/backfill_orphan_chunks.py`. Kept for the record of the original design.
+
 ```
 Input:  chunks WHERE embedding_id IS NULL
 
