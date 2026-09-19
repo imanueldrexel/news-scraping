@@ -26,6 +26,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
+from starlette.concurrency import run_in_threadpool
 
 from newscrawler.infrastructure.datasource.dataflow.write.faiss.chunk_faiss_data_source import (
     ChunkFAISSDatasource,
@@ -155,6 +156,14 @@ async def api_query_form(
 
 @app.get("/api/health")
 async def api_health():
+    # OPS-14: the payload is Postgres + file I/O. Run it in the threadpool so a
+    # poller hitting this endpoint never stalls the event loop that serves
+    # /api/query (the handler is async; sync work here would block everything).
+    # DBT-15 (#50) covers the same problem for the other routes.
+    return await run_in_threadpool(_health_payload)
+
+
+def _health_payload() -> dict:
     try:
         stats = _get_stats_ds().get_stats()
         return {
@@ -164,32 +173,54 @@ async def api_health():
             "last_crawl":       stats.get("last_crawl"),
             "digests_generated": stats.get("digests_generated", 0),
             # OPS-04: a gap between this and chunks_indexed is exactly the silent
-            # divergence check_store_consistency.py exists to catch -- read via raw
-            # pickle (same technique as that script), not ChunkFAISSDatasource, so a
-            # health check never forces the ~10s embedding-model/index load (DBT-15).
+            # divergence check_store_consistency.py exists to catch.
             "faiss_docs":       _faiss_doc_counts(),
         }
     except Exception as e:
         return {"status": "degraded", "error": str(e)}
 
 
+# OPS-14: (index.faiss path) -> ((mtime_ns, size), ntotal). The pipeline rewrites
+# index.faiss on every save_local, so a changed stat is the only invalidation needed.
+_faiss_count_cache: dict = {}
+
+
 def _faiss_doc_counts() -> dict:
-    """{"NEWS_L1": n, "NEWS_L2": n} document counts, or {"error": ...} if either
-    index can't be read. Never raises -- a broken FAISS dir must not turn a working
-    /api/health into a 500."""
-    import pickle
+    """{"NEWS_L1": n, "NEWS_L2": n} vector counts, None for an index that can't be
+    read. Never raises -- a broken FAISS dir must not turn a working /api/health
+    into a 500.
+
+    OPS-14: counts come from the FAISS index header (`read_index` with
+    IO_FLAG_MMAP maps the file and reads `ntotal`; ~13 ms + ~44 ms on the
+    2026-09-18 corpus, no allocation), cached on the file's (mtime, size) so a
+    poller pays nothing until the pipeline writes a new index. The previous
+    version unpickled both docstores (37 MB + 83 MB) to call len() -- 2.1 s and
+    304 MB per request, growing with the corpus. ntotal == docstore length for a
+    LangChain FAISS store (add_documents/delete keep them in step), which is also
+    what check_store_consistency.py's "total vectors" line reports.
+    """
     from newscrawler.core.constants import VECTOR_DB_NAME_L1, VECTOR_DB_NAME_L2
     counts = {}
     for name, db_name in (("NEWS_L1", VECTOR_DB_NAME_L1), ("NEWS_L2", VECTOR_DB_NAME_L2)):
-        path = os.path.join(db_name, "index.pkl")
+        path = os.path.join(db_name, "index.faiss")
         try:
-            with open(path, "rb") as f:
-                docstore, _ = pickle.load(f)
-            counts[name] = len(docstore._dict)
+            counts[name] = _faiss_ntotal(path)
         except Exception as e:
             counts[name] = None
-            logger.warning(f"Could not read {name} doc count: {e}")
+            logger.warning(f"Could not read {name} vector count: {e}")
     return counts
+
+
+def _faiss_ntotal(path: str) -> int:
+    st = os.stat(path)
+    stamp = (st.st_mtime_ns, st.st_size)
+    cached = _faiss_count_cache.get(path)
+    if cached is not None and cached[0] == stamp:
+        return cached[1]
+    import faiss
+    ntotal = faiss.read_index(path, faiss.IO_FLAG_MMAP | faiss.IO_FLAG_READ_ONLY).ntotal
+    _faiss_count_cache[path] = (stamp, ntotal)
+    return ntotal
 
 
 @app.get("/api/stats")
