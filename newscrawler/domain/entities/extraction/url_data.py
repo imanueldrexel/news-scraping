@@ -27,7 +27,10 @@ class URL(enum.Enum):
     LIPUTAN6 = "https://www.liputan6.com/sitemap.xml"
     IDXCHANNEL = "https://www.idxchannel.com/sitemap.xml"
     MEDIAINDONESIA = "https://mediaindonesia.com/sitemap.xml"
-    TIRTO = "https://tirto.id/s/sitemap-content.xml"
+    # SRC-16 (#95): the old /s/sitemap-content.xml path 404s; the live index
+    # is a two-level structure -- this lists per-section monthly sub-indexes
+    # (insider/ekonomi.xml, insider/bisnis.xml, ...), see TirtoCrawler._get_branches.
+    TIRTO = "https://tirto.id/sitemap/news.xml"
     INVESTORID = "https://investor.id/sitemap_news.xml"
     BERITASATU = "https://www.beritasatu.com/sitemap.xml"
     SUARA = "https://www.suara.com/sitemap.xml"
