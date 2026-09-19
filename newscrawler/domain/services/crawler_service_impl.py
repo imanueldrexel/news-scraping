@@ -45,6 +45,10 @@ class CrawlerServiceImpl(CrawlerService):
             web_crawler: Crawler = self.crawler_dict.get(website_name)
             raw_sitemaps  = web_crawler.get_news_in_bulk()
             sitemaps_dtos = web_crawler.batch_crawling_sitemap(raw_sitemaps, website_name)
+            # SYS-32: entries with no usable publication date (neither
+            # news:publication_date nor lastmod) never became a SitemapDTO --
+            # captured before save_scraped_data replaces sitemaps_dtos below.
+            skipped_no_date = getattr(sitemaps_dtos, "skipped_no_date", 0)
 
             # SYS-07: log the number of newly-inserted rows, not "entries listed" --
             # a healthy source re-lists most of its sitemap on every run, so the old
@@ -54,6 +58,8 @@ class CrawlerServiceImpl(CrawlerService):
                 sitemaps_dtos = self.save_scraped_data(sitemaps_dtos)
                 new_count = getattr(sitemaps_dtos, "new_count", len(sitemaps_dtos))
                 logger.info(f"Saved {len(sitemaps_dtos)} sitemaps. IDs populated.")
+            if skipped_no_date:
+                logger.warning(f"{website_name}: {skipped_no_date} sitemap entries skipped (no publication date)")
 
             self.data_flow_repo.log_crawl_complete(log_id, new_count)
             return sitemaps_dtos

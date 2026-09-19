@@ -1,3 +1,4 @@
+import collections
 import logging
 import os
 import re
@@ -5,6 +6,7 @@ from newspaper import Article
 from abc import abstractmethod
 from concurrent.futures.thread import ThreadPoolExecutor
 from typing import List, Dict, Optional, Union, Any, Tuple
+from urllib.parse import urlparse
 
 import pydantic
 
@@ -36,6 +38,19 @@ class NewsDetailsBatch(list):
         self.failures: Dict[int, str] = dict(failures or {})
 
 
+class SitemapScrapeBatch(list):
+    """What batch_crawling_sitemap has always returned (a SitemapDTO per scraped
+    entry) -- len()/iteration/indexing unchanged for every existing caller.
+    SYS-32: additionally carries how many entries were dropped for having no
+    usable publication date (neither news:publication_date nor lastmod), so
+    crawl_sitemaps can log that count next to new_count instead of the drop
+    being invisible. Same shape as NewsDetailsBatch/SitemapSaveResult."""
+
+    def __init__(self, items=(), skipped_no_date: int = 0):
+        super().__init__(items)
+        self.skipped_no_date: int = skipped_no_date
+
+
 class Crawler:
     def __init__(self):
         self.verbose = VERBOSE
@@ -50,25 +65,33 @@ class Crawler:
 
     def batch_crawling_sitemap(
         self, news: List[Dict[str, str]], website_name: str
-    ) -> List[SitemapDTO]:
-        news_data = []
+    ) -> "SitemapScrapeBatch":
+        news_data = SitemapScrapeBatch()
         if news:
             if self.parallelize and website_name != WebsiteName.MEDIAINDONESIA.value:
                 with ThreadPoolExecutor(max_workers=self.max_worker) as executor:
-                    results = executor.map(self._get_sitemap, news)
-                    for result in results:
-                        if result:
-                            if self.verbose:
-                                logger.info(result)
-                            news_data.append(result)
-
+                    results = list(executor.map(self._get_sitemap, news))
             else:
-                for n in news:
-                    result = self._get_sitemap(n)
-                    if result:
-                        if self.verbose:
-                            logger.info(result)
-                        news_data.append(result)
+                results = [self._get_sitemap(n) for n in news]
+
+            # SYS-32: a lastmod-only sitemap (no news:publication_date) drops
+            # here -- one summary WARNING per branch instead of one exception
+            # log line per <url>. `category` on the raw dict is the branch name
+            # `_scrape` stamped on every entry.
+            skipped_by_branch = collections.Counter()
+            for n, result in zip(news, results):
+                if result:
+                    if self.verbose:
+                        logger.info(result)
+                    news_data.append(result)
+                elif n.get("timestamp") is None:
+                    skipped_by_branch[n.get("category") or "unknown"] += 1
+            for branch, count in skipped_by_branch.items():
+                logger.warning(
+                    f"{website_name}/{branch}: {count} entries had no usable "
+                    f"publication date (no news:publication_date or lastmod), skipped"
+                )
+            news_data.skipped_no_date = sum(skipped_by_branch.values())
 
         return news_data
 
@@ -126,11 +149,25 @@ class Crawler:
 
     @staticmethod
     def _get_sitemap(articles_data: Dict[str, Any]) -> Union[SitemapDTO, None]:
+        # SYS-32: a lastmod-only leaf (TIRTO, TEMPO, BATAMPOS) has no
+        # news:publication_date -- there is nothing to fall back to for a
+        # sitemap row (unlike the timestamp, lastmod is not itself a
+        # publication date), so drop it before it ever reaches pydantic's
+        # NOT NULL-equivalent validation. batch_crawling_sitemap aggregates
+        # this into one WARNING per branch instead of an exception per row.
+        if articles_data.get("timestamp") is None:
+            return None
         try:
             data_field_dict = {
                 field: None for field in SitemapDTO.__dataclass_fields__.keys()
             }
-            data_field_dict["headline"] = articles_data.get("headline")
+            # sitemaps.headline is NOT NULL; a lastmod-only leaf has no
+            # news:title either, so fall back to a slug derived from the URL
+            # rather than lose the row -- _get_news_details prefers a real
+            # page title over this placeholder when one is available.
+            data_field_dict["headline"] = articles_data.get("headline") or Crawler._derive_headline_from_url(
+                articles_data.get("link")
+            )
             data_field_dict["keywords"] = articles_data.get("keywords")
             data_field_dict["timestamp"] = articles_data.get("timestamp")
             data_field_dict["category"] = articles_data.get("category")
@@ -146,8 +183,29 @@ class Crawler:
             return None
 
     @staticmethod
+    def _derive_headline_from_url(link: Optional[str]) -> Optional[str]:
+        """SYS-32: fallback for sitemaps.headline (NOT NULL) when the sitemap
+        entry has no news:title. A news URL's slug is usually the headline in
+        kebab-case ("daftar-lengkap-harga-bbm-pertamina-per-1-september-2026-hB7q"),
+        so turning it into words is a serviceable placeholder -- not the real
+        headline, but enough for the row to save and for the semantic filter to
+        have something to score."""
+        if not link:
+            return None
+        slug = urlparse(link).path.rstrip("/").rsplit("/", 1)[-1]
+        slug = re.sub(r"\.(html?|xml|php)$", "", slug, flags=re.IGNORECASE)
+        slug = slug.replace("-", " ").replace("_", " ").strip()
+        return slug.title() if slug else None
+
+    @staticmethod
     def _get_timestamp(news_soup, date_time_reader: DateTimeReader):
         timestamp = news_soup.find("news:publication_date")
+        if not timestamp:
+            # SYS-32: sitemaps.org leaves with no news: namespace (TIRTO,
+            # TEMPO, BATAMPOS) carry only <lastmod>. It is not the true
+            # publication date, but it is the newest signal available and the
+            # only way these sources save any row at all.
+            timestamp = news_soup.find("lastmod")
         if timestamp:
             timestamp_string = timestamp.get_text(" ").strip()
             # SYS-11: convert_date() already returns the correct +07:00 (WIB)
@@ -292,8 +350,15 @@ class Crawler:
                 elif isinstance(extracted_text, str):
                     extracted_text = [extracted_text] if extracted_text.strip() else []
 
+                # SYS-32: SitemapDTO.headline is pydantic-validated `str`, so a
+                # DTO that reaches this method always has a real string --
+                # _get_sitemap's own URL-slug fallback guarantees that for any
+                # sitemap built by the live crawl. This only fires for an empty
+                # string, i.e. a DTO built some other way (a test, a repair
+                # script) with no title -- fetch one from the page itself
+                # rather than let the semantic filter see nothing.
                 meta_data = {
-                    "title": sitemap.headline,
+                    "title": sitemap.headline or self._get_page_title(soup),
                     "posted_at": sitemap.timestamp,
                     "extractor": extractor_used,
                 }
@@ -308,6 +373,19 @@ class Crawler:
         except BaseException as e:
             logger.info(f"Error in get_content {sitemap.link}. Reason: {e}")
             return None, f"{type(e).__name__}: {e}"[:200]
+
+    @staticmethod
+    def _get_page_title(soup) -> Optional[str]:
+        """SYS-32: fallback headline source when sitemap.headline is empty --
+        og:title first (more curated than the raw <title> tag, which often
+        carries a " | SiteName" suffix), then <title> itself."""
+        og_title = soup.find("meta", property="og:title")
+        if og_title and og_title.get("content"):
+            return og_title["content"].strip()
+        title_tag = soup.find("title")
+        if title_tag and title_tag.get_text(strip=True):
+            return title_tag.get_text(" ").strip()
+        return None
 
     @staticmethod
     def _text_length(extracted_text) -> int:
