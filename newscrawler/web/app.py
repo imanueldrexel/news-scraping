@@ -16,6 +16,7 @@ load_dotenv(
 )
 
 import logging
+import threading
 import uuid
 from datetime import date, datetime
 from pathlib import Path
@@ -57,23 +58,44 @@ _processor: Optional[QueryProcessor]         = None
 _stats_ds:  Optional[SQLAlchemyNewsletterDataSource] = None
 _sessions = SessionManager()
 
+# DBT-15 (#50): guards _processor/_stats_ds/_db_client construction. Without
+# it, two simultaneous first requests each pass the `is None` check before
+# either finishes constructing, so both build a ChunkFAISSDatasource (two
+# embedding-model loads, two FAISS index loads, ~1 GB RAM) and one is
+# discarded. Double-checked locking: the lock is only taken while the
+# singleton is still None, so every call after warm-up is lock-free.
+_singleton_lock = threading.Lock()
+
 
 def _get_processor() -> QueryProcessor:
     global _db_client, _faiss_ds, _processor
     if _processor is None:
-        _db_client = SQLAlchemyClient()
-        _faiss_ds  = ChunkFAISSDatasource()
-        _processor = QueryProcessor(_faiss_ds, _db_client)
+        with _singleton_lock:
+            if _processor is None:
+                if _db_client is None:
+                    _db_client = SQLAlchemyClient()
+                _faiss_ds  = ChunkFAISSDatasource()
+                _processor = QueryProcessor(_faiss_ds, _db_client)
     return _processor
 
 
 def _get_stats_ds() -> SQLAlchemyNewsletterDataSource:
     global _db_client, _stats_ds
     if _stats_ds is None:
-        if _db_client is None:
-            _db_client = SQLAlchemyClient()
-        _stats_ds = SQLAlchemyNewsletterDataSource(_db_client)
+        with _singleton_lock:
+            if _stats_ds is None:
+                if _db_client is None:
+                    _db_client = SQLAlchemyClient()
+                _stats_ds = SQLAlchemyNewsletterDataSource(_db_client)
     return _stats_ds
+
+
+def _run_query(**kwargs) -> dict:
+    """DBT-15 (#50): the single sync entry point handed to run_in_threadpool
+    by both query routes. _get_processor() itself must run inside the
+    threadpool too -- calling it before the dispatch would still block the
+    event loop for the full ~10s model/index load on the first request."""
+    return _get_processor().query(**kwargs)
 
 
 # ── Request/response models ───────────────────────────────────────────────────
@@ -102,7 +124,12 @@ async def api_query(request: Request, body: QueryRequest):
     date_from = _parse_date(body.date_from)
     date_to   = _parse_date(body.date_to)
 
-    result = _get_processor().query(
+    # DBT-15 (#50): query() is blocking (FAISS search, sentence-transformers
+    # encode, psycopg2, a Gemini HTTP round-trip) -- run it in FastAPI's
+    # threadpool so it doesn't freeze the single event loop thread that also
+    # serves every other request, including /api/health, for its duration.
+    result = await run_in_threadpool(
+        _run_query,
         question=body.query,
         session_history=history,
         date_from=date_from,
@@ -137,7 +164,8 @@ async def api_query_form(
     sid     = session_id or _sessions.new_session_id()
     history = _sessions.get_history(sid)
 
-    result = _get_processor().query(
+    result = await run_in_threadpool(
+        _run_query,
         question=query,
         session_history=history,
         date_from=_parse_date(date_from or None),
@@ -225,6 +253,13 @@ def _faiss_ntotal(path: str) -> int:
 
 @app.get("/api/stats")
 async def api_stats():
+    # DBT-15 (#50): get_stats() is a blocking Postgres call (and, on the
+    # first request, blocking SQLAlchemyClient/SQLAlchemyNewsletterDataSource
+    # construction) -- off the event loop, same as /api/health (OPS-14).
+    return await run_in_threadpool(_stats_payload)
+
+
+def _stats_payload() -> dict:
     try:
         return _get_stats_ds().get_stats()
     except Exception as e:
