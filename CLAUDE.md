@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-NewsAggregator: crawls ~32 Indonesian news portals (sitemap-driven), keeps only finance/economy articles (semantic filter), chunks + embeds them into local FAISS indexes, stores everything in PostgreSQL, and builds three products on top: an entity knowledge base (Gemini extraction), a daily markdown newsletter (DBSCAN clustering), and a RAG search web UI (FastAPI). See `PRD.md` for the design/product spec and `OPERATIONS.md` for the runbook (env-var table, SQL health queries, schedule).
+NewsAggregator: crawls ~30 Indonesian news portals (sitemap-driven; KAPANLAGI and BATAMPOS retired 2026-09-20, no usable finance content), keeps only finance/economy articles (semantic filter), chunks + embeds them into local FAISS indexes, stores everything in PostgreSQL, and builds three products on top: an entity knowledge base (Gemini extraction), a daily markdown newsletter (DBSCAN clustering), and a RAG search web UI (FastAPI). See `PRD.md` for the design/product spec and `OPERATIONS.md` for the runbook (env-var table, SQL health queries, schedule).
 
 **Two codebases live here; only one is active.**
 - `newscrawler/` — the real, actively developed pipeline (Postgres + FAISS + sentence-transformers + Gemini). All work goes here.

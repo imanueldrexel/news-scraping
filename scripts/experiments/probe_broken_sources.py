@@ -42,7 +42,10 @@ from newscrawler.core.page_loader.requests_page_loader import RequestsPageLoader
 from newscrawler.domain.entities.extraction.url_data import URL
 
 # The 2026-09-19 health-check BROKEN/ERROR set (SRC-02 x5, SRC-03 x2, SRC-04, SRC-05, SRC-06 x2).
-DEFAULT = ["ANTARANEWS", "BATAMPOS", "KAPANLAGI", "TIRTO", "SUARA",
+# All fixed by 2026-09-20 except BISNIS (SRC-03, genuine Cloudflare challenge).
+# BATAMPOS and KAPANLAGI were retired (SRC-17/SRC-18) rather than fixed --
+# removed from URL/WebsiteName entirely, so they'd KeyError here now.
+DEFAULT = ["ANTARANEWS", "TIRTO", "SUARA",
            "BISNIS", "IDNTIMES", "INEWS", "LIPUTAN6", "MERDEKA", "TEMPO"]
 
 # Known/likely homes for the sources whose enum entry is empty or off-site.

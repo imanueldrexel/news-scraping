@@ -2,9 +2,6 @@ from newscrawler.domain.entities.extraction.website_name import WebsiteName
 from newscrawler.infrastructure.datasource.scrapers.antara_news.antara_news_crawler import (
     AntaraNewsCrawler,
 )
-from newscrawler.infrastructure.datasource.scrapers.batampos.batampos_crawler import (
-    BatamposCrawler,
-)
 from newscrawler.infrastructure.datasource.scrapers.berita_satu.beritasatu_crawler import (
     BeritaSatuCrawler,
 )
@@ -38,9 +35,6 @@ from newscrawler.infrastructure.datasource.scrapers.investor_id.investorid_crawl
     InvestorIDCrawler,
 )
 from newscrawler.infrastructure.datasource.scrapers.jpnn.jpnn_crawler import JPNNCrawler
-from newscrawler.infrastructure.datasource.scrapers.kapanlagi.kapanlagi_crawler import (
-    KapanlagiCrawler,
-)
 from newscrawler.infrastructure.datasource.scrapers.kompas.kompas_crawler import (
     KompasCrawler,
 )
@@ -92,7 +86,6 @@ CRAWLER_DICT = {
     WebsiteName.SINDONEWS.value: SindonewsCrawler(),
     WebsiteName.PIKIRANRAKYAT.value: PikiranRakyatCrawler(),
     WebsiteName.JPNN.value: JPNNCrawler(),
-    WebsiteName.BATAMPOS.value: BatamposCrawler(),
     WebsiteName.CNN.value: CNNCrawler(),
     WebsiteName.CNBC.value: CNBCCrawler(),
     WebsiteName.KOMPAS.value: KompasCrawler(),
@@ -102,7 +95,6 @@ CRAWLER_DICT = {
     WebsiteName.GRIDID.value: GridIdCrawler(),
     WebsiteName.KONTAN.value: KontanCrawler(),
     WebsiteName.BISNIS.value: BisnisCrawler(),
-    WebsiteName.KAPANLAGI.value: KapanlagiCrawler(),
     WebsiteName.LIPUTAN6.value: LiputanEnamCrawler(),
     WebsiteName.IDXCHANNEL.value: IdxChannelCrawler(),
     WebsiteName.MEDIAINDONESIA.value: MediaIndonesiaCrawler(),
