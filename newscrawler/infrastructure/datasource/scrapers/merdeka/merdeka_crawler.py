@@ -22,7 +22,16 @@ class MerdekaCrawler(Crawler):
 
     @staticmethod
     def _get_branches(soup) -> Dict[str, str]:
-        branches = {"news": URL.MERDEKA.value}
+        # SRC-15 (#93): used to hand the index URL itself to _scrape as the
+        # only branch -- _scrape looks for <url> elements, an index has
+        # <sitemap> elements, so it always found 0 links. Has nothing to do
+        # with the site changing; parse the index properly and keep uang (the
+        # finance section) -- see DBT-04 for widening to the other 12.
+        branches = {}
+        for sitemap in soup.find_all("sitemap"):
+            loc = sitemap.find("loc")
+            if loc and "/uang/sitemap.xml" in loc.get_text(" ").strip():
+                branches["uang"] = loc.get_text(" ").strip()
         return branches
 
     @staticmethod
