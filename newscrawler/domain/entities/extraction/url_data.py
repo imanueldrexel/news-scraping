@@ -39,5 +39,7 @@ class URL(enum.Enum):
     INEWS = "https://www.inews.id/sitemap.xml"
     WARTAEKONOMI = "https://wartaekonomi.co.id/sitemap.xml"
     TVONENEWS = "https://www.tvonenews.com/sitemap.xml"
-    IDNTIMES = "https://www.idntimes.com/sitemap-news.xml"
+    # SRC-14 (#92): the old /sitemap-news.xml path 403s (retired server-side);
+    # the live index is /sitemap.xml -> <section>/sitemap-news.xml.
+    IDNTIMES = "https://www.idntimes.com/sitemap.xml"
     EMITENNEWS = "https://www.emitennews.com/sitemap.xml"

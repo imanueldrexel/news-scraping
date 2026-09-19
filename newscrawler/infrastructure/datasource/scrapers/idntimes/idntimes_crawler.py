@@ -22,22 +22,22 @@ class IDNTimesCrawler(Crawler):
 
     @staticmethod
     def _get_branches(soup) -> Dict[str, str]:
+        # SRC-14 (#92): the real index has ~63 entries, most of them
+        # <section>/sitemap-web.xml or <section>/sitemap-image.xml (one with
+        # 1,000 <url>, lastmod only, no news: tags). re.sub on a non-matching
+        # link returned the link unchanged, so every one of those became a
+        # branch keyed by its own full URL -- skip anything that doesn't match
+        # the /sitemap-news.xml pattern instead of re.sub-ing it regardless.
         branches = {}
         sitemaps = soup.find_all("sitemap")
         for sitemap in sitemaps:
             link = sitemap.find("loc")
-            if link:
-                link = link.get_text(" ").strip()
-                if link:
-                    try:
-                        branch_name = re.sub(
-                            r"(https://www.idntimes.com/)(\w+)(/sitemap-news.xml)",
-                            r"\2",
-                            link,
-                        )
-                    except BaseException:
-                        branch_name = "news"
-                    branches[branch_name] = link.strip()
+            if not link:
+                continue
+            link = link.get_text(" ").strip()
+            match = re.match(r"https://www\.idntimes\.com/(\w+)/sitemap-news\.xml$", link)
+            if match:
+                branches[match.group(1)] = link
         return branches
 
     @staticmethod
