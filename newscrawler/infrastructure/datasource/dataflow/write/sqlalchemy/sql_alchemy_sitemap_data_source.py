@@ -248,10 +248,10 @@ class SQLAlchemySitemapDataSource:
         NewsDetailsDTO this run (fetch failure or any exception in
         _get_news_details). Also stamps last_crawl_attempt=NOW() -- a permanently
         dead URL must still leave the cooldown queue like a successful attempt
-        does, not just get counted. error_msg is necessarily coarse: the service
-        layer only knows *which* sitemap_ids are missing from the batch's
-        NewsDetailsDTO list, not each one's individual exception (that detail is
-        logged, not returned, by _get_news_details)."""
+        does, not just get counted. error_msg is stored as last_fetch_error;
+        since OPS-15 the service calls this once per distinct reason ("HTTP 404",
+        "ReadTimeout after 5 retries", ...) so the runbook query can tell them
+        apart. scripts/reset_fetch_failures.py undoes the count."""
         if not sitemap_ids:
             return
         with self.client.get_session() as session:

@@ -4,7 +4,7 @@ from typing import List, Optional
 from newscrawler.core.chunker import HierarchicalChunker
 from newscrawler.core.crawler_dict_list import CRAWLER_DICT
 from newscrawler.core.crawler_url_list import WEB_URL_DICT
-from newscrawler.core.constants import INTERESTS
+from newscrawler.core.constants import INTERESTS, SITEMAP_SOURCE_FAILURE_RATIO
 from newscrawler.core.importance_filter import SemanticImportanceFilter
 from newscrawler.domain.dtos.dataflow.details.news_details_dto import NewsDetailsDTO
 from newscrawler.domain.dtos.dataflow.details.site_map_dto import SitemapDTO
@@ -88,6 +88,10 @@ class CrawlerServiceImpl(CrawlerService):
         extracted_total = 0
         passed_filter_total = 0
         saved_total = 0
+        # OPS-15: sitemap_id -> reason for every sitemap this run fetched nothing
+        # for. Recorded to the DB only at the end of the run (see below), because
+        # "did the whole source fail?" cannot be answered per batch.
+        run_failures = {}
 
         for i in range(0, min(len(target_news), batch_size * 10), batch_size):
             logger.info(f"Processing batch {i//batch_size+1} for {website_name}")
@@ -100,12 +104,13 @@ class CrawlerServiceImpl(CrawlerService):
             # _get_news_details raised) -- mark_sitemaps_attempted below only covers
             # the successes, so without this a permanently-dead URL was never marked
             # at all and kept consuming a retry slot on every single run forever.
+            # OPS-15: batch_crawling_details now says WHY (NewsDetailsBatch.failures);
+            # a crawler mock or older return type without it gets the generic text.
             extracted_ids = {n.sitemap_id for n in newsdetails} if newsdetails else set()
-            failed_ids = [s.sitemap_id for s in batch if s.sitemap_id not in extracted_ids]
-            if failed_ids:
-                self.data_flow_repo.increment_fetch_failures(
-                    failed_ids, error_msg="fetch or extraction produced no result"
-                )
+            reasons = getattr(newsdetails, "failures", None) or {}
+            for s in batch:
+                if s.sitemap_id not in extracted_ids:
+                    run_failures[s.sitemap_id] = reasons.get(s.sitemap_id, "fetch or extraction produced no result")
 
             if not newsdetails:
                 continue
@@ -115,7 +120,12 @@ class CrawlerServiceImpl(CrawlerService):
 
             # Bug B fix: mark every successfully-extracted sitemap as attempted so it is
             # not re-crawled until the cooldown elapses. Extraction failures are not in
-            # `newsdetails`, so they remain eligible for retry on the next run.
+            # `newsdetails`; SYS-09 counts them in sitemaps.fetch_failures at the end of
+            # the run (also stamping the cooldown), and load_all_sitemaps stops
+            # offering a sitemap once it reaches SITEMAP_MAX_FETCH_FAILURES -- so a
+            # failure is retried after the cooldown, at most that many times, unless
+            # the whole source failed this run (OPS-15, below), in which case nothing
+            # is counted and everything stays eligible for the next run.
             self.data_flow_repo.mark_sitemaps_attempted([n.sitemap_id for n in newsdetails])
             
             # --- Semantic Filtering ---
@@ -185,12 +195,55 @@ class CrawlerServiceImpl(CrawlerService):
                     logger.error(f"Error saving batch {i//batch_size+1} for {website_name}: {e}")
                     continue
 
+        self._record_fetch_failures(website_name, attempted, run_failures)
+
         logger.info(
             f"Full-text crawl finished for {website_name}: "
             f"attempted={attempted} extracted={extracted_total} "
             f"passed_filter={passed_filter_total} saved={saved_total}"
         )
         return saved_total
+
+    def _record_fetch_failures(self, website_name: str, attempted: int, run_failures: dict) -> None:
+        """OPS-15: turn this run's fetch failures into sitemaps.fetch_failures --
+        unless the run shows the SOURCE failed, in which case count nothing.
+
+        SYS-09's cap exists to retire individually dead URLs. A site blocking
+        article pages for a while, a TLS/DNS problem, or a regression in
+        _get_news_details fails every URL in the run at once; counting those would
+        retire up to 1,000 sitemaps per run per source after three such runs, with
+        no alert (OPS-09 made the same distinction for Gemini outages a day before
+        SYS-09 landed without it). So: when at least SITEMAP_SOURCE_FAILURE_RATIO
+        of the attempted sitemaps failed, log at ERROR and leave fetch_failures
+        alone -- every one of them stays eligible for the next run. Otherwise
+        record the failures grouped by reason, so last_fetch_error says what
+        actually happened to each row.
+        """
+        if not run_failures:
+            return
+        failed = len(run_failures)
+        ratio = failed / attempted if attempted else 0.0
+        by_reason = {}
+        for sitemap_id, reason in run_failures.items():
+            by_reason.setdefault(reason, []).append(sitemap_id)
+        reason_summary = ", ".join(f"{r!r}: {len(ids)}" for r, ids in sorted(by_reason.items(), key=lambda kv: -len(kv[1])))
+
+        if ratio >= SITEMAP_SOURCE_FAILURE_RATIO:
+            logger.error(
+                f"{website_name}: {failed}/{attempted} sitemaps failed to fetch/extract this run "
+                f"({ratio:.0%}) -- treating this as a source-wide failure, not {failed} dead URLs: "
+                f"fetch_failures NOT incremented, all stay eligible. Reasons: {reason_summary}"
+            )
+            return
+
+        if ratio >= 0.5:
+            logger.warning(
+                f"{website_name}: {failed}/{attempted} sitemaps failed to fetch/extract this run "
+                f"({ratio:.0%}, below SITEMAP_SOURCE_FAILURE_RATIO={SITEMAP_SOURCE_FAILURE_RATIO}); "
+                f"counting them individually. Reasons: {reason_summary}"
+            )
+        for reason, ids in by_reason.items():
+            self.data_flow_repo.increment_fetch_failures(ids, error_msg=reason)
 
     def extract_knowledge(self) -> int:
         logger.info("Starting knowledge extraction phase...")

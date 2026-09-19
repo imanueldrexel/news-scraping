@@ -15,6 +15,12 @@ SITEMAP_RECRAWL_COOLDOWN_DAYS = int(os.getenv("SITEMAP_RECRAWL_COOLDOWN_DAYS", 7
 # consuming a retry slot forever. Still retried up to this many times first, since
 # most failures are transient (a timeout, a momentary block).
 SITEMAP_MAX_FETCH_FAILURES = int(os.getenv("SITEMAP_MAX_FETCH_FAILURES", 3))
+# OPS-15: when at least this fraction of a run's attempted sitemaps for one source
+# fail to fetch/extract, the failure is treated as the SOURCE's (a block, a TLS/DNS
+# problem, a regression in the crawler) rather than 1,000 individually dead URLs:
+# the run logs at ERROR and does not touch fetch_failures at all, so an outage
+# cannot retire a source's whole queue. 1.0 = only when every single one failed.
+SITEMAP_SOURCE_FAILURE_RATIO = float(os.getenv("SITEMAP_SOURCE_FAILURE_RATIO", 1.0))
 # Article text shorter than this (total chars) is treated as an extraction failure and
 # handed to the next extractor (site selector -> trafilatura -> newspaper). 0 disables.
 MIN_ARTICLE_CHARS = int(os.getenv("MIN_ARTICLE_CHARS", 200))

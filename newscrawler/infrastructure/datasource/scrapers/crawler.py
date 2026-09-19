@@ -4,11 +4,12 @@ import re
 from newspaper import Article
 from abc import abstractmethod
 from concurrent.futures.thread import ThreadPoolExecutor
-from typing import List, Dict, Union, Any, Tuple
+from typing import List, Dict, Optional, Union, Any, Tuple
 
 import pydantic
 
 from newscrawler.core.constants import VERBOSE, PARALLELIZE, MAX_WORKER, MIN_ARTICLE_CHARS
+from newscrawler.core.page_loader.page_loader import PageLoader
 from newscrawler.core.page_loader.requests_page_loader import RequestsPageLoader
 from newscrawler.domain.dtos.dataflow.details.news_details_dto import NewsDetailsDTO
 from newscrawler.domain.dtos.dataflow.details.site_map_dto import SitemapDTO
@@ -18,6 +19,21 @@ from newscrawler.domain.utils.date_time_reader import DateTimeReader
 logging.basicConfig()
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
+
+
+class NewsDetailsBatch(list):
+    """What batch_crawling_details has always returned -- the NewsDetailsDTOs that
+    were fetched and extracted, in order -- plus, since OPS-15, WHY each of the
+    other sitemaps in the batch produced nothing: `failures` maps sitemap_id to a
+    short reason ("HTTP 404", "ReadTimeout after 5 retries", "soft-404: ...", an
+    exception name from the extractor). len()/iteration/indexing are unchanged
+    for every existing caller; the service layer reads `failures` to store a real
+    sitemaps.last_fetch_error instead of one constant string for everything.
+    Same shape as SitemapSaveResult (SYS-07)."""
+
+    def __init__(self, items=(), failures: Optional[Dict[int, str]] = None):
+        super().__init__(items)
+        self.failures: Dict[int, str] = dict(failures or {})
 
 
 class Crawler:
@@ -170,34 +186,50 @@ class Crawler:
 
     def batch_crawling_details(
         self, news: List[SitemapDTO], website_name: str
-    ) -> List[NewsDetailsDTO]:
-        news_data = []
+    ) -> "NewsDetailsBatch":
+        news_data = NewsDetailsBatch()
         if news:
             if self.parallelize and website_name != WebsiteName.MEDIAINDONESIA.value:
                 with ThreadPoolExecutor(max_workers=self.max_worker) as executor:
-                    results = executor.map(self._get_news_details, news)
-                    for result in results:
-                        if result:
-                            if self.verbose:
-                                logger.info(result)
-                            news_data.append(result)
-
+                    results = list(executor.map(self._fetch_news_details, news))
             else:
-                for n in news:
-                    result = self._get_news_details(n)
-                    if result:
-                        if self.verbose:
-                            logger.info(result)
-                        news_data.append(result)
+                results = [self._fetch_news_details(n) for n in news]
+
+            for sitemap, (result, reason) in zip(news, results):
+                if result:
+                    if self.verbose:
+                        logger.info(result)
+                    news_data.append(result)
+                else:
+                    news_data.failures[sitemap.sitemap_id] = reason or "fetch or extraction produced no result"
 
         return news_data
 
     def _get_news_details(self, sitemap: SitemapDTO) -> NewsDetailsDTO:
+        return self._fetch_news_details(sitemap)[0]
+
+    def _load_page(self, url: str):
+        """(soup, reason) from the page loader. A real PageLoader reports why a fetch
+        failed (OPS-15); anything else assigned to page_loader -- an object that only
+        implements get_soup, including every test double -- gets the generic reason."""
+        if isinstance(self.page_loader, PageLoader):
+            return self.page_loader.get_soup_with_reason(url)
+        soup = self.page_loader.get_soup(url)
+        return (soup, None) if soup else (None, "page loader returned no document")
+
+    def _fetch_news_details(self, sitemap: SitemapDTO) -> Tuple[Optional[NewsDetailsDTO], Optional[str]]:
+        """(dto, None) on success; (None, reason) when the page could not be fetched
+        or anything in the extraction path raised. OPS-15: the reason is what the
+        service layer stores in sitemaps.last_fetch_error, so it must say what
+        actually happened (HTTP status, timeout, soft-404, exception type) -- the
+        log line alone was never queryable."""
         try:
             url = sitemap.link
             if self.website_name == "JPNN":
                 url = sitemap.link.replace("?page=all", "")
-            soup = self.page_loader.get_soup(url)
+            soup, fetch_reason = self._load_page(url)
+            if soup is None:
+                return None, fetch_reason or "page loader returned no document"
             if soup:
                 # Site extractors are hand-written selectors that raise (typically
                 # AttributeError on a missing container) when the layout drifts. A crash
@@ -270,9 +302,12 @@ class Crawler:
                     extracted_text=extracted_text,
                     reporter=reporter,
                     meta_data=meta_data,
-                )
+                ), None
+            # A BeautifulSoup with no content is falsy; nothing to extract from.
+            return None, "empty document"
         except BaseException as e:
             logger.info(f"Error in get_content {sitemap.link}. Reason: {e}")
+            return None, f"{type(e).__name__}: {e}"[:200]
 
     @staticmethod
     def _text_length(extracted_text) -> int:

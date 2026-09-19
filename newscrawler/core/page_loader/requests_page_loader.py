@@ -33,33 +33,47 @@ class RequestsPageLoader(PageLoader):
         }
 
     def get_url(self, url_path):
+        return self.get_url_with_reason(url_path)[0]
+
+    def get_url_with_reason(self, url_path):
+        """(response, None) or (None, reason). OPS-15: the reason distinguishes a
+        timeout/connection failure (after retries) from any other request error,
+        so it can be stored per sitemap instead of a constant."""
         try:
             response = requests.get(
                 url_path, headers=self.headers, timeout=(10, 27), stream=True
             )
-            return response
-        except (requests.exceptions.ReadTimeout, requests.exceptions.ConnectionError):
+            return response, None
+        except (requests.exceptions.ReadTimeout, requests.exceptions.ConnectionError) as first_err:
             # SYS-05: `A or B` on two exception classes evaluates to `A`, so this
             # used to catch only ReadTimeout -- a ConnectionError (reset, DNS, TLS)
             # fell straight through to the generic `except BaseException` below and
             # got exactly one attempt instead of being retried.
+            last_err = first_err
             for idx in range(self.max_retries):
                 logger.info(f"Retry {idx} to connect")
                 try:
                     response = requests.get(
                         url_path, headers=self.headers, timeout=(20, 30)
                     )
-                    return response
-                except (requests.exceptions.ReadTimeout, requests.exceptions.ConnectionError):
+                    return response, None
+                except (requests.exceptions.ReadTimeout, requests.exceptions.ConnectionError) as retry_err:
+                    last_err = retry_err
                     continue
-            return None
+            return None, f"{type(last_err).__name__} after {self.max_retries} retries"
         except BaseException as e:
             logger.info(f"Failed to get {url_path}. Reason {e}, Returning None")
-            return None
+            return None, f"request failed: {type(e).__name__}: {e}"[:200]
 
     def get_soup(self, url_path: str):
-        response = self.get_url(url_path)
-        if response and response.status_code == 200:
+        return self.get_soup_with_reason(url_path)[0]
+
+    def get_soup_with_reason(self, url_path: str):
+        """(soup, None) on success, (None, reason) on failure -- see PageLoader."""
+        response, reason = self.get_url_with_reason(url_path)
+        if response is None:
+            return None, reason
+        if response.status_code == 200:
             # SYS-14: a 200 that was redirected to an error/home page is a soft-404,
             # not a real article -- reject it before it reaches the extractor chain.
             final_path = urlparse(response.url).path
@@ -67,14 +81,14 @@ class RequestsPageLoader(PageLoader):
                 logger.info(
                     f"Failed to get {url_path}. Redirected to error page {response.url}, Returning None"
                 )
-                return None
+                return None, f"soft-404: redirected to {response.url}"[:200]
             try:
                 soup = BeautifulSoup(response.content, "html.parser")
             except BaseException as e:
                 logger.info(
                     f"Failed to get the HTML for {url_path}. Reason: {e}, Returning None"
                 )
-                return None
+                return None, f"HTML parse failed: {type(e).__name__}: {e}"[:200]
 
             # Some sites render the error page in place (no redirect) but still
             # mark it with a canonical link pointing at the real error/home page.
@@ -84,11 +98,10 @@ class RequestsPageLoader(PageLoader):
                 logger.info(
                     f"Failed to get {url_path}. Canonical points to error page {canonical_href}, Returning None"
                 )
-                return None
+                return None, f"soft-404: canonical {canonical_href}"[:200]
 
-            return soup
-        elif response:
-            logger.info(
-                f"Failed to get {url_path}. Status Code: {response.status_code}, Returning None"
-            )
-            return None
+            return soup, None
+        logger.info(
+            f"Failed to get {url_path}. Status Code: {response.status_code}, Returning None"
+        )
+        return None, f"HTTP {response.status_code}"

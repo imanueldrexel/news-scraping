@@ -4,7 +4,8 @@ that was actually redirected to (or renders in place) an error/home page instead
 of the requested article. Previously any status_code == 200 was accepted, so a
 307 -> /404 -> 200 chain (or an in-place error page) flowed into the extractor
 chain and got saved as an article body.
-No network needed: RequestsPageLoader.get_url is patched to return a fake response.
+No network needed: RequestsPageLoader.get_url_with_reason (the primitive get_soup
+reads since OPS-15) is patched to return a fake (response, reason) pair.
 """
 from unittest.mock import MagicMock, patch
 
@@ -28,7 +29,7 @@ class TestSoftDetection:
             url="https://site.test/404",
             history=[MagicMock(status_code=307)],
         )
-        with patch.object(loader, "get_url", return_value=response):
+        with patch.object(loader, "get_url_with_reason", return_value=(response, None)):
             assert loader.get_soup("https://site.test/news/missing") is None
 
     def test_redirect_that_lands_on_a_real_article_path_is_not_rejected(self):
@@ -37,7 +38,7 @@ class TestSoftDetection:
             url="https://site.test/news/some-article?page=all",
             history=[MagicMock(status_code=301)],
         )
-        with patch.object(loader, "get_url", return_value=response):
+        with patch.object(loader, "get_url_with_reason", return_value=(response, None)):
             assert loader.get_soup("https://site.test/news/some-article") is not None
 
     def test_no_redirect_no_error_canonical_returns_soup(self):
@@ -47,7 +48,7 @@ class TestSoftDetection:
             b"</head><body>real article text</body></html>"
         )
         response = make_response(html=html)
-        with patch.object(loader, "get_url", return_value=response):
+        with patch.object(loader, "get_url_with_reason", return_value=(response, None)):
             assert loader.get_soup("https://site.test/news/some-article") is not None
 
     def test_canonical_pointing_to_error_page_returns_none(self):
@@ -58,16 +59,16 @@ class TestSoftDetection:
             b"<body>IDXINDUST 1.03% IDXINFRA -0.22%</body></html>"
         )
         response = make_response(url="https://site.test/news/not-yet-published", html=html)
-        with patch.object(loader, "get_url", return_value=response):
+        with patch.object(loader, "get_url_with_reason", return_value=(response, None)):
             assert loader.get_soup("https://site.test/news/not-yet-published") is None
 
     def test_non_200_status_still_returns_none(self):
         loader = RequestsPageLoader()
         response = make_response(status_code=500)
-        with patch.object(loader, "get_url", return_value=response):
+        with patch.object(loader, "get_url_with_reason", return_value=(response, None)):
             assert loader.get_soup("https://site.test/news/some-article") is None
 
     def test_no_response_returns_none(self):
         loader = RequestsPageLoader()
-        with patch.object(loader, "get_url", return_value=None):
+        with patch.object(loader, "get_url_with_reason", return_value=(None, "ReadTimeout after 5 retries")):
             assert loader.get_soup("https://site.test/news/some-article") is None
