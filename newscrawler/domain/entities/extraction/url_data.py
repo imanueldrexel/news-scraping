@@ -12,7 +12,13 @@ class URL(enum.Enum):
     REQNEWS = "https://www.reqnews.com/sitemap/latest.xml"
     PIKIRANRAKYAT = "https://www.pikiran-rakyat.com/sitemap-news.xml"
     SINDONEWS = "https://www.sindonews.com/sitemap.xml"
-    ANTARANEWS = "https://en.antaranews.com/rss/spo.xml"
+    # SRC-13 (#91): a liveness probe only -- get_news_in_bulk() fetches this to
+    # check the source is up before scraping; the real branch list is the fixed
+    # ekonomi* feed set AntaraNewsCrawler._get_branches returns, independent of
+    # this URL's content. The old en.antaranews.com/rss/spo.xml (English sports
+    # RSS on a subdomain with no sitemap) 404s permanently and hid 60 live
+    # Indonesian feeds behind an unrelated liveness check.
+    ANTARANEWS = "https://www.antaranews.com/rss/ekonomi.xml"
     GRIDID = "https://www.grid.id/sitemap/news/sitemap.xml"
     KONTAN = "https://www.kontan.co.id/sitemap.xml"
     VIVA = "https://www.viva.co.id/sitemap.xml"

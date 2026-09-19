@@ -26,13 +26,18 @@ class AntaraNewsCrawler(Crawler):
 
     @staticmethod
     def _get_branches(soup) -> Dict[str, str]:
-        branches = AntaraNewsNetwork().get_all_url()
-        return branches
-
-    @staticmethod
-    def _get_branch_name_from_url(url):
-        branch_name = "ANTARA News"
-        return branch_name
+        # SRC-13 (#91): AntaraNewsNetwork.get_all_url() returns all ~60 feeds
+        # (politik, hukum, metro, sepakbola*, olahraga*, lifestyle*, hiburan*,
+        # tekno*, otomotif*, ...) -- 55 of them off-topic for a finance
+        # pipeline (SYS-31). Restrict to the ekonomi* feeds; BUMNUntukNegeri is
+        # dropped because it 404s.
+        network = AntaraNewsNetwork()
+        return {
+            "Ekonomi": network.Ekonomi,
+            "Finansial": network.Finansial,
+            "Bisnis": network.Bisnis,
+            "Bursa": network.Bursa,
+        }
 
     def _scrape(self, branch_link, branch_name) -> List:
         logger.info(f"Scrape {branch_name} on {self.website_name}")
@@ -48,15 +53,17 @@ class AntaraNewsCrawler(Crawler):
                 timestamp_datetime = self._get_timestamp(
                     url, date_time_reader=self.date_time_reader
                 )
-                new_branch_name = self._get_branch_name_from_url(link)
-                branch_name = (
-                    new_branch_name if new_branch_name != link else new_branch_name
-                )
                 attributes = {
                     "link": link,
                     "headline": title,
                     "keywords": keywords,
                     "timestamp": timestamp_datetime,
+                    # SRC-13 (#91): the old _get_branch_name_from_url override
+                    # always returned the fixed string "ANTARA News" regardless
+                    # of feed, so every row's category was identical no matter
+                    # which of the 4 ekonomi* branches it came from. branch_name
+                    # here is the dict key _get_branches assigned
+                    # ("Ekonomi"/"Finansial"/"Bisnis"/"Bursa") -- use it as-is.
                     "category": branch_name,
                     "sources": self.website_name,
                 }
@@ -109,6 +116,12 @@ class AntaraNewsCrawler(Crawler):
             return texts
 
     def _get_reporter_from_text(self, soup) -> List[str]:
+        # SRC-21 (#101): every path used to fall off the end and implicitly
+        # return None when no byline paragraph was found (common on this wire
+        # service) -- _fetch_news_details iterates this result right after
+        # calling it, and iterating None raised a TypeError caught (and
+        # correctly handled as reporter=[]) by SYS-02's crash guard, but only
+        # after a noisy WARNING on every such article.
         try:
             layer = soup.find("div", attrs={"class": ["post-content clearfix"]})
             if layer:
@@ -124,4 +137,4 @@ class AntaraNewsCrawler(Crawler):
                         return paragraph
         except BaseException as e:
             logger.info(f"Error while get reporter from text\nReason:{e}")
-            return []
+        return []
