@@ -25,23 +25,30 @@ class LiputanEnamCrawler(Crawler):
 
     @staticmethod
     def _get_branches(soup) -> Dict[str, str]:
+        # SRC-05 (#16): the live index moved from <section>/sitemap_news.xml
+        # (28 entries) to <section>/sitemap.xml; the old "sitemap_news" in link
+        # filter matched nothing, so every run parsed 0 branches. Keep bisnis
+        # (finance-relevant) -- see DBT-04 for widening to the other 27.
         branches = {}
-        sitemaps = soup.find_all("sitemap")
-        for sitemap in sitemaps:
+        for sitemap in soup.find_all("sitemap"):
             link = sitemap.find("loc")
-            if link:
-                link = link.get_text(" ").strip()
-                if "sitemap_news" in link:
-                    try:
-                        branch_name = re.sub(
-                            r"(https://www.liputan6.com/)(.*)(/sitemap_news.xml)",
-                            r"\2",
-                            link,
-                        )
-                    except BaseException:
-                        branch_name = "news"
-                    branches[branch_name] = link.strip()
+            if not link:
+                continue
+            link = link.get_text(" ").strip()
+            match = re.match(r"https://www\.liputan6\.com/(\w+)/sitemap\.xml$", link)
+            if match and match.group(1) == "bisnis":
+                branches[match.group(1)] = link
         return branches
+
+    @staticmethod
+    def _get_link(news_soup) -> str:
+        # SRC-05 (#16): unlike most other outlets, liputan6.com's article
+        # pages 404 with ?page=all appended -- the base Crawler._get_link
+        # appends it to every URL except JPNN, which broke every article
+        # fetch here once _get_branches started finding real links again.
+        link = news_soup.find("loc")
+        if link:
+            return link.get_text(" ").strip()
 
     def _get_whole_text(self, soup):
         pages = soup.find_all(
@@ -67,4 +74,9 @@ class LiputanEnamCrawler(Crawler):
         return texts
 
     def _get_reporter_from_text(self, soup) -> List[str]:
-        pass
+        # SRC-25 (#105): this was a bare `pass` (implicit None) -- crashed
+        # _fetch_news_details' reporter filter (caught by SYS-02's guard, no
+        # article lost, but a WARNING on every single one). No reliable byline
+        # selector found in the static HTML (likely client-rendered); return
+        # [] explicitly rather than reintroduce the same bug.
+        return []
