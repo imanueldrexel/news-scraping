@@ -116,6 +116,29 @@ class TestTaskAndWebsiteValidation:
         api.crawl_websites_in_batch([], task="extract_knowledge")  # must not raise
         svc.extract_knowledge.assert_called_once()
 
+    @pytest.mark.parametrize("task", ["sitemap", "full_text", "all"])
+    def test_empty_website_list_for_a_website_task_raises_instead_of_green_no_op(self, task):
+        """SYS-30: process_event({"task": "all"}) -- no "website" key -- used to log
+        'ok=0 failed=0', call nothing, write no crawl_log row and exit 0."""
+        svc = MagicMock()
+        api = CrawlerAPI(svc)
+        with pytest.raises(ValueError, match="at least one website"):
+            api.crawl_websites_in_batch([], task=task)
+        for method in ("crawl_sitemaps", "crawl_newsdetails", "extract_knowledge", "generate_newsletter"):
+            getattr(svc, method).assert_not_called()
+
+    def test_process_event_without_a_website_key_raises_for_a_crawl_task(self):
+        """The real entry point: lambda_handler maps a missing key to [] and must
+        now surface the error (SYS-06 re-raises it, so __main__ exits non-zero)."""
+        from unittest.mock import patch
+        from newscrawler.application.api.lambda_function import lambda_handler
+
+        svc = MagicMock()
+        with patch.object(lambda_handler, "init_crawler", return_value=CrawlerAPI(svc)):
+            with pytest.raises(ValueError, match="at least one website"):
+                lambda_handler.process_event({"task": "all"}, None)
+        svc.crawl_sitemaps.assert_not_called()
+
     def test_crawl_website_itself_rejects_an_unknown_task(self):
         """Backstop: crawl_website is also callable directly, not just through
         crawl_websites_in_batch's own validation."""

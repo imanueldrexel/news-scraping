@@ -58,6 +58,15 @@ class CrawlerAPI:
             raise ValueError(f"Unknown task {task!r}; must be one of {VALID_TASKS}")
 
         if task not in WEBSITE_AGNOSTIC_TASKS:
+            # SYS-30: the third silent input after SYS-21's two. lambda_handler maps
+            # an absent "website" key to [] because the agnostic tasks need none, so
+            # process_event({"task": "all"}) reached here with nothing to crawl,
+            # called no service method, logged "ok=0 failed=0" and exited 0.
+            if not website_names:
+                raise ValueError(
+                    f"task {task!r} needs at least one website "
+                    f"(only {WEBSITE_AGNOSTIC_TASKS} run without one)"
+                )
             # Validate every name before any work starts -- a batch that's already
             # crawled 3 sites shouldn't discover the 4th name was a typo only when
             # it crashes crawl_sitemaps with an AttributeError on None.
