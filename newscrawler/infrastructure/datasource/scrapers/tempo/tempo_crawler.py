@@ -1,4 +1,3 @@
-import re
 from typing import Dict, List
 
 from newscrawler.domain.entities.extraction.url_data import URL
@@ -20,26 +19,19 @@ class TempoCrawler(Crawler):
         self.website_name = WebsiteName.TEMPO.value
         self.website_url = URL.TEMPO.value
 
-    def _get_branches(self, soup) -> Dict[str, str]:
+    @staticmethod
+    def _get_branches(soup) -> Dict[str, str]:
+        # SRC-06 (#17): the old implementation fetched all 28 -sitemap.xml
+        # leaves up front (~155s -- this alone blew check_crawlers.py's 60s
+        # budget) and mis-read each fetched leaf's first <loc> (an article
+        # URL) as the branch link, collapsing 28 entries into a handful of
+        # garbage keys derived from the article's own host. Target
+        # ekonomi-sitemap.xml directly instead -- no extra fetch needed.
         branches = {}
-        sitemaps = soup.find_all("sitemap")
-        for sitemap in sitemaps:
-            link = sitemap.find("loc")
-            if link:
-                link = link.get_text(" ").strip()
-                if "-sitemap.xml" not in link:
-                    continue
-                else:
-                    soup = self.page_loader.get_soup(link)
-                    if soup:
-                        link = soup.find("loc")
-                        if link:
-                            link = link.get_text(" ").strip()
-                            branch_name = re.sub(
-                                r"(.*)(//)(.*)(.tempo)(.*)", r"\3", link
-                            )
-                            branch_name = branch_name.strip()
-                            branches[branch_name] = link.strip()
+        for sitemap in soup.find_all("sitemap"):
+            loc = sitemap.find("loc")
+            if loc and loc.get_text(" ").strip().endswith("/ekonomi-sitemap.xml"):
+                branches["ekonomi"] = loc.get_text(" ").strip()
         return branches
 
     def _get_whole_text(self, soup):
