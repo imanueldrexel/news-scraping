@@ -16,6 +16,15 @@ below now selects "missing L1 OR missing L2"; save_chunk_data's own
 that's actually missing, so re-chunking a partially-saved article is a no-op for
 the level it already has.
 
+This is also the only chunk backfill tool (DBT-24, #79): the older
+scripts/backfill_chunks.py selected by chunks.article_id (never written by the
+live pipeline, so it selected every article), chunked post-SYS-18 prose as one
+paragraph, and embedded into a VECTOR_DB_DIR index nothing reads -- it was
+deleted rather than rewritten into a copy of this script. Everything written
+here goes through DataFlowRepositoryImpl.save_chunk_data, i.e. the same
+HierarchicalChunker, the same ChunkFAISSDatasource and the same NEWS_L1/NEWS_L2
+indexes search_l2() and the newsletter read.
+
 Usage:
     python scripts/backfill_orphan_chunks.py [--website NAME] [--dry-run]
 """
@@ -57,32 +66,37 @@ _FETCH_SQL = text("""
 """)
 
 
-def main():
+def main(argv=None) -> dict:
+    """Returns {"selected", "repaired", "empty", "failed"} so the integration test
+    can drive this in-process (argv=None reads sys.argv as usual)."""
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--website", default=None, help="Limit to one source (default: all)")
     parser.add_argument("--dry-run", action="store_true", help="Report counts without writing")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     client = SQLAlchemyClient()
     with client.get_session() as session:
         rows = session.execute(_FETCH_SQL, {"website": args.website}).fetchall()
 
+    summary = {"selected": len(rows), "repaired": 0, "empty": 0, "failed": 0}
     logger.info("%d orphan article(s) found%s", len(rows), f" for {args.website}" if args.website else "")
     if not rows:
-        return
+        return summary
 
     if args.dry_run:
         by_source = {}
         for r in rows:
             by_source[r.sources] = by_source.get(r.sources, 0) + 1
         logger.info("[dry-run] Would re-chunk: %s", by_source)
-        return
+        return summary
 
     chunker = HierarchicalChunker()
     repo = DataFlowRepositoryImpl(client)
 
     repaired, empty, failed = 0, 0, 0
     for row in rows:
+        # SYS-18: extracted_text is prose joined with "\n\n" at the write boundary
+        # (sql_alchemy_articles_data_source.save_newsdetails); split it the same way.
         paragraphs = [p for p in (row.extracted_text or "").split("\n\n") if p.strip()]
         if not paragraphs:
             logger.warning("sitemap_id %d: extracted_text is empty, skipping", row.sitemap_id)
@@ -119,6 +133,8 @@ def main():
             failed += 1
 
     logger.info("Done. repaired=%d empty=%d failed=%d (of %d)", repaired, empty, failed, len(rows))
+    summary.update(repaired=repaired, empty=empty, failed=failed)
+    return summary
 
 
 if __name__ == "__main__":
