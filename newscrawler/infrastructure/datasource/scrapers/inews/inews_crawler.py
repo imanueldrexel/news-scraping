@@ -1,5 +1,4 @@
 import logging
-import re
 from typing import List, Dict
 
 from newscrawler.domain.entities.extraction.url_data import URL
@@ -22,19 +21,17 @@ class INewsCrawler(Crawler):
 
     @staticmethod
     def _get_branches(soup) -> Dict[str, str]:
+        # SRC-27 (#109): the real index has 129 entries -- www.inews.id's own
+        # topical sections (finance, sport, lifestyle, ...) plus 113 regional
+        # subdomains (bogor.inews.id, etc.). The old code kept every one of
+        # them; a real run ingested 24,861 sitemaps, 90% from those regional
+        # subdomains, 98% of which 404 (dead mirrors). Keep only the finance
+        # leaf -- see DBT-04 for widening to other sections.
         branches = {}
-        sitemaps = soup.find_all("sitemap")
-        for sitemap in sitemaps:
+        for sitemap in soup.find_all("sitemap"):
             link = sitemap.find("loc")
-            if link:
-                link = link.get_text(" ").strip()
-                branch_name = re.sub(r"(https://)(\w+)(\.inews.id.*)", r"\2", link)
-                if branch_name == "www":
-                    branch_name = re.sub(
-                        r"(https://www.inews.id/)(\w+)(/)(.*)", r"\2", link
-                    )
-
-                branches[branch_name] = link.strip()
+            if link and link.get_text(" ").strip().endswith("/finance/bisnis/sitemap.xml"):
+                branches["finance"] = link.get_text(" ").strip()
         return branches
 
     @staticmethod
