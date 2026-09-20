@@ -96,6 +96,9 @@ class DataFlowRepositoryImpl(DataFlowRepository):
     def get_saved_category_pairs(self, website: str) -> Set[Tuple[str, str]]:
         return self.news_data_source.get_saved_category_pairs(website)
 
+    def update_sitemap_headlines(self, headlines_by_id: Dict[int, str]) -> int:
+        return self.news_data_source.update_sitemap_headlines(headlines_by_id)
+
     @staticmethod
     def _to_chunk_model(chunk: ChunkDTO) -> ChunkModel:
         return ChunkModel(

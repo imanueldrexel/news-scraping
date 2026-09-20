@@ -353,17 +353,28 @@ class Crawler:
                 elif isinstance(extracted_text, str):
                     extracted_text = [extracted_text] if extracted_text.strip() else []
 
-                # SYS-32: SitemapDTO.headline is pydantic-validated `str`, so a
-                # DTO that reaches this method always has a real string --
-                # _get_sitemap's own URL-slug fallback guarantees that for any
-                # sitemap built by the live crawl. This only fires for an empty
-                # string, i.e. a DTO built some other way (a test, a repair
-                # script) with no title -- fetch one from the page itself
-                # rather than let the semantic filter see nothing.
+                # SYS-33 (#114): a lastmod-only leaf (TIRTO, TEMPO) never has a
+                # news:title, so _get_sitemap stored the URL slug as the
+                # headline -- trailing id included ("... Ini Pergerakannya
+                # Hca5"). SYS-32 wired _get_page_title behind
+                # `sitemap.headline or ...`, which its own fallback made
+                # unreachable on the live path: 317 articles kept the slug as
+                # their permanent title (filter input, FAISS metadata, UI).
+                # Now the page's og:title wins whenever the stored headline is
+                # that placeholder (or empty); the service writes it back to
+                # sitemaps.headline (`headline_from_page`), rejected rows too.
+                title = sitemap.headline
+                headline_from_page = False
+                if not title or self._is_placeholder_headline(sitemap):
+                    page_title = self._get_page_title(soup)
+                    if page_title:
+                        title = page_title
+                        headline_from_page = True
                 meta_data = {
-                    "title": sitemap.headline or self._get_page_title(soup),
+                    "title": title,
                     "posted_at": sitemap.timestamp,
                     "extractor": extractor_used,
+                    "headline_from_page": headline_from_page,
                 }
                 return NewsDetailsDTO(
                     sitemap_id=sitemap.sitemap_id,
@@ -377,11 +388,23 @@ class Crawler:
             logger.info(f"Error in get_content {sitemap.link}. Reason: {e}")
             return None, f"{type(e).__name__}: {e}"[:200]
 
+    @classmethod
+    def _is_placeholder_headline(cls, sitemap: SitemapDTO) -> bool:
+        """SYS-33: True when the stored headline is exactly what
+        _derive_headline_from_url would make of the link -- i.e. it came from
+        the SYS-32 slug fallback, not from a news:title. Detected by equality
+        rather than carried as a flag so a DTO rebuilt from a DB row (the live
+        full_text path loads sitemaps back from Postgres) is recognised too."""
+        if not sitemap.headline or not sitemap.link:
+            return False
+        return sitemap.headline == cls._derive_headline_from_url(sitemap.link)
+
     @staticmethod
     def _get_page_title(soup) -> Optional[str]:
-        """SYS-32: fallback headline source when sitemap.headline is empty --
-        og:title first (more curated than the raw <title> tag, which often
-        carries a " | SiteName" suffix), then <title> itself."""
+        """SYS-32/SYS-33: headline source when sitemap.headline is empty or a
+        URL-slug placeholder -- og:title first (more curated than the raw
+        <title> tag, which often carries a " | SiteName" suffix), then <title>
+        itself."""
         og_title = soup.find("meta", property="og:title")
         if og_title and og_title.get("content"):
             return og_title["content"].strip()

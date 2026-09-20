@@ -269,6 +269,30 @@ class SQLAlchemySitemapDataSource:
 
     VALID_CRAWL_STATUSES = {"pending", "rejected_filter", "empty_extraction", "saved"}
 
+    def update_headlines(self, headlines_by_id: Dict[int, str]) -> int:
+        """SYS-33 (#114): replace a URL-slug placeholder headline with the
+        page's real title once the page has been fetched. One transaction;
+        a row is only touched when the value actually differs. Returns the
+        number of rows changed."""
+        if not headlines_by_id:
+            return 0
+        changed = 0
+        with self.client.get_session() as session:
+            for sitemap_id, headline in headlines_by_id.items():
+                if not headline or not headline.strip():
+                    continue
+                changed += session.execute(
+                    text(
+                        f"UPDATE {SitemapTable.__tablename__} "
+                        f"SET {SitemapTable.headline.name} = :headline "
+                        f"WHERE {SitemapTable.sitemap_id.name} = :id "
+                        f"AND {SitemapTable.headline.name} IS DISTINCT FROM :headline"
+                    ),
+                    {"id": int(sitemap_id), "headline": headline.strip()},
+                ).rowcount
+            session.commit()
+        return changed
+
     def get_saved_category_pairs(self, website: str) -> Set[Tuple[str, str]]:
         """SYS-34 (#115, fix c): every (source, lower(category)) that has ever
         produced an `articles` row for this source. The service warns the

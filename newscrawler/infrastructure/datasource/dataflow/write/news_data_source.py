@@ -58,6 +58,9 @@ class NewsDataSource:
     def get_saved_category_pairs(self, website: str):
         return self.sql_alchemy_sitemap.get_saved_category_pairs(website)
 
+    def update_sitemap_headlines(self, headlines_by_id) -> int:
+        return self.sql_alchemy_sitemap.update_headlines(headlines_by_id)
+
     def load_sitemap(
         self, website: str, n_limit: int
     ) -> List[NewsSitemapModel]:

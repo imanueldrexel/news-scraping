@@ -150,7 +150,14 @@ class CrawlerServiceImpl(CrawlerService):
             # the whole source failed this run (OPS-15, below), in which case nothing
             # is counted and everything stays eligible for the next run.
             self.data_flow_repo.mark_sitemaps_attempted([n.sitemap_id for n in newsdetails])
-            
+
+            # SYS-33 (#114): a lastmod-only source (TIRTO, TEMPO) stored the
+            # URL slug as its headline; the crawler just read the real
+            # og:title off the page. Write it back for every fetched page --
+            # rejected rows too, since their headline is what SYS-38's
+            # re-score and SYS-36's gold set read -- before the filter runs.
+            self._write_back_page_headlines(website_name, newsdetails)
+
             # Build sitemap lookup so the filter and the chunker both get
             # source/category metadata for this batch.
             sitemap_by_id = {s.sitemap_id: s for s in batch}
@@ -249,6 +256,25 @@ class CrawlerServiceImpl(CrawlerService):
             f"passed_filter={passed_filter_total} saved={saved_total}"
         )
         return saved_total
+
+    def _write_back_page_headlines(self, website_name: str, newsdetails) -> None:
+        """SYS-33: persist the page title the crawler preferred over a
+        placeholder headline (`meta_data["headline_from_page"]`). Failure here
+        must not fail the batch -- the DTO still carries the real title for the
+        filter, the chunker and the article row."""
+        headlines = {
+            n.sitemap_id: n.meta_data["title"]
+            for n in newsdetails
+            if n.meta_data and n.meta_data.get("headline_from_page") and n.meta_data.get("title")
+        }
+        if not headlines:
+            return
+        try:
+            changed = self.data_flow_repo.update_sitemap_headlines(headlines)
+        except Exception as e:  # noqa: BLE001 -- see docstring
+            logger.warning(f"{website_name}: could not write back {len(headlines)} page headline(s): {e!r}")
+            return
+        logger.info(f"{website_name}: replaced {changed} URL-slug placeholder headline(s) with the page title")
 
     def _load_known_saved_pairs(self, website_name: str):
         """SYS-34: the (source, category) pairs that have ever produced a saved

@@ -48,6 +48,11 @@ class DataFlowRepository:
         WARNING in the crawl service."""
         raise NotImplementedError
 
+    def update_sitemap_headlines(self, headlines_by_id: Dict[int, str]) -> int:
+        """SYS-33: write the page's real title over a URL-slug placeholder
+        headline once the page has been fetched. Returns rows changed."""
+        raise NotImplementedError
+
     def extract_knowledge(self, batch_size: Optional[int] = None) -> int:
         raise NotImplementedError
 
