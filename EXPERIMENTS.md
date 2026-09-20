@@ -753,3 +753,27 @@ One line each; read this before starting on a scraper or pipeline problem.
   - **IDNTIMES: clean, no warnings.** `attempted=399 extracted=370 passed_filter=46 saved=46` (~11.5% pass rate, matching the ~10.6% seen in the full 8-outlet run). `business` category sitemaps grew 130 -> 147 (17 new, real finance content from the live site) confirming SRC-28's narrowed branch is actively working going forward. Articles still came from a mix of all 14 categories (business 83, news 46, life 8, ...) since `load_all_sitemaps` pulls the pre-existing backlog same as INEWS -- but since IDNTIMES's off-branch content isn't *dead* (just off-topic), this is recurring compute waste, not wasted network 404s, and was already captured by SRC-28's own text.
 - **Conclusion / do not repeat:** **"the backlog is self-limiting" was an underestimate — check the actual math (attempts needed x cooldown days x whether a recurring job even exists) before calling a stale-data problem self-resolving.** A `_get_branches` fix that narrows future sitemap discovery does nothing about a category-blind `load_all_sitemaps` continuing to serve the pre-existing backlog; for a source whose backlog is genuinely dead (not just off-topic), that means real, repeated, measurable waste (near-1,000 wasted HTTP requests) on every future ad hoc run, not a one-time cost.
 - **Links:** SRC-29 (#111, P2) filed, open · real production writes this run: INEWS +1 article (now 2 total), IDNTIMES +46 articles/+17 sitemaps · related: SRC-27 (#109), OPS-16 (#87), DBT-04 (#23)
+
+### 2026-09-20 — is SRC-29's dead-backlog problem INEWS-specific, or do other sources have it too?
+- **Question / hypothesis:** the user asked whether SRC-29's shape (a confirmed-dead sitemap backlog silently burning ~1,000 wasted requests per run, because `load_all_sitemaps` has no category/branch awareness and OPS-16's ratio guard never trips below 100%) is unique to INEWS or affects other sources too. Answered by querying the real DB, not by reasoning from the code alone.
+- **Method:**
+  ```sql
+  SELECT sm.sources,
+         COUNT(*) FILTER (WHERE a.sitemap_id IS NULL) AS no_article,
+         COUNT(*) FILTER (WHERE a.sitemap_id IS NULL AND sm.crawl_status != 'rejected_filter'
+                           AND (sm.last_crawl_attempt IS NULL OR sm.last_crawl_attempt < NOW() - INTERVAL '7 days')
+                           AND sm.fetch_failures < 3) AS eligible_now,
+         COUNT(*) FILTER (WHERE sm.fetch_failures > 0) AS ever_failed,
+         COUNT(*) FILTER (WHERE sm.fetch_failures >= 3) AS excluded_dead,
+         COUNT(*) AS total
+  FROM sitemaps sm LEFT JOIN articles a ON a.sitemap_id = sm.sitemap_id
+  GROUP BY sm.sources ORDER BY eligible_now DESC;
+  ```
+  Cross-referenced the largest queues against their own tracking history: SYS-08 (#26, VIVA) and OPS-16 (#87, BISNIS)'s existing text.
+- **Result:**
+  - **The 7 sibling outlets fixed this session (ANTARANEWS, TIRTO, SUARA, LIPUTAN6, MERDEKA, TEMPO, IDNTIMES): not affected.** `ever_failed=0` for all of them except IDNTIMES (93, ordinary per-URL extraction misses from today's own run, not a systemic dead-domain shape) -- their real `task=all` runs today extracted content fine; the remaining no-article backlog is small (34-1,285 rows) and off-topic-but-alive, not dead.
+  - **BISNIS already has the identical shape, at small scale (3-row eligible queue, 403-blocked)** -- this is the worked example already cited in OPS-16 (#87)'s own text, not a new finding.
+  - **VIVA has by far the largest eligible queue in the pipeline (39,211 rows, `ever_failed=0`) but it is NOT the same problem** -- SYS-08 (#26, closed) root-caused VIVA's zero-article history to a pydantic validation bug on `reporter` (fixed in `e9018ed`), not dead URLs. That ~39K backlog was deliberately never re-crawled after the fix ("not now, later"), so whether it's now healthy or hides a different dead-URL problem is untested, not confirmed either way.
+  - **MEDIAINDONESIA (10,960 eligible), PIKIRANRAKYAT (3,560), JPNN (2,538), WARTAEKONOMI (1,774), CNBC (1,345), IDXCHANNEL (1,074), TVONENEWS (807), SINDONEWS (632), GRIDID (434), KUMPARAN (352), KOMPAS (223), CNN (154): unknown, not tested.** All show `ever_failed=0`, which only proves nothing has hit the per-row failure counter yet -- consistent with either "genuinely healthy backlog" or "hasn't been crawled with `task=all`/`full_text` since the counter went live." No live evidence either way; not spot-checked further per the user's call ("no need... I'll let the QA team audit that").
+- **Conclusion / do not repeat:** SRC-29's specific symptom (measured 99%+ HTTP-404 burn rate) is INEWS-only among sources actually tested. The *architectural* gap it exposed (category-blind queue selection + a ratio guard that can't fire below 100%) is generic and already has one other live instance (BISNIS, small scale, covered by OPS-16) -- but "the gap is generic" is not evidence that any specific large-queue source (VIVA, MEDIAINDONESIA, etc.) currently has a dead backlog. Don't infer that from queue size alone; `ever_failed=0` on an untested source is not the same claim as `ever_failed=0` on a source verified healthy today (INEWS's own `ever_failed` was 0 too, right up until the first real run that measured it).
+- **Links:** no new ticket filed (informational cross-check only, at the user's explicit direction) · related: SRC-29 (#111), OPS-16 (#87), SYS-08 (#26, closed)
