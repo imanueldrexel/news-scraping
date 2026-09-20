@@ -1,3 +1,4 @@
+import json
 import logging
 import re
 from typing import List, Dict
@@ -50,25 +51,50 @@ class KumparanCrawler(Crawler):
         return texts
 
     def _get_reporter_from_text(self, soup) -> List[str]:
-        reporters = []
+        # SRC-11 (#68): the page's JSON-LD is third-party content; parse it as
+        # JSON, never eval() it. eval only worked by accident (JSON object/
+        # array/string/number syntax is valid Python) and broke on any
+        # true/false/null literal. `.string`, not `.get_text()`: bs4 >= 4.9
+        # deliberately skips <script> contents in get_text().
         scripts = soup.find_all(
             "script", attrs={"data-rh": "true", "type": "application/ld+json"}
         )
         for script in scripts:
+            raw = script.string
+            if not raw or not raw.strip():
+                continue
             try:
-                script = str(script).replace(
-                    '<script data-rh="true" type="application/ld+json">', ""
-                )
-                script = script.replace("</script>", "")
-                script = eval(script)
-                try:
-                    author = script["author"]["name"]
-                    reporters.append(author)
-                    break
-                except KeyError:
-                    continue
-            except BaseException as e:
+                data = json.loads(raw)
+            except json.JSONDecodeError as e:
                 logger.info(
-                    f"Error while getting reporter on  {self.website_name}. Reason: {e}"
+                    f"Unparseable ld+json on {self.website_name}: {e}"
                 )
-        return reporters
+                continue
+            names = self._author_names(data)
+            if names:
+                return names
+        return []
+
+    @staticmethod
+    def _author_names(data) -> List[str]:
+        """schema.org `author` is a Person/Organization object or a list of
+        them; a bare string is also seen in the wild. Only NewsArticle-shaped
+        blocks carry it -- a BreadcrumbList on the same page has none."""
+        if not isinstance(data, dict):
+            return []
+        author = data.get("author")
+        if isinstance(author, dict):
+            author = [author]
+        elif isinstance(author, str):
+            return [author.strip()] if author.strip() else []
+        if not isinstance(author, list):
+            return []
+        names = []
+        for entry in author:
+            if isinstance(entry, dict):
+                name = entry.get("name")
+            else:
+                name = entry
+            if isinstance(name, str) and name.strip():
+                names.append(name.strip())
+        return names
