@@ -1,10 +1,24 @@
 # Product Requirements Document
 ## NewsAggregator — Knowledge Base, Newsletter & RAG Search Platform
 
-**Version:** 1.0  
-**Date:** 2026-05-21  
+**Version:** 1.1 (scope amendment)  
+**Date:** 2026-05-21, amended 2026-09-20  
 **Author:** imanueldrexel  
 **Status:** Draft
+
+---
+
+## Scope amendment — 2026-09-20 (owner decision)
+
+**The product keeps everything *news-worthy*, not only finance/economy.** This supersedes every "finance/economy only" statement below until the affected sections are rewritten (tracked in SYS-40 #126 for §1/§7/§10 and SRC-39 #133 for §7.2).
+
+- **News-worthy (kept):** a reported, time-bound event or development with public significance — politics and government, economy/business/markets, law and crime, disasters and accidents, international affairs, science/tech developments, health or education policy and outbreaks, infrastructure, investigations. Economic policy (a minister on tariffs, fuel prices, revenue sharing) is in.
+- **Not news-worthy (dropped):** evergreen, service or lifestyle content with no event — recipes, `doa`/prayer guides and daily reflections, horoscopes/`zodiak`, tips and how-tos, listicles, celebrity gossip/relationships/fashion, product reviews, fiction and poetry, quizzes, travel guides, health tips, advertorials, **and sports**.
+- **Tie-break:** front section, or the lifestyle/entertainment/sports supplement? The full rubric, with a labelled gold set, is SYS-36 (#120).
+- **Every saved article carries a `topic`** (`markets`, `macro_policy`, `corporate`, `commodities_energy`, `consumer`, `politics_government`, `law_crime`, `disaster_accident`, `international`, `tech_science`, `health_education`, `other_news`) from the same classifier that makes the news-worthy decision (SYS-37 #121). The five finance topics are what the newsletter renders first (SYS-40 #126) and what knowledge extraction prioritises (SYS-39 #125); the knowledge base, newsletter and RAG search otherwise cover all news.
+- **The semantic filter is a supervised classifier on the article embedding, trained on a labelled set; the LLM labels and audits, it does not gate** (rationale on SYS-36). The cosine-vs-`INTERESTS`-keywords filter described in §7.3 is retired by SYS-37.
+- **Scrapers list every hard-news section of every source** and drop soft verticals by name, enforced once in the base crawler — the policy text is in §7.2 (SRC-39 #133). Crawlers narrowed to a finance leaf in September 2026 are being widened (SRC-34 #124); sources with no hard-news section are retired (GRIDID SRC-37 #130, KAPANLAGI), not narrowed.
+- **Capacity consequences** are ticketed, not assumed: extraction volume and the free-tier call cap (SYS-39 #125), vector-store growth (SYS-41 #127), a scheduled crawl (OPS-19 #132).
 
 ---
 
@@ -31,7 +45,7 @@
 
 ## 1. Background & Motivation
 
-The existing system scrapes news from 33 Indonesian news portals (Detik, Kompas, CNBC Indonesia, Bisnis Indonesia, Kontan, etc.) twice daily. Articles are stored in PostgreSQL and embedded into a local FAISS vector index using Ollama (`nomic-embed-text`). The semantic importance filter ensures only finance/economy-related articles are persisted.
+The existing system scrapes news from ~30 Indonesian news portals (Detik, Kompas, CNBC Indonesia, Bisnis Indonesia, Kontan, etc.) twice daily. Articles are stored in PostgreSQL and embedded into a local FAISS vector index using Ollama (`nomic-embed-text`). The semantic importance filter ensures only **news-worthy** articles are persisted — hard news of any desk, with soft/evergreen content (recipes, prayers, horoscopes, gossip, listicles, sports) dropped; each saved article is tagged with a `topic`, and the finance topics remain the first-class audience of the three products (see the 2026-09-20 scope amendment above; the filter was finance/economy-only until then).
 
 Currently the pipeline terminates at storage — the data has no user-facing product on top of it. The raw collection is valuable but underutilized:
 
@@ -288,18 +302,20 @@ Phase 5:  Knowledge Extraction  (NEW)
 Phase 6:  Newsletter Job        (NEW, scheduled)
 ```
 
-### 7.2 Phase 1 — Sitemap Crawl (Unchanged)
+### 7.2 Phase 1 — Sitemap Crawl
 
-- Triggered: twice daily (e.g., 06:00 WIB and 18:00 WIB)
+- Triggered: twice daily (e.g., 06:00 WIB and 18:00 WIB) — not yet scheduled, see OPS-19 (#132)
 - Output: `sitemaps` table rows (headline, link, category, date, keywords)
-- Deduplication: composite key `(link, posted_at)`
+- Deduplication: the `link` alone (`sitemaps_link_uq`, SYS-29 #84; it was `(link, posted_at)` until 2026-09-18)
 
-### 7.3 Phase 2 — Article Crawl (Unchanged)
+**Branch-scope requirement (SRC-39 #133, owner decision 2026-09-20).** A crawler lists **every section its outlet publishes that carries hard news** — national, political, legal/crime, regional, international, economy/business/markets, science/tech developments, health/education policy — and **drops, by branch name, the soft verticals**: sport, entertainment/celebrity, lifestyle/fashion/beauty, food/recipes, travel, religion guides, hobby-automotive, games, horoscopes, fiction, video/photo galleries, English editions. The decision is made per leaf, from a 3-title sample, and recorded on the source's ticket — never from the leaf's name alone (WARTAEKONOMI's `otomotif`/`kesehatan`/`transportasi` are business coverage). The drop is enforced once, in the base `Crawler` (SRC-35 #128), not in each subclass. A branch is never keyed by its URL: a `<loc>` the subclass cannot name is skipped. The semantic filter (§7.3) decides news-worthy vs soft *within* a listed section; it is not a substitute for listing the right sections. A source with no hard-news section at all is retired, not narrowed. `scripts/experiments/probe_branch_scope.py` prints every registered crawler's live branch set and is the check before and after any branch change.
 
-- Input: `sitemaps WHERE sitemap_id NOT IN articles`
+### 7.3 Phase 2 — Article Crawl
+
+- Input: `sitemaps` with no `articles` row, not in the re-crawl cooldown, under the fetch-failure cap (newest 1,000 per source per run)
 - Processing: site-specific HTML extraction → trafilatura fallback → newspaper3k fallback
-- Filter: `SemanticImportanceFilter` (cosine similarity ≥ 0.35 vs. INTERESTS keywords)
-- Output: `articles` table rows (full text, reporter, metadata)
+- Filter: `SemanticImportanceFilter` — **news-worthy vs soft**, a supervised multi-class classifier on the article embedding that also writes `articles.topic` (SYS-37 #121, trained on the SYS-36 #120 gold set). Until SYS-37 lands the code still runs the original cosine similarity ≥ 0.35 vs. `INTERESTS` keywords (finance-only), plus the SYS-31 category deny-list. A rejection is terminal (`sitemaps.crawl_status = 'rejected_filter'`, SYS-16); SYS-38 (#122) re-scores the existing rejects when the classifier changes.
+- Output: `articles` table rows (full text, reporter, metadata, `topic`)
 
 ### 7.4 Phase 3 — Chunking (NEW)
 
