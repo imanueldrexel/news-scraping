@@ -309,12 +309,14 @@ class GeminiLabeller:
         return self.daily_limit - self.ds.get_today_api_call_count(self.model_name)
 
     def call(self, prompt: str) -> Optional[str]:
-        self.ds.increment_api_call_count(self.model_name)
         response = self.client.models.generate_content(
             model=self.model_name,
             contents=prompt,
             config={"response_mime_type": "application/json"},
         )
+        # Counted only once the API answered -- OPS-09's rule for extraction:
+        # a 429/5xx/timeout never produced a response and must not eat budget.
+        self.ds.increment_api_call_count(self.model_name)
         return response.text
 
 
@@ -363,6 +365,11 @@ def cmd_label(args) -> int:
         return 1
     done = {r["sitemap_id"] for r in read_jsonl(args.out)}
     todo = [r for r in sample if r["sitemap_id"] not in done]
+    # The sample file is sorted by sitemap_id (= by source, roughly). A
+    # quota-limited day (the free tier is 20 calls/day/model, OPS-20) must
+    # still cover every stratum and source, so batches are drawn in a seeded
+    # shuffle of the remaining rows rather than in file order.
+    random.Random(args.seed).shuffle(todo)
     batches = [todo[i:i + args.batch_size] for i in range(0, len(todo), args.batch_size)]
     logger.info("%d sample rows, %d already labelled, %d to label in %d call(s) of %d (model %s)",
                 len(sample), len(done), len(todo), len(batches), args.batch_size, GEMINI_MODEL)
@@ -386,21 +393,28 @@ def cmd_label(args) -> int:
     labeller = GeminiLabeller(SQLAlchemyKnowledgeDataSource(SQLAlchemyClient()), GEMINI_MODEL, GEMINI_API_KEY,
                               DAILY_API_CALL_LIMIT)
 
-    calls = labelled = rejected = 0
-    for batch in batches:
-        if args.max_calls is not None and calls >= args.max_calls:
-            logger.info("--max-calls %d reached; stopping (resumable).", args.max_calls)
-            break
-        if labeller.budget_left() <= 0:
-            logger.warning("Daily API budget exhausted (%d); stopping (resumable).", DAILY_API_CALL_LIMIT)
-            break
+    if args.max_calls is not None:
+        batches = batches[: args.max_calls]
+    if labeller.budget_left() < len(batches):
+        logger.warning("Daily API budget (%d) covers %d of %d call(s); the rest wait for a re-run.",
+                       DAILY_API_CALL_LIMIT, labeller.budget_left(), len(batches))
+        batches = batches[: max(0, labeller.budget_left())]
+
+    import threading
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    write_lock = threading.Lock()
+    stats = {"calls": 0, "labelled": 0, "rejected": 0, "failed": 0}
+
+    def label_one(batch):
         prompt = build_label_prompt(batch_payload(batch))
         try:
             raw = labeller.call(prompt)
-        except Exception as e:  # noqa: BLE001 -- resumable; report and stop
-            logger.error("Gemini call failed after %d call(s): %r -- stopping (resumable).", calls, e)
-            break
-        calls += 1
+        except Exception as e:  # noqa: BLE001 -- resumable; this batch is retried on the next run
+            logger.error("Gemini call failed: %r (batch of %d left for a re-run)", e, len(batch))
+            with write_lock:
+                stats["failed"] += 1
+            return
         labels, problems = parse_labels(raw, batch)
         now = datetime.now(timezone.utc).isoformat(timespec="seconds")
         out_rows = []
@@ -414,15 +428,28 @@ def cmd_label(args) -> int:
                 "stratum": r["stratum"], "split": r["split"],
                 "is_news": is_news, "topic": topic, "labeller": GEMINI_MODEL, "labelled_at": now,
             })
-        append_jsonl(args.out, out_rows)
-        labelled += len(out_rows)
-        rejected += len(batch) - len(out_rows)
+        with write_lock:
+            append_jsonl(args.out, out_rows)
+            stats["calls"] += 1
+            stats["labelled"] += len(out_rows)
+            stats["rejected"] += len(batch) - len(out_rows)
+            calls = stats["calls"]
         for p in problems[:5]:
             logger.warning("  call %d: %s", calls, p)
         if calls % 10 == 0:
-            logger.info("%d call(s), %d labelled, %d left for a re-run", calls, labelled, rejected)
-    logger.info("Done: %d call(s), %d row(s) labelled, %d row(s) not accepted (re-run to retry), output %s",
-                calls, labelled, rejected, args.out)
+            logger.info("%d call(s), %d labelled, %d left for a re-run", calls, stats["labelled"], stats["rejected"])
+
+    # Calls are independent; --workers > 1 overlaps the model's latency
+    # (~30-45 s per 20-row call with thinking on). The output file is
+    # append-only under a lock, so a crash mid-run loses at most the batches
+    # in flight, and the next run picks them up.
+    with ThreadPoolExecutor(max_workers=max(1, args.workers)) as ex:
+        futures = [ex.submit(label_one, b) for b in batches]
+        for f in as_completed(futures):
+            f.result()
+    logger.info("Done: %d call(s), %d row(s) labelled, %d row(s) not accepted, %d call(s) failed "
+                "(re-run to retry), output %s", stats["calls"], stats["labelled"], stats["rejected"],
+                stats["failed"], args.out)
     return 0
 
 
@@ -548,6 +575,8 @@ def main(argv=None) -> int:
     p.add_argument("--dry-run", action="store_true")
     p.add_argument("--batch-size", type=int, default=20)
     p.add_argument("--max-calls", type=int, default=None)
+    p.add_argument("--workers", type=int, default=1, help="Concurrent Gemini calls (default 1)")
+    p.add_argument("--seed", type=int, default=20260920, help="Order in which the remaining rows are batched")
     p.add_argument("--sample", default=SAMPLE_PATH)
     p.add_argument("--out", default=GOLD_PATH)
     p.set_defaults(fn=cmd_label)
