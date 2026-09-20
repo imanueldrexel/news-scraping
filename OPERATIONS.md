@@ -11,7 +11,10 @@
 | `POSTGRES_DB_NAME` | `newsaggregator` | DB name |
 | `GEMINI_API_KEY` | — | **Required for extraction, newsletter, RAG** |
 | `GEMINI_MODEL` | `gemini-1.5-flash` | Gemini model name |
-| `DAILY_API_CALL_LIMIT` | `1400` | Hard stop for Gemini calls/day |
+| `DAILY_API_CALL_LIMIT` | `1400` | Hard stop for LLM calls/day, per model name in `api_usage_log`. **The Gemini free tier on this project enforces 20/day/model** (OPS-20, #136) — the 1400 is not what the API allows |
+| `OPENAI_API_KEY` | — | OPS-20: OpenAI-compatible endpoint used **only** by the offline gold-set labeller (`scripts/label_filter_gold.py label`, SYS-36); never in the crawl path |
+| `OPENAI_BASE_URL` | — | e.g. `https://ai.sumopod.com/v1` |
+| `OPENAI_MODEL` | `deepseek-v4-flash` | Labelling model; a reasoning model is called with thinking disabled |
 | `KNOWLEDGE_BATCH_SIZE` | `50` | Articles per extraction run |
 | `EMBEDDING_MODEL_HF` | `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` | Embedding model |
 | `VECTOR_DB_NAME_L1` | `NEWS_L1` | FAISS L1 index directory |

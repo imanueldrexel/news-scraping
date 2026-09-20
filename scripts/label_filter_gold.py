@@ -14,12 +14,16 @@ re-run alone:
                   the SYS-34/SRC-36 cleanup, both of which change the strata.
                   Rows whose headline is a URL-slug placeholder (SYS-33: TIRTO/
                   TEMPO before the repair) are excluded and counted.
-  label           Gemini, batched --batch-size rows per call, JSON out, via the
-                  existing google.genai client and api_usage_log (shared daily
-                  cap with knowledge extraction). Resumable: rows already in the
-                  output are skipped; a row whose label comes back invalid is
-                  left for the next run. --dry-run needs no key and writes
-                  nothing; --max-calls N is the smoke test.
+  label           An LLM labels --batch-size rows per call, JSON out, counted in
+                  api_usage_log under the model's name (the same daily cap as
+                  knowledge extraction). --provider openai (default; OPS-20 #136:
+                  any OpenAI-compatible endpoint -- OPENAI_API_KEY, OPENAI_BASE_URL,
+                  OPENAI_MODEL, e.g. SumoPod's deepseek-v4-flash) or --provider
+                  gemini (the existing google.genai client; free tier is 20
+                  calls/day/model). Resumable: rows already in the output are
+                  skipped; a row whose label comes back invalid is left for the
+                  next run. --dry-run needs no key and writes nothing;
+                  --max-calls N is the smoke test; --workers N overlaps calls.
   handcheck       Write tests/fixtures/filter_gold_handcheck.csv: 100 rows across
                   strata for is_news + 50 news rows across topics for topic, with
                   blank human_* columns for the owner.
@@ -320,6 +324,62 @@ class GeminiLabeller:
         return response.text
 
 
+class OpenAICompatLabeller:
+    """OPS-20 (#136): any OpenAI-compatible chat endpoint (SumoPod's
+    `deepseek-v4-flash` today) behind the same call()/budget_left() interface
+    and the same api_usage_log accounting, keyed by model name so its calls
+    are counted separately from Gemini's. Temperature 0: a labeller should
+    be as deterministic as the model allows."""
+
+    def __init__(self, ds, model_name: str, api_key: str, base_url: Optional[str], daily_limit: int):
+        from openai import OpenAI
+        self.ds = ds
+        self.model_name = model_name
+        self.daily_limit = daily_limit
+        self.client = OpenAI(api_key=api_key, base_url=base_url)
+
+    def budget_left(self) -> int:
+        return self.daily_limit - self.ds.get_today_api_call_count(self.model_name)
+
+    def call(self, prompt: str) -> Optional[str]:
+        response = self.client.chat.completions.create(
+            model=self.model_name,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0,
+            max_tokens=4000,
+            # deepseek-v4-flash is a reasoning model: with thinking on it spent
+            # all 4,000 output tokens in reasoning_content on a 20-row batch
+            # and returned an empty answer (finish=length). Off: 420 output
+            # tokens, 2.4 s, 20/20 labels. An endpoint that does not know the
+            # field ignores it.
+            extra_body={"thinking": {"type": "disabled"}},
+        )
+        self.ds.increment_api_call_count(self.model_name)
+        return response.choices[0].message.content
+
+
+def make_labeller(provider: str):
+    """The labelling client for --provider, from constants.py (env)."""
+    from newscrawler.core.constants import (
+        DAILY_API_CALL_LIMIT, GEMINI_API_KEY, GEMINI_MODEL, OPENAI_API_KEY, OPENAI_BASE_URL, OPENAI_MODEL,
+    )
+    from newscrawler.infrastructure.datasource.dataflow.write.sqlalchemy.sql_alchemy_knowledge_data_source import (
+        SQLAlchemyKnowledgeDataSource,
+    )
+    from newscrawler.infrastructure.network.clients.sqlalchemy_client import SQLAlchemyClient
+
+    ds = SQLAlchemyKnowledgeDataSource(SQLAlchemyClient())
+    if provider == "gemini":
+        if not GEMINI_API_KEY:
+            raise SystemExit("GEMINI_API_KEY is not set")
+        return GeminiLabeller(ds, GEMINI_MODEL, GEMINI_API_KEY, DAILY_API_CALL_LIMIT), GEMINI_MODEL
+    if provider == "openai":
+        if not OPENAI_API_KEY:
+            raise SystemExit("OPENAI_API_KEY is not set (OPENAI_BASE_URL / OPENAI_MODEL alongside it in .env)")
+        return OpenAICompatLabeller(ds, OPENAI_MODEL, OPENAI_API_KEY, OPENAI_BASE_URL, DAILY_API_CALL_LIMIT), OPENAI_MODEL
+    raise SystemExit(f"unknown provider {provider!r}")
+
+
 # ── Subcommands ──────────────────────────────────────────────────────────────
 def cmd_sample(args) -> int:
     from sqlalchemy import text
@@ -357,8 +417,9 @@ def cmd_sample(args) -> int:
 
 
 def cmd_label(args) -> int:
-    from newscrawler.core.constants import DAILY_API_CALL_LIMIT, GEMINI_API_KEY, GEMINI_MODEL
+    from newscrawler.core.constants import DAILY_API_CALL_LIMIT, GEMINI_MODEL, OPENAI_MODEL
 
+    model_name = GEMINI_MODEL if args.provider == "gemini" else OPENAI_MODEL
     sample = read_jsonl(args.sample)
     if not sample:
         logger.error("No sample at %s -- run `sample` first", args.sample)
@@ -371,8 +432,8 @@ def cmd_label(args) -> int:
     # shuffle of the remaining rows rather than in file order.
     random.Random(args.seed).shuffle(todo)
     batches = [todo[i:i + args.batch_size] for i in range(0, len(todo), args.batch_size)]
-    logger.info("%d sample rows, %d already labelled, %d to label in %d call(s) of %d (model %s)",
-                len(sample), len(done), len(todo), len(batches), args.batch_size, GEMINI_MODEL)
+    logger.info("%d sample rows, %d already labelled, %d to label in %d call(s) of %d (provider %s, model %s)",
+                len(sample), len(done), len(todo), len(batches), args.batch_size, args.provider, model_name)
     if not todo:
         logger.info("Nothing to label.")
         return 0
@@ -383,15 +444,7 @@ def cmd_label(args) -> int:
         logger.info("[dry-run] no API call made, nothing written.")
         return 0
 
-    if not GEMINI_API_KEY:
-        logger.error("GEMINI_API_KEY is not set")
-        return 1
-    from newscrawler.infrastructure.datasource.dataflow.write.sqlalchemy.sql_alchemy_knowledge_data_source import (
-        SQLAlchemyKnowledgeDataSource,
-    )
-    from newscrawler.infrastructure.network.clients.sqlalchemy_client import SQLAlchemyClient
-    labeller = GeminiLabeller(SQLAlchemyKnowledgeDataSource(SQLAlchemyClient()), GEMINI_MODEL, GEMINI_API_KEY,
-                              DAILY_API_CALL_LIMIT)
+    labeller, model_name = make_labeller(args.provider)
 
     if args.max_calls is not None:
         batches = batches[: args.max_calls]
@@ -426,7 +479,7 @@ def cmd_label(args) -> int:
                 "sitemap_id": r["sitemap_id"], "source": r["source"], "category": r["category"],
                 "headline": r["headline"], "body_head": r["body_head"], "has_body": r["has_body"],
                 "stratum": r["stratum"], "split": r["split"],
-                "is_news": is_news, "topic": topic, "labeller": GEMINI_MODEL, "labelled_at": now,
+                "is_news": is_news, "topic": topic, "labeller": model_name, "labelled_at": now,
             })
         with write_lock:
             append_jsonl(args.out, out_rows)
@@ -575,7 +628,10 @@ def main(argv=None) -> int:
     p.add_argument("--dry-run", action="store_true")
     p.add_argument("--batch-size", type=int, default=20)
     p.add_argument("--max-calls", type=int, default=None)
-    p.add_argument("--workers", type=int, default=1, help="Concurrent Gemini calls (default 1)")
+    p.add_argument("--provider", choices=("gemini", "openai"), default="openai",
+                   help="gemini: GEMINI_API_KEY/GEMINI_MODEL; openai: any OpenAI-compatible endpoint via "
+                        "OPENAI_API_KEY/OPENAI_BASE_URL/OPENAI_MODEL (default; OPS-20)")
+    p.add_argument("--workers", type=int, default=1, help="Concurrent labelling calls (default 1)")
     p.add_argument("--seed", type=int, default=20260920, help="Order in which the remaining rows are batched")
     p.add_argument("--sample", default=SAMPLE_PATH)
     p.add_argument("--out", default=GOLD_PATH)

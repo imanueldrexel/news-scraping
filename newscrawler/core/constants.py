@@ -66,6 +66,14 @@ INTERESTS = [
 GEMINI_API_KEY        = os.getenv("GEMINI_API_KEY")
 GEMINI_MODEL          = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 DAILY_API_CALL_LIMIT  = int(os.getenv("DAILY_API_CALL_LIMIT", 1400))
+# OPS-20 (#136): an OpenAI-compatible endpoint for the OFFLINE labeller
+# (SYS-36) only -- owner decision 2026-09-20 after the Gemini free tier turned
+# out to be 20 requests/day/model. Nothing in the per-article crawl path
+# calls it. The openai SDK reads OPENAI_API_KEY/OPENAI_BASE_URL by name; the
+# model is ours (SumoPod: "deepseek-v4-flash").
+OPENAI_API_KEY        = os.getenv("OPENAI_API_KEY")
+OPENAI_BASE_URL       = os.getenv("OPENAI_BASE_URL")
+OPENAI_MODEL          = os.getenv("OPENAI_MODEL", "deepseek-v4-flash")
 KNOWLEDGE_BATCH_SIZE  = int(os.getenv("KNOWLEDGE_BATCH_SIZE", 50))
 # SYS-19: a poison article (unparseable Gemini response, or a response whose shape
 # crashes _process_extraction) burns one Gemini call per run forever without this --
