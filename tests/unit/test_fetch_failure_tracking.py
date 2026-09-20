@@ -15,6 +15,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from newscrawler.domain.dtos.dataflow.details.news_details_dto import NewsDetailsDTO
+from newscrawler.core.importance_filter import FilterDecision
 from newscrawler.domain.services.crawler_service_impl import CrawlerServiceImpl
 
 
@@ -25,7 +26,7 @@ def service():
     svc.crawler_dict = {"TEST_SITE": MagicMock()}
     svc.data_flow_repo.load_sitemap_data.return_value = [MagicMock(sitemap_id=i) for i in (1, 2, 3)]
     svc.data_flow_repo.save_newsdetails_data.side_effect = lambda dtos: [d.sitemap_id for d in dtos]
-    svc.semantic_filter.is_important.return_value = True
+    svc.semantic_filter.classify.return_value = FilterDecision(True, "score", True)
     return svc
 
 

@@ -1,6 +1,6 @@
 from abc import abstractmethod
 from datetime import date
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 from newscrawler.domain.dtos.dataflow.details.chunk_dto import ChunkDTO
 from newscrawler.domain.dtos.dataflow.details.news_details_dto import NewsDetailsDTO
@@ -40,6 +40,12 @@ class DataFlowRepository:
         """SYS-09: bump the fetch-failure counter for sitemaps that produced no
         NewsDetailsDTO this run, so load_all_sitemaps can eventually exclude a
         permanently-dead URL instead of retrying it forever."""
+        raise NotImplementedError
+
+    def get_saved_category_pairs(self, website: str) -> Set[Tuple[str, str]]:
+        """SYS-34: every (source, lower(category)) that has ever produced an
+        articles row for this source -- the baseline for the never-seen-category
+        WARNING in the crawl service."""
         raise NotImplementedError
 
     def extract_knowledge(self, batch_size: Optional[int] = None) -> int:

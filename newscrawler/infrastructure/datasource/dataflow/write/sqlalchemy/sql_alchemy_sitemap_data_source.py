@@ -2,7 +2,7 @@ from datetime import datetime, timezone, timedelta
 from sqlalchemy import text
 from dataclasses import replace
 import logging
-from typing import Iterable, List, Dict, Tuple
+from typing import Iterable, List, Dict, Set, Tuple
 
 from newscrawler.infrastructure.datasource.dataflow.model.news_data_model import (
     NewsSitemapModel,
@@ -268,6 +268,26 @@ class SQLAlchemySitemapDataSource:
             session.commit()
 
     VALID_CRAWL_STATUSES = {"pending", "rejected_filter", "empty_extraction", "saved"}
+
+    def get_saved_category_pairs(self, website: str) -> Set[Tuple[str, str]]:
+        """SYS-34 (#115, fix c): every (source, lower(category)) that has ever
+        produced an `articles` row for this source. The service warns the
+        first time a run saves under a pair that is not in here, so a new
+        source's vocabulary (IDNTIMES `hype`/`korea`/`fiction`) shows up in
+        the log on day one instead of in the next audit."""
+        with self.client.get_session() as session:
+            rows = session.execute(
+                text(
+                    f"SELECT DISTINCT s.{SitemapTable.sources.name}, "
+                    f"lower(s.{SitemapTable.category.name}) AS category "
+                    f"FROM {SitemapTable.__tablename__} s "
+                    f"JOIN {NewsArticlesTable.__tablename__} a "
+                    f"ON a.{NewsArticlesTable.sitemap_id.name} = s.{SitemapTable.sitemap_id.name} "
+                    f"WHERE s.{SitemapTable.sources.name} = :website"
+                ),
+                {"website": website},
+            ).fetchall()
+        return {(r[0], r[1] or "") for r in rows}
 
     def mark_sitemaps_status(self, sitemap_ids, status: str):
         """SYS-16: set crawl_status for the given sitemap_ids, distinguishing a

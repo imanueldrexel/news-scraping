@@ -6,6 +6,7 @@ import os
 # Init path to allow imports
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
+from newscrawler.core.importance_filter import FilterDecision
 from newscrawler.domain.services.crawler_service_impl import CrawlerServiceImpl
 from newscrawler.domain.dtos.dataflow.details.news_details_dto import NewsDetailsDTO
 
@@ -57,7 +58,7 @@ class TestCrawlerServiceImpl(unittest.TestCase):
         def side_effect_is_important(text, category=None):
             return "Economy" in text
             
-        self.mock_filter_instance.is_important.side_effect = side_effect_is_important
+        self.mock_filter_instance.classify.side_effect = lambda text, category=None: FilterDecision(side_effect_is_important(text, category), "score", side_effect_is_important(text, category))
 
         # 4. Mock 'save_embedding_data' to return successful IDs
         self.mock_repo.save_chunk_data.return_value = [1]
@@ -67,7 +68,7 @@ class TestCrawlerServiceImpl(unittest.TestCase):
 
         # --- Assert ---
         # 1. Verify filtering
-        self.assertEqual(self.mock_filter_instance.is_important.call_count, 2)
+        self.assertEqual(self.mock_filter_instance.classify.call_count, 2)
         
         # 2. Verify 'save_embedding_data' was called ONLY with the important article
         self.mock_repo.save_chunk_data.assert_called()
@@ -105,7 +106,7 @@ class TestCrawlerServiceImpl(unittest.TestCase):
             reporter=["Reporter X"],
         )
         self.mock_crawler.batch_crawling_details.return_value = [already_embedded]
-        self.mock_filter_instance.is_important.return_value = True
+        self.mock_filter_instance.classify.return_value = FilterDecision(True, "score", True)
 
         # FAISS dedup hit: save_chunk_data returns the sitemap_id (Bug A fix behaviour)
         self.mock_repo.save_chunk_data.return_value = [99]

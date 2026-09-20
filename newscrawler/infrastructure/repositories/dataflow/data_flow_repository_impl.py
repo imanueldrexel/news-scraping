@@ -1,5 +1,5 @@
 from datetime import date
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Set, Tuple, Union
 
 from newscrawler.core.constants import KNOWLEDGE_BATCH_SIZE
 from newscrawler.core.knowledge_extractor import KnowledgeExtractor
@@ -92,6 +92,9 @@ class DataFlowRepositoryImpl(DataFlowRepository):
 
     def increment_fetch_failures(self, sitemap_ids: List[int], error_msg: str = None) -> None:
         self.news_data_source.increment_fetch_failures(sitemap_ids, error_msg)
+
+    def get_saved_category_pairs(self, website: str) -> Set[Tuple[str, str]]:
+        return self.news_data_source.get_saved_category_pairs(website)
 
     @staticmethod
     def _to_chunk_model(chunk: ChunkDTO) -> ChunkModel:

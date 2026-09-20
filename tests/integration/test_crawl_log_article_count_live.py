@@ -14,6 +14,8 @@ import pytest
 psycopg2 = pytest.importorskip("psycopg2", reason="psycopg2 not installed")
 from sqlalchemy import text  # noqa: E402
 
+from newscrawler.core.importance_filter import FilterDecision  # noqa: E402
+
 
 @pytest.fixture
 def client():
@@ -50,7 +52,7 @@ class TestArticleCountPersistedForFullText:
 
         with patch("newscrawler.domain.services.crawler_service_impl.SemanticImportanceFilter"):
             service = CrawlerServiceImpl(data_flow_repo=mock_repo)
-        service.semantic_filter.is_important.return_value = True
+        service.semantic_filter.classify.return_value = FilterDecision(True, "score", True)
         service.crawler_dict = {"SYS04_TEST": MagicMock()}
         service.crawler_dict["SYS04_TEST"].batch_crawling_details.return_value = [
             NewsDetailsDTO(

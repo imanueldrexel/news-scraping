@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from newscrawler.core.importance_filter import FilterDecision
 from newscrawler.domain.dtos.dataflow.details.news_details_dto import NewsDetailsDTO
 from newscrawler.domain.services.crawler_service_impl import CrawlerServiceImpl
 
@@ -17,7 +18,7 @@ from newscrawler.domain.services.crawler_service_impl import CrawlerServiceImpl
 def service():
     with patch("newscrawler.domain.services.crawler_service_impl.SemanticImportanceFilter"):
         svc = CrawlerServiceImpl(data_flow_repo=MagicMock())
-    svc.semantic_filter.is_important.return_value = True
+    svc.semantic_filter.classify.return_value = FilterDecision(True, "score", True)
     svc.crawler_dict = {"TEST_SITE": MagicMock()}
     # SYS-04: save_newsdetails_data's return value now drives saved_total and the
     # 'saved' status stamp (what actually committed), not len(to_save). Default the
@@ -62,7 +63,7 @@ class TestCrawlLogArticleCount:
         )
 
     def test_articles_filtered_out_are_not_counted_as_saved(self, service):
-        service.semantic_filter.is_important.return_value = False
+        service.semantic_filter.classify.return_value = FilterDecision(False, "score", False)
         service.data_flow_repo.load_sitemap_data.return_value = [MagicMock(sitemap_id=1)]
         service.crawler_dict["TEST_SITE"].batch_crawling_details.return_value = [make_article(1)]
 

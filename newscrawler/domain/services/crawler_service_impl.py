@@ -1,3 +1,4 @@
+import collections
 import logging
 import math
 from typing import List, Optional
@@ -99,6 +100,21 @@ class CrawlerServiceImpl(CrawlerService):
         # for. Recorded to the DB only at the end of the run (see below), because
         # "did the whole source fail?" cannot be answered per batch.
         run_failures = {}
+        # SYS-35 (#118, fix 4): per-run filter telemetry. `gate_counts` says how
+        # each decision was made; `allow_total`/`allow_score_passed` measure, per
+        # news category, what the semantic SCORE alone would have said about
+        # articles the category gate saved anyway -- i.e. the score's recall on
+        # sections known to be news (45-70% when this was filed). A model or
+        # threshold change that drops it is visible in the log, not in the
+        # next audit.
+        gate_counts = collections.Counter()
+        allow_total = collections.Counter()
+        allow_score_passed = collections.Counter()
+        # SYS-34 (#115, fix c): (source, category) pairs that have ever produced
+        # a saved article. The first save under a pair not in here is a WARNING
+        # -- a new source's vocabulary (IDNTIMES `hype`/`korea`/`fiction`)
+        # becomes visible the day it first leaks, not at the next audit.
+        known_saved_pairs = self._load_known_saved_pairs(website_name)
 
         for i in range(0, min(len(target_news), batch_size * 10), batch_size):
             logger.info(f"Processing batch {i//batch_size+1} for {website_name}")
@@ -154,16 +170,32 @@ class CrawlerServiceImpl(CrawlerService):
                     title = news.meta_data.get('title', '')
                     # Clean/prepare text snippet
                     full_text = " ".join(news.extracted_text) if isinstance(news.extracted_text, list) else str(news.extracted_text)
-                    check_text = f"{title} {full_text[:500]}"
                     sitemap_meta = sitemap_by_id.get(news.sitemap_id)
                     category = sitemap_meta.category if sitemap_meta else None
 
-                    if self.semantic_filter.is_important(check_text, category=category):
-                        important_newsdetails.append(news)
-                    elif full_text.strip():
-                        rejected_filter_ids.append(news.sitemap_id)
-                    else:
+                    # SYS-35: an article with no extracted body is an extraction
+                    # failure whatever its category says. Before the category
+                    # allow-set existed a bare title still had to clear the
+                    # score; now it would be waved through and chunk to
+                    # nothing, leaving the row `attempted` instead of the
+                    # transient `empty_extraction` it actually is.
+                    if not full_text.strip():
                         empty_extraction_ids.append(news.sitemap_id)
+                        gate_counts["empty"] += 1
+                        continue
+
+                    check_text = f"{title} {full_text[:500]}"
+                    decision = self.semantic_filter.classify(check_text, category=category)
+                    gate_counts[decision.gate] += 1
+                    if decision.gate == "allow":
+                        allow_total[category] += 1
+                        if decision.score_passed:
+                            allow_score_passed[category] += 1
+
+                    if decision.is_important:
+                        important_newsdetails.append(news)
+                    else:
+                        rejected_filter_ids.append(news.sitemap_id)
                 except Exception as e:
                     logger.warning(f"Error filtering news {news.sitemap_id}: {e}")
 
@@ -196,6 +228,9 @@ class CrawlerServiceImpl(CrawlerService):
                         committed_sitemap_ids = list(self.save_scraped_data(to_save) or [])
                         if committed_sitemap_ids:
                             self.data_flow_repo.mark_sitemaps_status(committed_sitemap_ids, "saved")
+                            self._warn_on_unseen_categories(
+                                website_name, committed_sitemap_ids, sitemap_by_id, known_saved_pairs
+                            )
                         saved_total += len(committed_sitemap_ids)
                         logger.info(
                             f"Saved batch {i//batch_size+1} for {website_name}: "
@@ -206,6 +241,7 @@ class CrawlerServiceImpl(CrawlerService):
                     continue
 
         self._record_fetch_failures(website_name, attempted, run_failures)
+        self._log_filter_stats(website_name, gate_counts, allow_total, allow_score_passed)
 
         logger.info(
             f"Full-text crawl finished for {website_name}: "
@@ -213,6 +249,70 @@ class CrawlerServiceImpl(CrawlerService):
             f"passed_filter={passed_filter_total} saved={saved_total}"
         )
         return saved_total
+
+    def _load_known_saved_pairs(self, website_name: str):
+        """SYS-34: the (source, category) pairs that have ever produced a saved
+        article for this source, or None when the repository cannot say (a
+        repository double without the method, a DB error) -- in which case the
+        unseen-category check is skipped rather than warning on everything."""
+        getter = getattr(self.data_flow_repo, "get_saved_category_pairs", None)
+        if getter is None:
+            return None
+        try:
+            pairs = getter(website_name)
+        except Exception as e:  # noqa: BLE001 -- telemetry must never fail the crawl
+            logger.warning(f"{website_name}: could not load known saved categories ({e!r}); unseen-category check skipped")
+            return None
+        if not isinstance(pairs, (set, frozenset, list, tuple)):
+            return None
+        return set(pairs)
+
+    @staticmethod
+    def _warn_on_unseen_categories(website_name, committed_sitemap_ids, sitemap_by_id, known_saved_pairs) -> None:
+        """SYS-34 (#115, fix c): WARNING the first time this source saves an
+        article under a category it has never saved under before. The deny-list
+        is allow-by-default and only knows the vocabulary it was built from; the
+        next source's `hype`/`korea`/`fiction` leaks silently otherwise."""
+        if known_saved_pairs is None:
+            return
+        for sitemap_id in committed_sitemap_ids:
+            meta = sitemap_by_id.get(sitemap_id)
+            category = (meta.category if meta else None) or ""
+            pair = (website_name, category.strip().lower())
+            if pair in known_saved_pairs:
+                continue
+            known_saved_pairs.add(pair)
+            headline = (meta.headline if meta else "") or ""
+            logger.warning(
+                f"{website_name}: first article ever saved under category {category!r} "
+                f"(never seen before on this source) -- sitemap_id={sitemap_id} {headline[:90]!r}. "
+                f"Sample the category's titles: if it is a soft vertical it belongs on the "
+                f"deny-list (SYS-34), if it is a news desk on the allow-set (SYS-35)."
+            )
+
+    @staticmethod
+    def _log_filter_stats(website_name, gate_counts, allow_total, allow_score_passed) -> None:
+        """SYS-35 (#118, fix 4): one line per run on how the filter decided, and
+        the semantic score's own pass rate on categories the gate saved as news
+        -- the recall number SYS-35 was filed on (LIPUTAN6 `bisnis` 44.5%, SUARA
+        53%). It is expected to sit there until SYS-37 replaces the score; the
+        CI gate on the probe (SYS-37) is what fails a regression, this line is
+        what makes the number readable per run and per source."""
+        if not gate_counts:
+            return
+        summary = ", ".join(f"{k}={v}" for k, v in sorted(gate_counts.items()))
+        logger.info(f"{website_name}: filter decisions this run: {summary}")
+        if not allow_total:
+            return
+        parts = []
+        for category, total in sorted(allow_total.items(), key=lambda kv: -kv[1]):
+            passed = allow_score_passed.get(category, 0)
+            rate = passed / total if total else 0.0
+            parts.append(f"{category}={passed}/{total} ({rate:.0%})")
+        logger.info(
+            f"{website_name}: semantic-score recall on news categories (saved by category; "
+            f"what the score alone would have kept): {', '.join(parts)}"
+        )
 
     def _record_fetch_failures(self, website_name: str, attempted: int, run_failures: dict) -> None:
         """OPS-15: turn this run's fetch failures into sitemaps.fetch_failures --

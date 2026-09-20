@@ -50,7 +50,7 @@ from sqlalchemy import text
 from sentence_transformers import util
 
 from newscrawler.core.constants import INTERESTS
-from newscrawler.core.importance_filter import SemanticImportanceFilter, is_offtopic_category
+from newscrawler.core.importance_filter import SemanticImportanceFilter, category_gate
 from newscrawler.infrastructure.network.clients.sqlalchemy_client import SQLAlchemyClient
 
 logging.basicConfig(format="%(asctime)s %(levelname)s %(message)s")
@@ -77,17 +77,28 @@ def classify_batch(filter_: SemanticImportanceFilter, headlines, categories):
     is_offtopic_category) before it ever scores the text -- mirror that same
     ordering here, so a headline like "Rupiah Menguat" under category="hiburan"
     is rejected regardless of what it scores.
+
+    SYS-35 (#118): the gate is symmetric now. `category_gate` is the ONE
+    category decision the live filter uses -- "deny" rejects without scoring,
+    "allow" (a news desk: `bisnis`, `nasional`, ...) keeps the row pending
+    without scoring, and only a mixed bucket (None) is scored. Before this the
+    script did what the live filter did before SYS-35: permanently rejected
+    finance-section rows whose headline alone scored under 0.35.
+
+    Known gap (DBT-31, superseded by SYS-37): the SYS-31 margin is not applied
+    here, so this is still headline-only threshold, not the full live decision.
     """
-    non_blank_idx = [
+    gates = [category_gate(c) for c in categories]
+    to_score_idx = [
         i for i, h in enumerate(headlines)
-        if h and h.strip() and not is_offtopic_category(categories[i])
+        if h and h.strip() and gates[i] is None
     ]
-    is_important = [False] * len(headlines)
-    if non_blank_idx:
-        embeddings = filter_.model.encode([headlines[i] for i in non_blank_idx], convert_to_tensor=True)
+    is_important = [g == "allow" and bool(h and h.strip()) for g, h in zip(gates, headlines)]
+    if to_score_idx:
+        embeddings = filter_.model.encode([headlines[i] for i in to_score_idx], convert_to_tensor=True)
         scores = util.cos_sim(embeddings, filter_.interest_embeddings)
         max_scores = scores.max(dim=1).values
-        for pos, idx in enumerate(non_blank_idx):
+        for pos, idx in enumerate(to_score_idx):
             is_important[idx] = float(max_scores[pos]) >= filter_.threshold
     return is_important
 

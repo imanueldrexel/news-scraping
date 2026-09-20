@@ -22,6 +22,8 @@ import pytest
 psycopg2 = pytest.importorskip("psycopg2", reason="psycopg2 not installed")
 from sqlalchemy import text  # noqa: E402
 
+from newscrawler.core.importance_filter import FilterDecision  # noqa: E402
+
 WIB = timezone(timedelta(hours=7))
 SOURCE = "SYS07ALLTEST"
 
@@ -166,7 +168,7 @@ class TestTaskAllDoesNotReCrawlAlreadyArticledSitemaps:
         fake_repo = _FakeRepo(ds)
         with patch("newscrawler.domain.services.crawler_service_impl.SemanticImportanceFilter") as MockFilter:
             service = CrawlerServiceImpl(data_flow_repo=fake_repo)
-        service.semantic_filter.is_important.return_value = True
+        service.semantic_filter.classify.return_value = FilterDecision(True, "score", True)
         service.chunker = MagicMock()
         service.chunker.chunk.return_value = [MagicMock(sitemap_id=None)]
 
