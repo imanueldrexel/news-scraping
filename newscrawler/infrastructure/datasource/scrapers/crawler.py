@@ -237,7 +237,12 @@ class Crawler:
         keyword_div = news_soup.find("news:keywords")
         if keyword_div:
             keywords = keyword_div.get_text(" ").strip()
-            keywords = [x.strip() for x in keywords.split()]
+            # SYS-22 (#43): <news:keywords> is a comma-separated list per the
+            # Google News sitemap spec, and every outlet emits it that way. A
+            # whitespace split turned "Badan Gizi Nasional (BGN), Makan Bergizi
+            # Gratis (MBG)" into eight word tokens with commas glued on, which
+            # destroyed every multi-word entity the column exists to carry.
+            keywords = [x.strip() for x in keywords.split(",") if x.strip()]
             return keywords
 
     def batch_crawling_details(

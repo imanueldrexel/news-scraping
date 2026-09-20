@@ -66,23 +66,35 @@ class TestGetLink:
 
 
 class TestGetKeywords:
-    def test_KW01_space_separated(self):
-        soup = make_xml_url(keywords="economy finance")
+    """SYS-22 (#43): <news:keywords> is comma-separated (Google News sitemap
+    spec); a keyword is a phrase, so whitespace inside one must survive."""
+
+    def test_KW01_comma_separated_multiword_entities_kept_whole(self):
+        # The three production samples from the ticket.
+        soup = make_xml_url(keywords="Badan Gizi Nasional (BGN), Makan Bergizi Gratis (MBG)")
+        assert Crawler._get_keywords(soup) == ["Badan Gizi Nasional (BGN)", "Makan Bergizi Gratis (MBG)"]
+
+    def test_KW02_single_multiword_keyword_is_one_token(self):
+        soup = make_xml_url(keywords="PT Pembangunan Jaya Ancol Tbk, Taman Impian Jaya Ancol")
+        assert Crawler._get_keywords(soup) == ["PT Pembangunan Jaya Ancol Tbk", "Taman Impian Jaya Ancol"]
+
+    def test_KW03_no_comma_glued_to_any_token(self):
+        soup = make_xml_url(keywords="Nilai Tukar Rupiah, Singapura, Wisatawan Mancanegara (Wisman)")
+        result = Crawler._get_keywords(soup)
+        assert result == ["Nilai Tukar Rupiah", "Singapura", "Wisatawan Mancanegara (Wisman)"]
+        assert not any("," in k for k in result)
+
+    def test_KW04_extra_whitespace_and_empty_items_stripped(self):
+        soup = make_xml_url(keywords="  economy ,  finance , ,  ")
         assert Crawler._get_keywords(soup) == ["economy", "finance"]
 
-    def test_KW02_single(self):
+    def test_KW05_single_keyword(self):
         soup = make_xml_url(keywords="single")
         assert Crawler._get_keywords(soup) == ["single"]
 
-    def test_KW03_comma_not_split(self):
-        # _get_keywords splits on whitespace only: commas stick to tokens
-        soup = make_xml_url(keywords="economy, finance")
-        result = Crawler._get_keywords(soup)
-        assert result == ["economy,", "finance"]
-
-    def test_KW04_extra_whitespace(self):
-        soup = make_xml_url(keywords="  economy  finance  ")
-        assert Crawler._get_keywords(soup) == ["economy", "finance"]
+    def test_KW06_no_keywords_tag_returns_none(self):
+        soup = make_xml_url(keywords=None)
+        assert Crawler._get_keywords(soup) is None
 
 
 class TestGetSitemap:
