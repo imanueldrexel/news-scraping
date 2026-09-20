@@ -388,16 +388,37 @@ class Crawler:
             logger.info(f"Error in get_content {sitemap.link}. Reason: {e}")
             return None, f"{type(e).__name__}: {e}"[:200]
 
+    @staticmethod
+    def _slug_has_id_tail(link: str) -> bool:
+        """The slug of a lastmod-only outlet's URL ends in an article id --
+        TIRTO "-hCa5"/"-hCth" (4 chars, mixed case), TEMPO "-2287141" (digits).
+        A real slug is lowercase words, so a last token with a digit or an
+        upper-case letter is an id; a bare year ("-pilkada-2024") is not."""
+        slug = urlparse(link).path.rstrip("/").rsplit("/", 1)[-1]
+        slug = re.sub(r"\.(html?|xml|php)$", "", slug, flags=re.IGNORECASE)
+        tail = slug.rsplit("-", 1)[-1] if "-" in slug else ""
+        if not tail or re.fullmatch(r"(19|20)\d{2}", tail):
+            return False
+        return bool(re.search(r"\d", tail) or re.search(r"[A-Z]", tail))
+
     @classmethod
     def _is_placeholder_headline(cls, sitemap: SitemapDTO) -> bool:
-        """SYS-33: True when the stored headline is exactly what
-        _derive_headline_from_url would make of the link -- i.e. it came from
-        the SYS-32 slug fallback, not from a news:title. Detected by equality
-        rather than carried as a flag so a DTO rebuilt from a DB row (the live
-        full_text path loads sitemaps back from Postgres) is recognised too."""
+        """SYS-33: True when the stored headline is what _derive_headline_from_url
+        made of the link -- i.e. it came from the SYS-32 slug fallback, not from
+        a news:title. Detected rather than carried as a flag so a DTO rebuilt
+        from a DB row (the live full_text path loads sitemaps back from
+        Postgres) is recognised too.
+
+        Equality alone is not enough: 3,580 genuine headlines on MEDIAINDONESIA,
+        JPNN, INEWS, KOMPAS, ... are short, punctuation-free Title Case and
+        coincide with their own slug ("Keadilan Terkubur Longsor"). The
+        placeholder additionally carries the URL's trailing id token, which a
+        real headline does not, so both conditions are required."""
         if not sitemap.headline or not sitemap.link:
             return False
-        return sitemap.headline == cls._derive_headline_from_url(sitemap.link)
+        if sitemap.headline != cls._derive_headline_from_url(sitemap.link):
+            return False
+        return cls._slug_has_id_tail(sitemap.link)
 
     @staticmethod
     def _get_page_title(soup) -> Optional[str]:

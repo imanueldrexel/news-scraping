@@ -72,6 +72,29 @@ class TestIsPlaceholderHeadline:
     def test_empty_headline_is_not_a_placeholder_but_still_handled_by_the_empty_branch(self):
         assert not Crawler._is_placeholder_headline(SitemapDTO(headline="", link=TIRTO_LINK, sources="TIRTO"))
 
+    def test_a_real_title_that_merely_coincides_with_its_slug_is_not_a_placeholder(self):
+        """3,580 genuine headlines in production are short, punctuation-free
+        Title Case and equal their own slug -- the placeholder is only the one
+        that also carries the URL's trailing id token."""
+        for headline, link in (
+            ("Keadilan Terkubur Longsor", "https://mediaindonesia.com/forum-mahasiswa/845751/keadilan-terkubur-longsor?page=all"),
+            ("Teror Paket Isi Pocong Mini Gegerkan Warga Lendah Kulon Progo",
+             "https://yogyakarta.kompas.com/read/2026/05/25/151622478/teror-paket-isi-pocong-mini-gegerkan-warga-lendah-kulon-progo?page=all"),
+            ("Ribuan Personel Polda Lampung Bertugas Pengamanan Pemilu 2024",
+             "https://lampung.jpnn.com/politik/1/ribuan-personel-polda-lampung-bertugas-pengamanan-pemilu-2024"),
+        ):
+            dto = SitemapDTO(headline=headline, link=link, sources="X")
+            assert Crawler._derive_headline_from_url(link) == headline  # the coincidence
+            assert not Crawler._is_placeholder_headline(dto), headline
+
+    def test_id_tail_shapes(self):
+        assert Crawler._slug_has_id_tail("https://tirto.id/sidak-agrinas-hCth?page=all")      # letters, mixed case
+        assert Crawler._slug_has_id_tail("https://tirto.id/rupiah-menguat-hCa5?page=all")     # mixed case + digit
+        assert Crawler._slug_has_id_tail("https://www.tempo.co/ekonomi/apa-dampak-2287141")   # digits
+        assert not Crawler._slug_has_id_tail("https://x.id/pengamanan-pemilu-2024")           # a year
+        assert not Crawler._slug_has_id_tail("https://x.id/keadilan-terkubur-longsor")        # words
+        assert not Crawler._slug_has_id_tail("https://x.id/nohyphen")
+
 
 class TestFetchNewsDetailsPrefersPageTitleOverPlaceholder:
     def setup_method(self):
