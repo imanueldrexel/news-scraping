@@ -28,6 +28,11 @@ class IDNTimesCrawler(Crawler):
         # link returned the link unchanged, so every one of those became a
         # branch keyed by its own full URL -- skip anything that doesn't match
         # the /sitemap-news.xml pattern instead of re.sub-ing it regardless.
+        #
+        # SRC-28 (#110): that fix still kept all 16 news sections, unlike every
+        # sibling outlet fixed the same session -- a real run saved 1,426
+        # sitemaps/crawl with ~89% filtered out downstream as off-topic. Keep
+        # only business, the finance-relevant one -- see DBT-04 for widening.
         branches = {}
         sitemaps = soup.find_all("sitemap")
         for sitemap in sitemaps:
@@ -36,7 +41,7 @@ class IDNTimesCrawler(Crawler):
                 continue
             link = link.get_text(" ").strip()
             match = re.match(r"https://www\.idntimes\.com/(\w+)/sitemap-news\.xml$", link)
-            if match:
+            if match and match.group(1) == "business":
                 branches[match.group(1)] = link
         return branches
 

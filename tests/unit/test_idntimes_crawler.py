@@ -3,6 +3,10 @@ only the old configured /sitemap-news.xml path is retired -- /sitemap.xml is
 live. _get_branches's re.sub also had a real bug: applied unconditionally, a
 non-matching link (sitemap-web.xml, sitemap-image.xml) came back unchanged and
 became a branch keyed by its own full URL.
+
+SRC-28 (#110): that fix still kept every /sitemap-news.xml section (16 of
+them), unlike every sibling outlet fixed the same session which narrowed to
+the finance-relevant branch -- now only "business" is kept.
 """
 from bs4 import BeautifulSoup
 
@@ -22,14 +26,20 @@ _INDEX_XML = """<?xml version="1.0" encoding="UTF-8"?>
 
 
 class TestIdntimesGetBranches:
-    def test_only_sitemap_news_entries_become_branches(self):
+    def test_only_business_becomes_a_branch(self):
         soup = BeautifulSoup(_INDEX_XML, "html.parser")
         branches = IDNTimesCrawler._get_branches(soup)
         assert branches == {
-            "news": "https://www.idntimes.com/news/sitemap-news.xml",
             "business": "https://www.idntimes.com/business/sitemap-news.xml",
-            "sport": "https://www.idntimes.com/sport/sitemap-news.xml",
         }
+
+    def test_other_sitemap_news_sections_are_not_branches(self):
+        # SRC-28 (#110): every /sitemap-news.xml section used to become a
+        # branch (16 of them) -- only the finance-relevant one should now.
+        soup = BeautifulSoup(_INDEX_XML, "html.parser")
+        branches = IDNTimesCrawler._get_branches(soup)
+        assert "news" not in branches
+        assert "sport" not in branches
 
     def test_sitemap_web_and_image_entries_are_not_branches(self):
         # Before the fix, re.sub on a non-matching link returned it unchanged,
