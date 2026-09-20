@@ -1,178 +1,178 @@
-check,sitemap_id,stratum,source,category,headline,body_head_200,model_is_news,model_topic,human_is_news,human_topic,note
-is_news,2278,finance_reject,WARTAEKONOMI,digital_economy,"IPOT Luncurkan UI/UX Berbasis AI, Klaim Bisa Baca Smart Money",,True,tech_science,,,
-is_news,6363,finance_reject,WARTAEKONOMI,properti,"Lixil Pimpin Kolaborasi Lintas Sektor, Dorong Arsitektur Hijau",,True,corporate,,,
-is_news,4064,finance_reject,WARTAEKONOMI,infrastruktur,Rumah Susun UNSRI Jadi Fasilitas Pendukung Lahirnya SDM Unggul,,True,health_education,,,
-is_news,82957,finance_reject,TVONENEWS,ekonomi,"Telin dan DITO Telecommunity Teken MSA, Dorong Akselerasi Ekosistem Digital Lintas Negara",,True,corporate,,,
-is_news,6320,finance_reject,WARTAEKONOMI,properti,Pemerintah Bantu Freelancer Bisa Cicil Rumah Lewat Skema Ini,,True,consumer,,,
-is_news,4051,finance_reject,WARTAEKONOMI,infrastruktur,"1.398 Unit Huntara Tahap Satu Rampung, Besok Groundbreaking Huntap di Sumbar",,True,disaster_accident,,,
-is_news,7833,finance_reject,SINDONEWS,ekbis,"EV dan SPKLU, Infrastruktur Penting untuk Mendukung Mobilitas Rendah Emisi",,False,soft,,,
-is_news,105131,finance_reject,IDNTIMES,business,PM Korsel: Pasokan Listrik Kunci Utama Proyek Strategis Nasional,,True,international,,,
-is_news,80806,finance_reject,KUMPARAN,bisnis,"Pergulatan antara Keuntungan, Keberkahan, Kemaslahatan, dan Mafsadah",,False,soft,,,
-is_news,87160,finance_reject,MEDIAINDONESIA,ekonomi,Legislator Minta Pemerintah Berikan Hukum yang Jelas untuk IHT,,True,politics_government,,,
-is_news,14632,soft_save,JPNN,advetorial,"Lewat Salat Subuh Keliling, Satlantas Polres Kuansing Sosialisasikan Pemilu Damai","jpnn.com , KUANSING - Polres Kuansing dan jajaran rutin melakukan salat subuh keliling bersama masyarakat, sembari menyosialisasikan program Pemilu Damai dan menjaga keamanan.Kapolres Kuansing AKBP Pa",True,politics_government,,,
-is_news,28499,soft_save,PIKIRANRAKYAT,KlikSeleb,"Punya Karir Gemilang di Usianyq yang Baru 23 Tahun, Netizen Puji Kerja Keras Haechan NCT","Klikseleb.com - Haechan NCT mengejutkan netizen dengan pencapaian karirnya yang mengesankan di usianya yang baru 23 tahun.
-Pada tanggal 1 November, seorang netizen turun ke forum komunitas online dan ",False,soft,,,
-is_news,28547,soft_save,PIKIRANRAKYAT,KlikSeleb,"Ramai Pemboikotan Lesti Kejora Usai Kasus KDRT, Netizen Dukung Rame-rame: Dede Masih Tampil di TV","Klikseleb.com - Kasus KDRT Lesti Kejora oleh Rizky Billar masih menjadi topik panas.
-Lesti Kejora melaporkan Rizky Billar atas dugaan KDRT berupa dibanting, dicekik, hingga didorong ke kamar mandi.
-Se",False,soft,,,
-is_news,2678,soft_save,WARTAEKONOMI,english_edition,Indonesia: From Middle Power to Leading Value Creator in a Fragmented World,"The global economy is undergoing a quiet but decisive reordering. Traditional economic hierarchies, long dominated by the United States and Europe, are giving way to a more distributed system shaped b",True,international,,,
-is_news,104260,soft_save,IDNTIMES,life,"6 Kesalahan yang Merusak Promosi Produk, Mengecewakan Konsumen","6 Kesalahan yang Merusak Promosi Produk, Mengecewakan Konsumen
-Kamu sudah gencar mempromosikan produk. Mungkin itu sempat membuat produkmu cukup laku. Namun, pembeli tidak kembali. Bahkan setelahnya a",False,soft,,,
-is_news,28592,soft_save,PIKIRANRAKYAT,KlikSeleb,"Tetap Bela Rizky Billar Ditengah Dugaan Kisruh dengan Keluarga, Lesti Kejora: Aku Anggap Sebagai Latihan","Klikseleb.com - Kasus KDRT Lesti Kejora oleh Rizky Billar masih menjadi topik panas.
-Lesti Kejora melaporkan Rizky Billar atas dugaan KDRT berupa dibanting, dicekik, hingga didorong ke kamar mandi.
-Se",False,soft,,,
-is_news,14625,soft_save,JPNN,advetorial,"Cicil Hunian di Green Royal Lebih Menguntungkan daripada Sewa, Biaya Sama tetapi Hasilnya Beda","jpnn.com , JAKARTA - Memilih antara menyewa atau membeli hunian kerap menjadi pertanyaan klasik bagi banyak keluarga muda
+﻿check;sitemap_id;stratum;source;category;headline;body_head_200;model_is_news;model_topic;human_is_news;human_topic;note
+is_news;7833;finance_reject;SINDONEWS;ekbis;EV dan SPKLU, Infrastruktur Penting untuk Mendukung Mobilitas Rendah Emisi;;FALSE;soft;FALSE;;
+is_news;80806;finance_reject;KUMPARAN;bisnis;Pergulatan antara Keuntungan, Keberkahan, Kemaslahatan, dan Mafsadah;;FALSE;soft;FALSE;;
+is_news;95775;religion_boundary;MEDIAINDONESIA;ramadan;Ramadan Nostalgic 2025: Bazaar Modest Fashion Eksklusif dari Scarf Media;;FALSE;soft;FALSE;;
+is_news;90415;religion_boundary;MEDIAINDONESIA;jabar;Kampung Ramadhan Jilid 2: Nikmati Buka Puasa dan Menginap Hemat di Hotel 88 Kopo Bandung;;FALSE;soft;FALSE;;
+is_news;86174;econ_politics_boundary;JPNN;entertainment;Festival Tabuh Bedug Teluknaga Meriah, Ada Dukungan Agung Sedayu Group, Gubernur Banten: Keren;;FALSE;soft;FALSE;;
+is_news;114303;econ_politics_boundary;INEWS;asahanraya;Moment Hangat Presiden Prabowo Bersama Pimpinan Pondok Modern Darussalam Gontor Ponorogo;;FALSE;soft;TRUE;;
+is_news;69024;viva_general;VIVA;https://jogja.viva.co.id/sitemap/news/news-sitemap.xml;Suluk–Sulur–Jepara: Jejak Peradaban Ukir Nusantara di Museum Nasional;;FALSE;soft;FALSE;;
+is_news;43856;viva_general;VIVA;gaya-hidup;Ikut Aksi Tanam Mangrove, Anak Muda Semakin Sadar Bahaya Krisis Iklim;;FALSE;soft;FALSE;;
+is_news;41309;viva_general;VIVA;otomotif;Bisa Jadi Investasi Jangka Panjang Pengguna, Ban Mobil Listrik Jadi Faktor Efisiensi EV;;FALSE;soft;FALSE;;
+is_news;52075;viva_general;VIVA;surat;Tanggapan Lazada untuk Barang Konsumen yang Tak Sampai;;FALSE;soft;FALSE;;
+is_news;71693;viva_general;VIVA;https://wisata.viva.co.id/sitemap/news/news-sitemap.xml;Jumbrek Lamongan, Kue Tradisional Unik Berbungkus Daun Lontar yang Legendaris di Jalur Pantura;;FALSE;soft;FALSE;;
+is_news;35846;mixed_bucket;PIKIRANRAKYAT;WartaPontianak;Semangat Berbagi, BPM Kalbar Potong Dua Ekor Sapi Kurban di Hari Raya Idul Adha 1447 H;;FALSE;soft;FALSE;;
+is_news;968;finance_pending;WARTAEKONOMI;bisnis;BM Emas Tawarkan Pilihan Perhiasan dan Logam Mulia untuk Semua Kalangan;;FALSE;soft;FALSE;;
+is_news;82983;finance_pending;TVONENEWS;ekonomi;Tring! Golden Run 2026 Sukses Digelar, Pegadaian Dorong Gaya Hidup Sehat Sekaligus Literasi Investasi Emas;;FALSE;soft;FALSE;;
+is_news;5937;finance_pending;WARTAEKONOMI;perbankan;Sebarkan Manfaat Kurban, Bank Aladin Syariah Gandeng Muhammadiyah;;FALSE;soft;FALSE;;
+is_news;83304;hard_news;TVONENEWS;daerah;Jelang Laga Persib, Ratusan Barang Berbahaya DIsita Polda Jabar;;FALSE;soft;TRUE;;
+is_news;12071;hard_news;JPNN;daerah;SIM Keliling Bandung Hari Ini Senin 1 Juni 2026;;FALSE;soft;FALSE;;
+is_news;10752;soft_category;CNBC;lifestyle;Penampakan Kamar Super Mewah The Trans Luxury Hotel Surabaya;;FALSE;soft;FALSE;;
+is_news;75815;soft_category;GRIDID;GridHealth;Vidi Aldiano Sakit Apa? Begini Perjalanan Penyakit Kanker Ginjal yang Dideritanya;;FALSE;soft;FALSE;;
+is_news;94201;soft_category;MEDIAINDONESIA;piala-dunia-2026;Martin Experience tidak Sabar Bela Haiti Hadapi Brasil di Piala Dunia 2026;;FALSE;soft;FALSE;;
+is_news;104438;soft_category;IDNTIMES;life;5 Hobi Baru untuk Mengisi Waktu Luang dengan Lebih Seru;;FALSE;soft;FALSE;;
+is_news;12825;soft_category;JPNN;donwori;ART Demen Berdaster Bikin Majikan Ngiler;;FALSE;soft;FALSE;;
+is_news;86099;soft_category;CNBC;lifestyle;10 Negara Asia Paling Percaya Hal Mistis, Malaysia Nomor 1;;FALSE;soft;FALSE;;
+is_news;106077;soft_category;INEWS;https://www.inews.id/inews-tv/religi/sitemap.xml;CAHAYA HATI INDONESIA: Sedikit Mempelajari Alquran, Bikin Susah Bersyukur;;FALSE;soft;FALSE;;
+is_news;13921;soft_category;JPNN;travel;"Panduan &amp; Tips Mengunjungi Nara Agar Liburan Makin Berkesan";;FALSE;soft;FALSE;;
+is_news;77261;soft_category;GRIDID;Sajian;Cara Ampuh Memisahkan Kuning Telur Tanpa Alat, Pemula Langsung Bisa;;FALSE;soft;FALSE;;
+is_news;76184;soft_category;GRIDID;GridID;Rutinitas Wajib Nikita Willy setelah Mandi, Cuma Butuh Waktu 5 Menit;;FALSE;soft;FALSE;;
+is_news;2278;finance_reject;WARTAEKONOMI;digital_economy;IPOT Luncurkan UI/UX Berbasis AI, Klaim Bisa Baca Smart Money;;TRUE;tech_science;TRUE;;
+is_news;6363;finance_reject;WARTAEKONOMI;properti;Lixil Pimpin Kolaborasi Lintas Sektor, Dorong Arsitektur Hijau;;TRUE;corporate;TRUE;;
+is_news;4064;finance_reject;WARTAEKONOMI;infrastruktur;Rumah Susun UNSRI Jadi Fasilitas Pendukung Lahirnya SDM Unggul;;TRUE;health_education;TRUE;;
+is_news;82957;finance_reject;TVONENEWS;ekonomi;Telin dan DITO Telecommunity Teken MSA, Dorong Akselerasi Ekosistem Digital Lintas Negara;;TRUE;corporate;TRUE;;
+is_news;6320;finance_reject;WARTAEKONOMI;properti;Pemerintah Bantu Freelancer Bisa Cicil Rumah Lewat Skema Ini;;TRUE;consumer;TRUE;;
+is_news;4051;finance_reject;WARTAEKONOMI;infrastruktur;1.398 Unit Huntara Tahap Satu Rampung, Besok Groundbreaking Huntap di Sumbar;;TRUE;disaster_accident;TRUE;;
+is_news;105131;finance_reject;IDNTIMES;business;PM Korsel: Pasokan Listrik Kunci Utama Proyek Strategis Nasional;;TRUE;international;TRUE;;
+is_news;87160;finance_reject;MEDIAINDONESIA;ekonomi;Legislator Minta Pemerintah Berikan Hukum yang Jelas untuk IHT;;TRUE;politics_government;TRUE;;
+is_news;83372;religion_boundary;TVONENEWS;daerah;SalamAir Buka Rute Langsung Muscat–Kualanamu Mulai Juli 2026, Permudah Akses Umrah dan Timur Tengah;;TRUE;corporate;TRUE;;
+is_news;126770;religion_boundary;INEWS;blitar;Kemenag Batasi Penggunaan HP di Sekolah, Siswa Hanya Boleh Pakai untuk Belajar;;TRUE;health_education;FALSE;;
+is_news;89911;religion_boundary;MEDIAINDONESIA;internasional;Arab Saudi Sebut Penyelenggaraan Haji 2026 Berjalan Sukses, Layani Lebih dari 1,7 Juta Jamaah;;TRUE;other_news;TRUE;;
+is_news;32475;religion_boundary;PIKIRANRAKYAT;PortalMajalengka;Horeee, Tarif Tol dan Harga Tiket Pesawat bakal Diturunkan selama Ramadhan dan Libur Idul Fitri 2025;;TRUE;macro_policy;TRUE;;
+is_news;79242;religion_boundary;KOMPAS;megapolitan;2.500 Calon Jemaah Travel Hanania Batal Umrah, Kerugian hingga Rp 100 Miliar;;TRUE;law_crime;TRUE;;
+is_news;11265;econ_politics_boundary;JPNN;nasional;Prabowo: Pancasila sebagai Pegangan Indonesia di Tengah Rivalitas Geopolitik;;TRUE;politics_government;TRUE;;
+is_news;4216;econ_politics_boundary;WARTAEKONOMI;internasional;The Economist Sentil Prabowo: Berkulit Tipis, Tak Siap Fakta Pahit;;TRUE;politics_government;TRUE;;
+is_news;111138;econ_politics_boundary;INEWS;tulungagung;Festival Literasi Polman Ditutup, Ketua DPRD Minta Gerakan Membaca Berlanjut ke Sekolah;;TRUE;health_education;TRUE;;
+is_news;106894;econ_politics_boundary;INEWS;otomotif;Datang ke GIIAS 2026, Menkeu Purbaya Soroti Peran Industri Otomotif di Indonesia;;TRUE;macro_policy;TRUE;;
+is_news;22748;econ_politics_boundary;PIKIRANRAKYAT;BogorPR;Menko PM Angkat Bicara soal Tragedi Bocah SD di Ngada NTT: Ini Harus Jadi Cambuk Bagi Kita Semua;;TRUE;law_crime;TRUE;;
+is_news;40639;viva_general;VIVA;sport;Indonesia Open Makin Panjang Jadi 11 Hari, PBSI Rela Keluar Biaya Lebih Demi Status Turnamen Kelas Dunia;;TRUE;other_news;TRUE;;
+is_news;73452;viva_general;VIVA;https://kaltim.viva.co.id/sitemap/news/news-sitemap.xml;Lagi, Petinggi OIKN Mundur, OIKN : Semua Sesuai Aturan;;TRUE;politics_government;TRUE;;
+is_news;50907;viva_general;VIVA;trending;Klaim Punya Gunung di Parung, Firdaus Oiwobo Bawa Bukti Surat Tanah 110 Ribu Hektar;;TRUE;law_crime;TRUE;;
+is_news;65239;viva_general;VIVA;https://purwasuka.viva.co.id/sitemap/news/news-sitemap.xml;Dinas Sosial Subang Segera Realisasi Bantuan untuk 200 Rutilahu, Deni: Permohonan Melalui Aplikasi Si Abah Ngabret;;TRUE;politics_government;TRUE;;
+is_news;126300;mixed_bucket;INEWS;kutai;Kecelakaan di Tol Bangkinang, Ustaz dan Dosen Asal Pekanbaru Meninggal;;TRUE;disaster_accident;TRUE;;
+is_news;15051;mixed_bucket;JPNN;https://bali.jpnn.com/sitemap_post_bali-terkini.xml;"Jadwal Pemadaman Listrik Kamis (21/5): Bali Timur, Tabanan, Mengwi &amp; Sanur";;TRUE;consumer;TRUE;;
+is_news;114910;mixed_bucket;INEWS;kutaraja;Viral Video Kekerasan Anak di Wirosari Grobogan: Polisi Periksa Terduga Pelaku, Korban dan Saksi;;TRUE;law_crime;TRUE;;
+is_news;124605;mixed_bucket;INEWS;indramayu;Arus Peti Kemas Merauke Melonjak 10,65 Persen, Tembus 37.237 TEUs hingga Agustus 2026;;TRUE;consumer;TRUE;;
+is_news;22536;mixed_bucket;PIKIRANRAKYAT;BeritaKBB;Bandung for Palestine Viral, Kolaborasi Besar Bela Rakyat Gaza;;TRUE;international;TRUE;;
+is_news;77659;finance_pending;IDXCHANNEL;market-news;Ekspor SDA Satu Pintu lewat DSI, Ini Kata Vale (INCO);;TRUE;commodities_energy;TRUE;;
+is_news;99973;finance_pending;IDXCHANNEL;market-news;Harga Emas Melemah Jelang Keputusan The Fed, Minyak  Picu Kekhawatiran Inflasi;;TRUE;markets;TRUE;;
+is_news;6345;finance_pending;WARTAEKONOMI;properti;Summarecon Perkuat Ekosistem Bisnis, Luncurkan Diamond Commercial;;TRUE;corporate;TRUE;;
+is_news;100279;finance_pending;IDXCHANNEL;banking;Perkuat Keamanan Vault Berstandar Global, Pegadaian Raih Sertifikasi ISO 9001:2015;;TRUE;corporate;TRUE;;
+is_news;3876;finance_pending;WARTAEKONOMI;industri;Jadi Distributor Tunggal, Suri Nusantara Jaya Bawa Daging Miyazaki Wagyu ke Indonesia;;TRUE;corporate;TRUE;;
+is_news;100270;finance_pending;IDXCHANNEL;economics;Gus Ipul Tegaskan Lulusan Sekolah Rakyat Tak Boleh Nganggur;;TRUE;health_education;TRUE;;
+is_news;99934;finance_pending;WARTAEKONOMI;perbankan;Konsolidasi Perbankan Masuk Revisi UUP2SK;;TRUE;macro_policy;TRUE;;
+is_news;13104;hard_news;JPNN;politik;Koalisi Masyarakat Sipil Soroti Menguatnya Militerisme hingga Ancaman Krisis Ekonomi;;TRUE;politics_government;TRUE;;
+is_news;4930;hard_news;WARTAEKONOMI;megapolitan;Pesan Pramono ke Pemudik: Jangan Iming-Imingi Saudaranya Sesuatu, Tidak Semua Orang Bisa Bertarung di Jakarta;;TRUE;politics_government;TRUE;;
+is_news;11698;hard_news;JPNN;internasional;Ucapkan Selamat Iduladha, Vladimir Putin Puji Peran Muslim Bangun Rusia;;TRUE;international;TRUE;;
+is_news;4807;hard_news;WARTAEKONOMI;megapolitan;LRT Rute Velodrome-Manggarai Kapan Bisa Digunakan? Pramono: Full Operasi Agustus Nanti;;TRUE;politics_government;TRUE;;
+is_news;7449;hard_news;SINDONEWS;nasional;11 Kapolda Lulusan Akpol 1994 Teman Satu Angkatan Kapolda Metro Jaya Komjen Pol Asep Edi Suheri;;TRUE;politics_government;TRUE;;
+is_news;104998;soft_save;IDNTIMES;korea;3 Profesi Dilakoni Han So Hee di Film, Terbaru Jadi CEO di The Intern;"3 Profesi Dilakoni Han So Hee di Film, Terbaru Jadi CEO di The Intern
+- Han So Hee comeback ke layar lebar lewat The Intern sebagai Sun Woo, CEO muda perusahaan startup fashion yang ambisius dan sukse";FALSE;soft;FALSE;;
+is_news;104386;soft_save;IDNTIMES;life;5 Pot Tanaman Mini yang Bikin Meja Kerja Lebih Estetik;"5 Pot Tanaman Mini yang Bikin Meja Kerja Lebih Estetik
+- Tanaman mini dalam pot dapat menyegarkan dan mempersonalisasi meja kerja tanpa memakan banyak ruang, asalkan penataannya tetap rapi serta tidak";FALSE;soft;FALSE;;
+is_news;104260;soft_save;IDNTIMES;life;6 Kesalahan yang Merusak Promosi Produk, Mengecewakan Konsumen;"6 Kesalahan yang Merusak Promosi Produk, Mengecewakan Konsumen
+Kamu sudah gencar mempromosikan produk. Mungkin itu sempat membuat produkmu cukup laku. Namun, pembeli tidak kembali. Bahkan setelahnya a";FALSE;soft;FALSE;;
+is_news;21372;mixed_bucket;PIKIRANRAKYAT;ArahKata;"Harga Pangan Naik, Pemprov DKI Jakarta Ingatkan Warga Tak ""Panic Buying""";"ARAHKATA - Staf Khusus Gubernur dan Wakil Gubernur Jakarta Bidang Komunikasi Publik Chico Hakim mengimbau agar masyarakat tidak ""panic buying"" di tengah kenaikan harga pangan menjelang Idul Adha 1447 ";TRUE;commodities_energy;TRUE;;
+is_news;5882;religion_boundary;WARTAEKONOMI;multifinance;Pembiayaan Pinjol Diprediksi Meningkat Dua Kali Lipat di Ramadan dan Idulfitri 2026;Asosiasi Fintech Pendanaan Bersama Indonesia (AFPI) memproyeksikan penyaluran pembiayaan industri pinjaman daring (pindar) melonjak signifikan pada momentum Ramadan hingga Idulfitri 2026. Lonjakan ter;TRUE;consumer;TRUE;;
+is_news;15075;mixed_bucket;JPNN;https://bali.jpnn.com/sitemap_post_bali-terkini.xml;Turyapada Tahap II Berlanjut: Lahan Klir, Dilengkapi Planetarium hingga Gondola;bali.jpnn.com , BULELENG - Pembangunan Turyapada Tower KBS 6.0 Kerthi Bali di Desa Pegayaman, Sukasada, Buleleng , berjalan makin mulus.Minggu kemarin (17/5), Gubernur Bali Wayan Koster bersama Bupati;TRUE;politics_government;TRUE;;
+is_news;4764;finance_saved;WARTAEKONOMI;makro;Cadangan Devisa Turun Jadi US$151,9 miliar di Februari 2026;Bank Indonesia (BI) mencatat posisi cadangan devisa Indonesia pada akhir Februari 2026 sebesar US$151,9 miliar. Angka tersebut turun sekitar US$ 2,7 miliar dibandingkan posisi pada akhir Januari 2026 ;TRUE;macro_policy;TRUE;;
+is_news;5745;finance_saved;WARTAEKONOMI;pajak;DJP Catat Pelaporan SPT Capai 8,78 Juta, Aktivasi Coretax Tembus 16,6 Juta;Direktorat Jenderal Pajak (DJP) Kementerian Keuangan menyampaikan realisasi pelaporan Surat Pemberitahuan (SPT) Tahunan Pajak Penghasilan (PPh) Tahun pajak 2025 mencapai 8.783.653 hingga 22 Maret 2026;TRUE;macro_policy;TRUE;;
+is_news;6335;finance_saved;WARTAEKONOMI;properti;Harga Rumah Tetap Naik Meski Permintaan Anjlok 25%;Harga properti residensial di pasar primer masih mencatat kenaikan pada triwulan I 2026 di tengah pelemahan permintaan dan penurunan penjualan rumah di berbagai segmen. Survei Harga Properti Residensi;TRUE;consumer;TRUE;;
+is_news;78300;religion_boundary;IDXCHANNEL;syariah;Dirjen PE2HU Pastikan Layanan Jamaah Haji di Sektor 10 Makkah Berjalan Optimal;"IDXChannel - Direktur Jenderal Pengembangan Ekosistem Ekonomi Haji dan Umrah (PE2HU), Jaenal Effendi, meninjau langsung layanan jamaah haji Indonesia di Sektor 10 Makkah, Minggu (10/5/2026).
 
-Perhitungan biaya bulanan pun menjadi pertimbangan utama dalam menentukan pil",False,soft,,,
-is_news,28607,soft_save,PIKIRANRAKYAT,KlikSeleb,"Resmi Ditetapkan Sebagai Tersangka, Rizky Billar Kekeuh Tak Mengaku Telah KDRT Lesti Kejora: Gak Ada...","Klikseleb.com - Kasus KDRT Lesti Kejora oleh Rizky Billar masih menjadi topik panas.
-Lesti Kejora melaporkan Rizky Billar atas dugaan KDRT berupa dibanting, dicekik, hingga didorong ke kamar mandi.
-Se",True,law_crime,,,
-is_news,104386,soft_save,IDNTIMES,life,5 Pot Tanaman Mini yang Bikin Meja Kerja Lebih Estetik,"5 Pot Tanaman Mini yang Bikin Meja Kerja Lebih Estetik
-- Tanaman mini dalam pot dapat menyegarkan dan mempersonalisasi meja kerja tanpa memakan banyak ruang, asalkan penataannya tetap rapi serta tidak",False,soft,,,
-is_news,104998,soft_save,IDNTIMES,korea,"3 Profesi Dilakoni Han So Hee di Film, Terbaru Jadi CEO di The Intern","3 Profesi Dilakoni Han So Hee di Film, Terbaru Jadi CEO di The Intern
-- Han So Hee comeback ke layar lebar lewat The Intern sebagai Sun Woo, CEO muda perusahaan startup fashion yang ambisius dan sukse",False,soft,,,
-is_news,78300,religion_boundary,IDXCHANNEL,syariah,Dirjen PE2HU Pastikan Layanan Jamaah Haji di Sektor 10 Makkah Berjalan Optimal,"IDXChannel - Direktur Jenderal Pengembangan Ekosistem Ekonomi Haji dan Umrah (PE2HU), Jaenal Effendi, meninjau langsung layanan jamaah haji Indonesia di Sektor 10 Makkah, Minggu (10/5/2026).
+Dalam ku";TRUE;other_news;TRUE;;
+is_news;77660;finance_saved;IDXCHANNEL;market-news;IHSG Berpotensi Uji Area 5.899 Awal Pekan, Cermati Analisa Saham-Saham Ini;"IDXChannel - Indeks Harga Saham Gabungan ( IHSG ) terkoreksi tipis pada akhir perdagangan, Jumat (29/5/2026). IHSG melemah 0,05 persen ke level 6.127 dan disertai dengan munculnya volume pembelian.
 
-Dalam ku",True,other_news,,,
-is_news,5882,religion_boundary,WARTAEKONOMI,multifinance,Pembiayaan Pinjol Diprediksi Meningkat Dua Kali Lipat di Ramadan dan Idulfitri 2026,Asosiasi Fintech Pendanaan Bersama Indonesia (AFPI) memproyeksikan penyaluran pembiayaan industri pinjaman daring (pindar) melonjak signifikan pada momentum Ramadan hingga Idulfitri 2026. Lonjakan ter,True,consumer,,,
-is_news,83372,religion_boundary,TVONENEWS,daerah,"SalamAir Buka Rute Langsung Muscat–Kualanamu Mulai Juli 2026, Permudah Akses Umrah dan Timur Tengah",,True,corporate,,,
-is_news,126770,religion_boundary,INEWS,blitar,"Kemenag Batasi Penggunaan HP di Sekolah, Siswa Hanya Boleh Pakai untuk Belajar",,True,health_education,,,
-is_news,89911,religion_boundary,MEDIAINDONESIA,internasional,"Arab Saudi Sebut Penyelenggaraan Haji 2026 Berjalan Sukses, Layani Lebih dari 1,7 Juta Jamaah",,True,other_news,,,
-is_news,95775,religion_boundary,MEDIAINDONESIA,ramadan,Ramadan Nostalgic 2025: Bazaar Modest Fashion Eksklusif dari Scarf Media,,False,soft,,,
-is_news,32475,religion_boundary,PIKIRANRAKYAT,PortalMajalengka,"Horeee, Tarif Tol dan Harga Tiket Pesawat bakal Diturunkan selama Ramadhan dan Libur Idul Fitri 2025",,True,macro_policy,,,
-is_news,27576,religion_boundary,PIKIRANRAKYAT,KabarBanteng,Haji: Perjalanan Spiritual Jutaan Umat Muslim se-Dunia,"KABAR BANTEN - Sabda Rasulullah Saw :
-مَثَلُ الْمُؤْمِنِينَ فِي تَوَادِّهِمْ، وَتَرَاحُمِهِمْ، وَتَعَاطُفِهِمْ مَثَلُ الْجَسَدِ إِذَا اشْتَكَى مِنْهُ عُضْوٌ تَدَاعَى لَهُ سَائِرُ الْجَسَدِ بِالسَّهَرِ",False,soft,,,
-is_news,79242,religion_boundary,KOMPAS,megapolitan,"2.500 Calon Jemaah Travel Hanania Batal Umrah, Kerugian hingga Rp 100 Miliar",,True,law_crime,,,
-is_news,90415,religion_boundary,MEDIAINDONESIA,jabar,Kampung Ramadhan Jilid 2: Nikmati Buka Puasa dan Menginap Hemat di Hotel 88 Kopo Bandung,,False,soft,,,
-is_news,11265,econ_politics_boundary,JPNN,nasional,Prabowo: Pancasila sebagai Pegangan Indonesia di Tengah Rivalitas Geopolitik,,True,politics_government,,,
-is_news,86174,econ_politics_boundary,JPNN,entertainment,"Festival Tabuh Bedug Teluknaga Meriah, Ada Dukungan Agung Sedayu Group, Gubernur Banten: Keren",,False,soft,,,
-is_news,33651,econ_politics_boundary,PIKIRANRAKYAT,PrianganTimurNews,Laporkan Jika Ada Penyimpangan! DPRD Kalsel Ajak Warga Aktif Awasi Penyaluran BBM Bersubsidi,"PRIANGANTIMURNEWS - Pengawasan distribusi BBM bersubsidi tidak hanya menjadi tanggung jawab pemerintah dan aparat terkait, tetapi juga membutuhkan peran aktif masyarakat agar bantuan energi tersebut b",True,commodities_energy,,,
-is_news,77991,econ_politics_boundary,IDXCHANNEL,foto,Menteri PKP Dorong Bank BSN Jadi Motor Pembiayaan Syariah,IDXChannel - Menteri Perumahan dan Kawasan Permukiman (PKP) Maruarar Sirait (kanan) berjabat tangan dengan Direktur Utama Bank Syariah Nasional Alex Sofjan Noor (tengah) disaksikan Direktur Consumer B,True,macro_policy,,,
-is_news,114303,econ_politics_boundary,INEWS,asahanraya,Moment Hangat Presiden Prabowo Bersama Pimpinan Pondok Modern Darussalam Gontor Ponorogo,,False,soft,,,
-is_news,4216,econ_politics_boundary,WARTAEKONOMI,internasional,"The Economist Sentil Prabowo: Berkulit Tipis, Tak Siap Fakta Pahit",,True,politics_government,,,
-is_news,111138,econ_politics_boundary,INEWS,tulungagung,"Festival Literasi Polman Ditutup, Ketua DPRD Minta Gerakan Membaca Berlanjut ke Sekolah",,True,health_education,,,
-is_news,26704,econ_politics_boundary,PIKIRANRAKYAT,JurnalGarut,"Gelontorkan Rp5,9 Miliar Penanganan Stunting, Bupati Garut: Untuk Beli Susu","JURNAL GARUT - Pemkab Garut menggelontorkan anggaran hingga Rp5,9 miliar yang digunakan untuk membeli susu dalam penanganan stunting atau anak kurang gizi.
-""Sudah disiapkan anggaran dari APBD kurang l",True,health_education,,,
-is_news,106894,econ_politics_boundary,INEWS,otomotif,"Datang ke GIIAS 2026, Menkeu Purbaya Soroti Peran Industri Otomotif di Indonesia",,True,macro_policy,,,
-is_news,22748,econ_politics_boundary,PIKIRANRAKYAT,BogorPR,Menko PM Angkat Bicara soal Tragedi Bocah SD di Ngada NTT: Ini Harus Jadi Cambuk Bagi Kita Semua,,True,law_crime,,,
-is_news,40639,viva_general,VIVA,sport,"Indonesia Open Makin Panjang Jadi 11 Hari, PBSI Rela Keluar Biaya Lebih Demi Status Turnamen Kelas Dunia",,True,other_news,,,
-is_news,69024,viva_general,VIVA,https://jogja.viva.co.id/sitemap/news/news-sitemap.xml,Suluk–Sulur–Jepara: Jejak Peradaban Ukir Nusantara di Museum Nasional,,False,soft,,,
-is_news,73452,viva_general,VIVA,https://kaltim.viva.co.id/sitemap/news/news-sitemap.xml,"Lagi, Petinggi OIKN Mundur, OIKN : Semua Sesuai Aturan",,True,politics_government,,,
-is_news,43856,viva_general,VIVA,gaya-hidup,"Ikut Aksi Tanam Mangrove, Anak Muda Semakin Sadar Bahaya Krisis Iklim",,False,soft,,,
-is_news,50907,viva_general,VIVA,trending,"Klaim Punya Gunung di Parung, Firdaus Oiwobo Bawa Bukti Surat Tanah 110 Ribu Hektar",,True,law_crime,,,
-is_news,65239,viva_general,VIVA,https://purwasuka.viva.co.id/sitemap/news/news-sitemap.xml,"Dinas Sosial Subang Segera Realisasi Bantuan untuk 200 Rutilahu, Deni: Permohonan Melalui Aplikasi Si Abah Ngabret",,True,politics_government,,,
-is_news,41309,viva_general,VIVA,otomotif,"Bisa Jadi Investasi Jangka Panjang Pengguna, Ban Mobil Listrik Jadi Faktor Efisiensi EV",,False,soft,,,
-is_news,52075,viva_general,VIVA,surat,Tanggapan Lazada untuk Barang Konsumen yang Tak Sampai,,False,soft,,,
-is_news,71693,viva_general,VIVA,https://wisata.viva.co.id/sitemap/news/news-sitemap.xml,"Jumbrek Lamongan, Kue Tradisional Unik Berbungkus Daun Lontar yang Legendaris di Jalur Pantura",,False,soft,,,
-is_news,36724,viva_general,VIVA,news-sitemap,"Modus Pasutri Pemilik WO Marwah Tipu Puluhan Calon Pengantin, Terapkan Sistem 'Gali Lubang Tutup Lubang'","Jakarta, VIVA – Polisi mengungkap motif di balik dugaan penipuan yang dilakukan pasangan suami istri pemilik penyelenggara pernikahan atau wedding organizer ( WO ) Marwah di Jakarta Timur (Jaktim) men",True,law_crime,,,
-is_news,126300,mixed_bucket,INEWS,kutai,"Kecelakaan di Tol Bangkinang, Ustaz dan Dosen Asal Pekanbaru Meninggal",,True,disaster_accident,,,
-is_news,15051,mixed_bucket,JPNN,https://bali.jpnn.com/sitemap_post_bali-terkini.xml,"Jadwal Pemadaman Listrik Kamis (21/5): Bali Timur, Tabanan, Mengwi &amp; Sanur",,True,consumer,,,
-is_news,114910,mixed_bucket,INEWS,kutaraja,"Viral Video Kekerasan Anak di Wirosari Grobogan: Polisi Periksa Terduga Pelaku, Korban dan Saksi",,True,law_crime,,,
-is_news,21372,mixed_bucket,PIKIRANRAKYAT,ArahKata,"Harga Pangan Naik, Pemprov DKI Jakarta Ingatkan Warga Tak ""Panic Buying""","ARAHKATA - Staf Khusus Gubernur dan Wakil Gubernur Jakarta Bidang Komunikasi Publik Chico Hakim mengimbau agar masyarakat tidak ""panic buying"" di tengah kenaikan harga pangan menjelang Idul Adha 1447 ",True,commodities_energy,,,
-is_news,124605,mixed_bucket,INEWS,indramayu,"Arus Peti Kemas Merauke Melonjak 10,65 Persen, Tembus 37.237 TEUs hingga Agustus 2026",,True,consumer,,,
-is_news,35846,mixed_bucket,PIKIRANRAKYAT,WartaPontianak,"Semangat Berbagi, BPM Kalbar Potong Dua Ekor Sapi Kurban di Hari Raya Idul Adha 1447 H",,False,soft,,,
-is_news,15075,mixed_bucket,JPNN,https://bali.jpnn.com/sitemap_post_bali-terkini.xml,"Turyapada Tahap II Berlanjut: Lahan Klir, Dilengkapi Planetarium hingga Gondola","bali.jpnn.com , BULELENG - Pembangunan Turyapada Tower KBS 6.0 Kerthi Bali di Desa Pegayaman, Sukasada, Buleleng , berjalan makin mulus.Minggu kemarin (17/5), Gubernur Bali Wayan Koster bersama Bupati",True,politics_government,,,
-is_news,22536,mixed_bucket,PIKIRANRAKYAT,BeritaKBB,"Bandung for Palestine Viral, Kolaborasi Besar Bela Rakyat Gaza",,True,international,,,
-is_news,21952,mixed_bucket,PIKIRANRAKYAT,BanjarPR,"Resmi Dimusnahkan oleh Kementan, Berikut Bahaya Jamur Enoki","PR BANJAR - Indonesia dianugerahi oleh kekayaan alam yang melimpah.
+P";TRUE;markets;TRUE;;
+is_news;77991;econ_politics_boundary;IDXCHANNEL;foto;Menteri PKP Dorong Bank BSN Jadi Motor Pembiayaan Syariah;IDXChannel - Menteri Perumahan dan Kawasan Permukiman (PKP) Maruarar Sirait (kanan) berjabat tangan dengan Direktur Utama Bank Syariah Nasional Alex Sofjan Noor (tengah) disaksikan Direktur Consumer B;TRUE;macro_policy;TRUE;;
+is_news;78195;finance_saved;IDXCHANNEL;banking;Peningkatan Literasi Pendanaan Digital Mahasiswa UNS Lewat MoneyFestasi bersama OVO Finansial;IDXChannel - Ratusan mahasiswa Universitas Negeri Sebelas Maret Surakarta (UNS) antusias mengikuti sesi MoneyFestasi , bertajuk 'Fintech The Future: Membangun Literasi dan Keamanan Pendanaan Digital G;FALSE;soft;FALSE;;
+is_news;3714;finance_saved;WARTAEKONOMI;industri;Coretax jadi Revolusi Pajak Digital, tapi Riset Ini Hitung Ada Faktor Lain yang Menentukan Kepatuhan Wajib Pajak;Implementasi sistem Coretax sejak 1 Januari 2025 menjadi tonggak baru transformasi perpajakan nasional. Melalui sistem administrasi perpajakan digital yang terintegrasi, pemerintah berharap kepatuhan ;TRUE;macro_policy;TRUE;;
+is_news;13607;hard_news;JPNN;abc-indonesia;Upah yang Belum Dibayar, Penipuan Pajak, dan Uang yang Raib: Di Balik Industri Penyedia Tenaga Kerja di Australia;"itu Dua tahun setelah mereka bekerja berjam-jam memetik sayuran salad yang akan disajikan di meja makan Natal warga Australia, Tommy dan Susilo masih belum dibayar.""Kita susah-susah bekerja, panas-pan";TRUE;international;TRUE;;
+is_news;36724;viva_general;VIVA;news-sitemap;Modus Pasutri Pemilik WO Marwah Tipu Puluhan Calon Pengantin, Terapkan Sistem 'Gali Lubang Tutup Lubang';Jakarta, VIVA – Polisi mengungkap motif di balik dugaan penipuan yang dilakukan pasangan suami istri pemilik penyelenggara pernikahan atau wedding organizer ( WO ) Marwah di Jakarta Timur (Jaktim) men;TRUE;law_crime;TRUE;;
+is_news;12168;finance_saved;JPNN;ekonomi;Triwulan II 2026 Bisnis Batu Bara Meningkat, Kinerja KAI Logistik Lampaui Target;jpnn.com , JAKARTA - KAI Logistik pada triwulan kedua 2026 mencatatkan geliat kinerja khususnya segmen penanganan batu bara yang dilayani melalui KALOG Pro.Momentum positif tersebut didorong kinerja d;TRUE;corporate;TRUE;;
+is_news;14625;soft_save;JPNN;advetorial;Cicil Hunian di Green Royal Lebih Menguntungkan daripada Sewa, Biaya Sama tetapi Hasilnya Beda;"jpnn.com , JAKARTA - Memilih antara menyewa atau membeli hunian kerap menjadi pertanyaan klasik bagi banyak keluarga muda
+
+Perhitungan biaya bulanan pun menjadi pertimbangan utama dalam menentukan pil";FALSE;soft;FALSE;;
+is_news;14632;soft_save;JPNN;advetorial;Lewat Salat Subuh Keliling, Satlantas Polres Kuansing Sosialisasikan Pemilu Damai;jpnn.com , KUANSING - Polres Kuansing dan jajaran rutin melakukan salat subuh keliling bersama masyarakat, sembari menyosialisasikan program Pemilu Damai dan menjaga keamanan.Kapolres Kuansing AKBP Pa;TRUE;politics_government;TRUE;;
+is_news;11729;hard_news;JPNN;internasional;Menhut Dorong Produk Kehutanan Berkelanjutan Berkembang Pesat di Pasar AS;"jpnn.com , WASHINGTON DC - Kementerian Kehutanan bersama KBRI di Washington D.C., Asosiasi Pengusaha Hutan Indonesia (APHI) dan FKMPI menggelar webinar internasional bertajuk Navigating U.S
+
+Market Ac";TRUE;commodities_energy;TRUE;;
+is_news;26704;econ_politics_boundary;PIKIRANRAKYAT;JurnalGarut;Gelontorkan Rp5,9 Miliar Penanganan Stunting, Bupati Garut: Untuk Beli Susu;"JURNAL GARUT - Pemkab Garut menggelontorkan anggaran hingga Rp5,9 miliar yang digunakan untuk membeli susu dalam penanganan stunting atau anak kurang gizi.
+""Sudah disiapkan anggaran dari APBD kurang l";TRUE;health_education;TRUE;;
+is_news;27576;religion_boundary;PIKIRANRAKYAT;KabarBanteng;Haji: Perjalanan Spiritual Jutaan Umat Muslim se-Dunia;"KABAR BANTEN - Sabda Rasulullah Saw :
+مَثَلُ الْمُؤْمِنِينَ فِي تَوَادِّهِمْ، وَتَرَاحُمِهِمْ، وَتَعَاطُفِهِمْ مَثَلُ الْجَسَدِ إِذَا اشْتَكَى مِنْهُ عُضْوٌ تَدَاعَى لَهُ سَائِرُ الْجَسَدِ بِالسَّهَرِ";FALSE;soft;FALSE;;
+is_news;28499;soft_save;PIKIRANRAKYAT;KlikSeleb;Punya Karir Gemilang di Usianyq yang Baru 23 Tahun, Netizen Puji Kerja Keras Haechan NCT;"Klikseleb.com - Haechan NCT mengejutkan netizen dengan pencapaian karirnya yang mengesankan di usianya yang baru 23 tahun.
+Pada tanggal 1 November, seorang netizen turun ke forum komunitas online dan ";FALSE;soft;FALSE;;
+is_news;28547;soft_save;PIKIRANRAKYAT;KlikSeleb;Ramai Pemboikotan Lesti Kejora Usai Kasus KDRT, Netizen Dukung Rame-rame: Dede Masih Tampil di TV;"Klikseleb.com - Kasus KDRT Lesti Kejora oleh Rizky Billar masih menjadi topik panas.
+Lesti Kejora melaporkan Rizky Billar atas dugaan KDRT berupa dibanting, dicekik, hingga didorong ke kamar mandi.
+Se";FALSE;soft;FALSE;;
+is_news;28592;soft_save;PIKIRANRAKYAT;KlikSeleb;Tetap Bela Rizky Billar Ditengah Dugaan Kisruh dengan Keluarga, Lesti Kejora: Aku Anggap Sebagai Latihan;"Klikseleb.com - Kasus KDRT Lesti Kejora oleh Rizky Billar masih menjadi topik panas.
+Lesti Kejora melaporkan Rizky Billar atas dugaan KDRT berupa dibanting, dicekik, hingga didorong ke kamar mandi.
+Se";FALSE;soft;FALSE;;
+is_news;28607;soft_save;PIKIRANRAKYAT;KlikSeleb;Resmi Ditetapkan Sebagai Tersangka, Rizky Billar Kekeuh Tak Mengaku Telah KDRT Lesti Kejora: Gak Ada...;"Klikseleb.com - Kasus KDRT Lesti Kejora oleh Rizky Billar masih menjadi topik panas.
+Lesti Kejora melaporkan Rizky Billar atas dugaan KDRT berupa dibanting, dicekik, hingga didorong ke kamar mandi.
+Se";TRUE;law_crime;FALSE;;
+is_news;79625;mixed_bucket;KOMPAS;makassar;Menembus Jalan Terjal Perbatasan Luwu, Guru Honorer Silfa Kadjengka Cemaskan Nasibnya;LUWU, KOMPAS.com - Di balik bentangan pegunungan bagian barat Kabupaten Luwu, Sulawesi Selatan, tepat di wilayah yang berbatasan langsung dengan Toraja Utara, berdiri SMP Negeri Paranta. Sekolah ini t;TRUE;health_education;TRUE;;
+is_news;5763;finance_saved;WARTAEKONOMI;pajak;Deadline 31 Maret Mendekat, Ini Cara Lapor SPT di Coretax;Pelaporan SPT Tahunan Pajak Penghasilan (PPh) Orang Pribadi kini dilakukan melalui sistem Coretax yang dikembangkan Direktorat Jenderal Pajak sebagai bagian dari transformasi digital administrasi perp;TRUE;macro_policy;TRUE;;
+is_news;21952;mixed_bucket;PIKIRANRAKYAT;BanjarPR;Resmi Dimusnahkan oleh Kementan, Berikut Bahaya Jamur Enoki;"PR BANJAR - Indonesia dianugerahi oleh kekayaan alam yang melimpah.
 Sebagai negara tropis, Indonesia dapat ditumbuhi oleh berbagai jenis tumbuhan ternmasuk Jamur Enoki.
-Flamulina velutipes atau jamur ",True,health_education,,,
-is_news,79625,mixed_bucket,KOMPAS,makassar,"Menembus Jalan Terjal Perbatasan Luwu, Guru Honorer Silfa Kadjengka Cemaskan Nasibnya","LUWU, KOMPAS.com - Di balik bentangan pegunungan bagian barat Kabupaten Luwu, Sulawesi Selatan, tepat di wilayah yang berbatasan langsung dengan Toraja Utara, berdiri SMP Negeri Paranta. Sekolah ini t",True,health_education,,,
-is_news,78195,finance_saved,IDXCHANNEL,banking,Peningkatan Literasi Pendanaan Digital Mahasiswa UNS Lewat MoneyFestasi bersama OVO Finansial,"IDXChannel - Ratusan mahasiswa Universitas Negeri Sebelas Maret Surakarta (UNS) antusias mengikuti sesi MoneyFestasi , bertajuk 'Fintech The Future: Membangun Literasi dan Keamanan Pendanaan Digital G",False,soft,,,
-is_news,77660,finance_saved,IDXCHANNEL,market-news,"IHSG Berpotensi Uji Area 5.899 Awal Pekan, Cermati Analisa Saham-Saham Ini","IDXChannel - Indeks Harga Saham Gabungan ( IHSG ) terkoreksi tipis pada akhir perdagangan, Jumat (29/5/2026). IHSG melemah 0,05 persen ke level 6.127 dan disertai dengan munculnya volume pembelian.
-
-P",True,markets,,,
-is_news,5745,finance_saved,WARTAEKONOMI,pajak,"DJP Catat Pelaporan SPT Capai 8,78 Juta, Aktivasi Coretax Tembus 16,6 Juta",Direktorat Jenderal Pajak (DJP) Kementerian Keuangan menyampaikan realisasi pelaporan Surat Pemberitahuan (SPT) Tahunan Pajak Penghasilan (PPh) Tahun pajak 2025 mencapai 8.783.653 hingga 22 Maret 2026,True,macro_policy,,,
-is_news,4764,finance_saved,WARTAEKONOMI,makro,"Cadangan Devisa Turun Jadi US$151,9 miliar di Februari 2026","Bank Indonesia (BI) mencatat posisi cadangan devisa Indonesia pada akhir Februari 2026 sebesar US$151,9 miliar. Angka tersebut turun sekitar US$ 2,7 miliar dibandingkan posisi pada akhir Januari 2026 ",True,macro_policy,,,
-is_news,3714,finance_saved,WARTAEKONOMI,industri,"Coretax jadi Revolusi Pajak Digital, tapi Riset Ini Hitung Ada Faktor Lain yang Menentukan Kepatuhan Wajib Pajak","Implementasi sistem Coretax sejak 1 Januari 2025 menjadi tonggak baru transformasi perpajakan nasional. Melalui sistem administrasi perpajakan digital yang terintegrasi, pemerintah berharap kepatuhan ",True,macro_policy,,,
-is_news,1079,finance_saved,WARTAEKONOMI,bisnis,Smesco Hubungkan UMKM dengan Bank dan Fintech untuk Perluas Pembiayaan,"Smesco Indonesia mempertemukan pelaku usaha mikro, kecil, dan menengah (UMKM) dengan perbankan serta perusahaan teknologi finansial (financial technology/fintech) melalui kegiatan Funding Day. Langkah",True,consumer,,,
-is_news,6335,finance_saved,WARTAEKONOMI,properti,Harga Rumah Tetap Naik Meski Permintaan Anjlok 25%,Harga properti residensial di pasar primer masih mencatat kenaikan pada triwulan I 2026 di tengah pelemahan permintaan dan penurunan penjualan rumah di berbagai segmen. Survei Harga Properti Residensi,True,consumer,,,
-is_news,12168,finance_saved,JPNN,ekonomi,"Triwulan II 2026 Bisnis Batu Bara Meningkat, Kinerja KAI Logistik Lampaui Target","jpnn.com , JAKARTA - KAI Logistik pada triwulan kedua 2026 mencatatkan geliat kinerja khususnya segmen penanganan batu bara yang dilayani melalui KALOG Pro.Momentum positif tersebut didorong kinerja d",True,corporate,,,
-is_news,1507,finance_saved,WARTAEKONOMI,bursa,"SIG Bukukan Pendapatan Rp8,29 Triliun di Kuartal I 2026, Volume Penjualan Tembus 8,71 Juta Ton",PT Semen Indonesia (Persero) Tbk (SIG) mencatat kinerja keuangan konsolidasian yang tetap tumbuh pada kuartal I 2026 di tengah tekanan industri semen domestik yang masih menghadapi overcapacity dan ke,True,corporate,,,
-is_news,5763,finance_saved,WARTAEKONOMI,pajak,"Deadline 31 Maret Mendekat, Ini Cara Lapor SPT di Coretax",Pelaporan SPT Tahunan Pajak Penghasilan (PPh) Orang Pribadi kini dilakukan melalui sistem Coretax yang dikembangkan Direktorat Jenderal Pajak sebagai bagian dari transformasi digital administrasi perp,True,macro_policy,,,
-is_news,77659,finance_pending,IDXCHANNEL,market-news,"Ekspor SDA Satu Pintu lewat DSI, Ini Kata Vale (INCO)",,True,commodities_energy,,,
-is_news,968,finance_pending,WARTAEKONOMI,bisnis,BM Emas Tawarkan Pilihan Perhiasan dan Logam Mulia untuk Semua Kalangan,,False,soft,,,
-is_news,82983,finance_pending,TVONENEWS,ekonomi,"Tring! Golden Run 2026 Sukses Digelar, Pegadaian Dorong Gaya Hidup Sehat Sekaligus Literasi Investasi Emas",,False,soft,,,
-is_news,99973,finance_pending,IDXCHANNEL,market-news,"Harga Emas Melemah Jelang Keputusan The Fed, Minyak  Picu Kekhawatiran Inflasi",,True,markets,,,
-is_news,6345,finance_pending,WARTAEKONOMI,properti,"Summarecon Perkuat Ekosistem Bisnis, Luncurkan Diamond Commercial",,True,corporate,,,
-is_news,100279,finance_pending,IDXCHANNEL,banking,"Perkuat Keamanan Vault Berstandar Global, Pegadaian Raih Sertifikasi ISO 9001:2015",,True,corporate,,,
-is_news,3876,finance_pending,WARTAEKONOMI,industri,"Jadi Distributor Tunggal, Suri Nusantara Jaya Bawa Daging Miyazaki Wagyu ke Indonesia",,True,corporate,,,
-is_news,100270,finance_pending,IDXCHANNEL,economics,Gus Ipul Tegaskan Lulusan Sekolah Rakyat Tak Boleh Nganggur,,True,health_education,,,
-is_news,99934,finance_pending,WARTAEKONOMI,perbankan,Konsolidasi Perbankan Masuk Revisi UUP2SK,,True,macro_policy,,,
-is_news,5937,finance_pending,WARTAEKONOMI,perbankan,"Sebarkan Manfaat Kurban, Bank Aladin Syariah Gandeng Muhammadiyah",,False,soft,,,
-is_news,13104,hard_news,JPNN,politik,Koalisi Masyarakat Sipil Soroti Menguatnya Militerisme hingga Ancaman Krisis Ekonomi,,True,politics_government,,,
-is_news,83304,hard_news,TVONENEWS,daerah,"Jelang Laga Persib, Ratusan Barang Berbahaya DIsita Polda Jabar",,False,soft,,,
-is_news,13607,hard_news,JPNN,abc-indonesia,"Upah yang Belum Dibayar, Penipuan Pajak, dan Uang yang Raib: Di Balik Industri Penyedia Tenaga Kerja di Australia","itu Dua tahun setelah mereka bekerja berjam-jam memetik sayuran salad yang akan disajikan di meja makan Natal warga Australia, Tommy dan Susilo masih belum dibayar.""Kita susah-susah bekerja, panas-pan",True,international,,,
-is_news,4930,hard_news,WARTAEKONOMI,megapolitan,"Pesan Pramono ke Pemudik: Jangan Iming-Imingi Saudaranya Sesuatu, Tidak Semua Orang Bisa Bertarung di Jakarta",,True,politics_government,,,
-is_news,11698,hard_news,JPNN,internasional,"Ucapkan Selamat Iduladha, Vladimir Putin Puji Peran Muslim Bangun Rusia",,True,international,,,
-is_news,4807,hard_news,WARTAEKONOMI,megapolitan,LRT Rute Velodrome-Manggarai Kapan Bisa Digunakan? Pramono: Full Operasi Agustus Nanti,,True,politics_government,,,
-is_news,11729,hard_news,JPNN,internasional,Menhut Dorong Produk Kehutanan Berkelanjutan Berkembang Pesat di Pasar AS,"jpnn.com , WASHINGTON DC - Kementerian Kehutanan bersama KBRI di Washington D.C., Asosiasi Pengusaha Hutan Indonesia (APHI) dan FKMPI menggelar webinar internasional bertajuk Navigating U.S
-
-Market Ac",True,commodities_energy,,,
-is_news,12071,hard_news,JPNN,daerah,SIM Keliling Bandung Hari Ini Senin 1 Juni 2026,,False,soft,,,
-is_news,79313,hard_news,KOMPAS,regional,Keluarga Korban Sebut Oknum TNI AL Juga Aniaya Lansia di Situbondo,"SITUBONDO, KOMPAS.com — Kasus penganiayaan yang dialami DN (19), warga Kelurahan Dawuhan, Kecamatan Situbondo, Kabupaten Situbondo, Jawa Timur, diduga bukan satu-satunya peristiwa yang melibatkan oknu",True,law_crime,,,
-is_news,7449,hard_news,SINDONEWS,nasional,11 Kapolda Lulusan Akpol 1994 Teman Satu Angkatan Kapolda Metro Jaya Komjen Pol Asep Edi Suheri,,True,politics_government,,,
-is_news,10752,soft_category,CNBC,lifestyle,Penampakan Kamar Super Mewah The Trans Luxury Hotel Surabaya,,False,soft,,,
-is_news,75815,soft_category,GRIDID,GridHealth,Vidi Aldiano Sakit Apa? Begini Perjalanan Penyakit Kanker Ginjal yang Dideritanya,,False,soft,,,
-is_news,94201,soft_category,MEDIAINDONESIA,piala-dunia-2026,Martin Experience tidak Sabar Bela Haiti Hadapi Brasil di Piala Dunia 2026,,False,soft,,,
-is_news,104438,soft_category,IDNTIMES,life,5 Hobi Baru untuk Mengisi Waktu Luang dengan Lebih Seru,,False,soft,,,
-is_news,12825,soft_category,JPNN,donwori,ART Demen Berdaster Bikin Majikan Ngiler,,False,soft,,,
-is_news,86099,soft_category,CNBC,lifestyle,"10 Negara Asia Paling Percaya Hal Mistis, Malaysia Nomor 1",,False,soft,,,
-is_news,106077,soft_category,INEWS,https://www.inews.id/inews-tv/religi/sitemap.xml,"CAHAYA HATI INDONESIA: Sedikit Mempelajari Alquran, Bikin Susah Bersyukur",,False,soft,,,
-is_news,13921,soft_category,JPNN,travel,Panduan &amp; Tips Mengunjungi Nara Agar Liburan Makin Berkesan,,False,soft,,,
-is_news,77261,soft_category,GRIDID,Sajian,"Cara Ampuh Memisahkan Kuning Telur Tanpa Alat, Pemula Langsung Bisa",,False,soft,,,
-is_news,76184,soft_category,GRIDID,GridID,"Rutinitas Wajib Nikita Willy setelah Mandi, Cuma Butuh Waktu 5 Menit",,False,soft,,,
-topic,103142,finance_saved,SUARA,bisnis,7 Perusahaan Lagi Antre IPO Tahun Ini,"- Otoritas Jasa Keuangan mencatat tujuh perusahaan berada dalam proses penawaran umum perdana saham per enam September dua ribu dua puluh enam.
-- Tujuh perusahaan tersebut memiliki perkiraan target da",True,markets,,,
-topic,103298,finance_saved,ANTARANEWS,Bursa,"IHSG menguat seiring kenaikan bunga The Fed sudah di ""priced in"" pasar",Jakarta (ANTARA) - Indeks Harga Saham Gabungan (IHSG) Bursa Efek Indonesia (BEI) pada Kamis bergerak menguat seiring kenaikan suku bunga acuan The Fed sudah di-priced in (dilakukan penyesuaian harga t,True,markets,,,
-topic,103219,finance_saved,SUARA,bisnis,"Rupiah Kembali Loyo, Tekanan Dolar dan Minyak Dunia Menghantui","- Rupiah ditutup Rp17.694 per dolar AS, melemah 0,14%.
+Flamulina velutipes atau jamur ";TRUE;health_education;TRUE;;
+is_news;33651;econ_politics_boundary;PIKIRANRAKYAT;PrianganTimurNews;Laporkan Jika Ada Penyimpangan! DPRD Kalsel Ajak Warga Aktif Awasi Penyaluran BBM Bersubsidi;PRIANGANTIMURNEWS - Pengawasan distribusi BBM bersubsidi tidak hanya menjadi tanggung jawab pemerintah dan aparat terkait, tetapi juga membutuhkan peran aktif masyarakat agar bantuan energi tersebut b;TRUE;commodities_energy;TRUE;;
+is_news;1507;finance_saved;WARTAEKONOMI;bursa;SIG Bukukan Pendapatan Rp8,29 Triliun di Kuartal I 2026, Volume Penjualan Tembus 8,71 Juta Ton;PT Semen Indonesia (Persero) Tbk (SIG) mencatat kinerja keuangan konsolidasian yang tetap tumbuh pada kuartal I 2026 di tengah tekanan industri semen domestik yang masih menghadapi overcapacity dan ke;TRUE;corporate;TRUE;;
+is_news;79313;hard_news;KOMPAS;regional;Keluarga Korban Sebut Oknum TNI AL Juga Aniaya Lansia di Situbondo;SITUBONDO, KOMPAS.com — Kasus penganiayaan yang dialami DN (19), warga Kelurahan Dawuhan, Kecamatan Situbondo, Kabupaten Situbondo, Jawa Timur, diduga bukan satu-satunya peristiwa yang melibatkan oknu;TRUE;law_crime;TRUE;;
+is_news;1079;finance_saved;WARTAEKONOMI;bisnis;Smesco Hubungkan UMKM dengan Bank dan Fintech untuk Perluas Pembiayaan;Smesco Indonesia mempertemukan pelaku usaha mikro, kecil, dan menengah (UMKM) dengan perbankan serta perusahaan teknologi finansial (financial technology/fintech) melalui kegiatan Funding Day. Langkah;TRUE;consumer;TRUE;;
+is_news;2678;soft_save;WARTAEKONOMI;english_edition;Indonesia: From Middle Power to Leading Value Creator in a Fragmented World;The global economy is undergoing a quiet but decisive reordering. Traditional economic hierarchies, long dominated by the United States and Europe, are giving way to a more distributed system shaped b;TRUE;international;TRUE;;
+topic;100205;finance_pending;IDXCHANNEL;economics;Arab Saudi Temukan Mineral Tanah Jarang di Madinah, Ada 31 Ribu Ton Uranium;;TRUE;commodities_energy;;commodities_energy;
+topic;77677;finance_reject;IDXCHANNEL;market-news;Antam (ANTM) Buka Suara soal Sistem Ekspor SDA Nasional Kini lewat PT DSI;;TRUE;commodities_energy;;commodities_energy;
+topic;80757;finance_reject;KUMPARAN;bisnis;Produksi Gandum Australia Merosot Imbas Cuaca dan Perang di Iran;;TRUE;commodities_energy;;commodities_energy;
+topic;30975;mixed_bucket;PIKIRANRAKYAT;Pangandaran;Reaktivasi Jalur Kereta Bandung Pangandaran Prioritas Utama Jawa Barat Demi Turis Murah;;TRUE;consumer;;consumer;
+topic;6184;finance_reject;WARTAEKONOMI;perbankan;BRI Kanwil II Jakarta Kerahkan 55 Armada Angkut Ribuan Pemudik ke Jateng & Jatim;;TRUE;consumer;;consumer;
+topic;12226;finance_reject;JPNN;ekonomi;Strategi Marco Travel Atasi Kenaikan Harga Umrah-Haji Akibat Konflik Timur Tengah;;TRUE;consumer;;consumer;
+topic;85909;finance_reject;CNBC;market;Emiten Anak Hashim Kerja Sama dengan Telkom;;TRUE;corporate;;corporate;
+topic;38862;finance_pending;VIVA;bisnis;Perkuat Operasional dan Profitabilitas, AirAsia Borong 150 Unit Airbus A220 Senilai US$19 Miliar;;TRUE;corporate;;corporate;
+topic;3335;finance_reject;WARTAEKONOMI;green_economy;Inilah Rahasia Pertamina Geothermal (PGEO) Area Ulubelu Raih Emas di PROPER 2026;;TRUE;corporate;;corporate;
+topic;79199;hard_news;KOMPAS;megapolitan;Kebakaran Kemayoran Jakpus: 8 Warga Dilarikan ke RS karena Sesak Napas;;TRUE;disaster_accident;;disaster_accident;
+topic;33153;mixed_bucket;PIKIRANRAKYAT;PortalPurwokerto;Jalan Amblas di Kutasari Baturraden, Arus Lalu Lintas Dialihkan dari Tugu Batu hingga Pasar Pamijen;;TRUE;disaster_accident;;disaster_accident;
+topic;66585;viva_general;VIVA;https://jateng.viva.co.id/sitemap/news/news-sitemap.xml;Ini Puluhan Titik Rawan Macet dan Bencana di Jalur Mudik Jawa Tengah;;TRUE;disaster_accident;;disaster_accident;
+topic;79256;hard_news;KOMPAS;megapolitan;Mencari Jejak Banjir Tangsel di Aliran Kali Ciputat...;;TRUE;disaster_accident;;disaster_accident;
+topic;8505;mixed_bucket;SINDONEWS;edukasi;Begini Mekanisme Penyampaian Sertifikat Hasil TKA 2026, Cek Alur Resminya;;TRUE;health_education;;health_education;
+topic;120770;religion_boundary;INEWS;lamongan;Kemenag Batasi Penggunaan HP di Sekolah, Siswa Hanya Boleh Pakai untuk Belajar;;TRUE;health_education;;health_education;
+topic;89600;mixed_bucket;MEDIAINDONESIA;infografis;Waspadai Gangguan Ginjal Akut Misterius pada Anak;;TRUE;health_education;;health_education;
+topic;128607;religion_boundary;INEWS;tasikmalaya;Kemenag Batasi Penggunaan Ponsel di Sekolah, Orang Tua Diminta Atur Waktu Gawai Anak;;TRUE;health_education;;health_education;
+topic;101661;hard_news;TRIBUN;internasional;Iran Siapkan 3 Skenario Hadapi AS: Perang, Gencatan Senjata, hingga Damai;;TRUE;international;;international;
+topic;3690;finance_reject;WARTAEKONOMI;industri;Indonesia dan Cina Teken Perjanjian Halal Pertama Antar Pemerintah, Ada Konsep 'HALAL+';;TRUE;international;;international;
+topic;5777;finance_reject;WARTAEKONOMI;pajak;Tiga Butik Tiffany Disegel, Bea Cukai Bongkar Dugaan Pelanggaran Impor;;TRUE;law_crime;;law_crime;
+topic;113935;mixed_bucket;INEWS;palu;Video Viral Perundungan Anak di Wirosari Grobogan, Korban Alami Lebam dan Sempat Tak Masuk Sekolah;;TRUE;law_crime;;law_crime;
+topic;83432;hard_news;TVONENEWS;daerah;Komnas HAM Nyatakan Kasus Little Aresha Bukan Pelanggaran HAM Berat, Pemkot Diminta Awasi Daycare Ilegal;;TRUE;law_crime;;law_crime;
+topic;3389;hard_news;WARTAEKONOMI;hukum;4 Unit Rolex Milik Fadia Arafiq Raib Saat OTT, KPK Panggil Saksi Ritel Jam Mewah;;TRUE;law_crime;;law_crime;
+topic;89352;econ_politics_boundary;MEDIAINDONESIA;infografis;Infografis Capaian Ekonomi Nasional Setahun Pemerintahan Presiden Prabowo Subianto;;TRUE;macro_policy;;macro_policy;
+topic;820;finance_reject;WARTAEKONOMI;asuransi;Baru 32 Persen Pekerja Terdaftar, Muhaimin Dorong Perluasan BPJS Ketenagakerjaan;;TRUE;macro_policy;;macro_policy;
+topic;3804;finance_reject;WARTAEKONOMI;industri;Pasca Temuan Bahan Pakan Ternak Mengandung Porcine, BPJPH dan Barantin Perkuat Pengawasan Impor untuk Pastikan Produk Sehat dan Halal;;TRUE;other_news;;consumer;
+topic;74726;viva_general;VIVA;https://tangerang.viva.co.id/sitemap/news/news-sitemap.xml;Menyentuh! 477 Gereja Katolik di Indonesia Siapkan Tempat Singgah Gratis untuk Pemudik Lebaran 2026;;TRUE;other_news;;other_news;
+topic;119124;mixed_bucket;INEWS;siantar;Telaah Kritis KEHATI: Pentingnya Menyeimbangkan Mitigasi dan Adaptasi Iklim;;TRUE;other_news;;other_news;
+topic;16175;mixed_bucket;JPNN;https://jabar.jpnn.com/sitemap_post_politik.xml;Musda Golkar Jabar Jadi Ajang Adu Kekuatan Ahmad Hidayat vs Daniel Mutaqien Syafiuddin;;TRUE;politics_government;;politics_government;
+topic;13085;hard_news;JPNN;politik;Respons Dinamika Global, PKS Perkokoh Pondasi Bangsa;;TRUE;politics_government;;politics_government;
+topic;16220;mixed_bucket;JPNN;https://jabar.jpnn.com/sitemap_post_politik.xml;154 Desa di Kabupaten Bekasi Siap Menggelar Pilkades Digital;;TRUE;politics_government;;politics_government;
+topic;85800;mixed_bucket;CNN;https://www.cnnindonesia.com/internasional/sitemap_news.xml;AS Uji Coba Robot Tentara Humanoid Bantu Ukraina Lawan Rusia;;TRUE;tech_science;;tech_science;
+topic;82934;finance_reject;TVONENEWS;ekonomi;ITD Summit 2026: TelkomGroup Tunjukkan AI Sudah Jadi Alat Kerja Nyata, Bukan Cuma Tren;;TRUE;tech_science;;tech_science;
+topic;102618;mixed_bucket;CNBC;mymoney;Video: Pakai AI, Bank Digital Bikin Transakssi Nasabah Cepat & Aman;;TRUE;tech_science;;tech_science;
+topic;23723;mixed_bucket;PIKIRANRAKYAT;CianjurPedia;Apple Uji AKhir AirPods yang Dibekali Kamera;;TRUE;tech_science;;tech_science;
+topic;103052;finance_saved;SUARA;bisnis;Jakarta-Depok Turun, Rumah di Bekasi-Tangerang Paling Banyak Diburu Konsumen;"- Minat beli rumah di Jakarta dan Depok menurun pada Kuartal II 2026 berdasarkan data Pinhome.
+- Kawasan penyangga seperti Bekasi, Tangerang, dan Bogor justru mencatatkan penguatan minat beli rumah.
+-";TRUE;consumer;;consumer;
+topic;103142;finance_saved;SUARA;bisnis;7 Perusahaan Lagi Antre IPO Tahun Ini;"- Otoritas Jasa Keuangan mencatat tujuh perusahaan berada dalam proses penawaran umum perdana saham per enam September dua ribu dua puluh enam.
+- Tujuh perusahaan tersebut memiliki perkiraan target da";TRUE;markets;;markets;
+topic;103219;finance_saved;SUARA;bisnis;Rupiah Kembali Loyo, Tekanan Dolar dan Minyak Dunia Menghantui;"- Rupiah ditutup Rp17.694 per dolar AS, melemah 0,14%.
 - Dolar, yield AS, dan minyak dunia menekan rupiah.
 - Pasar menanti keputusan dan sikap The Fed besok.
-Suara.com - Rupiah kembali ke zona merah p",True,markets,,,
-topic,14009,finance_saved,JPNN,crypto,"Cadangan Aset INDODAX Tembus Rp18 Triliun, Sinyal Pasar Kripto Menguat?","jpnn.com , JAKARTA - Proof of Reserves (PoR) INDODAX telah menembus USD 1 miliar atau Rp18 Triliun, berdasarkan data yang ditampilkan pada fitur Proof of Reserves di CoinMarketCap.William Sutanto, CEO",True,markets,,,
-topic,18796,mixed_bucket,JPNN,https://lampung.jpnn.com/sitemap_post_lampung-terkini.xml,Lampung Timur Mengalami Inflasi Tertinggi Periode Maret 2024,"lampung.jpnn.com , BANDAR LAMPUNG - Badan Pusat Statistik (BPS) Provinsi Lampung mencatat Kabupaten Lampung Timur menjadi inflasi tertinggi periode Maret 2024.Atas hasil tersebut, inflasi Provinsi Lam",True,macro_policy,,,
-topic,89352,econ_politics_boundary,MEDIAINDONESIA,infografis,Infografis Capaian Ekonomi Nasional Setahun Pemerintahan Presiden Prabowo Subianto,,True,macro_policy,,,
-topic,101485,finance_saved,TRIBUN,bisnis,Dirjen Pajak Sebut Ada 'Nama-nama Ajaib' dalam Perombakan Pejabat DJP yang Dilakukan Purbaya,"TRIBUNNEWS.COM, JAKARTA - Direktur Jenderal Pajak Bimo Wijayanto mengungkap adanya sejumlah nama dalam proses rotasi pejabat di lingkungan Direktorat Jenderal Pajak (DJP), yang menurutnya tidak mengik",True,macro_policy,,,
-topic,820,finance_reject,WARTAEKONOMI,asuransi,"Baru 32 Persen Pekerja Terdaftar, Muhaimin Dorong Perluasan BPJS Ketenagakerjaan",,True,macro_policy,,,
-topic,85909,finance_reject,CNBC,market,Emiten Anak Hashim Kerja Sama dengan Telkom,,True,corporate,,,
-topic,38862,finance_pending,VIVA,bisnis,"Perkuat Operasional dan Profitabilitas, AirAsia Borong 150 Unit Airbus A220 Senilai US$19 Miliar",,True,corporate,,,
-topic,419,finance_saved,WARTAEKONOMI,agribisnis,"Tempe RI Tembus Chile, Dibidik Jadi Produk Global di Amerika Latin",Ekspansi produk pangan Indonesia ke pasar global kembali menunjukkan perkembangan baru setelah tempe mulai menembus pasar Amerika Latin. Chile dipilih sebagai pintu masuk awal untuk memperluas distrib,True,corporate,,,
-topic,3335,finance_reject,WARTAEKONOMI,green_economy,Inilah Rahasia Pertamina Geothermal (PGEO) Area Ulubelu Raih Emas di PROPER 2026,,True,corporate,,,
-topic,100205,finance_pending,IDXCHANNEL,economics,"Arab Saudi Temukan Mineral Tanah Jarang di Madinah, Ada 31 Ribu Ton Uranium",,True,commodities_energy,,,
-topic,77677,finance_reject,IDXCHANNEL,market-news,Antam (ANTM) Buka Suara soal Sistem Ekspor SDA Nasional Kini lewat PT DSI,,True,commodities_energy,,,
-topic,2575,religion_boundary,WARTAEKONOMI,energi,"Bahlil Tegaskan Tarif Royalti Minerba Baru Masih Tahap Kajian, Belum Final","Menteri Energi dan Sumber Daya Mineral (ESDM), Bahlil Lahadalia, menegaskan bahwa wacana penyesuaian tarif royalti mineral dan batu bara (minerba) saat ini masih dalam tahap kajian mendalam dan belum ",True,commodities_energy,,,
-topic,80757,finance_reject,KUMPARAN,bisnis,Produksi Gandum Australia Merosot Imbas Cuaca dan Perang di Iran,,True,commodities_energy,,,
-topic,30975,mixed_bucket,PIKIRANRAKYAT,Pangandaran,Reaktivasi Jalur Kereta Bandung Pangandaran Prioritas Utama Jawa Barat Demi Turis Murah,,True,consumer,,,
-topic,6184,finance_reject,WARTAEKONOMI,perbankan,BRI Kanwil II Jakarta Kerahkan 55 Armada Angkut Ribuan Pemudik ke Jateng & Jatim,,True,consumer,,,
-topic,12226,finance_reject,JPNN,ekonomi,Strategi Marco Travel Atasi Kenaikan Harga Umrah-Haji Akibat Konflik Timur Tengah,,True,consumer,,,
-topic,103052,finance_saved,SUARA,bisnis,"Jakarta-Depok Turun, Rumah di Bekasi-Tangerang Paling Banyak Diburu Konsumen","- Minat beli rumah di Jakarta dan Depok menurun pada Kuartal II 2026 berdasarkan data Pinhome.
-- Kawasan penyangga seperti Bekasi, Tangerang, dan Bogor justru mencatatkan penguatan minat beli rumah.
--",True,consumer,,,
-topic,16175,mixed_bucket,JPNN,https://jabar.jpnn.com/sitemap_post_politik.xml,Musda Golkar Jabar Jadi Ajang Adu Kekuatan Ahmad Hidayat vs Daniel Mutaqien Syafiuddin,,True,politics_government,,,
-topic,13085,hard_news,JPNN,politik,"Respons Dinamika Global, PKS Perkokoh Pondasi Bangsa",,True,politics_government,,,
-topic,16220,mixed_bucket,JPNN,https://jabar.jpnn.com/sitemap_post_politik.xml,154 Desa di Kabupaten Bekasi Siap Menggelar Pilkades Digital,,True,politics_government,,,
-topic,18487,mixed_bucket,JPNN,https://kaltim.jpnn.com/sitemap_post_politik.xml,"Tim Transisi Pemerintahan Rudy-Seno Dibentuk, Rusmadi Wongso Jadi Ketua","kaltim.jpnn.com , SAMARINDA - Tim Transisi pemerintahan yang akan membantu proses peralihan kekuasaan dari Penjabat Gubernur Kaltim Akmal Malik kepada Rudy Mas'ud dan Seno Ajo sudah dibentuk.Rusmadi W",True,politics_government,,,
-topic,5777,finance_reject,WARTAEKONOMI,pajak,"Tiga Butik Tiffany Disegel, Bea Cukai Bongkar Dugaan Pelanggaran Impor",,True,law_crime,,,
-topic,113935,mixed_bucket,INEWS,palu,"Video Viral Perundungan Anak di Wirosari Grobogan, Korban Alami Lebam dan Sempat Tak Masuk Sekolah",,True,law_crime,,,
-topic,83432,hard_news,TVONENEWS,daerah,"Komnas HAM Nyatakan Kasus Little Aresha Bukan Pelanggaran HAM Berat, Pemkot Diminta Awasi Daycare Ilegal",,True,law_crime,,,
-topic,3389,hard_news,WARTAEKONOMI,hukum,"4 Unit Rolex Milik Fadia Arafiq Raib Saat OTT, KPK Panggil Saksi Ritel Jam Mewah",,True,law_crime,,,
-topic,79199,hard_news,KOMPAS,megapolitan,Kebakaran Kemayoran Jakpus: 8 Warga Dilarikan ke RS karena Sesak Napas,,True,disaster_accident,,,
-topic,33153,mixed_bucket,PIKIRANRAKYAT,PortalPurwokerto,"Jalan Amblas di Kutasari Baturraden, Arus Lalu Lintas Dialihkan dari Tugu Batu hingga Pasar Pamijen",,True,disaster_accident,,,
-topic,66585,viva_general,VIVA,https://jateng.viva.co.id/sitemap/news/news-sitemap.xml,Ini Puluhan Titik Rawan Macet dan Bencana di Jalur Mudik Jawa Tengah,,True,disaster_accident,,,
-topic,79256,hard_news,KOMPAS,megapolitan,Mencari Jejak Banjir Tangsel di Aliran Kali Ciputat...,,True,disaster_accident,,,
-topic,101661,hard_news,TRIBUN,internasional,"Iran Siapkan 3 Skenario Hadapi AS: Perang, Gencatan Senjata, hingga Damai",,True,international,,,
-topic,26476,mixed_bucket,PIKIRANRAKYAT,JakbarNews,"Presiden Baru Sri Lanka Temui Para Biarawan di Kuil, Ada Misi Penting yang Dilakukan untuk Selamatkan Negara","JakBarNews.com - Presiden baru Sri Lanka, Ranil Wickremesinghe, melakukan pertemuan dengan para biarawan berpengaruh dari Kuil Gigi di Kandy pada Sabtu, 30 Juli 2022.
-Kuil Gigi merupakan salah satu te",True,international,,,
-topic,3690,finance_reject,WARTAEKONOMI,industri,"Indonesia dan Cina Teken Perjanjian Halal Pertama Antar Pemerintah, Ada Konsep 'HALAL+'",,True,international,,,
-topic,7926,hard_news,SINDONEWS,international,"PM Ceko Sebut Uni Eropa Mengikuti Jejak Kemunduran Kekaisaran Romawi, Ini 3 Alasannya","PRAHA - Perdana Menteri Ceko Andrej Babis membandingkan Uni Eropa dengan Kekaisaran Romawi di masa senjanya, dengan alasan bahwa Brussels melemahkan blok tersebut melalui kebijakan ekonomi, iklim, dan",True,international,,,
-topic,85800,mixed_bucket,CNN,https://www.cnnindonesia.com/internasional/sitemap_news.xml,AS Uji Coba Robot Tentara Humanoid Bantu Ukraina Lawan Rusia,,True,tech_science,,,
-topic,82934,finance_reject,TVONENEWS,ekonomi,"ITD Summit 2026: TelkomGroup Tunjukkan AI Sudah Jadi Alat Kerja Nyata, Bukan Cuma Tren",,True,tech_science,,,
-topic,102618,mixed_bucket,CNBC,mymoney,"Video: Pakai AI, Bank Digital Bikin Transakssi Nasabah Cepat & Aman",,True,tech_science,,,
-topic,23723,mixed_bucket,PIKIRANRAKYAT,CianjurPedia,Apple Uji AKhir AirPods yang Dibekali Kamera,,True,tech_science,,,
-topic,8505,mixed_bucket,SINDONEWS,edukasi,"Begini Mekanisme Penyampaian Sertifikat Hasil TKA 2026, Cek Alur Resminya",,True,health_education,,,
-topic,120770,religion_boundary,INEWS,lamongan,"Kemenag Batasi Penggunaan HP di Sekolah, Siswa Hanya Boleh Pakai untuk Belajar",,True,health_education,,,
-topic,89600,mixed_bucket,MEDIAINDONESIA,infografis,Waspadai Gangguan Ginjal Akut Misterius pada Anak,,True,health_education,,,
-topic,128607,religion_boundary,INEWS,tasikmalaya,"Kemenag Batasi Penggunaan Ponsel di Sekolah, Orang Tua Diminta Atur Waktu Gawai Anak",,True,health_education,,,
-topic,3804,finance_reject,WARTAEKONOMI,industri,"Pasca Temuan Bahan Pakan Ternak Mengandung Porcine, BPJPH dan Barantin Perkuat Pengawasan Impor untuk Pastikan Produk Sehat dan Halal",,True,other_news,,,
-topic,79058,hard_news,KOMPAS,nasional,Menhan Sjafrie Sebut Ryamizard Ryacudu Teladan bagi Prajurit,"JAKARTA, KOMPAS.com - Menteri Pertahanan (Menhan) Sjafrie Sjamsoeddin mengenang mantan Menhan Ryamizard Ryacudu sebagai sosok yang menjadi teladan bagi para prajurit dan tak menyukai tindakan-tindakan",True,other_news,,,
-topic,74726,viva_general,VIVA,https://tangerang.viva.co.id/sitemap/news/news-sitemap.xml,Menyentuh! 477 Gereja Katolik di Indonesia Siapkan Tempat Singgah Gratis untuk Pemudik Lebaran 2026,,True,other_news,,,
-topic,119124,mixed_bucket,INEWS,siantar,Telaah Kritis KEHATI: Pentingnya Menyeimbangkan Mitigasi dan Adaptasi Iklim,,True,other_news,,,
+Suara.com - Rupiah kembali ke zona merah p";TRUE;markets;;markets;
+topic;419;finance_saved;WARTAEKONOMI;agribisnis;Tempe RI Tembus Chile, Dibidik Jadi Produk Global di Amerika Latin;Ekspansi produk pangan Indonesia ke pasar global kembali menunjukkan perkembangan baru setelah tempe mulai menembus pasar Amerika Latin. Chile dipilih sebagai pintu masuk awal untuk memperluas distrib;TRUE;corporate;;corporate;
+topic;103298;finance_saved;ANTARANEWS;Bursa;"IHSG menguat seiring kenaikan bunga The Fed sudah di ""priced in"" pasar";Jakarta (ANTARA) - Indeks Harga Saham Gabungan (IHSG) Bursa Efek Indonesia (BEI) pada Kamis bergerak menguat seiring kenaikan suku bunga acuan The Fed sudah di-priced in (dilakukan penyesuaian harga t;TRUE;markets;;markets;
+topic;79058;hard_news;KOMPAS;nasional;Menhan Sjafrie Sebut Ryamizard Ryacudu Teladan bagi Prajurit;JAKARTA, KOMPAS.com - Menteri Pertahanan (Menhan) Sjafrie Sjamsoeddin mengenang mantan Menhan Ryamizard Ryacudu sebagai sosok yang menjadi teladan bagi para prajurit dan tak menyukai tindakan-tindakan;TRUE;other_news;;other_news;
+topic;26476;mixed_bucket;PIKIRANRAKYAT;JakbarNews;Presiden Baru Sri Lanka Temui Para Biarawan di Kuil, Ada Misi Penting yang Dilakukan untuk Selamatkan Negara;"JakBarNews.com - Presiden baru Sri Lanka, Ranil Wickremesinghe, melakukan pertemuan dengan para biarawan berpengaruh dari Kuil Gigi di Kandy pada Sabtu, 30 Juli 2022.
+Kuil Gigi merupakan salah satu te";TRUE;international;;international;
+topic;14009;finance_saved;JPNN;crypto;Cadangan Aset INDODAX Tembus Rp18 Triliun, Sinyal Pasar Kripto Menguat?;jpnn.com , JAKARTA - Proof of Reserves (PoR) INDODAX telah menembus USD 1 miliar atau Rp18 Triliun, berdasarkan data yang ditampilkan pada fitur Proof of Reserves di CoinMarketCap.William Sutanto, CEO;TRUE;markets;;markets;
+topic;18487;mixed_bucket;JPNN;https://kaltim.jpnn.com/sitemap_post_politik.xml;Tim Transisi Pemerintahan Rudy-Seno Dibentuk, Rusmadi Wongso Jadi Ketua;kaltim.jpnn.com , SAMARINDA - Tim Transisi pemerintahan yang akan membantu proses peralihan kekuasaan dari Penjabat Gubernur Kaltim Akmal Malik kepada Rudy Mas'ud dan Seno Ajo sudah dibentuk.Rusmadi W;TRUE;politics_government;;politics_government;
+topic;18796;mixed_bucket;JPNN;https://lampung.jpnn.com/sitemap_post_lampung-terkini.xml;Lampung Timur Mengalami Inflasi Tertinggi Periode Maret 2024;lampung.jpnn.com , BANDAR LAMPUNG - Badan Pusat Statistik (BPS) Provinsi Lampung mencatat Kabupaten Lampung Timur menjadi inflasi tertinggi periode Maret 2024.Atas hasil tersebut, inflasi Provinsi Lam;TRUE;macro_policy;;macro_policy;
+topic;2575;religion_boundary;WARTAEKONOMI;energi;Bahlil Tegaskan Tarif Royalti Minerba Baru Masih Tahap Kajian, Belum Final;Menteri Energi dan Sumber Daya Mineral (ESDM), Bahlil Lahadalia, menegaskan bahwa wacana penyesuaian tarif royalti mineral dan batu bara (minerba) saat ini masih dalam tahap kajian mendalam dan belum ;TRUE;commodities_energy;;commodities_energy;
+topic;7926;hard_news;SINDONEWS;international;PM Ceko Sebut Uni Eropa Mengikuti Jejak Kemunduran Kekaisaran Romawi, Ini 3 Alasannya;PRAHA - Perdana Menteri Ceko Andrej Babis membandingkan Uni Eropa dengan Kekaisaran Romawi di masa senjanya, dengan alasan bahwa Brussels melemahkan blok tersebut melalui kebijakan ekonomi, iklim, dan;TRUE;international;;international;
+topic;101485;finance_saved;TRIBUN;bisnis;Dirjen Pajak Sebut Ada 'Nama-nama Ajaib' dalam Perombakan Pejabat DJP yang Dilakukan Purbaya;TRIBUNNEWS.COM, JAKARTA - Direktur Jenderal Pajak Bimo Wijayanto mengungkap adanya sejumlah nama dalam proses rotasi pejabat di lingkungan Direktorat Jenderal Pajak (DJP), yang menurutnya tidak mengik;TRUE;macro_policy;;macro_policy;

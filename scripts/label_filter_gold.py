@@ -551,9 +551,19 @@ def cmd_handcheck(args) -> int:
     return 0
 
 
+def read_handcheck_csv(path: str) -> List[dict]:
+    """The owner fills the CSV in Excel, which saves it back with a UTF-8 BOM,
+    the locale's delimiter (`;` here) and TRUE/FALSE upper-cased. utf-8-sig
+    eats the BOM; the delimiter is sniffed from the header line."""
+    with open(path, encoding="utf-8-sig", newline="") as f:
+        header = f.readline()
+        f.seek(0)
+        delimiter = max((",", ";", "\t"), key=header.count)
+        return list(csv.DictReader(f, delimiter=delimiter))
+
+
 def cmd_score_handcheck(args) -> int:
-    with open(args.csv, encoding="utf-8", newline="") as f:
-        rows = list(csv.DictReader(f))
+    rows = read_handcheck_csv(args.csv)
     truthy = {"true": True, "false": False, "1": True, "0": False, "yes": True, "no": False, "y": True, "n": False}
     n_news = agree_news = n_topic = agree_topic = 0
     disagreements = []

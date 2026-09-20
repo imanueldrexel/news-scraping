@@ -159,3 +159,27 @@ class TestParseLabels:
 
     def test_payload_is_id_headline_body(self):
         assert batch_payload(self.BATCH) == '[{"id": 1, "headline": "a", "body_head": null}, {"id": 2, "headline": "b", "body_head": "x"}]'
+
+
+class TestReadHandcheckCsv:
+    """The owner fills the hand-check in Excel, which writes a UTF-8 BOM, a
+    `;` delimiter and TRUE/FALSE upper-cased. The reader must not care."""
+
+    def _write(self, tmp_path, text, encoding="utf-8-sig"):
+        p = tmp_path / "hc.csv"
+        with open(p, "w", encoding=encoding, newline="") as f:
+            f.write(text)
+        return str(p)
+
+    def test_excel_semicolon_with_bom(self, tmp_path):
+        from label_filter_gold import read_handcheck_csv
+        rows = read_handcheck_csv(self._write(
+            tmp_path, "check;sitemap_id;headline;model_is_news;human_is_news\r\nis_news;1;A, b;True;FALSE\r\n"))
+        assert rows == [{"check": "is_news", "sitemap_id": "1", "headline": "A, b",
+                         "model_is_news": "True", "human_is_news": "FALSE"}]
+
+    def test_plain_comma_without_bom_still_works(self, tmp_path):
+        from label_filter_gold import read_handcheck_csv
+        rows = read_handcheck_csv(self._write(
+            tmp_path, 'check,sitemap_id,headline,model_is_news,human_is_news\nis_news,1,"A; b",True,true\n', "utf-8"))
+        assert rows[0]["headline"] == "A; b" and rows[0]["human_is_news"] == "true"
