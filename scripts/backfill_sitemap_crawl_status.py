@@ -7,6 +7,13 @@ symptom), so the headline is the only signal available without re-fetching from
 the network -- a reasonable approximation of the original title+body decision,
 not a re-run of it.
 
+DBT-29 (#107): the category deny-list added by SYS-31 (#86) is applied here
+too, before the headline score, mirroring SemanticImportanceFilter.is_important's
+own ordering -- a row whose category is off-topic (e.g. "hiburan") is rejected
+regardless of what its bare headline scores.
+
+- category is off-topic (SYS-31)   -> crawl_status = 'rejected_filter',
+                                       headline score never computed
 - headline fails the filter        -> crawl_status = 'rejected_filter' (excluded
                                        from load_all_sitemaps permanently)
 - headline is blank/whitespace-only -> crawl_status = 'empty_extraction' (keeps the
@@ -43,7 +50,7 @@ from sqlalchemy import text
 from sentence_transformers import util
 
 from newscrawler.core.constants import INTERESTS
-from newscrawler.core.importance_filter import SemanticImportanceFilter
+from newscrawler.core.importance_filter import SemanticImportanceFilter, is_offtopic_category
 from newscrawler.infrastructure.network.clients.sqlalchemy_client import SQLAlchemyClient
 
 logging.basicConfig(format="%(asctime)s %(levelname)s %(message)s")
@@ -51,7 +58,7 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 _FETCH_SQL = text("""
-    SELECT s.sitemap_id, s.headline
+    SELECT s.sitemap_id, s.headline, s.category
     FROM sitemaps s
     WHERE s.crawl_status = 'pending'
       AND s.last_crawl_attempt IS NOT NULL
@@ -61,12 +68,20 @@ _FETCH_SQL = text("""
 """)
 
 
-def classify_batch(filter_: SemanticImportanceFilter, headlines):
+def classify_batch(filter_: SemanticImportanceFilter, headlines, categories):
     """Same decision as SemanticImportanceFilter.is_important(), but batch-encoded
     (one matrix operation for the whole batch instead of one model.encode() call
     per headline) -- the only way this finishes in a reasonable time over ~73k rows.
+
+    DBT-29 (#107): SYS-31 made the live filter reject a row by category (via
+    is_offtopic_category) before it ever scores the text -- mirror that same
+    ordering here, so a headline like "Rupiah Menguat" under category="hiburan"
+    is rejected regardless of what it scores.
     """
-    non_blank_idx = [i for i, h in enumerate(headlines) if h and h.strip()]
+    non_blank_idx = [
+        i for i, h in enumerate(headlines)
+        if h and h.strip() and not is_offtopic_category(categories[i])
+    ]
     is_important = [False] * len(headlines)
     if non_blank_idx:
         embeddings = filter_.model.encode([headlines[i] for i in non_blank_idx], convert_to_tensor=True)
@@ -99,7 +114,8 @@ def main():
     for start in range(0, len(rows), args.batch_size):
         chunk = rows[start:start + args.batch_size]
         headlines = [r.headline or "" for r in chunk]
-        important = classify_batch(filter_, headlines)
+        categories = [r.category for r in chunk]
+        important = classify_batch(filter_, headlines, categories)
 
         for row, headline, imp in zip(chunk, headlines, important):
             if imp:
