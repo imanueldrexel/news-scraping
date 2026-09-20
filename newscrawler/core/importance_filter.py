@@ -125,11 +125,12 @@ OFFTOPIC_INTERESTS = [
 # and the score only ever arbitrates the genuinely mixed buckets.
 #
 # Exact match only, on the publisher's own section name. A bucket called
-# `news`/`berita`/`news-sitemap`/`sitemap` is NOT here: on KUMPARAN `news` was
-# 1 of 4 hard news in a random sample (photo gallery, a how-to and an opinion
-# piece beside it), on VIVA `news-sitemap` 0 of 4 -- those are the mixed
-# buckets the score (and SYS-37's probe) exists for, and SYS-37's precision
-# gate is measured on exactly them. Names that read as news but sampled mixed
+# `news`/`berita`/`news-sitemap`/`sitemap` is NOT here -- owner decision,
+# 2026-09-20 (recorded on SYS-35 #118): on KUMPARAN `news` was 1 of 4 hard
+# news in a random sample (photo gallery, a how-to and an opinion piece
+# beside it), on VIVA `news-sitemap` 0 of 4 -- those are the mixed buckets
+# the score (and SYS-37's probe) exists for, and SYS-37's precision gate is
+# measured on exactly them. Names that read as news but sampled mixed
 # stay out too: `pendidikan` (JPNN: policy; MEDIAINDONESIA: "17 Pakaian Adat
 # Sumatera Barat"), `syariah` (Kemenag haji policy next to Idul Adha greeting
 # listicles), `humaniora`, `research`, `mymoney` (personal-finance tips),
