@@ -15,6 +15,8 @@ class NewsDetailsModel:
     reporter: Optional[List[str]] = None
     meta_data: Dict[str, Any] = None
     is_embedded: bool = False
+    topic: Optional[str] = None
+    topic_confidence: Optional[float] = None
 
     def to_dict(self):
         doc_dict = dict()
@@ -24,5 +26,7 @@ class NewsDetailsModel:
         doc_dict["reporter"] = self.reporter
         doc_dict["meta_data"] = self.meta_data
         doc_dict["is_embedded"] = self.is_embedded
+        doc_dict["topic"] = self.topic
+        doc_dict["topic_confidence"] = self.topic_confidence
 
         return doc_dict

@@ -1,12 +1,14 @@
 import collections
+import dataclasses
 import logging
 import math
 from typing import List, Optional
 from newscrawler.core.chunker import HierarchicalChunker
 from newscrawler.core.crawler_dict_list import CRAWLER_DICT
 from newscrawler.core.crawler_url_list import WEB_URL_DICT
-from newscrawler.core.constants import INTERESTS, SITEMAP_SOURCE_FAILURE_RATIO
-from newscrawler.core.importance_filter import SemanticImportanceFilter, OFFTOPIC_INTERESTS
+from newscrawler.core.constants import SITEMAP_SOURCE_FAILURE_RATIO, SOFT_THRESHOLD
+from newscrawler.core.importance_filter import SemanticImportanceFilter
+from newscrawler.core.importance_probe import build_check_text
 from newscrawler.domain.dtos.dataflow.details.news_details_dto import NewsDetailsDTO
 from newscrawler.domain.dtos.dataflow.details.site_map_dto import SitemapDTO
 from newscrawler.domain.repositories.data_flow_repository.data_flow_repository import (
@@ -33,12 +35,11 @@ class CrawlerServiceImpl(CrawlerService):
         self.newsdetails_limit = limit
         self.chunker = chunker or HierarchicalChunker()
 
+        # SYS-37: the probe (newscrawler/core/models/) and the encoder its
+        # sidecar names. A missing or mismatched artifact raises here -- the
+        # service must not start with a filter that accepts or rejects all.
         logger.info("Initializing Semantic Filter...")
-        self.semantic_filter = SemanticImportanceFilter(
-            interests=INTERESTS,
-            model_name='paraphrase-multilingual-MiniLM-L12-v2',
-            offtopic_interests=OFFTOPIC_INTERESTS,
-        )
+        self.semantic_filter = SemanticImportanceFilter(soft_threshold=SOFT_THRESHOLD)
 
     def crawl_sitemaps(self, website_name: str) -> List[SitemapDTO]:
         log_id = self.data_flow_repo.log_crawl_start(website_name, "sitemap")
@@ -100,16 +101,19 @@ class CrawlerServiceImpl(CrawlerService):
         # for. Recorded to the DB only at the end of the run (see below), because
         # "did the whole source fail?" cannot be answered per batch.
         run_failures = {}
-        # SYS-35 (#118, fix 4): per-run filter telemetry. `gate_counts` says how
-        # each decision was made; `allow_total`/`allow_score_passed` measure, per
-        # news category, what the semantic SCORE alone would have said about
-        # articles the category gate saved anyway -- i.e. the score's recall on
-        # sections known to be news (45-70% when this was filed). A model or
-        # threshold change that drops it is visible in the log, not in the
-        # next audit.
+        # SYS-35 (#118, fix 4) / SYS-45 (#140): per-run filter telemetry.
+        # `gate_counts` says how each decision was made; `allow_total`/
+        # `allow_score_passed` count, per news category, how many articles the
+        # PROBE kept of those the category gate would once have saved
+        # unconditionally -- the probe's rejects on news desks are the
+        # precision SYS-45 bought, and a drop in this ratio is a recall
+        # regression visible per run. SYS-37 fix 4: `uncertain` counts the
+        # decisions with P(soft) in the band -- the size of a possible
+        # LLM tie-break, not filed until the number exists.
         gate_counts = collections.Counter()
         allow_total = collections.Counter()
         allow_score_passed = collections.Counter()
+        uncertain = 0
         # SYS-34 (#115, fix c): (source, category) pairs that have ever produced
         # a saved article. The first save under a pair not in here is a WARNING
         # -- a new source's vocabulary (IDNTIMES `hype`/`korea`/`fiction`)
@@ -191,15 +195,21 @@ class CrawlerServiceImpl(CrawlerService):
                         gate_counts["empty"] += 1
                         continue
 
-                    check_text = f"{title} {full_text[:500]}"
+                    check_text = build_check_text(title, full_text)
                     decision = self.semantic_filter.classify(check_text, category=category)
                     gate_counts[decision.gate] += 1
                     if decision.gate == "allow":
                         allow_total[category] += 1
                         if decision.score_passed:
                             allow_score_passed[category] += 1
+                    if getattr(decision, "in_uncertain_band", False):
+                        uncertain += 1
 
                     if decision.is_important:
+                        # SYS-37 fix 3: the topic rides on the DTO to articles.topic.
+                        if getattr(decision, "topic", None):
+                            news = dataclasses.replace(news, topic=decision.topic,
+                                                       topic_confidence=decision.topic_confidence)
                         important_newsdetails.append(news)
                     else:
                         rejected_filter_ids.append(news.sitemap_id)
@@ -248,7 +258,7 @@ class CrawlerServiceImpl(CrawlerService):
                     continue
 
         self._record_fetch_failures(website_name, attempted, run_failures)
-        self._log_filter_stats(website_name, gate_counts, allow_total, allow_score_passed)
+        self._log_filter_stats(website_name, gate_counts, allow_total, allow_score_passed, uncertain)
 
         logger.info(
             f"Full-text crawl finished for {website_name}: "
@@ -317,17 +327,19 @@ class CrawlerServiceImpl(CrawlerService):
             )
 
     @staticmethod
-    def _log_filter_stats(website_name, gate_counts, allow_total, allow_score_passed) -> None:
-        """SYS-35 (#118, fix 4): one line per run on how the filter decided, and
-        the semantic score's own pass rate on categories the gate saved as news
-        -- the recall number SYS-35 was filed on (LIPUTAN6 `bisnis` 44.5%, SUARA
-        53%). It is expected to sit there until SYS-37 replaces the score; the
-        CI gate on the probe (SYS-37) is what fails a regression, this line is
-        what makes the number readable per run and per source."""
+    def _log_filter_stats(website_name, gate_counts, allow_total, allow_score_passed, uncertain=0) -> None:
+        """SYS-35 (#118, fix 4) / SYS-45 / SYS-37: one line per run on how the
+        filter decided; the probe's keep rate per news category (its rejects
+        there are SYS-45's precision -- a fall in the rate is a recall
+        regression on a desk that is news by construction); and the size of
+        the uncertain band. The CI gate on the probe artifact is what fails a
+        regression; these lines make the numbers readable per run and source."""
         if not gate_counts:
             return
         summary = ", ".join(f"{k}={v}" for k, v in sorted(gate_counts.items()))
-        logger.info(f"{website_name}: filter decisions this run: {summary}")
+        scored = sum(v for k, v in gate_counts.items() if k in ("allow", "score"))
+        band = f"; uncertain band P(soft) in [0.35, 0.65]: {uncertain}/{scored}" if scored else ""
+        logger.info(f"{website_name}: filter decisions this run: {summary}{band}")
         if not allow_total:
             return
         parts = []
@@ -336,8 +348,8 @@ class CrawlerServiceImpl(CrawlerService):
             rate = passed / total if total else 0.0
             parts.append(f"{category}={passed}/{total} ({rate:.0%})")
         logger.info(
-            f"{website_name}: semantic-score recall on news categories (saved by category; "
-            f"what the score alone would have kept): {', '.join(parts)}"
+            f"{website_name}: probe keep rate on news categories (SYS-45: the rest are rejects on a news desk): "
+            f"{', '.join(parts)}"
         )
 
     def _record_fetch_failures(self, website_name: str, attempted: int, run_failures: dict) -> None:

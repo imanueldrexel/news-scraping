@@ -11,7 +11,8 @@
 | `POSTGRES_DB_NAME` | `newsaggregator` | DB name |
 | `GEMINI_API_KEY` | — | **Required for extraction, newsletter, RAG** |
 | `GEMINI_MODEL` | `gemini-1.5-flash` | Gemini model name |
-| `DAILY_API_CALL_LIMIT` | `1400` | Hard stop for LLM calls/day, per model name in `api_usage_log`. **The Gemini free tier on this project enforces 20/day/model** (OPS-20, #136) — the 1400 is not what the API allows |
+| `DAILY_API_CALL_LIMIT` | `1400` | Hard stop for LLM calls/day, per model name in `api_usage_log`. **The Gemini free tier on this project enforces 20/day/model** (OPS-20, #136) — the 1400 is not what the API allows |
+| `SOFT_THRESHOLD` | *(unset)* | SYS-37: overrides the probe artifact's CV-chosen P(soft) threshold (0.39 for the 2026-09-22 artifact, `newscrawler/core/models/importance_probe.json`). Leave unset unless OPS-18 says the operating point must move. The probe's encoder (`intfloat/multilingual-e5-large`, ~2.2 GB) is loaded by the crawler in addition to MiniLM. |
 | `OPENAI_API_KEY` | — | OPS-20: OpenAI-compatible endpoint used **only** by the offline gold-set labeller (`scripts/label_filter_gold.py label`, SYS-36); never in the crawl path |
 | `OPENAI_BASE_URL` | — | e.g. `https://ai.sumopod.com/v1` |
 | `OPENAI_MODEL` | `deepseek-v4-flash` | Labelling model; a reasoning model is called with thinking disabled |

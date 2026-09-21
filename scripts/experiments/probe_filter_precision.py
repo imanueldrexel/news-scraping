@@ -1,4 +1,10 @@
 #!/usr/bin/env python3
+"""HISTORICAL (2026-09-19/20, SYS-31/SYS-35 era). Imports the cosine-vs-INTERESTS
+filter API that SYS-37 (#121) retired on 2026-09-22 -- this script no longer
+runs and is kept as the record of the experiment it documents in EXPERIMENTS.md.
+The equivalent probe-era diagnostics are scripts/experiments/probe_input_matrix.py
+and scripts/train_importance_probe.py --no-write.
+"""
 """
 SYS-31 (#86): how well does SemanticImportanceFilter actually separate finance
 from everything else, on what the pipeline has already saved?

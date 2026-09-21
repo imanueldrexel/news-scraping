@@ -55,12 +55,14 @@ CHUNK_MIN_TOKENS = int(os.getenv("CHUNK_MIN_TOKENS", 80))
 CHUNK_MAX_TOKENS = int(os.getenv("CHUNK_MAX_TOKENS", 450))
 CHUNK_OVERLAP_TOKENS = int(os.getenv("CHUNK_OVERLAP_TOKENS", 50))
 EMBEDDING_MODEL_HF = os.getenv("EMBEDDING_MODEL_HF", "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
-INTERESTS = [
-    "Pasar Saham", "Keuangan", "Ekonomi", "Makroekonomi", "Mikroekonomi",
-    "Inflasi", "Suku Bunga", "Kebijakan Bank Sentral", "Pertumbuhan PDB",
-    "Laporan Keuangan Perusahaan", "Berita Penggerak Pasar", "Investasi",
-    "Komoditas", "Forex", "IHSG", "Rupiah"
-]
+# SYS-37 (#121): the INTERESTS phrase list that the cosine filter scored
+# against is retired -- the news-worthy decision is the probe in
+# newscrawler/core/models/ (trained by scripts/train_importance_probe.py on
+# the SYS-36 gold set). SOFT_THRESHOLD overrides the artifact's CV-chosen
+# P(soft) threshold (0.39 for the 2026-09-22 artifact); leave unset unless
+# an audit (OPS-18) says the operating point must move.
+_soft = os.getenv("SOFT_THRESHOLD")
+SOFT_THRESHOLD = float(_soft) if _soft else None
 
 # ── Knowledge Extraction (Phase 2) ──────────────────────────────────────────
 GEMINI_API_KEY        = os.getenv("GEMINI_API_KEY")

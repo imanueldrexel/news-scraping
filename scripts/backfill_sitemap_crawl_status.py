@@ -47,10 +47,7 @@ from dotenv import load_dotenv
 load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env"))
 
 from sqlalchemy import text
-from sentence_transformers import util
-
-from newscrawler.core.constants import INTERESTS
-from newscrawler.core.importance_filter import SemanticImportanceFilter, category_gate
+from newscrawler.core.importance_filter import SemanticImportanceFilter
 from newscrawler.infrastructure.network.clients.sqlalchemy_client import SQLAlchemyClient
 
 logging.basicConfig(format="%(asctime)s %(levelname)s %(message)s")
@@ -69,38 +66,18 @@ _FETCH_SQL = text("""
 
 
 def classify_batch(filter_: SemanticImportanceFilter, headlines, categories):
-    """Same decision as SemanticImportanceFilter.is_important(), but batch-encoded
-    (one matrix operation for the whole batch instead of one model.encode() call
-    per headline) -- the only way this finishes in a reasonable time over ~73k rows.
+    """The live filter's own batch decision -- SemanticImportanceFilter
+    .classify_batch (SYS-37 #121: category gate, then the probe on the
+    encoder the artifact names). Headline-only here, because a row that was
+    never saved has no body; the live path scores title + body[:500]. That
+    is the one remaining difference (DBT-31's shape) and it is a property of
+    the data, not of a second copy of the decision -- there is none.
 
-    DBT-29 (#107): SYS-31 made the live filter reject a row by category (via
-    is_offtopic_category) before it ever scores the text -- mirror that same
-    ordering here, so a headline like "Rupiah Menguat" under category="hiburan"
-    is rejected regardless of what it scores.
-
-    SYS-35 (#118): the gate is symmetric now. `category_gate` is the ONE
-    category decision the live filter uses -- "deny" rejects without scoring,
-    "allow" (a news desk: `bisnis`, `nasional`, ...) keeps the row pending
-    without scoring, and only a mixed bucket (None) is scored. Before this the
-    script did what the live filter did before SYS-35: permanently rejected
-    finance-section rows whose headline alone scored under 0.35.
-
-    Known gap (DBT-31, superseded by SYS-37): the SYS-31 margin is not applied
-    here, so this is still headline-only threshold, not the full live decision.
-    """
-    gates = [category_gate(c) for c in categories]
-    to_score_idx = [
-        i for i, h in enumerate(headlines)
-        if h and h.strip() and gates[i] is None
-    ]
-    is_important = [g == "allow" and bool(h and h.strip()) for g, h in zip(gates, headlines)]
-    if to_score_idx:
-        embeddings = filter_.model.encode([headlines[i] for i in to_score_idx], convert_to_tensor=True)
-        scores = util.cos_sim(embeddings, filter_.interest_embeddings)
-        max_scores = scores.max(dim=1).values
-        for pos, idx in enumerate(to_score_idx):
-            is_important[idx] = float(max_scores[pos]) >= filter_.threshold
-    return is_important
+    Returns one bool per row: True = news-worthy (stays pending), False =
+    rejected (a soft category, or the probe's P(soft) >= its threshold).
+    An empty headline is neither: the caller marks it empty_extraction."""
+    decisions = filter_.classify_batch(list(headlines), list(categories))
+    return [d.is_important for d in decisions]
 
 
 def main():
@@ -118,8 +95,8 @@ def main():
     if not rows:
         return
 
-    logger.info("Loading semantic filter model...")
-    filter_ = SemanticImportanceFilter(interests=INTERESTS, model_name="paraphrase-multilingual-MiniLM-L12-v2")
+    logger.info("Loading the semantic filter (probe + its encoder)...")
+    filter_ = SemanticImportanceFilter()
 
     rejected_ids, empty_ids, left_pending = [], [], 0
     for start in range(0, len(rows), args.batch_size):

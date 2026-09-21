@@ -149,12 +149,14 @@ class TestTerminalStateClassification:
 
 
 class TestFilterTelemetry:
-    """SYS-35 (#118, fix 4): the per-run pass-rate stat on news categories."""
+    """SYS-35 (#118, fix 4) / SYS-45 / SYS-37: the per-run keep-rate stat on
+    news categories and the uncertain-band count."""
 
-    def test_score_recall_on_news_categories_is_logged_per_category(self, service, caplog):
+    def test_probe_keep_rate_on_news_categories_is_logged_per_category(self, service, caplog):
         def fake_classify(text, category=None):
-            # bisnis: 2 saved by category, score would have kept 1 of them.
-            return decision(True, gate="allow", score_passed="oil" not in text)
+            # bisnis: 2 rows on a news desk, the probe rejected 1 of them (SYS-45).
+            keep = "oil" not in text
+            return decision(keep, gate="allow", score_passed=keep)
 
         service.semantic_filter.classify.side_effect = fake_classify
         service.data_flow_repo.load_sitemap_data.return_value = [sitemap(1, "bisnis"), sitemap(2, "bisnis")]
@@ -166,11 +168,33 @@ class TestFilterTelemetry:
         with caplog.at_level(logging.INFO, logger="newscrawler.domain.services.crawler_service_impl"):
             service.crawl_newsdetails("TEST_SITE")
 
-        stat_lines = [r.message for r in caplog.records if "semantic-score recall on news categories" in r.message]
+        stat_lines = [r.message for r in caplog.records if "probe keep rate on news categories" in r.message]
         assert len(stat_lines) == 1
         assert "bisnis=1/2 (50%)" in stat_lines[0]
         gate_lines = [r.message for r in caplog.records if "filter decisions this run" in r.message]
         assert gate_lines and "allow=2" in gate_lines[0]
+
+    def test_uncertain_band_is_counted_per_run_and_topic_rides_on_the_saved_dto(self, service, caplog):
+        from newscrawler.core.importance_filter import FilterDecision
+
+        def fake_classify(text, category=None):
+            return FilterDecision(True, "score", True, topic="law_crime", topic_confidence=0.7,
+                                  p_soft=0.5 if "oil" in text else 0.1)
+
+        service.semantic_filter.classify.side_effect = fake_classify
+        service.data_flow_repo.load_sitemap_data.return_value = [sitemap(1, "news"), sitemap(2, "news")]
+        service.crawler_dict["TEST_SITE"].batch_crawling_details.side_effect = per_batch([
+            article(1, ["oil prices fell"]), article(2, ["BI raised rates"]),
+        ])
+        service.data_flow_repo.save_chunk_data.side_effect = lambda chunks: [1, 2]
+
+        with caplog.at_level(logging.INFO, logger="newscrawler.domain.services.crawler_service_impl"):
+            service.crawl_newsdetails("TEST_SITE")
+
+        gate_lines = [r.message for r in caplog.records if "filter decisions this run" in r.message]
+        assert gate_lines and "uncertain band P(soft) in [0.35, 0.65]: 1/2" in gate_lines[0]
+        saved = [n for call in service.data_flow_repo.save_newsdetails_data.call_args_list for n in call[0][0]]
+        assert [(n.topic, n.topic_confidence) for n in saved] == [("law_crime", 0.7), ("law_crime", 0.7)]
 
 
 class TestUnseenCategoryWarning:

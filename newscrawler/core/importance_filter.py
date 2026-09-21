@@ -1,8 +1,12 @@
 import logging
 import re
 from dataclasses import dataclass
-from typing import List, Optional
-from sentence_transformers import SentenceTransformer, util
+from typing import List, Optional, Sequence
+
+from sentence_transformers import SentenceTransformer
+
+from newscrawler.core import importance_probe
+from newscrawler.core.importance_probe import PROBE_DIR, ImportanceProbe, ProbeArtifactError, embed_for_probe
 
 # Configure logging
 logging.basicConfig()
@@ -105,26 +109,6 @@ OFFTOPIC_CATEGORY_KEYWORDS_WORD = (
     # SYS-42: `celeb`/`celebs` as a word only -- never the prefix of `celebes`.
     "celeb",
 )
-
-# Short topic anchors for verticals that keep landing in the cosine noise band
-# against INTERESTS even though they are not finance. Used as a contrastive
-# check (SemanticImportanceFilter.margin): an article must score higher against
-# INTERESTS than against these, not merely clear the raw threshold. This is the
-# fallback for articles whose sitemap.category is missing, blank, or not (yet)
-# covered by the deny-list above. No "Otomotif" entry, for the same reason
-# it isn't a category keyword -- real auto-market business content would
-# score close to it too.
-#
-# Deliberately NOT re-tuned for the news-worthy scope ("Kriminal dan
-# Kecelakaan" / "Politik dan Pemilu" are news now): the whole cosine-vs-phrase
-# stage is replaced by SYS-37 (#121), and three tuning passes on it have each
-# failed the next audit. Until then it only ever arbitrates mixed buckets,
-# never a category in NEWS_CATEGORIES.
-OFFTOPIC_INTERESTS = [
-    "Hiburan dan Gosip Selebriti", "Gaya Hidup dan Fashion", "Kuliner dan Resep Masakan",
-    "Olahraga dan Sepak Bola", "Wisata dan Travel", "Agama dan Religi",
-    "Kriminal dan Kecelakaan", "Politik dan Pemilu",
-]
 
 # SYS-35 (#118): the category gate was asymmetric by accident -- a category
 # known to be soft won before the score, but a category known to be news
@@ -241,117 +225,110 @@ if _overlap:
     raise RuntimeError(f"NEWS_CATEGORIES entries also matched by the deny-list: {_overlap}")
 
 
+# ── SYS-37 (#121): the probe decides ─────────────────────────────────────────
+# The cosine-vs-INTERESTS score (threshold 0.35 + the SYS-31 margin) is gone.
+# World oil prices scored 0.254, Boeing shares 0.203 (SYS-35), a poem and a
+# vasectomy story cleared it (SYS-34): the embedding was fine, the comparison
+# against short phrases was not. What decides now is `ImportanceProbe`
+# (newscrawler/core/importance_probe.py): two logistic-regression heads over
+# the `multilingual-e5-large` embedding, trained on the SYS-36 gold set by
+# scripts/train_importance_probe.py -- P(soft) is the news-worthy gate, the
+# topic head gives `articles.topic`. The committed artifact's sidecar names
+# the encoder, the threshold and the metrics it was accepted on; the filter
+# loads exactly that encoder. A missing or mismatched artifact raises
+# ProbeArtifactError at construction -- never a silent accept-all/reject-all.
+#
+# SYS-45 (#140, owner 2026-09-21): a news desk (`allow`) no longer means
+# "never reject" -- it means the *score* cannot reject, the probe can.
+# `deny` still rejects before anything is embedded.
+UNCERTAIN_BAND = importance_probe.UNCERTAIN_BAND
+
+
 @dataclass(frozen=True)
 class FilterDecision:
     """What `SemanticImportanceFilter.classify` decided and why.
 
-    gate: "allow" (news category, saved regardless of score), "deny" (soft
-      category, rejected regardless of score), "score" (mixed bucket, the
-      score decided), or "empty" (nothing to score).
-    score_passed: what the semantic score alone would have said -- computed
-      for allowed categories too, so the per-run pass-rate stat (SYS-35 fix 4)
-      can report the score's recall on categories known to be news. None when
-      the score never ran.
+    gate: "allow" (news desk -- the probe still decides, SYS-45), "deny" (soft
+      category, rejected before the probe), "score" (mixed bucket, the probe
+      decided) or "empty" (nothing to score).
+    score_passed: the probe's own verdict (P(soft) < threshold); None when it
+      never ran. For an "allow" row this IS the decision; the per-run stat
+      reports probe rejects per news category from it.
+    topic / topic_confidence: the topic head's best news class and its
+      probability among the news classes -- persisted to articles.topic /
+      topic_confidence (SYS-37 fix 3). Set even for a rejected row.
+    p_soft: the gate probability, for the uncertain-band telemetry.
     """
     is_important: bool
     gate: str
     score_passed: Optional[bool] = None
-    max_score: Optional[float] = None
-    max_offtopic: Optional[float] = None
+    topic: Optional[str] = None
+    topic_confidence: Optional[float] = None
+    p_soft: Optional[float] = None
+
+    @property
+    def in_uncertain_band(self) -> bool:
+        return self.p_soft is not None and UNCERTAIN_BAND[0] <= self.p_soft <= UNCERTAIN_BAND[1]
 
 
 class SemanticImportanceFilter:
-    def __init__(self, interests: List[str], threshold: float = 0.35, model_name: str = 'all-MiniLM-L6-v2',
-                 offtopic_interests: Optional[List[str]] = None, margin: float = 0.035):
-        """
-        Initialize the Semantic Importance Filter.
+    def __init__(self, probe: Optional[ImportanceProbe] = None, probe_dir: str = PROBE_DIR,
+                 soft_threshold: Optional[float] = None, model: Optional[SentenceTransformer] = None):
+        """Load the committed probe and the encoder its sidecar names.
 
-        Args:
-            interests: List of strings describing the user's interests (e.g. "Artificial Intelligence", "Stock Market").
-            threshold: Cosine similarity threshold (0 to 1). Articles above this are "important".
-            model_name: Sentence Transformer model name.
-            offtopic_interests: SYS-31 -- reference topics an article must score
-                below (relative to `margin`) its best `interests` score, even if
-                it clears `threshold`. Raw cosine similarity against short
-                INTERESTS phrases alone does not separate finance from
-                lifestyle/entertainment content in the noise band just above
-                `threshold`; scoring against a contrasting off-topic set catches
-                what the category deny-list (`is_offtopic_category`) misses.
-            margin: how much higher the best INTERESTS score must be than the
-                best off-topic score for an article to pass.
-        """
-        logger.info(f"Loading Semantic Filter Model: {model_name}...")
-        self.model = SentenceTransformer(model_name)
-        self.interests = interests
-        self.threshold = threshold
-        self.margin = margin
-
-        # Pre-encode interests for speed
-        self.interest_embeddings = self.model.encode(self.interests, convert_to_tensor=True)
-
-        self.offtopic_interests = offtopic_interests or []
-        self.offtopic_embeddings = (
-            self.model.encode(self.offtopic_interests, convert_to_tensor=True)
-            if self.offtopic_interests else None
+        probe / model: injected for tests; production passes nothing and gets
+            the artifact in PROBE_DIR plus a fresh SentenceTransformer.
+        soft_threshold: override the sidecar's threshold (constants.SOFT_THRESHOLD
+            from the env; None = the trainer's CV choice)."""
+        self.probe = probe or ImportanceProbe.load(probe_dir, soft_threshold=soft_threshold)
+        self.model_name = self.probe.encoder_name
+        if not self.model_name:
+            raise ProbeArtifactError("probe sidecar names no encoder")
+        logger.info(f"Loading Semantic Filter encoder: {self.model_name}...")
+        self.model = model if model is not None else SentenceTransformer(self.model_name)
+        dim = self.model.get_sentence_embedding_dimension()
+        if dim != self.probe.dim:
+            raise ProbeArtifactError(f"{self.model_name} embeds to {dim} dims, the probe expects {self.probe.dim}")
+        sidecar = self.probe.sidecar
+        logger.info(
+            f"Initialized Semantic Filter: probe trained {sidecar.get('trained_at', '?')} on "
+            f"{sidecar.get('n_train', '?')} gold rows, soft_threshold={self.probe.soft_threshold:.2f}, "
+            f"test recall_finance={sidecar.get('metrics_test', {}).get('recall_finance', float('nan')):.3f} "
+            f"precision_mixed={sidecar.get('metrics_test', {}).get('precision_mixed', float('nan')):.3f}"
         )
-        logger.info(f"Initialized Semantic Filter with interests: {self.interests}")
 
     def is_important(self, text: str, category: Optional[str] = None) -> bool:
-        """
-        Check if the text is news-worthy: a news category is, a soft category
-        is not, and anything else is decided by semantic similarity to the
-        interests (SYS-31 margin included). Thin wrapper over `classify`.
-        """
+        """Thin wrapper: news-worthy or not."""
         return self.classify(text, category).is_important
 
     def classify(self, text: str, category: Optional[str] = None) -> FilterDecision:
-        """The one decision function. Category gate first (SYS-31 deny,
-        SYS-35 allow), then the score -- which also runs for an allowed
-        category so its recall on known-news sections is measurable, but
-        never for a denied one (nothing to learn, and the model is the
-        expensive step)."""
-        if not text:
-            return FilterDecision(is_important=False, gate="empty")
+        """One article. Thin wrapper over classify_batch."""
+        return self.classify_batch([text], [category])[0]
 
-        gate = category_gate(category)
-        if gate == "deny":
-            return FilterDecision(is_important=False, gate="deny")
-
-        score_passed, max_score, max_offtopic = self._score(text)
-        if gate == "allow":
-            return FilterDecision(is_important=True, gate="allow", score_passed=score_passed,
-                                  max_score=max_score, max_offtopic=max_offtopic)
-        return FilterDecision(is_important=score_passed, gate="score", score_passed=score_passed,
-                              max_score=max_score, max_offtopic=max_offtopic)
-
-    def _score(self, text: str):
-        """(passed, max_interest_score, max_offtopic_score) -- the SYS-31
-        threshold + margin decision, unchanged."""
-        # Truncate text to first 200 words for speed and relevance (intros usually contain the topic)
-        text_snippet = " ".join(text.split()[:200])
-
-        # Encode the article text
-        article_embedding = self.model.encode(text_snippet, convert_to_tensor=True)
-
-        # Calculate cosine similarities
-        cosine_scores = util.cos_sim(article_embedding, self.interest_embeddings)
-
-        # Find the max similarity score
-        max_score = float(cosine_scores.max())
-        max_offtopic = None
-
-        if max_score < self.threshold:
-            return False, max_score, max_offtopic
-
-        if self.offtopic_embeddings is not None:
-            offtopic_scores = util.cos_sim(article_embedding, self.offtopic_embeddings)
-            max_offtopic = float(offtopic_scores.max())
-            if max_offtopic + self.margin >= max_score:
-                logger.debug(
-                    f"Article scored {max_score:.3f} vs interests but {max_offtopic:.3f} "
-                    f"vs off-topic anchors (margin {self.margin}) -- rejecting"
+    def classify_batch(self, texts: Sequence[str], categories: Sequence[Optional[str]]) -> List[FilterDecision]:
+        """THE decision function -- the live filter, backfill_sitemap_crawl_status.py,
+        the topic backfill and SYS-38's re-queue all go through here, so "same
+        decision as the live filter" is true by construction. Category gate
+        first: `deny` rejects without embedding; `allow` and mixed buckets are
+        embedded once as a batch and decided by the probe."""
+        if len(texts) != len(categories):
+            raise ValueError("texts and categories must have the same length")
+        decisions: List[Optional[FilterDecision]] = [None] * len(texts)
+        to_score = []
+        for i, (text, category) in enumerate(zip(texts, categories)):
+            if not text or not text.strip():
+                decisions[i] = FilterDecision(is_important=False, gate="empty")
+                continue
+            gate = category_gate(category)
+            if gate == "deny":
+                decisions[i] = FilterDecision(is_important=False, gate="deny")
+                continue
+            to_score.append((i, text, gate))
+        if to_score:
+            embeddings = embed_for_probe(self.model, [t for _, t, _ in to_score], model_name=self.model_name)
+            for (i, _, gate), (is_news, topic, confidence, p_soft) in zip(to_score, self.probe.predict(embeddings)):
+                decisions[i] = FilterDecision(
+                    is_important=is_news, gate=gate or "score", score_passed=is_news,
+                    topic=topic, topic_confidence=confidence, p_soft=p_soft,
                 )
-                return False, max_score, max_offtopic
-
-        logger.debug(f"Article matched with score {max_score:.3f}")
-        return True, max_score, max_offtopic
+        return [d for d in decisions if d is not None]

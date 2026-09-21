@@ -111,6 +111,9 @@ class SQLAlchemyArticleDataSource:
                             writer=newsdetail.reporter,
                             meta_data=newsdetail.meta_data,
                             is_embedded=newsdetail.is_embedded,
+                            # SYS-37: the probe's topic; None for a caller that predates it.
+                            topic=getattr(newsdetail, "topic", None),
+                            topic_confidence=getattr(newsdetail, "topic_confidence", None),
                             knowledge_extracted=0,
                             knowledge_extracted_at=None,
                         ).on_conflict_do_nothing(

@@ -2,6 +2,7 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy import (
     Boolean,
     Column,
+    Float,
     Index,
     String,
     BigInteger,
@@ -76,6 +77,10 @@ class NewsArticlesTable(Base):
     knowledge_extracted_at = Column(TIMESTAMP, nullable=True)
     knowledge_extract_attempts = Column(Integer, nullable=False, default=0)
     last_extract_error         = Column(String, nullable=True)
+    # SYS-37 (#121): scripts/migrate_articles_topic.sql -- the probe's topic
+    # (filter_rubric.TOPICS_NEWS) and its confidence among the news classes.
+    topic                      = Column(String, nullable=True)
+    topic_confidence           = Column(Float, nullable=True)
 
     def __init__(self, sitemap: NewsDetailsModel):
         self.sitemap_id = sitemap.sitemap_id
@@ -91,6 +96,8 @@ class NewsArticlesTable(Base):
         self.is_embedded = sitemap.is_embedded
         self.knowledge_extracted = 0
         self.knowledge_extracted_at = None
+        self.topic = getattr(sitemap, "topic", None)
+        self.topic_confidence = getattr(sitemap, "topic_confidence", None)
 
 
 class ChunksTable(Base):

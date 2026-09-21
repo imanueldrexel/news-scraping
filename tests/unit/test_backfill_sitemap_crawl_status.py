@@ -4,90 +4,53 @@ _FETCH_SQL didn't even select sitemaps.category, so a row like headline
 rejects via is_offtopic_category, before ever scoring the text) was left
 'pending' forever because the bare headline cleared the raw threshold.
 
-SYS-35 (#118): the gate is symmetric. A news-desk category (`ekonomi`,
-`nasional`) keeps the row pending without scoring -- this script used to do
-exactly what the live filter did before SYS-35 and permanently rejected
-finance-section rows whose bare headline scored under 0.35. Both gates come
-from the one `category_gate` the live filter uses, never a local copy.
+SYS-35 (#118) / SYS-37 (#121): the script's `classify_batch` is no longer a
+copy of the live decision -- it IS the live decision:
+SemanticImportanceFilter.classify_batch (DBT-31's one-decision-function
+finding). What is pinned here is that the script hands the live filter every
+row, in order, with its category, and maps the decisions back one-to-one; the
+gate/probe behaviour itself is tested in test_importance_filter.py.
 """
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
+from newscrawler.core.importance_filter import FilterDecision
 from scripts.backfill_sitemap_crawl_status import classify_batch
 
 
-def _make_filter():
+def _filter_returning(*decisions):
     filt = MagicMock()
-    filt.threshold = 0.35
-    filt.interest_embeddings = MagicMock()
-    filt.model.encode.side_effect = lambda headlines, convert_to_tensor=True: list(headlines)
+    filt.classify_batch.return_value = list(decisions)
     return filt
 
 
-def _scores(*values):
-    return MagicMock(max=lambda dim: MagicMock(values=list(values)))
-
-
-class TestClassifyBatchCategoryGate(unittest.TestCase):
-    @patch("scripts.backfill_sitemap_crawl_status.util.cos_sim")
-    def test_offtopic_category_rejected_regardless_of_headline_score(self, cos_sim):
-        filt = _make_filter()
-        cos_sim.return_value = _scores(0.99)
-
-        important = classify_batch(filt, ["Rupiah Menguat Terhadap Dolar AS"], ["hiburan"])
-
-        self.assertEqual(important, [False])
-        filt.model.encode.assert_not_called()
-
-    @patch("scripts.backfill_sitemap_crawl_status.util.cos_sim")
-    def test_finance_category_kept_pending_without_scoring(self, cos_sim):
-        # SYS-35: a finance section is news by the publisher's own filing; a
-        # low headline score (world oil prices: 0.254) must not reject it.
-        filt = _make_filter()
-        cos_sim.return_value = _scores(0.10)
-
-        important = classify_batch(filt, ["Harga Minyak Dunia Turun Usai AS Ungkap Pipa Arab Saudi"], ["ekonomi"])
-
-        self.assertEqual(important, [True])
-        filt.model.encode.assert_not_called()
-
-    @patch("scripts.backfill_sitemap_crawl_status.util.cos_sim")
-    def test_hard_news_category_kept_pending_without_scoring(self, cos_sim):
-        filt = _make_filter()
-        cos_sim.return_value = _scores(0.10)
-        important = classify_batch(filt, ["Prabowo Puji PDIP di Luar Pemerintah"], ["politik-dan-hukum"])
-        self.assertEqual(important, [True])
-        filt.model.encode.assert_not_called()
-
-    @patch("scripts.backfill_sitemap_crawl_status.util.cos_sim")
-    def test_mixed_bucket_is_scored(self, cos_sim):
-        filt = _make_filter()
-        cos_sim.return_value = _scores(0.20, 0.80)
-        important = classify_batch(filt, ["Kekalahan untuk Refleksi Diri", "Rupiah Menguat"], ["news", "news"])
-        self.assertEqual(important, [False, True])
-        self.assertEqual(filt.model.encode.call_args[0][0], ["Kekalahan untuk Refleksi Diri", "Rupiah Menguat"])
-
-    @patch("scripts.backfill_sitemap_crawl_status.util.cos_sim")
-    def test_mixed_batch_only_the_mixed_bucket_row_reaches_the_model(self, cos_sim):
-        filt = _make_filter()
-        cos_sim.return_value = _scores(0.99)
-
-        important = classify_batch(
-            filt,
-            ["Rupiah Menguat", "Ria Ricis Nangis Lihat Sapi", "Kebakaran Kemayoran Diduga Akibat Korsleting"],
-            ["ekonomi", "hiburan", "news"],
+class TestClassifyBatchUsesTheLiveFilter(unittest.TestCase):
+    def test_every_row_goes_to_the_live_filter_with_its_category_in_order(self):
+        filt = _filter_returning(
+            FilterDecision(False, "deny"), FilterDecision(True, "allow", True, "markets", 0.9, 0.1),
+            FilterDecision(False, "empty"), FilterDecision(False, "score", False, "other_news", 0.4, 0.8),
         )
+        headlines = ["Rupiah Menguat Terhadap Dolar AS", "Harga Minyak Dunia Turun", "", "Doa Hari Ini"]
+        categories = ["hiburan", "ekonomi", "bisnis", "news"]
 
-        self.assertEqual(important, [True, False, True])
-        encoded_arg = filt.model.encode.call_args[0][0]
-        self.assertEqual(encoded_arg, ["Kebakaran Kemayoran Diduga Akibat Korsleting"])
+        important = classify_batch(filt, headlines, categories)
 
-    def test_blank_headline_never_encoded_regardless_of_category(self):
-        filt = _make_filter()
-        important = classify_batch(filt, ["", "   "], ["ekonomi", "news"])
-        self.assertEqual(important, [False, False])
-        filt.model.encode.assert_not_called()
+        filt.classify_batch.assert_called_once_with(headlines, categories)
+        self.assertEqual(important, [False, True, False, False])
 
+    def test_a_news_desk_row_is_the_probes_call_not_an_automatic_keep(self):
+        # SYS-45: `allow` no longer means "never reject" -- whatever the live
+        # filter returns for an `ekonomi` row is what the script records.
+        filt = _filter_returning(FilterDecision(False, "allow", False, "corporate", 0.5, 0.7))
+        self.assertEqual(classify_batch(filt, ["OJK Ungkap 7 Fakta Menarik Reksa Dana Syariah"], ["ekonomi"]), [False])
 
-if __name__ == "__main__":
-    unittest.main()
+    def test_no_second_copy_of_the_decision_exists_in_the_script(self):
+        # The regression DBT-29/DBT-31 were about: a private re-implementation
+        # of the gate or the score drifting from the live one.
+        import inspect
+        import scripts.backfill_sitemap_crawl_status as mod
+        src = inspect.getsource(mod.classify_batch)
+        for forbidden in ("category_gate(", "is_offtopic_category(", "cos_sim", "interest_embeddings", "filter_.threshold",
+                          "filter_.model", "filter_.probe"):
+            self.assertNotIn(forbidden, src, f"classify_batch re-implements part of the live decision: {forbidden}")
+        self.assertIn("filter_.classify_batch(", src)

@@ -11,8 +11,15 @@ news-worthy scope and left the deny-list.
 SYS-34 (#115): the deny-list knows the vocabulary that leaked poems, K-drama
 recaps and OOTD listicles from IDNTIMES (`life`/`hype`/`korea`/`fiction`/
 `men`/`food`) plus the soft verticals sampled across every source in the DB on
-2026-09-20, and the SYS-31 margin is measured against those titles too.
+2026-09-20.
+
+SYS-37 (#121) / SYS-45 (#140): the cosine score is gone; the probe decides
+everything the category gate does not deny -- news desks included (`allow`
+means the score cannot reject, the probe can). Offline tests use a stub
+probe; the real-encoder tests load the committed artifact and skip when
+multilingual-e5-large is not cached locally.
 """
+import os
 import unittest
 from unittest.mock import MagicMock
 
@@ -22,13 +29,13 @@ from newscrawler.core.importance_filter import (
     NEWS_CATEGORIES_FINANCE,
     NEWS_CATEGORIES_HARD,
     OFFTOPIC_CATEGORIES_EXACT,
-    OFFTOPIC_INTERESTS,
     SemanticImportanceFilter,
     category_gate,
     is_finance_category,
     is_news_category,
     is_offtopic_category,
 )
+from newscrawler.core.importance_probe import ImportanceProbe, ProbeArtifactError
 
 
 class TestIsOffTopicCategory(unittest.TestCase):
@@ -243,94 +250,158 @@ class TestNewsCategoryAllowSet(unittest.TestCase):
         self.assertEqual(category_gate("bali/politik"), "allow")
 
 
-def _make_filter_without_loading_model(max_score=0.9, max_offtopic=0.0):
+def _make_filter_with_stub_probe(p_soft=0.1, topic="markets", confidence=0.8, threshold=0.39):
+    """SYS-37: a filter whose probe and encoder are stubs -- offline, no model.
+    The stub probe returns the same P(soft) for every row; the category gate
+    and the batch plumbing are what is under test."""
     filt = SemanticImportanceFilter.__new__(SemanticImportanceFilter)
     filt.model = MagicMock()
-    filt.interests = ["Ekonomi"]
-    filt.threshold = 0.35
-    filt.margin = 0.035
-    filt.interest_embeddings = MagicMock()
-    filt.offtopic_interests = OFFTOPIC_INTERESTS
-    filt.offtopic_embeddings = MagicMock()
-    filt._score = MagicMock(return_value=(max_score >= 0.35 and max_offtopic + 0.035 < max_score, max_score, max_offtopic))
+    filt.model.encode.side_effect = lambda texts, **kw: [[0.0] * 4 for _ in texts]
+    filt.model_name = "stub-encoder"
+    probe = MagicMock()
+    probe.dim = 4
+    probe.soft_threshold = threshold
+    probe.encoder_name = "stub-encoder"
+    probe.predict.side_effect = lambda emb: [(p_soft < threshold, topic, confidence, p_soft) for _ in range(len(emb))]
+    filt.probe = probe
     return filt
 
 
 class TestSemanticImportanceFilterCategoryGate(unittest.TestCase):
-    """Category check must short-circuit before the model ever runs."""
+    """Category check must short-circuit before the encoder ever runs; the
+    probe decides everything else (SYS-45: a news desk included)."""
 
     def test_offtopic_category_rejected_without_encoding(self):
-        filt = _make_filter_without_loading_model()
+        filt = _make_filter_with_stub_probe()
         decision = filt.classify("some text", category="hiburan")
         self.assertFalse(decision.is_important)
         self.assertEqual(decision.gate, "deny")
         self.assertIsNone(decision.score_passed)
-        filt._score.assert_not_called()
+        self.assertIsNone(decision.topic)
+        filt.model.encode.assert_not_called()
+        filt.probe.predict.assert_not_called()
         self.assertFalse(filt.is_important("some text", category="hiburan"))
 
     def test_empty_text_rejected(self):
-        filt = _make_filter_without_loading_model()
+        filt = _make_filter_with_stub_probe()
         self.assertFalse(filt.is_important("", category=None))
-        self.assertEqual(filt.classify("", category="bisnis").gate, "empty")
+        self.assertEqual(filt.classify("   ", category="bisnis").gate, "empty")
+        filt.model.encode.assert_not_called()
 
-    def test_news_category_saved_even_when_the_score_says_no(self):
-        # SYS-35: world oil prices score 0.254 against the INTERESTS phrases.
-        filt = _make_filter_without_loading_model(max_score=0.254)
-        decision = filt.classify("Harga Minyak Dunia Turun Usai AS Ungkap Pipa Arab Saudi", category="bisnis")
-        self.assertTrue(decision.is_important)
+    def test_news_category_is_decided_by_the_probe_not_waved_through(self):
+        # SYS-45 (#140, owner 2026-09-21): `allow` means the *score* cannot
+        # reject; the probe still can. A listicle on a finance desk is out.
+        soft = _make_filter_with_stub_probe(p_soft=0.9)
+        decision = soft.classify("7 Fakta Menarik Reksa Dana Syariah", category="bisnis")
         self.assertEqual(decision.gate, "allow")
+        self.assertFalse(decision.is_important)
         self.assertFalse(decision.score_passed)
-        self.assertAlmostEqual(decision.max_score, 0.254)
-        self.assertTrue(filt.is_important("Harga Minyak Dunia Turun", category="bisnis"))
+        self.assertAlmostEqual(decision.p_soft, 0.9)
+        news = _make_filter_with_stub_probe(p_soft=0.1)
+        decision = news.classify("Harga Minyak Dunia Turun Usai AS Ungkap Pipa Arab Saudi", category="bisnis")
+        self.assertTrue(decision.is_important)
+        self.assertEqual((decision.gate, decision.score_passed, decision.topic), ("allow", True, "markets"))
 
-    def test_news_category_still_runs_the_score_for_the_recall_stat(self):
-        filt = _make_filter_without_loading_model(max_score=0.254)
-        filt.classify("Harga Minyak Dunia Turun", category="bisnis")
-        filt._score.assert_called_once()
+    def test_mixed_bucket_is_decided_by_the_probe(self):
+        below = _make_filter_with_stub_probe(p_soft=0.7)
+        d = below.classify("x", category="news")
+        self.assertEqual((d.is_important, d.gate, d.score_passed), (False, "score", False))
+        above = _make_filter_with_stub_probe(p_soft=0.2)
+        self.assertTrue(above.classify("x", category="news").is_important)
 
-    def test_mixed_bucket_is_decided_by_the_score(self):
-        below = _make_filter_without_loading_model(max_score=0.20)
-        self.assertEqual(below.classify("x", category="news"), FilterDecision(False, "score", False, 0.20, 0.0))
-        above = _make_filter_without_loading_model(max_score=0.60)
-        self.assertEqual(above.classify("x", category="news").is_important, True)
+    def test_topic_and_confidence_ride_on_every_scored_decision(self):
+        filt = _make_filter_with_stub_probe(p_soft=0.2, topic="law_crime", confidence=0.66)
+        d = filt.classify("Polisi Tangkap Pelaku", category=None)
+        self.assertEqual((d.topic, d.topic_confidence, d.p_soft), ("law_crime", 0.66, 0.2))
+        rejected = _make_filter_with_stub_probe(p_soft=0.8, topic="other_news")
+        d = rejected.classify("x", category="news")
+        self.assertEqual(d.topic, "other_news")   # set even when rejected: a caller that keeps it still gets a topic
+
+    def test_uncertain_band(self):
+        self.assertTrue(FilterDecision(True, "score", True, p_soft=0.36).in_uncertain_band)
+        self.assertTrue(FilterDecision(False, "score", False, p_soft=0.65).in_uncertain_band)
+        self.assertFalse(FilterDecision(True, "score", True, p_soft=0.10).in_uncertain_band)
+        self.assertFalse(FilterDecision(False, "deny").in_uncertain_band)
+
+    def test_classify_batch_is_the_one_decision_and_preserves_order(self):
+        filt = _make_filter_with_stub_probe(p_soft=0.2)
+        decisions = filt.classify_batch(
+            ["news one", "", "soft desk", "news two"], ["news", "bisnis", "hiburan", "nasional"])
+        self.assertEqual([d.gate for d in decisions], ["score", "empty", "deny", "allow"])
+        self.assertEqual([d.is_important for d in decisions], [True, False, False, True])
+        # only the two scorable rows were embedded, in one call
+        filt.model.encode.assert_called_once()
+        self.assertEqual(list(filt.model.encode.call_args[0][0]), ["news one", "news two"])
+        with self.assertRaises(ValueError):
+            filt.classify_batch(["a"], [])
 
     def test_is_important_is_a_thin_wrapper_over_classify(self):
-        filt = _make_filter_without_loading_model(max_score=0.60)
-        filt.classify = MagicMock(return_value=FilterDecision(True, "score", True, 0.6, 0.1))
+        filt = _make_filter_with_stub_probe()
+        filt.classify = MagicMock(return_value=FilterDecision(True, "score", True, "markets", 0.9, 0.1))
         self.assertTrue(filt.is_important("x", category="news"))
         filt.classify.assert_called_once_with("x", "news")
 
+    def test_missing_or_mismatched_artifact_is_a_hard_failure(self):
+        with self.assertRaises(ProbeArtifactError):
+            SemanticImportanceFilter(probe_dir=os.path.join(os.path.dirname(__file__), "no-such-dir"))
+        probe = MagicMock(dim=4, encoder_name="stub", sidecar={}, soft_threshold=0.5)
+        model = MagicMock()
+        model.get_sentence_embedding_dimension.return_value = 5
+        with self.assertRaises(ProbeArtifactError):
+            SemanticImportanceFilter(probe=probe, model=model)
+        probe.encoder_name = ""
+        with self.assertRaises(ProbeArtifactError):
+            SemanticImportanceFilter(probe=probe, model=MagicMock())
 
-class TestSemanticImportanceFilterRealModel(unittest.TestCase):
-    """Real model, real off-topic anchors: verifies the margin actually
-    separates a lifestyle/celebrity text from a finance one when category is
-    unavailable (category=None) -- the defense-in-depth path for sources whose
-    category is missing or not yet in the deny-list -- and that the SYS-35
-    allow-set rescues the worked examples the score rejects."""
+
+class TestCommittedProbeArtifact(unittest.TestCase):
+    """The artifact in newscrawler/core/models/ is what the service loads.
+    Offline: reads the sidecar, no encoder."""
 
     @classmethod
     def setUpClass(cls):
-        from newscrawler.core.constants import INTERESTS
-        cls.filt = SemanticImportanceFilter(
-            interests=INTERESTS,
-            model_name="paraphrase-multilingual-MiniLM-L12-v2",
-            offtopic_interests=OFFTOPIC_INTERESTS,
-        )
+        cls.probe = ImportanceProbe.load()
 
-    def test_celebrity_gossip_rejected_with_no_category(self):
-        text = ("Ria Ricis Nangis Lihat Sapi Kurbannya Disembelih. Selebgram itu tak kuasa "
-                "menahan tangis saat sapi kesayangannya disembelih di Idul Adha.")
-        self.assertFalse(self.filt.is_important(text, category=None))
+    def test_artifact_matches_the_code_and_the_committed_gold_set(self):
+        from newscrawler.core.filter_rubric import TOPICS
+        from newscrawler.core.importance_probe import sha256_of_file
+        self.assertEqual(self.probe.classes, list(TOPICS))
+        self.assertEqual(self.probe.encoder_name, "intfloat/multilingual-e5-large")
+        gold = os.path.join(os.path.dirname(__file__), "..", "fixtures", "filter_gold.jsonl")
+        self.assertEqual(self.probe.sidecar["gold_sha256"], sha256_of_file(gold),
+                         "the artifact was trained on a different filter_gold.jsonl than the one committed -- retrain")
 
-    def test_real_finance_headline_still_passes(self):
-        text = ("Bank Indonesia Naikkan Suku Bunga Acuan 25 Basis Poin. Rapat Dewan Gubernur BI "
-                "menahan inflasi yang masih tinggi di tengah pelemahan Rupiah.")
-        self.assertTrue(self.filt.is_important(text, category=None))
+    def test_recorded_metrics_meet_the_gates_within_the_owner_tolerance(self):
+        # SYS-37 Done-when + SYS-45; owner decision 2026-09-22: within 0.02 of
+        # each floor is accepted (the gold set cannot resolve less). A retrain
+        # that regresses by 0.02 or more fails here.
+        gates = {"recall_finance": 0.95, "recall_general": 0.90, "precision_mixed": 0.90,
+                 "precision_allow": 0.90, "topic_accuracy": 0.80}
+        m = self.probe.sidecar["metrics_test"]
+        for name, floor in gates.items():
+            self.assertGreaterEqual(m[name], floor - 0.02, name)
+        self.assertEqual(self.probe.sidecar["gate_tolerance"], 0.02)
+        self.assertGreater(self.probe.sidecar["n_test"], 700)
 
-    def test_sys35_worked_examples_pass_under_their_finance_category(self):
-        """The eight SYS-35 rejects (real bodies score 0.20-0.34). They pass
-        because of the category, not the score -- the score half of this
-        Done-when transfers to SYS-37 (#121) per the owner's comment."""
+
+def _load_real_filter():
+    try:
+        return SemanticImportanceFilter()
+    except Exception as e:  # noqa: BLE001 -- encoder not cached on this machine
+        raise unittest.SkipTest(f"real encoder unavailable offline: {e!r}")
+
+
+class TestSemanticImportanceFilterRealModel(unittest.TestCase):
+    """The committed probe on its real encoder. Slow (loads multilingual-e5-large,
+    ~2 GB); skipped when the encoder is not cached locally. These are the SYS-35
+    and SYS-34 worked examples through the real `classify` -- the ticket's
+    Done-when, now judged by the probe rather than rescued by the category."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.filt = _load_real_filter()
+
+    def test_sys35_worked_examples_pass_with_a_finance_topic(self):
         examples = [
             ("LIPUTAN6", "bisnis", "Harga Minyak Dunia Turun Usai AS Ungkap Pipa Arab Saudi Segera Beroperasi. "
              "Liputan6.com, Jakarta - Harga minyak dunia turun pada perdagangan Rabu setelah Amerika Serikat "
@@ -350,39 +421,41 @@ class TestSemanticImportanceFilterRealModel(unittest.TestCase):
             ("TIRTO", "ekonomi", "Rokok Ilegal Marak, Realisasi Pajak Rokok Jakarta Turun Rp37 M. Maraknya rokok ilegal "
              "membuat realisasi pajak rokok Jakarta turun Rp37 miliar tahun ini."),
         ]
-        for source, category, text in examples:
-            decision = self.filt.classify(text, category=category)
-            self.assertTrue(decision.is_important, f"{source}/{category}: {text[:60]}")
-            self.assertEqual(decision.gate, "allow")
+        from newscrawler.core.filter_rubric import TOPICS_FINANCE
+        decisions = self.filt.classify_batch([t for _, _, t in examples], [c for _, c, _ in examples])
+        for (source, category, text), d in zip(examples, decisions):
+            self.assertTrue(d.is_important, f"{source}/{category}: {text[:60]} p_soft={d.p_soft:.2f}")
+            self.assertEqual(d.gate, "allow")
+            self.assertTrue(d.score_passed, f"the probe itself must keep {text[:50]}")
+            self.assertIn(d.topic, TOPICS_FINANCE, f"{text[:50]} -> {d.topic}")
 
-    def test_sys34_regression_titles_are_rejected_by_their_category(self):
+    def test_soft_examples_fail_by_probe_with_no_category(self):
+        # No category: the deny-list cannot help; the probe alone must say soft.
+        for text in (
+            "[PUISI] Barangkali Aku Butuh Jeda. Barangkali aku butuh jeda dari riuh yang tak kunjung reda, "
+            "dari langkah yang terus dipaksa. Aku ingin diam sejenak.",
+            "Doa Hari Ini untuk Kelancaran Rezeki, Lengkap dengan Artinya. Berikut bacaan doa agar rezeki lancar "
+            "yang bisa diamalkan setiap pagi beserta arti dan keutamaannya.",
+            "Resep Ayam Goreng Kremes Renyah ala Rumahan, Bumbu Meresap Sempurna. Bahan-bahan: 1 ekor ayam, "
+            "bawang putih, ketumbar, kunyit. Cara membuat: haluskan bumbu, marinasi ayam selama 30 menit.",
+            "Hasil Liga Inggris: Arsenal Menang 3-1 atas Tottenham, Saka Cetak Dua Gol. Arsenal mengalahkan "
+            "Tottenham Hotspur 3-1 di Emirates Stadium; Bukayo Saka mencetak dua gol dan Odegaard satu.",
+            "7 Gaya OOTD Dewi Gita, Selalu Tampil Stunning dan Elegan. Penampilan Dewi Gita selalu memukau dengan "
+            "padu padan busana yang chic; simak inspirasi gayanya berikut ini.",
+        ):
+            d = self.filt.classify(text, category=None)
+            self.assertFalse(d.is_important, f"{text[:50]} p_soft={d.p_soft:.2f}")
+            self.assertEqual(d.gate, "score")
+
+    def test_sys34_regression_titles_are_rejected_by_their_category_before_the_probe(self):
         for category, text in (
             ("fiction", "[PUISI] Barangkali Aku Butuh Jeda. Barangkali aku butuh jeda dari riuh yang tak kunjung reda."),
             ("korea", "3 Profesi Dilakoni Han So Hee di Film, Ada yang Jadi Pengacara. Han So Hee memerankan tiga profesi."),
             ("hype", "Harry Vaughan Umumkan Pernikahan dengan Nevy Tania. Aktor Harry Vaughan resmi menikah."),
-            ("life", "7 Gaya OOTD Dewi Gita, Selalu Tampil Stunning. Penampilan Dewi Gita selalu memukau."),
             ("life", "5 Zodiak yang Punya Aura Pembawa Rezeki. Zodiak ini dipercaya membawa keberuntungan."),
         ):
-            decision = self.filt.classify(text, category=category)
-            self.assertFalse(decision.is_important, f"{category}: {text[:50]}")
-            self.assertEqual(decision.gate, "deny")
-
-    def test_sys34_poem_and_kdrama_are_measured_against_the_margin_too(self):
-        """SYS-34 (d): the margin fallback passed a poem and three K-drama
-        recaps on the live run. Record what it does on the same titles with
-        no category, so a change to the score is measured against them and
-        not only against SYS-31's six. This is not a guard on the margin --
-        SYS-37 replaces it -- it is a guard that the category gate stays the
-        thing that rejects them: whatever the score says, `deny` wins."""
-        poem = "[PUISI] Barangkali Aku Butuh Jeda. Barangkali aku butuh jeda dari riuh yang tak kunjung reda."
-        kdrama = "7 Perubahan Positif Tim 5 Setelah Konflik di The Ordinary Jackpot. Drama Korea ini makin seru."
-        for text in (poem, kdrama):
-            no_category = self.filt.classify(text, category=None)
-            with_category = self.filt.classify(text, category="fiction")
-            self.assertEqual(with_category.gate, "deny")
-            self.assertFalse(with_category.is_important)
-            # The score's own verdict is recorded on the decision either way.
-            self.assertIn(no_category.gate, ("score",))
+            d = self.filt.classify(text, category=category)
+            self.assertEqual((d.is_important, d.gate), (False, "deny"), f"{category}: {text[:50]}")
 
 
 if __name__ == "__main__":

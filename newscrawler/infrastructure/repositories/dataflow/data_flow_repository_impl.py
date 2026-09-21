@@ -172,6 +172,8 @@ class DataFlowRepositoryImpl(DataFlowRepository):
 
         return NewsDetailsModel(
             sitemap_id=news_details.sitemap_id,
+            topic=getattr(news_details, "topic", None),
+            topic_confidence=getattr(news_details, "topic_confidence", None),
             extracted_text=news_details.extracted_text,
             reporter=news_details.reporter,
             meta_data=meta_data,
