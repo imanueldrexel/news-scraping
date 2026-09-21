@@ -90,6 +90,48 @@ class TestIsOffTopicCategory(unittest.TestCase):
         self.assertTrue(is_offtopic_category("bali/sport"))
         self.assertTrue(is_offtopic_category("sepakbola"))
 
+    def test_celebes_is_not_a_false_positive_via_the_celeb_substring(self):
+        """SYS-42 (#137): INEWS's `celebes` (celebes.inews.id, the Sulawesi
+        regional desk -- 200 pending hard-news rows on 2026-09-21) contains
+        "celeb" the way "transportasi" contains "sport". A substring stem
+        denied it before the score; `celeb` is word-bounded now."""
+        self.assertFalse(is_offtopic_category("celebes"))
+        self.assertFalse(is_offtopic_category("Celebes"))
+        self.assertFalse(is_offtopic_category("https://celebes.inews.id/sitemap.xml"))
+        self.assertIsNone(category_gate("celebes"))
+
+    def test_celeb_still_matches_real_celebrity_categories(self):
+        for cat in ("celebrity", "Celebrity", "celeb", "celebs", "https://celebrity.okezone.com/sitemap.xml",
+                    "https://www.example.com/celeb/sitemap.xml", "seleb", "KlikSeleb", "selebriti"):
+            self.assertTrue(is_offtopic_category(cat), f"{cat!r} should be off-topic")
+
+    def test_no_deny_stem_collides_with_the_live_not_denied_vocabulary(self):
+        """SYS-42 (#137): the inverse of SYS-34's title sampling. Every live
+        (source, category) the gate did not deny on 2026-09-21 is in the
+        fixture; a new stem on either keyword list that catches one of them
+        fails here instead of permanently rejecting a real desk on the next
+        run. To deny one of these on purpose, remove it from the fixture in
+        the same commit, with the 3-title sample on the ticket."""
+        import json
+        import os
+        path = os.path.join(os.path.dirname(__file__), "..", "fixtures", "category_vocabulary_not_denied.json")
+        with open(path, encoding="utf-8") as f:
+            pairs = json.load(f)["pairs"]
+        self.assertGreater(len(pairs), 300, "fixture looks truncated")
+        collisions = [
+            f"{p['source']}/{p['category']}" for p in pairs if is_offtopic_category(p["category"])
+        ]
+        self.assertEqual(
+            collisions, [],
+            "deny-list stems now catch live categories that were not denied on 2026-09-21 -- sample their "
+            "titles before denying them (SRC-39), then update the fixture in the same commit",
+        )
+        # The two known collisions are in the fixture and so covered above;
+        # pin them by name too, so the message says what broke.
+        names = {p["category"].lower() for p in pairs}
+        self.assertIn("celebes", names)
+        self.assertIn("transportasi", names)
+
 
 class TestNewsWorthyScopeDenyList(unittest.TestCase):
     """SYS-34 (#115) + SYS-35 (#118): what left the list and what joined it."""
@@ -186,9 +228,19 @@ class TestNewsCategoryAllowSet(unittest.TestCase):
         self.assertIsNone(category_gate("news"))
 
     def test_deny_wins_over_allow_for_a_value_matching_both(self):
-        # Cannot happen for the committed vocabularies (asserted above); the
-        # ordering is still policy, not accident.
+        # The committed *names* are disjoint (asserted above), but a host-
+        # qualified key (SRC-41 `<region>/<section>`, SRC-34 `finance/<leaf>`)
+        # can carry a soft stem in one segment and an allow-set name in the
+        # last: `hiburan/nasional` is denied by substring AND allowed by its
+        # section. Deny must win -- the ordering is policy, not accident.
+        # DBT-32 (#141): the old version of this test used `bali/sport`, which
+        # never matched the allow-set, so swapping the two checks passed it.
+        self.assertTrue(is_offtopic_category("hiburan/nasional"))
+        self.assertTrue(is_news_category("hiburan/nasional"))
+        self.assertEqual(category_gate("hiburan/nasional"), "deny")
+        self.assertEqual(category_gate("https://olahraga.example.com/ekonomi"), "deny")
         self.assertEqual(category_gate("bali/sport"), "deny")
+        self.assertEqual(category_gate("bali/politik"), "allow")
 
 
 def _make_filter_without_loading_model(max_score=0.9, max_offtopic=0.0):

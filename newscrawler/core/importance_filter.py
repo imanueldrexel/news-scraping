@@ -83,16 +83,27 @@ OFFTOPIC_CATEGORIES_EXACT = {
 # on WARTAEKONOMI caught by sampling actual titles before the SYS-31 cleanup
 # delete ran; "wisata" is word-bounded for the same reason ("pariwisata" is
 # the tourism industry).
+#
+# SYS-42 (#137): a substring stem is a collision with the next source's
+# vocabulary waiting to happen -- `celeb` (added by SYS-34) matched INEWS's
+# Sulawesi desk `celebes` and would have permanently rejected 200 regional
+# hard-news rows on the next INEWS run. A stem short enough to be a prefix
+# of a real word goes on the word-bounded list; a substring stem must be a
+# whole word itself (`celebrity`, `olahraga`, `showbiz`). Every stem on both
+# lists is checked against the live not-denied vocabulary in
+# tests/fixtures/category_vocabulary_not_denied.json before it ships.
 OFFTOPIC_CATEGORY_KEYWORDS_SUBSTRING = (
     "olahraga", "lifestyle", "hiburan", "kuliner",
     "travel", "religi", "destinasi", "tainment",
     # SYS-34 (VIVA evidence): the Indonesian/English stems the exact list
     # already has, so URL-shaped categories are caught too.
-    "showbiz", "seleb", "celeb", "zodiak", "horoskop", "resep",
+    "showbiz", "seleb", "celebrity", "zodiak", "horoskop", "resep",
     "fiction", "renungan", "tafsir", "advetorial", "advertorial",
 )
 OFFTOPIC_CATEGORY_KEYWORDS_WORD = (
     "sport", "wisata", "bola", "food", "piala", "gossip", "gosip",
+    # SYS-42: `celeb`/`celebs` as a word only -- never the prefix of `celebes`.
+    "celeb",
 )
 
 # Short topic anchors for verticals that keep landing in the cosine noise band
