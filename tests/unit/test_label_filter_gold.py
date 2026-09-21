@@ -11,8 +11,8 @@ import pytest  # noqa: E402
 
 from label_filter_gold import (  # noqa: E402
     GOLD_PATH, SAMPLE_PATH, STRATA_TARGETS, STRATUM_ORDER, allocate, assign_splits, assign_stratum, batch_payload,
-    conflicting_label_headlines, dedupe_within_source, draw, frozen_has_body, headline_groups, merge_bodies,
-    normalise_headline, parse_labels, read_jsonl, reassign_strata, refresh_categories, refresh_rows, repair_split_leaks,
+    conflicting_label_headlines, dedupe_within_source, draw, frozen_has_body, headline_groups, majority_label, merge_bodies,
+    merge_votes, normalise_headline, parse_labels, read_jsonl, reassign_strata, refresh_categories, refresh_rows, repair_split_leaks,
 )
 from newscrawler.core.filter_rubric import (  # noqa: E402
     TOPICS, TOPICS_FINANCE, TOPICS_NEWS, TOPIC_SOFT, build_label_prompt, is_valid_label,
@@ -256,6 +256,23 @@ class TestMergeBodies:
         g1 = [dict(s1[0], is_news=False, topic="soft", labeller="m", labelled_at="t2")]       # re-labelled
         s2, g2, c2 = merge_bodies(s1, g1, fetched)
         assert s2 == s1 and g2 == g1 and c2["sample_rows_updated"] == c2["gold_rows_unlabelled_for_relabel"] == 0
+
+
+class TestMajorityVotes:
+    def test_majority_is_news_and_plurality_topic_with_current_as_tiebreak(self):
+        cur = {"is_news": True, "topic": "markets"}
+        assert majority_label(cur, [{"is_news": False, "topic": "soft"}, {"is_news": False, "topic": "soft"}]) == (False, "soft", 3)
+        assert majority_label(cur, [{"is_news": True, "topic": "corporate"}, {"is_news": False, "topic": "soft"}]) == (True, "markets", 3)
+        assert majority_label(cur, [{"is_news": True, "topic": "corporate"}, {"is_news": True, "topic": "corporate"}]) == (True, "corporate", 3)
+        cur_soft = {"is_news": False, "topic": "soft"}
+        assert majority_label(cur_soft, [{"is_news": True, "topic": "law_crime"}, {"is_news": True, "topic": "law_crime"}]) == (True, "law_crime", 3)
+
+    def test_merge_votes_touches_only_rows_with_votes(self):
+        gold = [dict(_row(1, split="test"), is_news=True, topic="markets"), dict(_row(2, split="train"), is_news=True, topic="markets")]
+        out, counts = merge_votes(gold, {1: [{"is_news": False, "topic": "soft"}, {"is_news": False, "topic": "soft"}]})
+        assert out[0]["is_news"] is False and out[0]["topic"] == "soft" and out[0]["label_votes"] == 3
+        assert "label_votes" not in out[1] and out[1]["is_news"] is True
+        assert counts == {"rows_with_votes": 1, "is_news_changed": 1, "topic_changed": 1}
 
 
 class TestRefreshRows:

@@ -63,7 +63,7 @@ load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file_
 from newscrawler.core.filter_rubric import TOPICS, TOPIC_SOFT  # noqa: E402
 from newscrawler.core.importance_filter import category_gate  # noqa: E402
 from newscrawler.core.importance_probe import (  # noqa: E402
-    PROBE_DIR, PROBE_MODEL_NAME, PROBE_SIDECAR, PROBE_WEIGHTS, UNCERTAIN_BAND,
+    DEFAULT_PROBE_ENCODER, PROBE_DIR, PROBE_SIDECAR, PROBE_WEIGHTS, UNCERTAIN_BAND,
     ImportanceProbe, build_check_text, embed_for_probe, sha256_of_file,
 )
 
@@ -86,6 +86,11 @@ GATES = {
     "precision_allow": 0.90,
     "topic_accuracy": 0.80,
 }
+# The threshold only moves the gate; topic accuracy is an argmax over the news
+# classes and does not depend on tau, so it is evaluated once, not searched.
+TAU_GATES = {k: v for k, v in GATES.items() if k != "topic_accuracy"}
+GATE_C_GRID = (0.25, 0.5, 1.0, 2.0, 4.0)
+TOPIC_C_GRID = (1.0, 2.0, 4.0, 8.0, 16.0)
 
 
 # ── data ─────────────────────────────────────────────────────────────────────
@@ -171,47 +176,110 @@ def gates_pass(metrics: Dict[str, Optional[float]]) -> Tuple[bool, List[str]]:
 
 def choose_threshold(rows: Sequence[dict], cv_probs: np.ndarray, classes: List[str],
                      grid=np.round(np.arange(0.30, 0.81, 0.01), 2)) -> Tuple[float, Dict]:
-    """The tau that satisfies every gate on the cross-validated train
-    predictions with the largest minimum slack; 0.5 (and a report of the
-    shortfalls) when none does."""
-    best_tau, best_slack, best_metrics = None, -1.0, None
+    """The tau with the largest minimum slack over the tau-dependent gates on
+    the cross-validated train predictions -- the widest margin when every gate
+    is met, the least-bad point when none can be. Topic accuracy is not part
+    of the search (it does not depend on tau)."""
+    best_tau, best_slack, best_metrics = 0.5, -9.0, None
     for tau in grid:
         m = gate_metrics(rows, cv_probs, float(tau), classes)
-        ok, _ = gates_pass(m)
-        if not ok:
+        if any(m.get(name) is None for name in TAU_GATES):
             continue
-        slack = min((m[name] - floor) for name, floor in GATES.items())
+        # The tau with the largest MINIMUM slack over the tau-dependent gates.
+        # When every gate is met that is the widest safety margin; when none
+        # can be, it is the least-bad point -- recall margin is traded for
+        # precision until the two shortfalls balance, instead of parking at
+        # 0.5 with recall far above its floor and precision far below.
+        slack = min((m[name] - floor) for name, floor in TAU_GATES.items())
         if slack > best_slack:
             best_tau, best_slack, best_metrics = float(tau), slack, m
-    if best_tau is None:
-        return 0.5, gate_metrics(rows, cv_probs, 0.5, classes)
+    if best_metrics is None:
+        best_metrics = gate_metrics(rows, cv_probs, best_tau, classes)
     return best_tau, best_metrics
 
 
-# ── training ─────────────────────────────────────────────────────────────────
-def fit(X: np.ndarray, y: List[str], seed: int = SEED, C: float = 1.0):
+# ── training: two heads, each selected by cross-validation on train ──────────
+def _order(clf, classes):
+    return [list(clf.classes_).index(c) for c in classes]
+
+
+def fit_gate(X: np.ndarray, is_news, C: float, seed: int = SEED):
+    """Binary logistic regression, positive class = soft."""
     from sklearn.linear_model import LogisticRegression
-    clf = LogisticRegression(C=C, class_weight="balanced", max_iter=2000, random_state=seed)
-    clf.fit(X, y)
-    return clf
+    y = ~np.asarray(is_news, dtype=bool)
+    return LogisticRegression(C=C, max_iter=4000, random_state=seed).fit(X, y)
 
 
-def cross_val_probs(X: np.ndarray, y: List[str], classes: List[str], seed: int = SEED, folds: int = 5) -> np.ndarray:
-    from sklearn.model_selection import StratifiedKFold
-    y_arr = np.array(y)
-    out = np.zeros((len(y), len(classes)), dtype=np.float64)
-    for train_idx, val_idx in StratifiedKFold(folds, shuffle=True, random_state=seed).split(X, y_arr):
-        clf = fit(X[train_idx], list(y_arr[train_idx]), seed)
-        probs = clf.predict_proba(X[val_idx])
-        # align to `classes` order (sklearn orders classes_ lexically)
-        col = [list(clf.classes_).index(c) for c in classes]
-        out[val_idx] = probs[:, col]
+def fit_topic(X: np.ndarray, topics, C: float, seed: int = SEED):
+    """13-class multinomial, class-balanced (the soft rows act as negatives;
+    this beat a news-only 12-class head in the SYS-47 sweep)."""
+    from sklearn.linear_model import LogisticRegression
+    return LogisticRegression(C=C, class_weight="balanced", max_iter=4000, random_state=seed).fit(X, topics)
+
+
+def assemble(p_soft: np.ndarray, topic_probs13: np.ndarray, classes: List[str]) -> np.ndarray:
+    """The 13-column matrix gate_metrics() scores: P(soft) from the gate, the
+    news columns from the topic head renormalised over the news classes and
+    scaled by 1 - P(soft) (so argmax over news classes is the topic head's)."""
+    soft_idx = classes.index(TOPIC_SOFT)
+    out = np.zeros((len(p_soft), len(classes)), dtype=np.float64)
+    news_cols = [i for i in range(len(classes)) if i != soft_idx]
+    news = topic_probs13[:, news_cols]
+    news = news / np.clip(news.sum(axis=1, keepdims=True), 1e-12, None)
+    out[:, soft_idx] = p_soft
+    out[:, news_cols] = (1 - p_soft)[:, None] * news
     return out
 
 
-def aligned_weights(clf, classes: List[str]) -> Tuple[np.ndarray, np.ndarray]:
-    order = [list(clf.classes_).index(c) for c in classes]
-    return clf.coef_[order].astype(np.float64), clf.intercept_[order].astype(np.float64)
+def cv_gate_probs(X, is_news, C, seed: int = SEED, folds: int = 5) -> np.ndarray:
+    from sklearn.model_selection import StratifiedKFold
+    y = np.asarray(is_news, dtype=bool)
+    out = np.zeros(len(y))
+    for a, b in StratifiedKFold(folds, shuffle=True, random_state=seed).split(X, y):
+        g = fit_gate(X[a], y[a], C, seed)
+        out[b] = g.predict_proba(X[b])[:, list(g.classes_).index(True)]
+    return out
+
+
+def cv_topic_probs(X, topics, C, classes, seed: int = SEED, folds: int = 5) -> np.ndarray:
+    from sklearn.model_selection import StratifiedKFold
+    y = np.asarray(topics)
+    out = np.zeros((len(y), len(classes)))
+    for a, b in StratifiedKFold(folds, shuffle=True, random_state=seed).split(X, y):
+        t = fit_topic(X[a], y[a], C, seed)
+        out[b] = t.predict_proba(X[b])[:, _order(t, classes)]
+    return out
+
+
+def select_heads(X_train, train, classes):
+    """Model selection on CV of train only. Gate: the (C, tau) with the widest
+    minimum slack over the tau-dependent gates. Topic: the C with the best CV
+    topic accuracy on news rows. Returns (C_gate, tau, C_topic, cv_metrics)."""
+    is_news = [bool(r["is_news"]) for r in train]
+    topics = [r["topic"] for r in train]
+    best_topic = (None, -1.0, None)
+    for C in TOPIC_C_GRID:
+        cv_t = cv_topic_probs(X_train, topics, C, classes)
+        pred = topic_of(cv_t, classes)
+        acc = float(np.mean([p == t for p, t, n in zip(pred, topics, is_news) if n]))
+        logger.info("  topic head C=%-4s  cv topic accuracy %.3f", C, acc)
+        if acc > best_topic[1]:
+            best_topic = (C, acc, cv_t)
+    C_topic, _, cv_topic = best_topic
+    best_gate = (None, None, -9.0, None)
+    for C in GATE_C_GRID:
+        cv_g = cv_gate_probs(X_train, is_news, C)
+        probs = assemble(cv_g, cv_topic, classes)
+        tau, m = choose_threshold(train, probs, classes)
+        ok = all(m.get(k) is not None and m[k] >= v for k, v in TAU_GATES.items())
+        slack = min(m[k] - v for k, v in TAU_GATES.items() if m[k] is not None)
+        logger.info("  gate head C=%-5s tau=%.2f  cv rec_fin=%.3f rec_gen=%.3f prec_mixed=%.3f prec_allow=%.3f  %s",
+                    C, tau, m["recall_finance"], m["recall_general"], m["precision_mixed"], m["precision_allow"],
+                    "feasible" if ok else "infeasible")
+        if slack > best_gate[2]:
+            best_gate = (C, tau, slack, m)
+    C_gate, tau, _, cv_metrics = best_gate
+    return C_gate, tau, C_topic, cv_metrics
 
 
 def confusion(rows: Sequence[dict], probs: np.ndarray, classes: List[str]) -> Dict[str, Dict[str, int]]:
@@ -265,22 +333,31 @@ def cmd_train(args) -> int:
     y_train = [r["topic"] for r in train]
     logger.info("embedded: train %s, test %s", X_train.shape, X_test.shape)
 
-    cv = cross_val_probs(X_train, y_train, classes)
-    tau, cv_metrics = choose_threshold(train, cv, classes)
-    ok_cv, cv_failures = gates_pass(cv_metrics)
-    logger.info("soft threshold chosen on 5-fold CV of train: tau=%.2f (%s)", tau,
-                "all gates pass on CV" if ok_cv else "NO tau passes every gate on CV; 0.50 reported")
+    logger.info("model selection on 5-fold CV of train:")
+    C_gate, tau, C_topic, cv_metrics = select_heads(X_train, train, classes)
+    logger.info("selected: gate C=%s tau=%.2f, topic C=%s", C_gate, tau, C_topic)
     print_report("train (5-fold CV) at tau", cv_metrics)
 
-    clf = fit(X_train, y_train)
-    coef, intercept = aligned_weights(clf, classes)
-    probe = ImportanceProbe(coef, intercept, classes, tau)
-    probs_test = probe.predict_proba(X_test)
-    sk_probs = clf.predict_proba(X_test)[:, [list(clf.classes_).index(c) for c in classes]]
-    max_diff = float(np.abs(probs_test - sk_probs).max())
+    is_news_train = [bool(r["is_news"]) for r in train]
+    gate = fit_gate(X_train, is_news_train, C_gate)
+    topic = fit_topic(X_train, y_train, C_topic)
+    gate_coef = gate.coef_.reshape(-1).astype(np.float64)
+    gate_intercept = float(gate.intercept_[0])
+    topic_coef = topic.coef_[_order(topic, classes)].astype(np.float64)
+    topic_intercept = topic.intercept_[_order(topic, classes)].astype(np.float64)
+    # sklearn's coefficients predict its classes_[1]; the probe's sigmoid must be P(soft)
+    if list(gate.classes_) != [False, True]:
+        gate_coef, gate_intercept = -gate_coef, -gate_intercept
+    probe = ImportanceProbe(gate_coef, gate_intercept, topic_coef, topic_intercept, classes, tau)
+    # parity: our sigmoid/softmax must reproduce sklearn before anything is written
+    sk_soft = gate.predict_proba(X_test)[:, list(gate.classes_).index(True)]
+    sk_topic = topic.predict_proba(X_test)[:, _order(topic, classes)]
+    max_diff = max(float(np.abs(probe.p_soft(X_test) - sk_soft).max()),
+                   float(np.abs(probe.topic_proba(X_test) - sk_topic).max()))
     if max_diff > 1e-6:
-        logger.error("npz softmax differs from sklearn predict_proba by %.2e -- refusing to write", max_diff)
+        logger.error("npz heads differ from sklearn predict_proba by %.2e -- refusing to write", max_diff)
         return 3
+    probs_test = assemble(probe.p_soft(X_test), probe.topic_proba(X_test), classes)
     test_metrics = gate_metrics(test, probs_test, tau, classes)
     test_metrics["topic_macro_f1"] = macro_f1(test, probs_test, classes)
     ok, failures = gates_pass(test_metrics)
@@ -301,18 +378,21 @@ def cmd_train(args) -> int:
         return 0
 
     os.makedirs(args.out_dir, exist_ok=True)
-    np.savez(os.path.join(args.out_dir, PROBE_WEIGHTS), coef=coef, intercept=intercept, classes=np.array(classes))
+    np.savez(os.path.join(args.out_dir, PROBE_WEIGHTS), gate_coef=gate_coef, gate_intercept=np.array([gate_intercept]),
+             topic_coef=topic_coef, topic_intercept=topic_intercept, classes=np.array(classes))
     sidecar = {
         "trained_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "embedding_model": args.encoder,
-        "embedding_dim": int(coef.shape[1]),
+        "embedding_dim": int(topic_coef.shape[1]),
         "classes": classes,
         "soft_threshold": tau,
         "gold_path": os.path.relpath(args.gold, REPO_ROOT).replace("\\", "/"),
         "gold_sha256": sha256_of_file(args.gold),
         "n_train": len(train), "n_test": len(test),
         "sklearn_version": sklearn.__version__, "numpy_version": np.__version__,
-        "estimator": "LogisticRegression(multinomial, lbfgs, class_weight=balanced, C=1.0, max_iter=2000)",
+        "estimator": {"gate": f"LogisticRegression(binary soft-vs-news, C={C_gate})",
+                      "topic": f"LogisticRegression(13-class, class_weight=balanced, C={C_topic})",
+                      "selection": "5-fold CV on train; tau over the tau-dependent gates; topic C by CV accuracy"},
         "seed": SEED,
         "gates": GATES,
         "metrics_test": {k: v for k, v in test_metrics.items() if k != "per_stratum"},
@@ -396,7 +476,7 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--gold", default=GOLD_PATH)
     parser.add_argument("--out-dir", default=PROBE_DIR)
-    parser.add_argument("--encoder", default=PROBE_MODEL_NAME,
+    parser.add_argument("--encoder", default=DEFAULT_PROBE_ENCODER,
                         help="sentence-transformers model for the probe (SYS-47: e.g. intfloat/multilingual-e5-base); recorded in the sidecar")
     parser.add_argument("--no-write", action="store_true", help="Evaluate only; never write the artifact")
     parser.add_argument("--backfill", action="store_true", help="Tag existing articles with a topic (needs the artifact)")

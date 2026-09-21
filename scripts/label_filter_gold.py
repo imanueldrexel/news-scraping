@@ -39,6 +39,11 @@ re-run alone:
                   gold: rows that gained a body get body_head/has_body and lose
                   their headline-only label so `label` re-decides them on
                   title + body; `had_body_at_freeze` keeps the stratum frozen.
+  merge-votes     SYS-47: the test split's labels become a majority of three
+                  passes (the current label + tests/fixtures/filter_gold_test_votes.jsonl,
+                  two more `label` runs with different --seed shuffles). Single-
+                  pass labels disagree ~4% run-to-run; the gates are measured
+                  against the majority. Train rows are untouched.
   label           An LLM labels --batch-size rows per call, JSON out, counted in
                   api_usage_log under the model's name (the same daily cap as
                   knowledge extraction). --provider openai (default; OPS-20 #136:
@@ -329,6 +334,43 @@ def merge_bodies(sample: List[dict], gold: List[dict], fetched: List[dict]) -> T
             continue
         new_gold.append(g)
     return sample, new_gold, counts
+
+
+def majority_label(current: dict, votes: List[dict]) -> Tuple[bool, str, int]:
+    """SYS-47: the current label is one vote; `votes` are the extra passes
+    (different batch shuffles). is_news by majority; topic by plurality among
+    the votes that agree with the majority is_news, ties broken by the current
+    label. Returns (is_news, topic, n_votes)."""
+    all_votes = [{"is_news": bool(current["is_news"]), "topic": current["topic"]}] + list(votes)
+    n_news = sum(1 for v in all_votes if v["is_news"])
+    is_news = n_news * 2 > len(all_votes)
+    if not is_news:
+        return False, "soft", len(all_votes)
+    counts = collections.Counter(v["topic"] for v in all_votes if v["is_news"] and v["topic"] != "soft")
+    if not counts:
+        return True, current["topic"] if current["topic"] != "soft" else "other_news", len(all_votes)
+    top = max(counts.values())
+    tied = [t for t, c in counts.items() if c == top]
+    topic = current["topic"] if current["topic"] in tied else tied[0]
+    return True, topic, len(all_votes)
+
+
+def merge_votes(gold: List[dict], votes_by_id: Dict[int, List[dict]]) -> Tuple[List[dict], Dict[str, int]]:
+    """Apply majority labels to the rows that have extra votes (the test split).
+    Pure. Rows without votes are untouched. Adds `label_votes`."""
+    counts = {"rows_with_votes": 0, "is_news_changed": 0, "topic_changed": 0}
+    out = []
+    for g in gold:
+        votes = votes_by_id.get(g["sitemap_id"])
+        if not votes:
+            out.append(g)
+            continue
+        is_news, topic, n = majority_label(g, votes)
+        counts["rows_with_votes"] += 1
+        counts["is_news_changed"] += int(is_news != bool(g["is_news"]))
+        counts["topic_changed"] += int(topic != g["topic"])
+        out.append(dict(g, is_news=is_news, topic=topic, label_votes=n))
+    return out, counts
 
 
 def refresh_categories(rows: List[dict], current_category_by_id: Dict[int, Optional[str]]) -> int:
@@ -701,6 +743,23 @@ def cmd_merge_bodies(args) -> int:
     return 0
 
 
+def cmd_merge_votes(args) -> int:
+    gold = read_jsonl(args.out)
+    votes = {r["sitemap_id"]: r["votes"] for r in read_jsonl(args.votes)}
+    if not gold or not votes:
+        logger.error("need both %s and %s", args.out, args.votes)
+        return 1
+    new_gold, counts = merge_votes(gold, votes)
+    for k, v in counts.items():
+        logger.info("  %-20s %6d", k, v)
+    if args.dry_run:
+        logger.info("[dry-run] nothing written.")
+        return 0
+    write_jsonl(args.out, new_gold)
+    logger.info("Wrote %d gold rows (%d carry majority labels).", len(new_gold), counts["rows_with_votes"])
+    return 0
+
+
 def cmd_label(args) -> int:
     from newscrawler.core.constants import DAILY_API_CALL_LIMIT, GEMINI_MODEL, OPENAI_MODEL
 
@@ -939,6 +998,12 @@ def main(argv=None) -> int:
     p.add_argument("--sample", default=SAMPLE_PATH)
     p.add_argument("--out", default=GOLD_PATH)
     p.set_defaults(fn=cmd_merge_bodies)
+
+    p = sub.add_parser("merge-votes")
+    p.add_argument("--dry-run", action="store_true")
+    p.add_argument("--votes", default=os.path.join(FIXTURES, "filter_gold_test_votes.jsonl"))
+    p.add_argument("--out", default=GOLD_PATH)
+    p.set_defaults(fn=cmd_merge_votes)
 
     p = sub.add_parser("label")
     p.add_argument("--dry-run", action="store_true")

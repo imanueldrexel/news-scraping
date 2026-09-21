@@ -32,7 +32,8 @@ from newscrawler.core.filter_rubric import TOPICS, TOPIC_SOFT
 # models expect an instruction prefix on every input ("query: " for
 # classification/symmetric use); it is part of the encoder's contract, so it
 # is applied here for training and serving alike.
-PROBE_MODEL_NAME = "paraphrase-multilingual-MiniLM-L12-v2"
+PROBE_MODEL_NAME = "paraphrase-multilingual-MiniLM-L12-v2"      # the FAISS/chunk embedding model; the old cosine filter's
+DEFAULT_PROBE_ENCODER = "intfloat/multilingual-e5-base"        # SYS-47: what the probe trains and serves on (sidecar is authoritative)
 ENCODER_PREFIX = {
     "intfloat/multilingual-e5-base": "query: ",
     "intfloat/multilingual-e5-small": "query: ",
@@ -96,33 +97,47 @@ class ProbeArtifactError(RuntimeError):
 
 
 class ImportanceProbe:
-    """Multinomial logistic regression over the MiniLM embedding: softmax(X W^T + b)
-    over filter_rubric.TOPICS. Loaded from PROBE_DIR; validated against the
-    code's class list, the embedding model name and dimension."""
+    """Two linear heads over the same embedding (SYS-47: a single balanced
+    13-class softmax cannot be both a calibrated gate and a topic classifier):
 
-    def __init__(self, coef: np.ndarray, intercept: np.ndarray, classes: List[str], soft_threshold: float,
-                 sidecar: Optional[dict] = None):
+      gate  -- binary logistic regression, P(soft) = sigmoid(x . g + b_g);
+               the row is news iff P(soft) < soft_threshold.
+      topic -- 13-class multinomial logistic regression; the topic is the
+               argmax over the 12 NEWS classes, its confidence the softmax mass
+               of that class renormalised over the news classes.
+
+    Loaded from PROBE_DIR; validated against the code's class list, the
+    encoder name in the sidecar and the embedding dimension."""
+
+    def __init__(self, gate_coef: np.ndarray, gate_intercept: float, topic_coef: np.ndarray, topic_intercept: np.ndarray,
+                 classes: List[str], soft_threshold: float, sidecar: Optional[dict] = None):
         if list(classes) != list(TOPICS):
             raise ProbeArtifactError(f"probe classes {list(classes)} != filter_rubric.TOPICS {list(TOPICS)}")
-        coef = np.asarray(coef, dtype=np.float64)
-        intercept = np.asarray(intercept, dtype=np.float64)
-        if coef.ndim != 2 or coef.shape[0] != len(classes) or intercept.shape != (len(classes),):
-            raise ProbeArtifactError(f"probe weights have shape {coef.shape}/{intercept.shape} for {len(classes)} classes")
+        gate_coef = np.asarray(gate_coef, dtype=np.float64).reshape(-1)
+        topic_coef = np.asarray(topic_coef, dtype=np.float64)
+        topic_intercept = np.asarray(topic_intercept, dtype=np.float64)
+        if topic_coef.ndim != 2 or topic_coef.shape[0] != len(classes) or topic_intercept.shape != (len(classes),):
+            raise ProbeArtifactError(f"topic weights have shape {topic_coef.shape}/{topic_intercept.shape} for {len(classes)} classes")
+        if gate_coef.shape != (topic_coef.shape[1],):
+            raise ProbeArtifactError(f"gate weights have shape {gate_coef.shape}, topic dim is {topic_coef.shape[1]}")
         if not (0.0 < soft_threshold < 1.0):
             raise ProbeArtifactError(f"soft_threshold {soft_threshold!r} is not in (0, 1)")
-        self.coef = coef
-        self.intercept = intercept
+        self.gate_coef = gate_coef
+        self.gate_intercept = float(np.asarray(gate_intercept).reshape(-1)[0])
+        self.topic_coef = topic_coef
+        self.topic_intercept = topic_intercept
         self.classes = list(classes)
         self.soft_index = self.classes.index(TOPIC_SOFT)
+        self.news_indices = [i for i, c in enumerate(self.classes) if c != TOPIC_SOFT]
         self.soft_threshold = float(soft_threshold)
         self.sidecar = sidecar or {}
 
     @property
     def dim(self) -> int:
-        return self.coef.shape[1]
+        return self.topic_coef.shape[1]
 
     @classmethod
-    def load(cls, directory: str = PROBE_DIR, expected_model_name: str = PROBE_MODEL_NAME,
+    def load(cls, directory: str = PROBE_DIR, expected_model_name: Optional[str] = None,
              soft_threshold: Optional[float] = None) -> "ImportanceProbe":
         weights_path = os.path.join(directory, PROBE_WEIGHTS)
         sidecar_path = os.path.join(directory, PROBE_SIDECAR)
@@ -132,36 +147,59 @@ class ImportanceProbe:
                     f"probe artifact missing: {path} -- run scripts/train_importance_probe.py (SYS-37)")
         with open(sidecar_path, encoding="utf-8") as f:
             sidecar = json.load(f)
-        if sidecar.get("embedding_model") != expected_model_name:
+        if not sidecar.get("embedding_model"):
+            raise ProbeArtifactError("sidecar has no embedding_model")
+        if expected_model_name is not None and sidecar["embedding_model"] != expected_model_name:
             raise ProbeArtifactError(
-                f"probe was trained on {sidecar.get('embedding_model')!r}, the filter loads {expected_model_name!r}")
+                f"probe was trained on {sidecar['embedding_model']!r}, the filter loads {expected_model_name!r}")
         with np.load(weights_path) as w:
-            coef, intercept, classes = w["coef"], w["intercept"], [str(c) for c in w["classes"]]
+            missing = {"gate_coef", "gate_intercept", "topic_coef", "topic_intercept", "classes"} - set(w.files)
+            if missing:
+                raise ProbeArtifactError(f"probe weights lack {sorted(missing)}")
+            gate_coef, gate_intercept = w["gate_coef"], w["gate_intercept"]
+            topic_coef, topic_intercept = w["topic_coef"], w["topic_intercept"]
+            classes = [str(c) for c in w["classes"]]
         if list(classes) != list(sidecar.get("classes", [])):
             raise ProbeArtifactError("probe weights and sidecar disagree on the class list")
         threshold = soft_threshold if soft_threshold is not None else sidecar.get("soft_threshold")
         if threshold is None:
             raise ProbeArtifactError("sidecar has no soft_threshold")
-        return cls(coef, intercept, classes, float(threshold), sidecar)
+        return cls(gate_coef, gate_intercept, topic_coef, topic_intercept, classes, float(threshold), sidecar)
 
-    def predict_proba(self, embeddings: np.ndarray) -> np.ndarray:
+    @property
+    def encoder_name(self) -> str:
+        return self.sidecar.get("embedding_model", "")
+
+    def _check(self, embeddings: np.ndarray) -> np.ndarray:
         x = np.asarray(embeddings, dtype=np.float64)
         if x.ndim == 1:
             x = x[None, :]
         if x.shape[1] != self.dim:
             raise ProbeArtifactError(f"embedding dim {x.shape[1]} != probe dim {self.dim}")
-        logits = x @ self.coef.T + self.intercept
+        return x
+
+    def p_soft(self, embeddings: np.ndarray) -> np.ndarray:
+        x = self._check(embeddings)
+        z = x @ self.gate_coef + self.gate_intercept
+        return 1.0 / (1.0 + np.exp(-z))
+
+    def topic_proba(self, embeddings: np.ndarray) -> np.ndarray:
+        """Softmax over all 13 topic-head classes, shape (n, 13)."""
+        x = self._check(embeddings)
+        logits = x @ self.topic_coef.T + self.topic_intercept
         logits -= logits.max(axis=1, keepdims=True)
         probs = np.exp(logits)
         probs /= probs.sum(axis=1, keepdims=True)
         return probs
 
-    def decide(self, probs_row: np.ndarray):
-        """(is_news, topic, topic_confidence, p_soft) for one probability row.
-        The topic is the best NEWS class even when the row is soft -- a caller
-        that keeps a soft row anyway still gets a topic."""
-        p_soft = float(probs_row[self.soft_index])
-        news = np.array(probs_row, dtype=np.float64)
-        news[self.soft_index] = -1.0
-        best = int(news.argmax())
-        return p_soft < self.soft_threshold, self.classes[best], float(probs_row[best]), p_soft
+    def predict(self, embeddings: np.ndarray):
+        """List of (is_news, topic, topic_confidence, p_soft) per row."""
+        ps = self.p_soft(embeddings)
+        tp = self.topic_proba(embeddings)
+        out = []
+        for p, row in zip(ps, tp):
+            news = row[self.news_indices]
+            best = int(news.argmax())
+            confidence = float(news[best] / news.sum()) if news.sum() > 0 else 0.0
+            out.append((bool(p < self.soft_threshold), self.classes[self.news_indices[best]], confidence, float(p)))
+        return out

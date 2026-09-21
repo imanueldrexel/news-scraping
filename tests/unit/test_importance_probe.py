@@ -21,13 +21,24 @@ from train_importance_probe import GATES, choose_threshold, gate_metrics, gates_
 
 DIM = 8
 rng = np.random.default_rng(0)
-COEF = rng.normal(size=(len(TOPICS), DIM))
-INTERCEPT = rng.normal(size=len(TOPICS))
+GATE_COEF = rng.normal(size=DIM)
+GATE_B = 0.1
+TOPIC_COEF = rng.normal(size=(len(TOPICS), DIM))
+TOPIC_B = rng.normal(size=len(TOPICS))
+SOFT = TOPICS.index(TOPIC_SOFT)
 
 
-def _write_artifact(directory, coef=COEF, intercept=INTERCEPT, classes=None, sidecar_extra=None, model="paraphrase-multilingual-MiniLM-L12-v2"):
+def _probe(threshold=0.5, classes=None, gate_coef=GATE_COEF, topic_coef=TOPIC_COEF, topic_b=TOPIC_B):
+    return ImportanceProbe(gate_coef, GATE_B, topic_coef, topic_b, list(TOPICS) if classes is None else classes, threshold)
+
+
+def _write_artifact(directory, classes=None, sidecar_extra=None, model="intfloat/multilingual-e5-base", drop=None):
     classes = list(TOPICS) if classes is None else classes
-    np.savez(os.path.join(directory, PROBE_WEIGHTS), coef=coef, intercept=intercept, classes=np.array(classes))
+    arrays = {"gate_coef": GATE_COEF, "gate_intercept": np.array([GATE_B]), "topic_coef": TOPIC_COEF,
+              "topic_intercept": TOPIC_B, "classes": np.array(classes)}
+    if drop:
+        arrays.pop(drop)
+    np.savez(os.path.join(directory, PROBE_WEIGHTS), **arrays)
     sidecar = {"embedding_model": model, "classes": classes, "soft_threshold": 0.5}
     sidecar.update(sidecar_extra or {})
     with open(os.path.join(directory, PROBE_SIDECAR), "w", encoding="utf-8") as f:
@@ -68,39 +79,48 @@ class TestTextPreparation:
 
 
 class TestImportanceProbe:
-    def test_softmax_matches_sklearn_predict_proba(self):
+    def test_heads_match_sklearn_predict_proba(self):
         from sklearn.linear_model import LogisticRegression
-        X = rng.normal(size=(200, DIM))
-        y = rng.integers(0, len(TOPICS), size=200)
-        clf = LogisticRegression(max_iter=2000).fit(X, [TOPICS[i] for i in y])
-        order = [list(clf.classes_).index(c) for c in TOPICS]
-        probe = ImportanceProbe(clf.coef_[order], clf.intercept_[order], list(TOPICS), 0.5)
-        np.testing.assert_allclose(probe.predict_proba(X), clf.predict_proba(X)[:, order], atol=1e-9)
+        X = rng.normal(size=(300, DIM))
+        y_topic = [TOPICS[i] for i in rng.integers(0, len(TOPICS), size=300)]
+        y_soft = np.array([t == TOPIC_SOFT for t in y_topic])
+        gate = LogisticRegression(max_iter=2000).fit(X, y_soft)
+        topic = LogisticRegression(max_iter=3000).fit(X, y_topic)
+        order = [list(topic.classes_).index(c) for c in TOPICS]
+        probe = ImportanceProbe(gate.coef_.reshape(-1), float(gate.intercept_[0]), topic.coef_[order], topic.intercept_[order],
+                                list(TOPICS), 0.5)
+        np.testing.assert_allclose(probe.p_soft(X), gate.predict_proba(X)[:, list(gate.classes_).index(True)], atol=1e-9)
+        np.testing.assert_allclose(probe.topic_proba(X), topic.predict_proba(X)[:, order], atol=1e-9)
 
-    def test_decide_returns_gate_topic_confidence_and_p_soft(self):
-        probe = ImportanceProbe(COEF, INTERCEPT, list(TOPICS), 0.5)
-        row = np.full(len(TOPICS), 0.01)
-        row[TOPICS.index(TOPIC_SOFT)] = 0.70
-        row[TOPICS.index("markets")] = 0.19
-        is_news, topic, conf, p_soft = probe.decide(row)
-        assert (is_news, topic, p_soft) == (False, "markets", 0.70) and abs(conf - 0.19) < 1e-12
-        row[TOPICS.index(TOPIC_SOFT)] = 0.30
-        assert probe.decide(row)[0] is True
+    def test_predict_returns_gate_topic_confidence_and_p_soft(self):
+        # A gate that says P(soft)=sigmoid(0.1) ~ 0.525 for a zero vector, and a
+        # topic head whose logits favour `markets`.
+        topic_coef = np.zeros((len(TOPICS), DIM)); topic_b = np.zeros(len(TOPICS))
+        topic_b[TOPICS.index("markets")] = 3.0
+        topic_b[SOFT] = 10.0   # soft dominates the raw softmax -- must be excluded from the topic argmax
+        probe = _probe(threshold=0.5, gate_coef=np.zeros(DIM), topic_coef=topic_coef, topic_b=topic_b)
+        (is_news, topic, conf, p_soft), = probe.predict(np.zeros((1, DIM)))
+        assert is_news is False and topic == "markets" and abs(p_soft - 1 / (1 + np.exp(-0.1))) < 1e-9
+        assert 0.6 < conf < 0.7   # e^3 / (e^3 + 11) among the 12 news classes
+        probe2 = _probe(threshold=0.6, gate_coef=np.zeros(DIM), topic_coef=topic_coef, topic_b=topic_b)
+        assert probe2.predict(np.zeros((1, DIM)))[0][0] is True
 
     def test_threshold_is_strict_less_than(self):
-        probe = ImportanceProbe(COEF, INTERCEPT, list(TOPICS), 0.5)
-        row = np.zeros(len(TOPICS)); row[TOPICS.index(TOPIC_SOFT)] = 0.5
-        assert probe.decide(row)[0] is False
+        # sigmoid(0) = 0.5 exactly: at threshold 0.5 the row is NOT news.
+        probe = ImportanceProbe(np.zeros(DIM), 0.0, TOPIC_COEF, TOPIC_B, list(TOPICS), 0.5)
+        assert probe.predict(np.zeros((1, DIM)))[0][0] is False
 
     def test_rejects_wrong_classes_shapes_and_threshold(self):
         with pytest.raises(ProbeArtifactError):
-            ImportanceProbe(COEF, INTERCEPT, list(reversed(TOPICS)), 0.5)
+            _probe(classes=list(reversed(TOPICS)))
         with pytest.raises(ProbeArtifactError):
-            ImportanceProbe(COEF[:-1], INTERCEPT, list(TOPICS), 0.5)
+            _probe(topic_coef=TOPIC_COEF[:-1])
         with pytest.raises(ProbeArtifactError):
-            ImportanceProbe(COEF, INTERCEPT, list(TOPICS), 1.0)
+            _probe(gate_coef=GATE_COEF[:-1])
         with pytest.raises(ProbeArtifactError):
-            ImportanceProbe(COEF, INTERCEPT, list(TOPICS), 0.5).predict_proba(np.zeros((2, DIM + 1)))
+            _probe(threshold=1.0)
+        with pytest.raises(ProbeArtifactError):
+            _probe().p_soft(np.zeros((2, DIM + 1)))
 
     def test_load_round_trip_and_every_mismatch_is_a_hard_failure(self, tmp_path):
         d = str(tmp_path)
@@ -109,17 +129,22 @@ class TestImportanceProbe:
         _write_artifact(d)
         probe = ImportanceProbe.load(d)
         assert probe.dim == DIM and probe.soft_threshold == 0.5 and probe.classes == list(TOPICS)
+        assert probe.encoder_name == "intfloat/multilingual-e5-base"
         assert ImportanceProbe.load(d, soft_threshold=0.3).soft_threshold == 0.3
+        assert ImportanceProbe.load(d, expected_model_name="intfloat/multilingual-e5-base").dim == DIM
         with pytest.raises(ProbeArtifactError, match="trained on"):
             ImportanceProbe.load(d, expected_model_name="some-other-model")
-        _write_artifact(d, model="other")
-        with pytest.raises(ProbeArtifactError, match="trained on"):
-            ImportanceProbe.load(d)
         _write_artifact(d, sidecar_extra={"classes": list(reversed(TOPICS))})
         with pytest.raises(ProbeArtifactError, match="disagree"):
             ImportanceProbe.load(d)
         _write_artifact(d, sidecar_extra={"soft_threshold": None})
         with pytest.raises(ProbeArtifactError, match="soft_threshold"):
+            ImportanceProbe.load(d)
+        _write_artifact(d, sidecar_extra={"embedding_model": ""})
+        with pytest.raises(ProbeArtifactError, match="embedding_model"):
+            ImportanceProbe.load(d)
+        _write_artifact(d, drop="gate_coef")
+        with pytest.raises(ProbeArtifactError, match="lack"):
             ImportanceProbe.load(d)
 
 
@@ -165,7 +190,7 @@ class TestGateArithmetic:
         ok, failures = gates_pass(m)
         assert not ok and any(f.startswith("recall_finance") for f in failures)
 
-    def test_choose_threshold_prefers_the_widest_margin_and_falls_back_to_half(self):
+    def test_choose_threshold_prefers_the_widest_margin_and_reports_the_least_bad_point(self):
         # Perfectly separable: soft rows at p_soft 0.9, news at 0.1; every tau in
         # (0.1, 0.9) passes, the widest slack is at a tau that keeps every metric
         # at 1.0 -- the first such tau on the grid is what the max picks.
@@ -174,9 +199,10 @@ class TestGateArithmetic:
         probs = _probs([0.1] * 5 + [0.1] * 5 + [0.9] * 5 + [0.1] * 5)
         tau, m = choose_threshold(rows, probs, list(TOPICS))
         assert 0.1 < tau < 0.9 and gates_pass(m)[0]
-        # Inseparable (every row at 0.5): nothing passes; 0.5 is reported, not shipped.
+        # Inseparable (every row at 0.5): nothing passes; the least-bad tau is
+        # reported (never shipped -- gates_pass is what the trainer acts on).
         tau, m = choose_threshold(rows, _probs([0.5] * 20), list(TOPICS))
-        assert tau == 0.5 and not gates_pass(m)[0]
+        assert 0.3 <= tau <= 0.8 and not gates_pass(m)[0]
 
     def test_gates_are_the_ticket_plus_sys45(self):
         assert GATES == {"recall_finance": 0.95, "recall_general": 0.90, "precision_mixed": 0.90,
