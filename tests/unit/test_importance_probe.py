@@ -17,7 +17,7 @@ from newscrawler.core.importance_probe import (  # noqa: E402
     PROBE_BODY_CHARS, PROBE_MAX_WORDS, PROBE_SIDECAR, PROBE_WEIGHTS, ImportanceProbe, ProbeArtifactError,
     build_check_text, embed_for_probe, encoder_prefix, truncate_for_probe,
 )
-from train_importance_probe import GATES, choose_threshold, gate_metrics, gates_pass, live_decision, topic_of  # noqa: E402
+from train_importance_probe import GATE_TOLERANCE, GATES, choose_threshold, gate_metrics, gates_pass, live_decision, topic_of  # noqa: E402
 
 DIM = 8
 rng = np.random.default_rng(0)
@@ -207,3 +207,13 @@ class TestGateArithmetic:
     def test_gates_are_the_ticket_plus_sys45(self):
         assert GATES == {"recall_finance": 0.95, "recall_general": 0.90, "precision_mixed": 0.90,
                          "precision_allow": 0.90, "topic_accuracy": 0.80}
+
+    def test_tolerance_is_the_owner_decision_and_a_real_regression_still_fails(self):
+        # Owner decision 2026-09-22 (SYS-37): a value within 0.02 of its floor is
+        # accepted (the gold set cannot resolve less); 0.02 or more below is not.
+        assert GATE_TOLERANCE == 0.02
+        base = {"recall_finance": 0.946, "recall_general": 0.916, "precision_mixed": 0.923, "precision_allow": 0.947, "topic_accuracy": 0.824}
+        assert gates_pass(base)[0] is True
+        assert gates_pass(base, tolerance=0.0)[0] is False
+        assert gates_pass(dict(base, recall_finance=0.929))[0] is False
+        assert gates_pass(dict(base, precision_mixed=0.879))[0] is False

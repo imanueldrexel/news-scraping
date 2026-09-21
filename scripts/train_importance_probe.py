@@ -86,6 +86,14 @@ GATES = {
     "precision_allow": 0.90,
     "topic_accuracy": 0.80,
 }
+# Owner decision 2026-09-22 (SYS-37 #121, after SYS-47 #143): the floors above
+# stay as written, and a measured value is accepted when it is within this
+# tolerance of its floor. The gold set's 763 single-labeller test rows cannot
+# resolve less than this (SE +/-0.015 on a recall of 0.95 over ~200 rows;
+# ~4% run-to-run label disagreement): e5-large reads recall_finance 0.946
+# against the 0.95 floor -- one row. A real regression (0.02 or more) still
+# fails; the floors are not rewritten.
+GATE_TOLERANCE = 0.02
 # The threshold only moves the gate; topic accuracy is an argmax over the news
 # classes and does not depend on tau, so it is evaluated once, not searched.
 TAU_GATES = {k: v for k, v in GATES.items() if k != "topic_accuracy"}
@@ -198,12 +206,13 @@ def gate_metrics(rows: Sequence[dict], probs: np.ndarray, tau: float, classes: L
     return out
 
 
-def gates_pass(metrics: Dict[str, Optional[float]]) -> Tuple[bool, List[str]]:
+def gates_pass(metrics: Dict[str, Optional[float]], tolerance: float = GATE_TOLERANCE) -> Tuple[bool, List[str]]:
+    """Every gate met within `tolerance` of its floor (0 = the floors exactly)."""
     failures = []
     for name, floor in GATES.items():
         value = metrics.get(name)
-        if value is None or value < floor:
-            failures.append(f"{name}={value if value is None else f'{value:.3f}'} < {floor:.2f}")
+        if value is None or value < floor - tolerance:
+            failures.append(f"{name}={value if value is None else f'{value:.3f}'} < {floor:.2f}-{tolerance:.2f}")
     return not failures, failures
 
 
@@ -339,7 +348,14 @@ def print_report(title: str, m: Dict) -> None:
                 m["recall_all"], m["precision_all"], 100 * m["uncertain_band_share"])
     for name, floor in GATES.items():
         v = m[name]
-        flag = "PASS" if v is not None and v >= floor else "FAIL"
+        if v is None:
+            flag = "n/a"
+        elif v >= floor:
+            flag = "PASS"
+        elif v >= floor - GATE_TOLERANCE:
+            flag = f"PASS within tolerance (-{floor - v:.3f}; owner decision 2026-09-22)"
+        else:
+            flag = "FAIL"
         logger.info("  %-18s %s  (gate >= %.2f)  %s", name, "  n/a" if v is None else f"{v:.3f}", floor, flag)
     logger.info("  %-24s %5s %5s %5s %8s %10s", "stratum", "n", "news", "kept", "recall", "precision")
     for s, d in sorted(m["per_stratum"].items(), key=lambda kv: -kv[1]["n"]):
@@ -405,6 +421,10 @@ def cmd_train(args) -> int:
     if not ok:
         logger.error("GATE FAILURE on the test split: %s -- artifact NOT written (do not lower the gate)", "; ".join(failures))
         return 2
+    exact_ok, within = gates_pass(test_metrics, tolerance=0.0)
+    if not exact_ok:
+        logger.warning("gates met within GATE_TOLERANCE=%.2f, not exactly: %s (owner decision 2026-09-22, SYS-37)",
+                       GATE_TOLERANCE, "; ".join(within))
     if args.no_write:
         logger.info("[--no-write] gates pass; artifact not written.")
         return 0
@@ -427,6 +447,8 @@ def cmd_train(args) -> int:
                       "selection": "5-fold CV on train; tau over the tau-dependent gates; topic C by CV accuracy"},
         "seed": SEED,
         "gates": GATES,
+        "gate_tolerance": GATE_TOLERANCE,
+        "gates_met_exactly": exact_ok,
         "metrics_test": {k: v for k, v in test_metrics.items() if k != "per_stratum"},
         "metrics_test_per_stratum": test_metrics["per_stratum"],
         "metrics_train_cv": {k: v for k, v in cv_metrics.items() if k != "per_stratum"},
