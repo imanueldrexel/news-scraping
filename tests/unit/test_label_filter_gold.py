@@ -10,7 +10,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
 import pytest  # noqa: E402
 
 from label_filter_gold import (  # noqa: E402
-    STRATA_TARGETS, STRATUM_ORDER, allocate, assign_splits, assign_stratum, batch_payload, draw, parse_labels,
+    GOLD_PATH, SAMPLE_PATH, STRATA_TARGETS, STRATUM_ORDER, allocate, assign_splits, assign_stratum, batch_payload,
+    conflicting_label_headlines, dedupe_within_source, draw, headline_groups, normalise_headline, parse_labels,
+    read_jsonl, reassign_strata, refresh_categories, refresh_rows, repair_split_leaks,
 )
 from newscrawler.core.filter_rubric import (  # noqa: E402
     TOPICS, TOPICS_FINANCE, TOPICS_NEWS, TOPIC_SOFT, build_label_prompt, is_valid_label,
@@ -120,15 +122,203 @@ class TestDraw:
         assert len(draw(rows, 500, random.Random(7))) == 50
 
 
+def _row(sid, source="INEWS", headline=None, category="news", status="rejected_filter", body=None, **extra):
+    r = {"sitemap_id": sid, "source": source, "category": category, "headline": headline or f"Headline {sid}",
+         "crawl_status": status, "body_head": body, "has_body": body is not None}
+    r.update(extra)
+    return r
+
+
 class TestAssignSplits:
     def test_twenty_percent_test_per_stratum(self):
-        rows = [{"sitemap_id": i, "stratum": "finance_reject"} for i in range(100)] + \
-               [{"sitemap_id": 100 + i, "stratum": "soft_save"} for i in range(10)]
+        rows = [_row(i, stratum="finance_reject") for i in range(100)] + \
+               [_row(100 + i, stratum="soft_save") for i in range(10)]
         assign_splits(rows, random.Random(3))
         fr = [r for r in rows if r["stratum"] == "finance_reject"]
         ss = [r for r in rows if r["stratum"] == "soft_save"]
         assert sum(r["split"] == "test" for r in fr) == 20
         assert sum(r["split"] == "test" for r in ss) == 2
+
+    def test_same_headline_never_straddles_the_split(self):
+        """SYS-43: 30 copies of one syndicated headline spread over two strata
+        and 70 distinct rows -- every copy lands on one side, whichever seed."""
+        for seed in range(20):
+            rows = [_row(i, source=f"S{i}", headline="Moment Hangat Presiden Prabowo di Gontor", stratum="mixed_bucket")
+                    for i in range(15)]
+            rows += [_row(100 + i, source=f"S{i}", headline="moment hangat  presiden prabowo di gontor ",
+                          stratum="econ_politics_boundary") for i in range(15)]
+            rows += [_row(200 + i, stratum="mixed_bucket") for i in range(70)]
+            assign_splits(rows, random.Random(seed))
+            sides = {r["split"] for r in rows if normalise_headline(r["headline"]) == "moment hangat presiden prabowo di gontor"}
+            assert len(sides) == 1, f"seed {seed}: group straddles {sides}"
+            test_keys = {normalise_headline(r["headline"]) for r in rows if r["split"] == "test"}
+            train_keys = {normalise_headline(r["headline"]) for r in rows if r["split"] == "train"}
+            assert not (test_keys & train_keys)
+
+    def test_quota_still_roughly_twenty_percent_with_groups(self):
+        rows = [_row(i, source=f"S{i}", headline="dup", stratum="a") for i in range(10)] + \
+               [_row(100 + i, stratum="a") for i in range(90)]
+        assign_splits(rows, random.Random(5))
+        n_test = sum(r["split"] == "test" for r in rows)
+        # 20 wanted; the 10-row group is all-or-nothing, so 20 or 10..29 depending on where it fell.
+        assert 10 <= n_test <= 29
+
+
+class TestDedupeWithinSource:
+    def test_keeps_body_row_else_lowest_id_within_a_source(self):
+        rows = [_row(5, headline="A"), _row(3, headline="a "), _row(9, headline="A", body="text"), _row(7, headline="B")]
+        kept, dropped = dedupe_within_source(rows)
+        assert [r["sitemap_id"] for r in kept] == [9, 7]
+        assert sorted(r["sitemap_id"] for r in dropped) == [3, 5]
+        rows = [_row(5, headline="A"), _row(3, headline="A")]
+        kept, _ = dedupe_within_source(rows)
+        assert [r["sitemap_id"] for r in kept] == [3]
+
+    def test_cross_source_copies_are_both_kept(self):
+        rows = [_row(1, source="INEWS", headline="Wire copy"), _row(2, source="KOMPAS", headline="wire copy")]
+        kept, dropped = dedupe_within_source(rows)
+        assert len(kept) == 2 and dropped == []
+
+    def test_normalisation(self):
+        assert normalise_headline("  Harga   Minyak\tTurun ") == "harga minyak turun"
+        assert normalise_headline(None) == ""
+
+
+class TestRefreshHelpers:
+    def test_refresh_categories_overwrites_only_changed_and_known_ids(self):
+        rows = [_row(1, category="https://bali.jpnn.com/sitemap_post_politik.xml"), _row(2, category="ekonomi"), _row(3, category="x")]
+        n = refresh_categories(rows, {1: "bali/politik", 2: "ekonomi"})
+        assert n == 1
+        assert rows[0]["category"] == "bali/politik" and rows[1]["category"] == "ekonomi" and rows[2]["category"] == "x"
+
+    def test_reassign_strata_moves_a_refreshed_hard_news_row_out_of_mixed_bucket(self):
+        rows = [_row(1, source="JPNN", category="bali/politik", headline="Banjir Bandang", stratum="mixed_bucket"),
+                _row(2, source="KUMPARAN", category="news", headline="Kebakaran", stratum="mixed_bucket")]
+        assert reassign_strata(rows) == 1
+        assert rows[0]["stratum"] == "hard_news" and rows[1]["stratum"] == "mixed_bucket"
+
+    def test_repair_split_leaks_moves_a_straddling_group_to_train(self):
+        rows = [_row(1, source="A", headline="Dup", split="test"), _row(2, source="B", headline="dup", split="train"),
+                _row(3, source="C", headline="Solo", split="test"), _row(4, source="D", headline="Only", split="test"),
+                _row(5, source="E", headline="only", split="test")]
+        assert repair_split_leaks(rows) == 1
+        assert rows[0]["split"] == "train" and rows[2]["split"] == "test"
+        assert rows[3]["split"] == "test" and rows[4]["split"] == "test"  # same side already: untouched
+
+    def test_conflicting_label_headlines(self):
+        gold = [_row(1, source="S1", headline="Gontor", is_news=True), _row(2, source="S2", headline="gontor", is_news=False),
+                _row(3, source="S1", headline="Persib", is_news=False), _row(4, source="S3", headline="persib", is_news=False),
+                _row(5, headline="Solo", is_news=True)]
+        assert conflicting_label_headlines(gold) == ["gontor"]
+        assert set(headline_groups(gold)) == {"gontor", "persib"}
+
+
+class TestRefreshRows:
+    def test_end_to_end_on_a_miniature_of_the_2026_09_20_fixture(self):
+        sample = [
+            # 3 INEWS mirror copies of one headline (2 labelled news, 1 soft) -> keep lowest id, unlabel.
+            _row(10, headline="Prabowo di Gontor", stratum="econ_politics_boundary", split="train"),
+            _row(11, headline="prabowo di gontor", stratum="econ_politics_boundary", split="test"),
+            _row(12, headline="Prabowo  di Gontor", stratum="econ_politics_boundary", split="train"),
+            # 2 copies labelled the same way -> keep the one with a body, label kept.
+            _row(20, headline="Kemenag Batasi HP", stratum="religion_boundary", split="test"),
+            _row(21, headline="Kemenag Batasi HP", stratum="religion_boundary", split="train", body="Kemenag ..."),
+            # JPNN stale URL category -> bali/politik -> hard_news; label kept.
+            _row(30, source="JPNN", category="https://bali.jpnn.com/sitemap_post_politik.xml", headline="Banjir Bandang Jembrana",
+                 stratum="mixed_bucket", split="test"),
+            # Cross-source copy straddling the split -> both to train.
+            _row(40, source="KOMPAS", category="nasional", headline="Wire Copy", stratum="hard_news", split="test"),
+            _row(41, source="CNBC", category="market", headline="wire copy", stratum="finance_pending", status="pending", split="train"),
+            # Untouched row.
+            _row(50, source="VIVA", category="militer", headline="Latihan TNI", status="pending", stratum="viva_general", split="test"),
+        ]
+        gold = [dict(s, is_news=n, topic=("politics_government" if n else "soft"), labeller="m", labelled_at="t")
+                for s, n in zip(sample, [True, False, True, True, True, True, True, True, True])]
+        current = {r["sitemap_id"]: r["category"] for r in sample}
+        current[30] = "bali/politik"
+
+        new_sample, new_gold, counts = refresh_rows(sample, gold, current)
+
+        assert counts["conflicting_headline_groups"] == 1
+        assert counts["categories_refreshed"] == 1
+        assert counts["strata_reassigned"] == 1
+        assert counts["duplicate_rows_dropped"] == 3          # 11, 12, 20
+        assert counts["split_rows_moved_to_train"] == 1       # 40
+        assert counts["gold_rows_unlabelled_for_relabel"] == 1  # 10
+        assert [r["sitemap_id"] for r in new_sample] == [10, 21, 30, 40, 41, 50]
+        assert [r["sitemap_id"] for r in new_gold] == [21, 30, 40, 41, 50]
+        by_id = {r["sitemap_id"]: r for r in new_gold}
+        assert by_id[30]["category"] == "bali/politik" and by_id[30]["stratum"] == "hard_news" and by_id[30]["split"] == "test"
+        assert by_id[40]["split"] == "train" and by_id[41]["split"] == "train"
+        assert by_id[21]["is_news"] is True and by_id[21]["has_body"] is True
+        assert headline_groups([r for r in new_sample if r["source"] == "INEWS"]) == {}
+        assert conflicting_label_headlines(new_gold) == []
+
+    def test_refresh_is_idempotent(self):
+        sample = [_row(1, headline="A", stratum="mixed_bucket", split="train"), _row(2, headline="B", stratum="mixed_bucket", split="test")]
+        gold = [dict(s, is_news=True, topic="other_news", labeller="m", labelled_at="t") for s in sample]
+        s1, g1, c1 = refresh_rows(sample, gold, {1: "news", 2: "news"})
+        s2, g2, c2 = refresh_rows(s1, g1, {1: "news", 2: "news"})
+        assert (s1, g1) == (s2, g2)
+        assert c2["duplicate_rows_dropped"] == c2["split_rows_moved_to_train"] == c2["gold_rows_unlabelled_for_relabel"] == 0
+
+
+@pytest.mark.skipif(not (os.path.exists(GOLD_PATH) and os.path.exists(SAMPLE_PATH)), reason="fixtures not present")
+class TestCommittedGoldFixture:
+    """SYS-43 / SYS-44 (#138 / #139) Done-when, pinned on the committed files.
+    Every one of these failed on the 2026-09-20 fixture as first committed."""
+
+    @pytest.fixture(scope="class")
+    def files(self):
+        return read_jsonl(SAMPLE_PATH), read_jsonl(GOLD_PATH)
+
+    def test_no_same_source_duplicate_headlines(self, files):
+        _, gold = files
+        dups = [k for k, n in __import__("collections").Counter(
+            (r["source"], normalise_headline(r["headline"])) for r in gold).items() if n > 1]
+        assert dups == [], f"{len(dups)} duplicate (source, headline) groups, e.g. {dups[:3]}"
+
+    def test_no_test_headline_appears_in_train(self, files):
+        _, gold = files
+        train = {normalise_headline(r["headline"]) for r in gold if r["split"] == "train"}
+        leaks = [r["headline"] for r in gold if r["split"] == "test" and normalise_headline(r["headline"]) in train]
+        assert leaks == [], f"{len(leaks)} test rows also in train, e.g. {leaks[:3]}"
+
+    def test_no_conflicting_labels_on_a_repeated_headline(self, files):
+        _, gold = files
+        assert conflicting_label_headlines(gold) == []
+
+    def test_no_url_category_on_a_source_whose_crawler_names_its_branches(self, files):
+        # SYS-44: CNN and JPNN name every branch (branch_name_from_url); a URL
+        # there is a stale value from before fix_url_shaped_categories.py.
+        # VIVA/INEWS still carry URL categories in the DB (SRC-33 / SRC-29) and
+        # are not asserted here -- they go stale the same way when those land.
+        from newscrawler.core.crawler_dict_list import CRAWLER_DICT
+        named = {n for n, c in CRAWLER_DICT.items() if hasattr(c, "branch_name_from_url")}
+        assert {"CNN", "JPNN"} <= named
+        _, gold = files
+        stale = [(r["source"], r["category"]) for r in gold if r["source"] in named and (r["category"] or "").startswith("http")]
+        assert stale == [], f"{len(stale)} stale URL categories, e.g. {stale[:3]}"
+
+    def test_stratum_is_consistent_with_category_and_frozen_status(self, files):
+        # The stratum on every row is what assign_stratum says for its
+        # (refreshed) category and its frozen crawl_status/has_body/headline.
+        sample, gold = files
+        wrong = [(r["sitemap_id"], r["stratum"], assign_stratum(r["source"], r["category"], r["crawl_status"], r["has_body"], r["headline"]))
+                 for r in sample]
+        wrong = [w for w in wrong if w[1] != w[2]]
+        assert wrong == [], f"{len(wrong)} rows whose stratum does not match their category, e.g. {wrong[:3]}"
+
+    def test_gold_rows_agree_with_the_sample(self, files):
+        sample, gold = files
+        by_id = {r["sitemap_id"]: r for r in sample}
+        assert all(g["sitemap_id"] in by_id for g in gold)
+        mism = [g["sitemap_id"] for g in gold
+                if (g["category"], g["stratum"], g["split"], g["headline"]) !=
+                (by_id[g["sitemap_id"]]["category"], by_id[g["sitemap_id"]]["stratum"],
+                 by_id[g["sitemap_id"]]["split"], by_id[g["sitemap_id"]]["headline"])]
+        assert mism == []
+        assert len(gold) >= 3000
 
 
 class TestParseLabels:

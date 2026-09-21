@@ -11,9 +11,29 @@ re-run alone:
                   where saved), assign each row ONE stratum, draw a seeded,
                   stratified sample and write tests/fixtures/filter_gold_sample.jsonl.
                   Freezes the population: run it BEFORE the SYS-35 re-queue and
-                  the SYS-34/SRC-36 cleanup, both of which change the strata.
+                  the SYS-34/SRC-36 cleanup, both of which change the strata --
+                  and AFTER any category rewrite (SYS-44: the 2026-09-20 sample
+                  was drawn 40 min before fix_url_shaped_categories.py and
+                  carried 336 stale URL categories until `refresh`).
                   Rows whose headline is a URL-slug placeholder (SYS-33: TIRTO/
-                  TEMPO before the repair) are excluded and counted.
+                  TEMPO before the repair) are excluded and counted. SYS-43: the
+                  population is collapsed to one row per normalised headline
+                  within a source first (INEWS's 113 regional mirror hosts list
+                  the same syndicated article once per host; the round-robin
+                  over cells drew it once per host -- 319 rows / 164 headlines).
+                  A re-draw today CANNOT reproduce the 2026-09-20 strata: the
+                  finance_reject population was re-queued and saved (SYS-35) and
+                  the soft_save rows were deleted (SYS-34). Refresh the committed
+                  sample; only re-draw for a deliberately new population.
+  refresh         Repair the committed sample + gold in place (SYS-43/SYS-44):
+                  re-read `category` from the DB by sitemap_id, re-run the
+                  stratum assignment on the frozen crawl_status/has_body, drop
+                  duplicate headlines within a source (keep the row with a body,
+                  else the lowest sitemap_id), move any headline group that
+                  spans train/test wholly to train, and strip the label from any
+                  headline group the labeller labelled both ways so `label`
+                  re-labels it in one batch. Labels of every other row are
+                  untouched. --dry-run prints the counts and writes nothing.
   label           An LLM labels --batch-size rows per call, JSON out, counted in
                   api_usage_log under the model's name (the same daily cap as
                   knowledge extraction). --provider openai (default; OPS-20 #136:
@@ -38,6 +58,8 @@ Output row (tests/fixtures/filter_gold.jsonl, one JSON object per line):
 
 Usage:
     python scripts/label_filter_gold.py sample [--size 4000] [--seed 20260920]
+    python scripts/label_filter_gold.py refresh --dry-run
+    python scripts/label_filter_gold.py refresh
     python scripts/label_filter_gold.py label --dry-run
     python scripts/label_filter_gold.py label --max-calls 2
     python scripts/label_filter_gold.py label
@@ -176,16 +198,120 @@ def draw(rows: List[dict], n: int, rng: random.Random) -> List[dict]:
     return out
 
 
+def normalise_headline(headline: Optional[str]) -> str:
+    """The identity of an article's text for dedup purposes: case- and
+    whitespace-insensitive. Two rows with the same normalised headline are
+    the same example whatever host or section they were listed under."""
+    return re.sub(r"\s+", " ", (headline or "").strip().lower())
+
+
+def _prefer(a: dict, b: dict) -> dict:
+    """Of two rows with the same headline in the same source, keep the one
+    with a body (more text for the labeller and the probe), else the lowest
+    sitemap_id (the first listing; the mirrors came later)."""
+    if bool(a.get("has_body")) != bool(b.get("has_body")):
+        return a if a.get("has_body") else b
+    return a if a["sitemap_id"] <= b["sitemap_id"] else b
+
+
+def dedupe_within_source(rows: List[dict]) -> Tuple[List[dict], List[dict]]:
+    """SYS-43 (#138): one row per (source, normalised headline). Returns
+    (kept, dropped) in the input order of the kept rows. Cross-source repeats
+    (wire copy on two outlets) are kept -- they are distinct listings of the
+    same text and assign_splits keeps them on one side of the split."""
+    best: Dict[Tuple[str, str], dict] = {}
+    for r in rows:
+        key = (r["source"], normalise_headline(r["headline"]))
+        best[key] = _prefer(best[key], r) if key in best else r
+    keep_ids = {id(r) for r in best.values()}
+    kept = [r for r in rows if id(r) in keep_ids]
+    dropped = [r for r in rows if id(r) not in keep_ids]
+    return kept, dropped
+
+
 def assign_splits(rows: List[dict], rng: random.Random, test_fraction: float = TEST_FRACTION) -> None:
-    """Fixed 80/20 within each stratum, in place."""
+    """Fixed 80/20 within each stratum, in place. SYS-43: rows that share a
+    normalised headline (across sources and strata) always land on the same
+    side -- a test row whose text is also in train measures memory, not the
+    classifier. A group already placed by an earlier stratum keeps its side
+    and counts toward this stratum's quota."""
     by_stratum: Dict[str, List[dict]] = collections.defaultdict(list)
     for r in rows:
         by_stratum[r["stratum"]].append(r)
+    side_of: Dict[str, str] = {}
     for stratum_rows in by_stratum.values():
         rng.shuffle(stratum_rows)
         n_test = int(round(len(stratum_rows) * test_fraction))
-        for i, r in enumerate(stratum_rows):
-            r["split"] = "test" if i < n_test else "train"
+        # Groups an earlier stratum already placed count toward this quota.
+        n_test -= sum(1 for r in stratum_rows if side_of.get(normalise_headline(r["headline"])) == "test")
+        for r in stratum_rows:
+            key = normalise_headline(r["headline"])
+            if key in side_of:
+                r["split"] = side_of[key]
+                continue
+            r["split"] = "test" if n_test > 0 else "train"
+            if r["split"] == "test":
+                n_test -= 1
+            side_of[key] = r["split"]
+
+
+def headline_groups(rows: List[dict]) -> Dict[str, List[dict]]:
+    """Rows keyed by normalised headline; only groups of two or more."""
+    groups: Dict[str, List[dict]] = collections.defaultdict(list)
+    for r in rows:
+        groups[normalise_headline(r["headline"])].append(r)
+    return {k: v for k, v in groups.items() if len(v) > 1}
+
+
+def repair_split_leaks(rows: List[dict]) -> int:
+    """SYS-43: for a committed sample, any headline group that spans both
+    splits moves wholly to train (test shrinks by a few rows; it never gains
+    a row it could have memorised). Returns rows moved."""
+    moved = 0
+    for group in headline_groups(rows).values():
+        if len({r["split"] for r in group}) > 1:
+            for r in group:
+                if r["split"] != "train":
+                    r["split"] = "train"
+                    moved += 1
+    return moved
+
+
+def conflicting_label_headlines(gold_rows: List[dict]) -> List[str]:
+    """SYS-43: normalised headlines the labeller labelled both ways. A row
+    that survives dedup out of such a group carries a label decided by which
+    batch it landed in, so it is re-labelled rather than kept."""
+    return sorted(
+        key for key, group in headline_groups(gold_rows).items()
+        if len({bool(r["is_news"]) for r in group}) > 1
+    )
+
+
+def refresh_categories(rows: List[dict], current_category_by_id: Dict[int, Optional[str]]) -> int:
+    """SYS-44 (#139): overwrite `category` with the DB's current value for the
+    same sitemap_id (a repair script may have rewritten it since the sample
+    was drawn). Rows the DB no longer has are left alone. Returns rows changed."""
+    changed = 0
+    for r in rows:
+        if r["sitemap_id"] not in current_category_by_id:
+            continue
+        current = current_category_by_id[r["sitemap_id"]]
+        if (current or "") != (r.get("category") or ""):
+            r["category"] = current
+            changed += 1
+    return changed
+
+
+def reassign_strata(rows: List[dict]) -> int:
+    """SYS-44: recompute `stratum` from the (possibly refreshed) category and
+    the frozen crawl_status / has_body / headline. Returns rows changed."""
+    changed = 0
+    for r in rows:
+        stratum = assign_stratum(r["source"], r.get("category"), r["crawl_status"], r["has_body"], r["headline"])
+        if stratum != r.get("stratum"):
+            r["stratum"] = stratum
+            changed += 1
+    return changed
 
 
 # ── DB ───────────────────────────────────────────────────────────────────────
@@ -196,8 +322,10 @@ _ALL_ROWS_SQL = """
 """
 
 
-def load_population(session) -> Tuple[List[dict], int]:
-    """Every sitemap row as a dict, minus placeholder-headline rows (count returned)."""
+def load_population(session) -> Tuple[List[dict], int, int]:
+    """Every sitemap row as a dict, minus placeholder-headline rows and minus
+    same-source duplicate headlines (SYS-43). Returns (rows, placeholders
+    excluded, duplicates collapsed)."""
     from sqlalchemy import text
     from newscrawler.domain.dtos.dataflow.details.site_map_dto import SitemapDTO
     from newscrawler.infrastructure.datasource.scrapers.crawler import Crawler
@@ -218,7 +346,23 @@ def load_population(session) -> Tuple[List[dict], int]:
             "headline": headline, "crawl_status": r.crawl_status,
             "body_head": body, "has_body": body is not None,
         })
-    return rows, placeholders
+    rows, dropped = dedupe_within_source(rows)
+    return rows, placeholders, len(dropped)
+
+
+def current_categories(session, sitemap_ids: List[int]) -> Dict[int, Optional[str]]:
+    from sqlalchemy import text
+    rows = session.execute(
+        text("SELECT sitemap_id, category FROM sitemaps WHERE sitemap_id = ANY(:ids)"), {"ids": list(sitemap_ids)}
+    ).fetchall()
+    return {r.sitemap_id: r.category for r in rows}
+
+
+def sources_with_named_branches() -> List[str]:
+    """Sources whose crawler names every branch (`branch_name_from_url`) --
+    a URL-shaped category on one of these is stale, never current."""
+    from newscrawler.core.crawler_dict_list import CRAWLER_DICT
+    return sorted(name for name, crawler in CRAWLER_DICT.items() if hasattr(crawler, "branch_name_from_url"))
 
 
 # ── JSONL helpers ────────────────────────────────────────────────────────────
@@ -389,9 +533,9 @@ def cmd_sample(args) -> int:
     client = SQLAlchemyClient()
     with client.get_session() as session:
         logger.info("database: %s", session.execute(text("SELECT current_database()")).scalar())
-        population, placeholders = load_population(session)
-    logger.info("%d rows in population (%d URL-slug placeholder headlines excluded -- SYS-33)",
-                len(population), placeholders)
+        population, placeholders, duplicates = load_population(session)
+    logger.info("%d rows in population (%d URL-slug placeholder headlines excluded -- SYS-33; "
+                "%d same-source duplicate headlines collapsed -- SYS-43)", len(population), placeholders, duplicates)
 
     by_stratum: Dict[str, List[dict]] = collections.defaultdict(list)
     for r in population:
@@ -413,6 +557,83 @@ def cmd_sample(args) -> int:
     n_test = sum(1 for r in sample if r["split"] == "test")
     logger.info("Wrote %d rows to %s (%d with body, %d test / %d train)",
                 len(sample), args.out, n_body, n_test, len(sample) - n_test)
+    return 0
+
+
+def refresh_rows(sample: List[dict], gold: List[dict], current_category_by_id: Dict[int, Optional[str]]) -> Tuple[List[dict], List[dict], Dict[str, int]]:
+    """The whole SYS-43/SYS-44 repair as a pure function over the two files'
+    rows. Returns (new_sample, new_gold, counts). Order of operations matters:
+    conflicts are detected on the gold rows BEFORE dedup (the disagreeing
+    copies are what prove the label is batch-dependent), the category is
+    refreshed before the stratum is recomputed, and the split leak repair
+    runs on the deduped sample so within-source copies are already gone."""
+    counts: Dict[str, int] = {}
+    conflicts = set(conflicting_label_headlines(gold))
+    counts["conflicting_headline_groups"] = len(conflicts)
+
+    sample_by_id = {r["sitemap_id"]: r for r in sample}
+    counts["categories_refreshed"] = refresh_categories(sample, current_category_by_id)
+    counts["strata_reassigned"] = reassign_strata(sample)
+
+    kept, dropped = dedupe_within_source(sample)
+    counts["duplicate_rows_dropped"] = len(dropped)
+    counts["split_rows_moved_to_train"] = repair_split_leaks(kept)
+
+    kept_ids = {r["sitemap_id"] for r in kept}
+    new_gold = []
+    unlabelled = 0
+    for g in gold:
+        if g["sitemap_id"] not in kept_ids:
+            continue
+        if normalise_headline(g["headline"]) in conflicts:
+            unlabelled += 1
+            continue
+        s = sample_by_id[g["sitemap_id"]]
+        g = dict(g, category=s.get("category"), stratum=s["stratum"], split=s["split"])
+        new_gold.append(g)
+    counts["gold_rows_unlabelled_for_relabel"] = unlabelled
+    counts["sample_rows"] = len(kept)
+    counts["gold_rows"] = len(new_gold)
+    return kept, new_gold, counts
+
+
+def cmd_refresh(args) -> int:
+    from sqlalchemy import text
+    from newscrawler.infrastructure.network.clients.sqlalchemy_client import SQLAlchemyClient
+
+    sample = read_jsonl(args.sample)
+    gold = read_jsonl(args.out)
+    if not sample:
+        logger.error("No sample at %s", args.sample)
+        return 1
+    client = SQLAlchemyClient()
+    with client.get_session() as session:
+        logger.info("database: %s", session.execute(text("SELECT current_database()")).scalar())
+        current = current_categories(session, [r["sitemap_id"] for r in sample])
+    missing = [r["sitemap_id"] for r in sample if r["sitemap_id"] not in current]
+    if missing:
+        logger.warning("%d sample rows no longer exist in sitemaps (category left as is): %s", len(missing), missing[:10])
+
+    new_sample, new_gold, counts = refresh_rows(sample, gold, current)
+    for k, v in counts.items():
+        logger.info("  %-34s %6d", k, v)
+
+    named = set(sources_with_named_branches())
+    stale = [r for r in new_sample if r["source"] in named and (r.get("category") or "").startswith("http")]
+    logger.info("  %-34s %6d  (sources with branch_name_from_url: %s)", "url_categories_left_on_named_sources", len(stale), ", ".join(sorted(named)))
+    logger.info("  %-34s %6d", "duplicate_headline_groups_left", len(headline_groups(new_sample)))
+    leaks = sum(1 for g in headline_groups(new_sample).values() if len({r["split"] for r in g}) > 1)
+    logger.info("  %-34s %6d", "split_leak_groups_left", leaks)
+    by_stratum = collections.Counter(r["stratum"] for r in new_sample)
+    logger.info("strata after refresh: %s", ", ".join(f"{k}={v}" for k, v in sorted(by_stratum.items(), key=lambda kv: -kv[1])))
+
+    if args.dry_run:
+        logger.info("[dry-run] nothing written.")
+        return 0
+    write_jsonl(args.sample, new_sample)
+    write_jsonl(args.out, new_gold)
+    logger.info("Wrote %d sample rows to %s and %d gold rows to %s -- run `label` to fill the %d un-labelled row(s).",
+                len(new_sample), args.sample, len(new_gold), args.out, len(new_sample) - len(new_gold))
     return 0
 
 
@@ -621,6 +842,13 @@ def cmd_stats(args) -> int:
     logger.info("per topic:")
     for t in TOPICS:
         logger.info("  %-20s %5d%s", t, tc.get(t, 0), "  (< 100)" if 0 < tc.get(t, 0) < 100 else "")
+    # SYS-43: the two invariants the fixture test pins, printed with the rest.
+    by_key = collections.Counter((r["source"], normalise_headline(r["headline"])) for r in gold)
+    same_source_dups = sum(n - 1 for n in by_key.values() if n > 1)
+    train_keys = {normalise_headline(r["headline"]) for r in gold if r["split"] == "train"}
+    leaks = sum(1 for r in gold if r["split"] == "test" and normalise_headline(r["headline"]) in train_keys)
+    logger.info("same-source duplicate headline rows: %d; test rows whose headline is also in train: %d",
+                same_source_dups, leaks)
     return 0
 
 
@@ -633,6 +861,12 @@ def main(argv=None) -> int:
     p.add_argument("--seed", type=int, default=20260920)
     p.add_argument("--out", default=SAMPLE_PATH)
     p.set_defaults(fn=cmd_sample)
+
+    p = sub.add_parser("refresh")
+    p.add_argument("--dry-run", action="store_true")
+    p.add_argument("--sample", default=SAMPLE_PATH)
+    p.add_argument("--out", default=GOLD_PATH)
+    p.set_defaults(fn=cmd_refresh)
 
     p = sub.add_parser("label")
     p.add_argument("--dry-run", action="store_true")
