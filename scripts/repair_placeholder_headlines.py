@@ -93,6 +93,23 @@ def fetch_title(crawler, link: str) -> Tuple[Optional[str], Optional[str]]:
     return (title.strip(), None) if title and title.strip() else (None, "page has no og:title/<title>")
 
 
+def apply_titles(session, rows, titles: Dict[int, str]) -> Tuple[int, int]:
+    """The write: for every candidate row with a fetched title, rewrite
+    sitemaps.headline and -- only where an articles row exists -- the
+    article's meta_data title. A row with no title is left untouched. Runs
+    inside the caller's session; the caller commits. Returns (sitemaps
+    changed, articles changed)."""
+    n_sitemaps = n_articles = 0
+    for r in rows:
+        title = titles.get(r.sitemap_id)
+        if not title:
+            continue
+        n_sitemaps += session.execute(_UPDATE_SITEMAP_SQL, {"id": r.sitemap_id, "h": title}).rowcount
+        if r.has_article:
+            n_articles += session.execute(_UPDATE_ARTICLE_SQL, {"id": r.sitemap_id, "h": title}).rowcount
+    return n_sitemaps, n_articles
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--dry-run", action="store_true", help="Count, fetch, show a sample; change nothing")
@@ -158,14 +175,7 @@ def main(argv=None):
     logger.info("Backed up %d row(s) to %s", len(to_fetch), backup_path)
 
     with client.get_session() as session:
-        n_sitemaps = n_articles = 0
-        for r in to_fetch:
-            title = titles.get(r.sitemap_id)
-            if not title:
-                continue
-            n_sitemaps += session.execute(_UPDATE_SITEMAP_SQL, {"id": r.sitemap_id, "h": title}).rowcount
-            if r.has_article:
-                n_articles += session.execute(_UPDATE_ARTICLE_SQL, {"id": r.sitemap_id, "h": title}).rowcount
+        n_sitemaps, n_articles = apply_titles(session, to_fetch, titles)
         session.commit()
     logger.info("Rewrote %d sitemaps.headline and %d articles.meta_data title(s) in one transaction.", n_sitemaps, n_articles)
 

@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "scripts"))
 
-from requeue_finance_rejects import find_finance_rejects  # noqa: E402
+from requeue_finance_rejects import _CANDIDATES_SQL, _REQUEUE_SQL, find_finance_rejects  # noqa: E402
 
 
 class _Session:
@@ -50,3 +50,16 @@ class TestFindFinanceRejects:
         session = _Session([])
         find_finance_rejects(session, ["LIPUTAN6", "SUARA"])
         assert session.params == {"websites": ["LIPUTAN6", "SUARA"]}
+
+    def test_candidates_sql_excludes_rows_that_already_have_an_article(self):
+        """DBT-32 (#141): a `rejected_filter` row with an articles row is a
+        SYS-16 backfill misclassification (DBT-26's shape), not a recall loss;
+        flipping it to `pending` would re-fetch it into a second save attempt.
+        The SQL is the guard (the live proof is in
+        tests/integration/test_requeue_finance_rejects_live.py)."""
+        sql = " ".join(str(_CANDIDATES_SQL).split())
+        assert "crawl_status = 'rejected_filter'" in sql
+        assert "NOT EXISTS (SELECT 1 FROM articles a WHERE a.sitemap_id = sitemaps.sitemap_id)" in sql
+        # And the UPDATE re-checks the status, so a row saved between the
+        # SELECT and the UPDATE is not flipped.
+        assert "crawl_status = 'rejected_filter'" in " ".join(str(_REQUEUE_SQL).split())
