@@ -34,6 +34,11 @@ re-run alone:
                   headline group the labeller labelled both ways so `label`
                   re-labels it in one batch. Labels of every other row are
                   untouched. --dry-run prints the counts and writes nothing.
+  merge-bodies    SYS-47: fold tests/fixtures/filter_gold_bodies.jsonl (from
+                  scripts/experiments/fetch_gold_bodies.py) into the sample and
+                  gold: rows that gained a body get body_head/has_body and lose
+                  their headline-only label so `label` re-decides them on
+                  title + body; `had_body_at_freeze` keeps the stratum frozen.
   label           An LLM labels --batch-size rows per call, JSON out, counted in
                   api_usage_log under the model's name (the same daily cap as
                   knowledge extraction). --provider openai (default; OPS-20 #136:
@@ -287,6 +292,45 @@ def conflicting_label_headlines(gold_rows: List[dict]) -> List[str]:
     )
 
 
+def frozen_has_body(row: dict) -> bool:
+    """SYS-47: the stratum is a property of the population at sample time, so
+    it is computed from whether the row had a body THEN -- `had_body_at_freeze`
+    -- not from `has_body`, which the body fetch may have flipped since."""
+    return bool(row.get("had_body_at_freeze", row.get("has_body")))
+
+
+def merge_bodies(sample: List[dict], gold: List[dict], fetched: List[dict]) -> Tuple[List[dict], List[dict], Dict[str, int]]:
+    """SYS-47 (#143): fold fetched body heads into the sample and gold rows.
+    Pure. For every row: `had_body_at_freeze` is set (once) from the current
+    `has_body`. A row that had no body and now has one gets `body_head`/
+    `has_body` updated in the sample and is DROPPED from gold -- its label was
+    decided on the headline alone and must be re-decided on title + body
+    (`label` picks it up). Rows that already had a body are never touched."""
+    heads = {f["sitemap_id"]: f["body_head"] for f in fetched if f.get("body_head")}
+    counts = {"rows_with_fetched_body": len(heads), "sample_rows_updated": 0, "gold_rows_unlabelled_for_relabel": 0,
+              "fetched_for_rows_that_already_had_a_body": 0}
+    gained = set()
+    for r in sample:
+        r.setdefault("had_body_at_freeze", bool(r.get("has_body")))
+        head = heads.get(r["sitemap_id"])
+        if head is None:
+            continue
+        if r.get("has_body"):
+            counts["fetched_for_rows_that_already_had_a_body"] += 1
+            continue
+        r["body_head"], r["has_body"] = head, True
+        gained.add(r["sitemap_id"])
+        counts["sample_rows_updated"] += 1
+    new_gold = []
+    for g in gold:
+        g.setdefault("had_body_at_freeze", bool(g.get("has_body")))
+        if g["sitemap_id"] in gained:
+            counts["gold_rows_unlabelled_for_relabel"] += 1
+            continue
+        new_gold.append(g)
+    return sample, new_gold, counts
+
+
 def refresh_categories(rows: List[dict], current_category_by_id: Dict[int, Optional[str]]) -> int:
     """SYS-44 (#139): overwrite `category` with the DB's current value for the
     same sitemap_id (a repair script may have rewritten it since the sample
@@ -307,7 +351,7 @@ def reassign_strata(rows: List[dict]) -> int:
     the frozen crawl_status / has_body / headline. Returns rows changed."""
     changed = 0
     for r in rows:
-        stratum = assign_stratum(r["source"], r.get("category"), r["crawl_status"], r["has_body"], r["headline"])
+        stratum = assign_stratum(r["source"], r.get("category"), r["crawl_status"], frozen_has_body(r), r["headline"])
         if stratum != r.get("stratum"):
             r["stratum"] = stratum
             changed += 1
@@ -637,6 +681,26 @@ def cmd_refresh(args) -> int:
     return 0
 
 
+def cmd_merge_bodies(args) -> int:
+    sample, gold, fetched = read_jsonl(args.sample), read_jsonl(args.out), read_jsonl(args.bodies)
+    if not sample or not fetched:
+        logger.error("need both %s and %s", args.sample, args.bodies)
+        return 1
+    new_sample, new_gold, counts = merge_bodies(sample, gold, fetched)
+    for k, v in counts.items():
+        logger.info("  %-44s %6d", k, v)
+    logger.info("  %-44s %6d", "sample rows with a body now", sum(1 for r in new_sample if r["has_body"]))
+    logger.info("  %-44s %6d", "sample rows still headline-only", sum(1 for r in new_sample if not r["has_body"]))
+    if args.dry_run:
+        logger.info("[dry-run] nothing written.")
+        return 0
+    write_jsonl(args.sample, new_sample)
+    write_jsonl(args.out, new_gold)
+    logger.info("Wrote %d sample rows and %d gold rows -- run `label` to re-label the %d row(s) that gained a body.",
+                len(new_sample), len(new_gold), len(new_sample) - len(new_gold))
+    return 0
+
+
 def cmd_label(args) -> int:
     from newscrawler.core.constants import DAILY_API_CALL_LIMIT, GEMINI_MODEL, OPENAI_MODEL
 
@@ -699,6 +763,7 @@ def cmd_label(args) -> int:
             out_rows.append({
                 "sitemap_id": r["sitemap_id"], "source": r["source"], "category": r["category"],
                 "headline": r["headline"], "body_head": r["body_head"], "has_body": r["has_body"],
+                "had_body_at_freeze": r.get("had_body_at_freeze", r["has_body"]),
                 "stratum": r["stratum"], "split": r["split"],
                 "is_news": is_news, "topic": topic, "labeller": model_name, "labelled_at": now,
             })
@@ -867,6 +932,13 @@ def main(argv=None) -> int:
     p.add_argument("--sample", default=SAMPLE_PATH)
     p.add_argument("--out", default=GOLD_PATH)
     p.set_defaults(fn=cmd_refresh)
+
+    p = sub.add_parser("merge-bodies")
+    p.add_argument("--dry-run", action="store_true")
+    p.add_argument("--bodies", default=os.path.join(FIXTURES, "filter_gold_bodies.jsonl"))
+    p.add_argument("--sample", default=SAMPLE_PATH)
+    p.add_argument("--out", default=GOLD_PATH)
+    p.set_defaults(fn=cmd_merge_bodies)
 
     p = sub.add_parser("label")
     p.add_argument("--dry-run", action="store_true")

@@ -256,12 +256,12 @@ def cmd_train(args) -> int:
     train = [r for r in gold if r["split"] == "train"]
     test = [r for r in gold if r["split"] == "test"]
     classes = list(TOPICS)
-    logger.info("gold %s: %d rows (train %d / test %d), sha256 %s", os.path.relpath(args.gold, REPO_ROOT),
-                len(gold), len(train), len(test), sha256_of_file(args.gold)[:12])
+    logger.info("gold %s: %d rows (train %d / test %d), sha256 %s; encoder %s", os.path.relpath(args.gold, REPO_ROOT),
+                len(gold), len(train), len(test), sha256_of_file(args.gold)[:12], args.encoder)
 
-    model = SentenceTransformer(PROBE_MODEL_NAME)
-    X_train = embed_for_probe(model, texts_of(train))
-    X_test = embed_for_probe(model, texts_of(test))
+    model = SentenceTransformer(args.encoder)
+    X_train = embed_for_probe(model, texts_of(train), model_name=args.encoder)
+    X_test = embed_for_probe(model, texts_of(test), model_name=args.encoder)
     y_train = [r["topic"] for r in train]
     logger.info("embedded: train %s, test %s", X_train.shape, X_test.shape)
 
@@ -304,7 +304,7 @@ def cmd_train(args) -> int:
     np.savez(os.path.join(args.out_dir, PROBE_WEIGHTS), coef=coef, intercept=intercept, classes=np.array(classes))
     sidecar = {
         "trained_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        "embedding_model": PROBE_MODEL_NAME,
+        "embedding_model": args.encoder,
         "embedding_dim": int(coef.shape[1]),
         "classes": classes,
         "soft_threshold": tau,
@@ -324,7 +324,7 @@ def cmd_train(args) -> int:
     with open(os.path.join(args.out_dir, PROBE_SIDECAR), "w", encoding="utf-8", newline="\n") as f:
         json.dump(sidecar, f, indent=1, ensure_ascii=False)
     # Load it back through the runtime path: what the service will do at start-up.
-    ImportanceProbe.load(args.out_dir)
+    ImportanceProbe.load(args.out_dir, expected_model_name=args.encoder)
     logger.info("wrote %s and %s (loads back cleanly)", PROBE_WEIGHTS, PROBE_SIDECAR)
     return 0
 
@@ -396,6 +396,8 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--gold", default=GOLD_PATH)
     parser.add_argument("--out-dir", default=PROBE_DIR)
+    parser.add_argument("--encoder", default=PROBE_MODEL_NAME,
+                        help="sentence-transformers model for the probe (SYS-47: e.g. intfloat/multilingual-e5-base); recorded in the sidecar")
     parser.add_argument("--no-write", action="store_true", help="Evaluate only; never write the artifact")
     parser.add_argument("--backfill", action="store_true", help="Tag existing articles with a topic (needs the artifact)")
     parser.add_argument("--all", action="store_true", help="--backfill: re-tag every article, not only topic IS NULL")

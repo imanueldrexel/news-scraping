@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
 from newscrawler.core.filter_rubric import TOPICS, TOPIC_SOFT  # noqa: E402
 from newscrawler.core.importance_probe import (  # noqa: E402
     PROBE_BODY_CHARS, PROBE_MAX_WORDS, PROBE_SIDECAR, PROBE_WEIGHTS, ImportanceProbe, ProbeArtifactError,
-    build_check_text, truncate_for_probe,
+    build_check_text, embed_for_probe, encoder_prefix, truncate_for_probe,
 )
 from train_importance_probe import GATES, choose_threshold, gate_metrics, gates_pass, live_decision, topic_of  # noqa: E402
 
@@ -44,6 +44,27 @@ class TestTextPreparation:
     def test_truncation_matches_the_old_score_snippet(self):
         assert truncate_for_probe(" ".join(["w"] * 500)).count("w") == PROBE_MAX_WORDS
         assert truncate_for_probe("  a   b \n c ") == "a b c"
+
+    def test_e5_prefix_is_part_of_the_encoder_contract_and_minilm_has_none(self):
+        # SYS-47: an E5 model expects "query: " on every input; the trainer and
+        # the runtime both go through embed_for_probe(model_name=...) so neither
+        # can forget it. MiniLM gets the bare text.
+        assert encoder_prefix("intfloat/multilingual-e5-base") == "query: "
+        assert encoder_prefix("paraphrase-multilingual-MiniLM-L12-v2") == ""
+
+        class FakeModel:
+            def __init__(self): self.seen = None
+            def encode(self, texts, **kw):
+                self.seen = list(texts)
+                return np.ones((len(texts), 4))
+
+        m = FakeModel()
+        embed_for_probe(m, ["Judul  satu", "Judul dua"], model_name="intfloat/multilingual-e5-base")
+        assert m.seen == ["query: Judul satu", "query: Judul dua"]
+        embed_for_probe(m, ["Judul satu"], model_name="paraphrase-multilingual-MiniLM-L12-v2")
+        assert m.seen == ["Judul satu"]
+        embed_for_probe(m, ["Judul satu"])
+        assert m.seen == ["Judul satu"]
 
 
 class TestImportanceProbe:

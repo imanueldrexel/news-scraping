@@ -26,7 +26,18 @@ from sentence_transformers import SentenceTransformer
 
 from newscrawler.core.filter_rubric import TOPICS, TOPIC_SOFT
 
+# SYS-47 (#143): the probe's encoder is a parameter -- the FAISS store stays on
+# MiniLM whatever the probe uses. The sidecar records which one trained the
+# weights and the runtime refuses to load them behind a different one. E5
+# models expect an instruction prefix on every input ("query: " for
+# classification/symmetric use); it is part of the encoder's contract, so it
+# is applied here for training and serving alike.
 PROBE_MODEL_NAME = "paraphrase-multilingual-MiniLM-L12-v2"
+ENCODER_PREFIX = {
+    "intfloat/multilingual-e5-base": "query: ",
+    "intfloat/multilingual-e5-small": "query: ",
+    "intfloat/multilingual-e5-large": "query: ",
+}
 PROBE_BODY_CHARS = 500     # the body head the service has always scored (title + body[:500])
 PROBE_MAX_WORDS = 200      # the old _score's snippet cut, kept so the trainer sees what the service sees
 PROBE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "models")
@@ -53,9 +64,17 @@ def truncate_for_probe(text: str) -> str:
     return " ".join((text or "").split()[:PROBE_MAX_WORDS])
 
 
-def embed_for_probe(model: SentenceTransformer, texts: Sequence[str], batch_size: int = 64) -> np.ndarray:
-    """L2-normalised MiniLM embeddings of the truncated texts, shape (n, dim)."""
-    prepared = [truncate_for_probe(t) for t in texts]
+def encoder_prefix(model_name: str) -> str:
+    return ENCODER_PREFIX.get(model_name, "")
+
+
+def embed_for_probe(model: SentenceTransformer, texts: Sequence[str], batch_size: int = 64,
+                    model_name: Optional[str] = None) -> np.ndarray:
+    """L2-normalised embeddings of the truncated texts, shape (n, dim). The
+    encoder's instruction prefix (E5) is applied from `model_name`; pass the
+    name the model was loaded with -- the same one the sidecar records."""
+    prefix = encoder_prefix(model_name or "")
+    prepared = [prefix + truncate_for_probe(t) for t in texts]
     return np.asarray(
         model.encode(prepared, batch_size=batch_size, normalize_embeddings=True, convert_to_numpy=True,
                      show_progress_bar=False),

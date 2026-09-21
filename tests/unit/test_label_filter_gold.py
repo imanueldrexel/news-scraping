@@ -11,8 +11,8 @@ import pytest  # noqa: E402
 
 from label_filter_gold import (  # noqa: E402
     GOLD_PATH, SAMPLE_PATH, STRATA_TARGETS, STRATUM_ORDER, allocate, assign_splits, assign_stratum, batch_payload,
-    conflicting_label_headlines, dedupe_within_source, draw, headline_groups, normalise_headline, parse_labels,
-    read_jsonl, reassign_strata, refresh_categories, refresh_rows, repair_split_leaks,
+    conflicting_label_headlines, dedupe_within_source, draw, frozen_has_body, headline_groups, merge_bodies,
+    normalise_headline, parse_labels, read_jsonl, reassign_strata, refresh_categories, refresh_rows, repair_split_leaks,
 )
 from newscrawler.core.filter_rubric import (  # noqa: E402
     TOPICS, TOPICS_FINANCE, TOPICS_NEWS, TOPIC_SOFT, build_label_prompt, is_valid_label,
@@ -227,6 +227,37 @@ class TestRefreshHelpers:
         assert set(headline_groups(gold)) == {"gontor", "persib"}
 
 
+class TestMergeBodies:
+    def test_rows_that_gain_a_body_are_updated_and_unlabelled_others_untouched(self):
+        sample = [_row(1, headline="A"), _row(2, headline="B", body="old body"), _row(3, headline="C"), _row(4, headline="D")]
+        gold = [dict(s, is_news=True, topic="markets", labeller="m", labelled_at="t") for s in sample]
+        fetched = [{"sitemap_id": 1, "body_head": "fetched one"}, {"sitemap_id": 2, "body_head": "fetched two"},
+                   {"sitemap_id": 3, "body_head": None, "error": "404"}]
+        new_sample, new_gold, counts = merge_bodies(sample, gold, fetched)
+        by = {r["sitemap_id"]: r for r in new_sample}
+        assert by[1]["body_head"] == "fetched one" and by[1]["has_body"] is True and by[1]["had_body_at_freeze"] is False
+        assert by[2]["body_head"] == "old body" and by[2]["had_body_at_freeze"] is True   # already had one: untouched
+        assert by[3]["has_body"] is False and by[4]["has_body"] is False
+        assert [g["sitemap_id"] for g in new_gold] == [2, 3, 4]                              # row 1 re-labelled later
+        assert counts == {"rows_with_fetched_body": 2, "sample_rows_updated": 1, "gold_rows_unlabelled_for_relabel": 1,
+                          "fetched_for_rows_that_already_had_a_body": 1}
+
+    def test_stratum_stays_frozen_after_a_body_arrives(self):
+        r = _row(1, source="LIPUTAN6", category="bisnis", headline="Harga Minyak", stratum="finance_reject")
+        merge_bodies([r], [], [{"sitemap_id": 1, "body_head": "body"}])
+        assert r["has_body"] is True and frozen_has_body(r) is False
+        assert reassign_strata([r]) == 0 and r["stratum"] == "finance_reject"
+
+    def test_merge_is_idempotent(self):
+        sample = [_row(1, headline="A")]
+        gold = [dict(sample[0], is_news=True, topic="markets", labeller="m", labelled_at="t")]
+        fetched = [{"sitemap_id": 1, "body_head": "fetched"}]
+        s1, g1, _ = merge_bodies(sample, gold, fetched)
+        g1 = [dict(s1[0], is_news=False, topic="soft", labeller="m", labelled_at="t2")]       # re-labelled
+        s2, g2, c2 = merge_bodies(s1, g1, fetched)
+        assert s2 == s1 and g2 == g1 and c2["sample_rows_updated"] == c2["gold_rows_unlabelled_for_relabel"] == 0
+
+
 class TestRefreshRows:
     def test_end_to_end_on_a_miniature_of_the_2026_09_20_fixture(self):
         sample = [
@@ -318,7 +349,7 @@ class TestCommittedGoldFixture:
         # The stratum on every row is what assign_stratum says for its
         # (refreshed) category and its frozen crawl_status/has_body/headline.
         sample, gold = files
-        wrong = [(r["sitemap_id"], r["stratum"], assign_stratum(r["source"], r["category"], r["crawl_status"], r["has_body"], r["headline"]))
+        wrong = [(r["sitemap_id"], r["stratum"], assign_stratum(r["source"], r["category"], r["crawl_status"], frozen_has_body(r), r["headline"]))
                  for r in sample]
         wrong = [w for w in wrong if w[1] != w[2]]
         assert wrong == [], f"{len(wrong)} rows whose stratum does not match their category, e.g. {wrong[:3]}"
