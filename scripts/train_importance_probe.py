@@ -103,6 +103,39 @@ def texts_of(rows: Sequence[dict]) -> List[str]:
     return [build_check_text(r["headline"], r.get("body_head")) for r in rows]
 
 
+EMBED_CACHE_DIR = os.path.join(REPO_ROOT, "scripts", "experiments")
+
+
+def embed_split(encoder: str, gold_path: str, train: Sequence[dict], test: Sequence[dict]):
+    """Embed both splits, cached next to the experiment scripts (gitignored) by
+    (encoder, gold sha256, the exact texts) -- e5-large takes ~10 min on CPU
+    and the gold set changes far less often than the head or the gates."""
+    import hashlib
+    key = hashlib.sha256((encoder + sha256_of_file(gold_path) + "".join(texts_of(train) + texts_of(test))).encode()).hexdigest()[:16]
+    cache = os.path.join(EMBED_CACHE_DIR, f"probe_train_{key}.npz")
+    if os.path.exists(cache):
+        with np.load(cache) as z:
+            logger.info("embeddings from cache %s", os.path.basename(cache))
+            return z["X_train"], z["X_test"]
+    from sentence_transformers import SentenceTransformer
+    model = SentenceTransformer(encoder)
+    X_train = embed_for_probe(model, texts_of(train), model_name=encoder)
+    X_test = embed_for_probe(model, texts_of(test), model_name=encoder)
+    os.makedirs(EMBED_CACHE_DIR, exist_ok=True)
+    np.savez(cache, X_train=X_train, X_test=X_test)
+    return X_train, X_test
+
+
+def tradeoff_curve(rows: Sequence[dict], probs: np.ndarray, classes: List[str], taus=(0.30, 0.35, 0.39, 0.42, 0.45, 0.50, 0.55, 0.60)):
+    logger.info("  trade-off on this split (for the owner's operating-point decision; tau is NOT chosen here):")
+    logger.info("    tau   rec_fin  rec_gen  prec_mixed  prec_allow  kept")
+    for tau in taus:
+        m = gate_metrics(rows, probs, float(tau), classes)
+        kept = sum(d["kept"] for d in m["per_stratum"].values()) / m["n"]
+        logger.info("    %.2f   %.3f    %.3f     %.3f       %.3f    %3.0f%%", tau, m["recall_finance"], m["recall_general"],
+                    m["precision_mixed"], m["precision_allow"], 100 * kept)
+
+
 # ── the decision, as the live filter makes it ────────────────────────────────
 def live_decision(probs: np.ndarray, categories: Sequence[Optional[str]], tau: float, soft_idx: int) -> np.ndarray:
     """is_news per row under the full live rule: a `deny` category is rejected
@@ -327,9 +360,7 @@ def cmd_train(args) -> int:
     logger.info("gold %s: %d rows (train %d / test %d), sha256 %s; encoder %s", os.path.relpath(args.gold, REPO_ROOT),
                 len(gold), len(train), len(test), sha256_of_file(args.gold)[:12], args.encoder)
 
-    model = SentenceTransformer(args.encoder)
-    X_train = embed_for_probe(model, texts_of(train), model_name=args.encoder)
-    X_test = embed_for_probe(model, texts_of(test), model_name=args.encoder)
+    X_train, X_test = embed_split(args.encoder, args.gold, train, test)
     y_train = [r["topic"] for r in train]
     logger.info("embedded: train %s, test %s", X_train.shape, X_test.shape)
 
@@ -363,6 +394,7 @@ def cmd_train(args) -> int:
     ok, failures = gates_pass(test_metrics)
     print_report(f"TEST at tau={tau:.2f}", test_metrics)
     logger.info("  topic macro-F1 on news rows: %.3f", test_metrics["topic_macro_f1"])
+    tradeoff_curve(test, probs_test, classes)
     logger.info("  labels' measured noise floor is ~%.0f%% (SYS-46): read every gate as +/-%.2f", 100 * NOISE_FLOOR, NOISE_FLOOR)
     conf = confusion(test, probs_test, classes)
     logger.info("  confusion (gold topic -> predicted, news rows):")
