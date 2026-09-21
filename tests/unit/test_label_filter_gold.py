@@ -41,6 +41,20 @@ class TestRubric:
         assert "Harga Minyak Turun" in prompt
         assert ", ".join(TOPICS) in prompt
 
+    def test_sys46_boundaries_are_in_the_prompt(self):
+        # Owner decision 2026-09-21 (SYS-46 #142): the two hand-check rows the
+        # owner called soft against the old wording are the rubric's worked
+        # negatives now, and the old "a celebrity in a court case is news"
+        # sentence is gone.
+        prompt = " ".join(build_label_prompt("[]").split())   # the rubric is hard-wrapped
+        assert "school and campus regulations and guidance" in prompt
+        assert '"Kemenag Batasi Penggunaan HP di Sekolah" is soft' in prompt
+        assert "celebrity's OWN criminal case" in prompt
+        assert '"Rizky Billar Ditetapkan Tersangka KDRT" is soft' in prompt
+        assert "A celebrity in a court case is news" not in prompt
+        assert "not a celebrity's own case: soft" in prompt
+        assert "not school rules: soft" in prompt
+
 
 class TestAssignStratum:
     def test_finance_reject_is_the_sys35_population(self):
