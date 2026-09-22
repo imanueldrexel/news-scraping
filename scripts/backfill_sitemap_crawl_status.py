@@ -54,15 +54,54 @@ logging.basicConfig(format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
+# DBT-26 (#85): a sitemap that already has a `chunks` row, or an L1 FAISS
+# vector, carries direct evidence that the ORIGINAL title+body filter passed
+# (chunking only starts after it did). This script's headline-only re-check
+# can disagree with that evidence -- DBT-20 stamped 582 MEDIAINDONESIA rows
+# `rejected_filter` (terminal) that way. Such rows are never candidates here;
+# they are counted and left for recrawl_faiss_orphans.py.
 _FETCH_SQL = text("""
     SELECT s.sitemap_id, s.headline, s.category
     FROM sitemaps s
     WHERE s.crawl_status = 'pending'
       AND s.last_crawl_attempt IS NOT NULL
       AND NOT EXISTS (SELECT 1 FROM articles a WHERE a.sitemap_id = s.sitemap_id)
+      AND NOT EXISTS (SELECT 1 FROM chunks c WHERE c.sitemap_id = s.sitemap_id)
+      AND NOT (s.sitemap_id = ANY(:l1_ids))
       AND (:website IS NULL OR s.sources = :website)
     ORDER BY s.sitemap_id
 """)
+_EVIDENCED_SQL = text("""
+    SELECT COUNT(*) FROM sitemaps s
+    WHERE s.crawl_status = 'pending'
+      AND s.last_crawl_attempt IS NOT NULL
+      AND NOT EXISTS (SELECT 1 FROM articles a WHERE a.sitemap_id = s.sitemap_id)
+      AND (EXISTS (SELECT 1 FROM chunks c WHERE c.sitemap_id = s.sitemap_id) OR s.sitemap_id = ANY(:l1_ids))
+      AND (:website IS NULL OR s.sources = :website)
+""")
+
+
+def load_l1_sitemap_ids() -> set:
+    """Every sitemap_id with an L1 vector -- the same pickle read as
+    scripts/fix_rejected_filter_with_faiss_evidence.py. Missing index = empty
+    set (a fresh install), never an error."""
+    import pickle
+    from newscrawler.core.constants import VECTOR_DB_NAME_L1
+    path = os.path.join(VECTOR_DB_NAME_L1, "index.pkl")
+    if not os.path.exists(path):
+        return set()
+    with open(path, "rb") as f:
+        docstore, _ = pickle.load(f)
+    return {int(doc.metadata["sitemap_id"]) for doc in docstore._dict.values()
+            if doc.metadata.get("sitemap_id") is not None}
+
+
+def fetch_candidates(session, website, l1_ids):
+    """Rows this script may classify, and the count it must not touch."""
+    params = {"website": website, "l1_ids": sorted(l1_ids)}
+    rows = session.execute(_FETCH_SQL, params).fetchall()
+    evidenced = session.execute(_EVIDENCED_SQL, params).scalar()
+    return rows, evidenced
 
 
 def classify_batch(filter_: SemanticImportanceFilter, headlines, categories):
@@ -88,10 +127,13 @@ def main():
     args = parser.parse_args()
 
     client = SQLAlchemyClient()
+    l1_ids = load_l1_sitemap_ids()
     with client.get_session() as session:
-        rows = session.execute(_FETCH_SQL, {"website": args.website}).fetchall()
+        rows, evidenced = fetch_candidates(session, args.website, l1_ids)
 
-    logger.info("%d sitemaps pending classification%s", len(rows), f" for {args.website}" if args.website else "")
+    logger.info("%d sitemaps pending classification%s; %d skipped because they already have chunks or an L1 "
+                "vector (DBT-26: the original filter passed them -- scripts/recrawl_faiss_orphans.py)",
+                len(rows), f" for {args.website}" if args.website else "", evidenced)
     if not rows:
         return
 
