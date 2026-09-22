@@ -260,6 +260,10 @@ WHERE NOT EXISTS (SELECT 1 FROM chunks c WHERE c.sitemap_id = a.sitemap_id);
 
 SELECT COUNT(*) AS pending_embedding_chunks, COUNT(DISTINCT sitemap_id) AS affected_sitemaps
 FROM chunks WHERE embedding_id IS NULL;
+-- DBT-23 (#74): rows with no vector id. Since 2026-09-22 the pipeline repairs them itself on the
+-- sitemap's next save (the level is offered again and save_chunks upserts in place); a count that
+-- stays > 0 across runs means the sitemap is never re-offered -- scripts/backfill_pending_embeddings.py.
+SELECT COUNT(*) AS unembedded_chunks FROM chunks WHERE embedding_id IS NULL;
 ```
 `orphan_articles` should be 0 -- an `articles` row with no `chunks` row means `save_chunk_data`'s SQL insert never landed even though the article was saved (SYS-17's exact bug: FAISS had the vectors, `chunks` did not). If nonzero, `scripts/backfill_orphan_chunks.py` repairs it by re-chunking from `articles.extracted_text` (no re-crawl needed) and reuses whatever FAISS already has. `pending_embedding_chunks` nonzero is the opposite direction (DBT-17, still open) -- a `chunks` row that was inserted but never actually embedded into FAISS.
 

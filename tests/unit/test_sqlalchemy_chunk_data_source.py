@@ -49,3 +49,45 @@ class TestGetExistingSitemapLevelPairs:
         ds.get_existing_sitemap_level_pairs([1, 2, 3])
         params = session.execute.call_args[0][1]
         assert set(params["ids"]) == {1, 2, 3}
+
+
+class TestNullEmbeddingRowsAreVisible:
+    """DBT-23 (#74): the dedup must not count a level as saved while any of its
+    rows lacks an embedding_id, and save_chunks must upsert on the DBT-09 key so
+    such a row is repaired in place. Statement shape pinned here; behaviour on
+    the real table in tests/integration/test_chunks_null_embedding_live.py."""
+
+    def test_existing_pairs_query_requires_every_row_to_carry_an_embedding(self):
+        from unittest.mock import MagicMock
+        from newscrawler.infrastructure.datasource.dataflow.write.sqlalchemy.sql_alchemy_chunk_data_source import (
+            SQLAlchemyChunkDataSource,
+        )
+        session = MagicMock()
+        session.execute.return_value.fetchall.return_value = [(5, 1)]
+        client = MagicMock()
+        client.get_session.return_value.__enter__.return_value = session
+        pairs = SQLAlchemyChunkDataSource(client).get_existing_sitemap_level_pairs([5])
+        sql = " ".join(str(session.execute.call_args[0][0]).split())
+        assert "GROUP BY sitemap_id, chunk_level" in sql
+        assert "HAVING COUNT(*) FILTER (WHERE embedding_id IS NULL) = 0" in sql
+        assert pairs == {(5, 1)}
+
+    def test_save_chunks_is_an_upsert_on_the_unique_key(self):
+        from unittest.mock import MagicMock
+        from newscrawler.infrastructure.datasource.dataflow.model.chunk_model import ChunkModel
+        from newscrawler.infrastructure.datasource.dataflow.write.sqlalchemy.sql_alchemy_chunk_data_source import (
+            SQLAlchemyChunkDataSource,
+        )
+        session = MagicMock()
+        client = MagicMock()
+        client.get_session.return_value.__enter__.return_value = session
+        SQLAlchemyChunkDataSource(client).save_chunks([
+            ChunkModel(sitemap_id=1, chunk_level=2, chunk_index=0, chunk_total=1, is_first_chunk=True,
+                       is_last_chunk=True, text_content="t", token_count=1, embedding_id="e", chunk_status="embedded"),
+        ])
+        stmt = session.execute.call_args[0][0]
+        from sqlalchemy.dialects import postgresql
+        sql = str(stmt.compile(dialect=postgresql.dialect()))
+        assert "ON CONFLICT (sitemap_id, chunk_level, chunk_index) DO UPDATE SET" in sql
+        assert "embedding_id = excluded.embedding_id" in sql and "chunk_status = excluded.chunk_status" in sql
+        session.commit.assert_called_once()
