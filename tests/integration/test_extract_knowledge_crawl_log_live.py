@@ -25,7 +25,21 @@ def client():
             s.execute(text("SELECT 1"))
     except Exception as exc:
         pytest.skip(f"Cannot connect to test DB: {exc}")
+    # get_articles_pending_extraction selects EVERY article with
+    # knowledge_extracted = 0, so rows other modules seeded in this shared test
+    # DB would join this run. Park them on a sentinel value for the duration
+    # and restore it afterwards, so these tests see only their own articles.
+    with c.get_session() as s:
+        parked = [r[0] for r in s.execute(text(
+            "SELECT articles_id FROM articles WHERE knowledge_extracted = 0")).fetchall()]
+        if parked:
+            s.execute(text("UPDATE articles SET knowledge_extracted = 9 WHERE articles_id = ANY(:ids)"), {"ids": parked})
+        s.commit()
     yield c
+    with c.get_session() as s:
+        if parked:
+            s.execute(text("UPDATE articles SET knowledge_extracted = 0 WHERE articles_id = ANY(:ids)"), {"ids": parked})
+        s.commit()
     with c.get_session() as s:
         s.execute(text("DELETE FROM articles WHERE sitemap_id IN (SELECT sitemap_id FROM sitemaps WHERE sources = :s)"), {"s": SOURCE})
         s.execute(text("DELETE FROM sitemaps WHERE sources = :s"), {"s": SOURCE})
