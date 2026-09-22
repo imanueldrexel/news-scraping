@@ -15,6 +15,11 @@ logger.setLevel(logging.INFO)
 
 
 class KontanCrawler(Crawler):
+    # SRC-35: KONTAN `english` is its market wire, not a translated soft desk
+    # ("GLOBAL MARKETS-Tech Rally Boosts Asian Stocks", "Global Oil Prices Plummet to
+    # 12-Day Low"), sampled 2026-09-22.
+    SOFT_BRANCH_EXCEPTIONS = frozenset({"english"})
+
     def __init__(self):
         super(KontanCrawler, self).__init__()
         self.website_name = WebsiteName.KONTAN.value

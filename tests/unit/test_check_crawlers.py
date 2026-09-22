@@ -119,6 +119,10 @@ def _mock_crawler(soup="SOUP", branches=None, articles=None, dtos=None, details=
     c.website_url = "http://example.com/sitemap.xml"
     c.page_loader.get_soup.return_value = soup
     c._get_branches.return_value = branches if branches is not None else {"news": "http://e.com/news.xml"}
+    # SRC-35: check_one drops soft branches before sampling one -- apply the
+    # real vocabulary here so the mock behaves like a crawler, not a MagicMock.
+    from newscrawler.infrastructure.datasource.scrapers.crawler import Crawler as _RealCrawler
+    c.drop_soft_branches.side_effect = lambda b: {k: v for k, v in (b or {}).items() if not _RealCrawler.is_soft_branch(k)}
     c._scrape.return_value = articles if articles is not None else [{"link": "http://e.com/a"}]
     c.batch_crawling_sitemap.return_value = dtos if dtos is not None else [SitemapDTO(headline="h", link="http://e.com/a", sources="KOMPAS")]
     c.batch_crawling_details.return_value = details if details is not None else [_detail(["body text here"])]
@@ -479,3 +483,19 @@ class TestSummaryLineWithDelta:
         assert payload["delta"]["new"][0]["website"] == "KOMPAS"
         assert payload["summary"] == cc.summary_line(results, delta)
         json.dumps(payload, default=cc._json_default)  # must round-trip (compared_to is a datetime)
+
+
+class TestSoftBranchCounters:
+    """SRC-35 (#128): the health line carries how many branches a source lists
+    and how many were dropped as soft verticals, so a site adding one is
+    visible the day it appears."""
+
+    def test_blank_result_has_the_counters(self):
+        r = cc._blank_result("X")
+        assert r["branches"] == 0 and r["soft_branches"] == 0
+
+    def test_render_shows_branch_counts(self):
+        r = cc._blank_result("DETIK")
+        r.update({"branch": "berita", "branches": 242, "soft_branches": 62, "status": cc.STATUS_OK})
+        out = cc.render_table([r])
+        assert "242-62" in out

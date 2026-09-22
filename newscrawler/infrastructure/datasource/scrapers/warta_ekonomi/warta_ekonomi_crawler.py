@@ -15,6 +15,11 @@ logger.setLevel(logging.INFO)
 
 
 class WartaEkonomiCrawler(Crawler):
+    # SRC-35: WARTAEKONOMI `travel` sampled 2026-09-22 as tourism-INDUSTRY coverage
+    # ("Rupiah Melemah, Turis Asing Justru Makin Ramai Serbu Indonesia, BPS Catat
+    # Lonjakan Wisman"), not travel guides -- the call SYS-31 made for its `otomotif`.
+    SOFT_BRANCH_EXCEPTIONS = frozenset({"travel"})
+
     def __init__(self):
         super(WartaEkonomiCrawler, self).__init__()
         self.website_name = WebsiteName.WARTAEKONOMI.value

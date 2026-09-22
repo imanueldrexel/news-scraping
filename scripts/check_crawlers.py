@@ -136,6 +136,10 @@ def classify(sitemap_links: int, detail_ok: int, extractors: list = None, error:
 def _blank_result(name: str, started_at: datetime = None) -> dict:
     return {
         "website": name, "branch": "", "sitemap_links": 0, "dto_count": 0,
+        # SRC-35 (#128): how many branches this source lists, and how many of
+        # them the base Crawler drops as soft verticals before anything is
+        # fetched. A site adding a vertical shows up here on the day it does.
+        "branches": 0, "soft_branches": 0,
         "detail_total": 0, "detail_ok": 0, "avg_chars": 0,
         "status": STATUS_BROKEN, "note": "", "extractors": [],
         # OPS-12: the outlet's own check window, not the logging transaction's NOW().
@@ -157,9 +161,13 @@ def check_one(name: str, crawler, sample_size: int) -> dict:
         if not soup:
             result["note"] = "sitemap fetch failed (get_soup returned None)"
             return result
-        branches = crawler._get_branches(soup) or {}
+        raw_branches = crawler._get_branches(soup) or {}
+        branches = crawler.drop_soft_branches(dict(raw_branches))
+        result["branches"] = len(raw_branches)
+        result["soft_branches"] = len(raw_branches) - len(branches)
         if not branches:
-            result["note"] = "no branches parsed from sitemap"
+            result["note"] = ("all %d branch(es) dropped as soft verticals (SRC-35)" % len(raw_branches)
+                              if raw_branches else "no branches parsed from sitemap")
             return result
 
         branch_name, branch_link = pick_branch(branches)
@@ -249,8 +257,10 @@ def render_table(results: list) -> str:
         "-" * 120]
     for r in results:
         detail = "%d/%d (%dch)" % (r["detail_ok"], r["detail_total"], r["avg_chars"])
+        # SRC-35: branches listed / dropped as soft, next to the branch sampled.
+        branch_cell = "%s %d-%d" % (r.get("branch", "")[:8], r.get("branches", 0), r.get("soft_branches", 0))
         rows.append("%-14s %-8s %-14s %-6d %-5d %-15s %-6s %s" % (
-            r["website"][:14], r["status"], r.get("branch", "")[:14], r["sitemap_links"],
+            r["website"][:14], r["status"], branch_cell[:14], r["sitemap_links"],
             r["dto_count"], detail, "%.1f" % r["duration_sec"], r["note"][:60]))
     return "\n".join(rows)
 

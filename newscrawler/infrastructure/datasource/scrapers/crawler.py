@@ -51,7 +51,64 @@ class SitemapScrapeBatch(list):
         self.skipped_no_date: int = skipped_no_date
 
 
+# SRC-35 (#128) / SRC-39 (#133): the soft verticals, dropped at branch level
+# for every source, before a single URL of them is listed. Under the
+# news-worthy scope the branch list IS the scope decision for a source, and it
+# belongs in one place rather than in twenty `_get_branches` bodies.
+#
+# Every name here was decided from a 3-title sample of the live branch on
+# 2026-09-22 (scripts/experiments/sample_branch_titles.py; table on SRC-35),
+# never from the name. What the samples KEPT, and is therefore deliberately
+# NOT here: `teknologi`/`tekno`/`ototekno`/`tekno-sains` (Apple, an AI summit,
+# Nvidia, a NASA meteor analysis -- tech news is news; gadget *reviews* are
+# the probe's job), `kesehatan` (TRIBUN: MBG poisoning victims; WARTAEKONOMI:
+# Ebola, BPJS), `otomotif` (SINDONEWS/JPNN/WARTAEKONOMI: Toyota global sales,
+# EV market share, dealer expansion -- SYS-31 sampled the same and kept it),
+# `transportasi` (WARTAEKONOMI: toll traffic, ganjil-genap -- and the `sport`
+# trap it is famous for), `edukasi`, `syariah`, `muslim` (haji registration),
+# `video`/`foto` (IDXCHANNEL: IHSG analysis, the Menkeu handover).
+#
+# Matching is word-bounded on the separators a branch key actually uses
+# (`-`, `_`, `/`, `.`), so `transportasi` never matches `sport` while
+# `bali/sport` does. A per-crawler SOFT_BRANCH_EXCEPTIONS set keeps a name
+# whose sample proved it is that outlet's business coverage.
+SOFT_BRANCH_WORDS = (
+    # sport (owner decision 2026-09-20: out)
+    "sport", "sports", "esport", "esports", "olahraga", "bola", "sepakbola", "sepak-bola",
+    "bolasport", "bolanita", "bolastylo", "bolanas", "superskor", "sportaliga", "piala", "juara",
+    # entertainment / celebrity / music / film
+    "showbiz", "seleb", "selebriti", "celeb", "celebs", "celebrity", "hiburan", "entertainment",
+    "hype", "kpop", "korea", "musik", "film", "filmon", "movie", "sinetron", "klikseleb",
+    "idxtainment", "ecotainment", "entertainment_life_style",
+    # lifestyle / fashion / beauty / women & parenting
+    "lifestyle", "gaya-hidup", "gayahidup", "fashion", "beauty", "kecantikan", "stylo", "jelita",
+    "women", "woman", "mom", "momandkids", "cewekbanget", "nakita", "nova",
+    # food / travel
+    "kuliner", "sajian", "resep", "food", "travel", "wisata", "destinasi", "piknik", "travelista",
+    # religion guides (doa, tausiyah, daily reflections). NOTE (SRC-35): the
+    # SINDONEWS `kalam` and JPNN `ramadan` samples were haji operations and
+    # mudik logistics -- news by the rubric, denied by the SYS-31 category
+    # list today, so dropping the branch changes nothing observable. Recorded
+    # on the ticket for SYS-37's probe to revisit; do not "fix" it here.
+    "religi", "ramadan", "kalam",
+    # games / quizzes / horoscopes / fiction / photo and gadget gear
+    "games", "game", "quiz", "horoskop", "zodiak", "fiction", "puisi", "gridgames",
+    "fotostop", "konsultasifotografi", "konsultasigadget", "gadget",
+    # hobby magazines (GRIDID's network, SRC-37) and user/PR columns
+    "bobo", "intisari", "fotokita", "gridhealth", "gridoto", "motorplus", "otoseken", "hai",
+    "idea", "donwori", "advetorial", "advertorial", "siaran-pers", "vstory", "blog",
+    # duplicate translations of a desk we already list (KONTAN's market wire
+    # is the exception -- see its crawler)
+    "english", "english_edition",
+)
+
+
 class Crawler:
+    # SRC-35: names this crawler keeps although they are in SOFT_BRANCH_WORDS,
+    # because a 3-title sample proved they are that outlet's business or news
+    # coverage. Every entry cites its evidence on SRC-35 (#128).
+    SOFT_BRANCH_EXCEPTIONS = frozenset()
+
     def __init__(self):
         self.verbose = VERBOSE
         self.parallelize = PARALLELIZE
@@ -103,15 +160,48 @@ class Crawler:
     def _get_branch_name_from_url(url) -> str:
         return "news"
 
+    @classmethod
+    def is_soft_branch(cls, branch_key: str) -> bool:
+        """SRC-35 (#128): True when this branch is a soft vertical for this
+        crawler. Word-bounded on the separators branch keys use, so
+        `transportasi` is never `sport` and `bali/sport` is; a key this
+        crawler lists in SOFT_BRANCH_EXCEPTIONS is always kept."""
+        key = (branch_key or "").strip().lower()
+        if not key:
+            return False
+        if key in {e.lower() for e in cls.SOFT_BRANCH_EXCEPTIONS}:
+            return False
+        return any(
+            re.search(rf"(?:^|[^a-z0-9]){re.escape(word)}(?:[^a-z0-9]|$)", key)
+            for word in SOFT_BRANCH_WORDS
+        )
+
+    def drop_soft_branches(self, branches: Dict[str, str]) -> Dict[str, str]:
+        """SRC-35: the scope decision for a source, applied once for every
+        crawler after its own `_get_branches`. Dropped keys are logged once per
+        run, so a site adding a vertical is visible the day it appears."""
+        kept, dropped = {}, []
+        for key, link in (branches or {}).items():
+            if self.is_soft_branch(key):
+                dropped.append(key)
+            else:
+                kept[key] = link
+        if dropped:
+            logger.info(
+                f"{self.website_name}: dropped {len(dropped)} soft branch(es) before listing "
+                f"(SRC-35): {', '.join(sorted(dropped))}"
+            )
+        return kept
+
     def get_news_in_bulk(self) -> List:
         soup = self.page_loader.get_soup(self.website_url)
         if not soup:
             logger.warning(f"Could not load sitemap from {self.website_url}")
             return []
-            
-        branches_to_crawl = self._get_branches(soup)
+
+        branches_to_crawl = self.drop_soft_branches(self._get_branches(soup))
         links_to_crawl = []
-        
+
         for branch_name, branch_link in branches_to_crawl.items():
             links = self._scrape(branch_link=branch_link, branch_name=branch_name)
             links_to_crawl.extend(links)
