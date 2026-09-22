@@ -70,3 +70,39 @@ class TestArticlesTopicLive:
                 {"ids": [with_topic, without]}).fetchall()}
         assert got[with_topic][0] == "commodities_energy" and abs(got[with_topic][1] - 0.83) < 1e-6
         assert got[without] == (None, None)
+
+
+class TestChunksArticleIdLinkLive:
+    """DBT-11 (#46): chunks are saved before the articles row exists, so
+    save_newsdetails links chunks.article_id right after the insert. Real
+    table: two chunk rows with NULL article_id, one article saved -> both
+    linked; a chunk of another sitemap untouched."""
+
+    def test_save_newsdetails_links_the_batch_chunks(self, client):
+        from newscrawler.domain.dtos.dataflow.details.news_details_dto import NewsDetailsDTO
+        from newscrawler.infrastructure.datasource.dataflow.write.sqlalchemy.sql_alchemy_articles_data_source import (
+            SQLAlchemyArticleDataSource,
+        )
+        from newscrawler.infrastructure.repositories.dataflow.data_flow_repository_impl import DataFlowRepositoryImpl
+
+        sid = _seed_sitemap(client)
+        other = _seed_sitemap(client)
+        with client.get_session() as s:
+            for target, idx in ((sid, 0), (sid, 1), (other, 0)):
+                s.execute(text("INSERT INTO chunks (sitemap_id, article_id, chunk_level, chunk_index, chunk_total, is_first_chunk, "
+                               "is_last_chunk, text_content, token_count, embedding_id, chunk_status) "
+                               "VALUES (:sid, NULL, 2, :ix, 2, false, false, 't', 5, 'e', 'embedded')"), {"sid": target, "ix": idx})
+            s.commit()
+
+        model = DataFlowRepositoryImpl._to_newsdetail_data_model(
+            NewsDetailsDTO(sitemap_id=sid, extracted_text=["Body."], reporter=[], meta_data={"title": "t", "posted_at": 20260922}))
+        assert SQLAlchemyArticleDataSource(client).save_newsdetails([model]) == [sid]
+
+        with client.get_session() as s:
+            aid = s.execute(text("SELECT articles_id FROM articles WHERE sitemap_id = :sid"), {"sid": sid}).scalar()
+            linked = s.execute(text("SELECT article_id FROM chunks WHERE sitemap_id = :sid ORDER BY chunk_index"), {"sid": sid}).fetchall()
+            untouched = s.execute(text("SELECT article_id FROM chunks WHERE sitemap_id = :sid"), {"sid": other}).scalar()
+            s.execute(text("DELETE FROM chunks WHERE sitemap_id IN (:a, :b)"), {"a": sid, "b": other})
+            s.commit()
+        assert [r.article_id for r in linked] == [aid, aid]
+        assert untouched is None

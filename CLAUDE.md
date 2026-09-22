@@ -87,6 +87,7 @@ psql -U postgres -d newsaggregator -f scripts/migrate_chunks_unique.sql   # DBT-
 psql -U postgres -d newsaggregator -f scripts/migrate_sitemap_fetch_failures.sql   # SYS-09: sitemaps.fetch_failures/last_fetch_error; load_all_sitemaps excludes rows at >= SITEMAP_MAX_FETCH_FAILURES
 psql -U postgres -d newsaggregator -f scripts/migrate_sitemaps_unique_link.sql   # SYS-29: unique sitemaps.link (the dedup key is the link alone, not (link, posted_at)); run scripts/dedupe_sitemap_links.py first or this fails on existing duplicates
 psql -U postgres -d newsaggregator -f scripts/migrate_articles_topic.sql   # SYS-37: articles.topic / topic_confidence (the probe's topic; run scripts/train_importance_probe.py --backfill after to fill existing rows)
+psql -U postgres -d newsaggregator -f scripts/migrate_chunks_article_id.sql   # DBT-11: backfill chunks.article_id from articles by sitemap_id (idempotent; new rows are linked by save_newsdetails)
 ```
 
 Run `tests/unit` / `tests/integration` explicitly rather than bare `pytest` (the three legacy `tests/test_*.py` files at the top level predate the split). `pytest.ini` sets a 120 s per-test timeout via `pytest-timeout` (DBT-25) — a test that hangs terminates the run with exit 1 and a stack dump instead of sitting forever; if a legitimately slow test trips it, raise the value there rather than removing it.

@@ -44,25 +44,28 @@ class TestSaveNewsdetailsUpsert:
 
         data_source.save_newsdetails([make_details_model(sitemap_id=99)])
 
-        assert session.execute.call_count == 1
-        stmt = session.execute.call_args[0][0]
+        # one INSERT per row + one UPDATE linking chunks.article_id (DBT-11)
+        assert session.execute.call_count == 2
+        stmt = session.execute.call_args_list[0][0][0]
         compiled = str(stmt.compile(dialect=postgresql.dialect()))
         assert "INSERT INTO articles" in compiled
         assert "ON CONFLICT (sitemap_id) DO NOTHING" in compiled
+        link = str(session.execute.call_args_list[1][0][0])
+        assert "UPDATE chunks c SET article_id = a.articles_id" in link and "c.article_id IS NULL" in link
 
     def test_commits_once_after_all_rows(self):
         data_source, session = _data_source_with_mock_session()
 
         data_source.save_newsdetails([make_details_model(sitemap_id=1), make_details_model(sitemap_id=2)])
 
-        assert session.execute.call_count == 2
+        assert session.execute.call_count == 3   # 2 inserts + the chunks.article_id link (DBT-11)
         session.commit.assert_called_once()
 
     def test_one_row_failing_does_not_abort_the_rest(self):
         data_source, session = _data_source_with_mock_session()
-        session.execute.side_effect = [Exception("boom"), None]
+        session.execute.side_effect = [Exception("boom"), MagicMock(), None]
 
         data_source.save_newsdetails([make_details_model(sitemap_id=1), make_details_model(sitemap_id=2)])
 
-        assert session.execute.call_count == 2
+        assert session.execute.call_count == 3   # failed insert, good insert, the link UPDATE
         session.commit.assert_called_once()

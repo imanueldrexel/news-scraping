@@ -2,11 +2,13 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy import (
     Boolean,
     Column,
+    Date,
     Float,
     Index,
     String,
     BigInteger,
     Integer,
+    SmallInteger,
     TIMESTAMP,
     JSON,
     ForeignKey,
@@ -42,6 +44,11 @@ class SitemapTable(Base):
     # excludes it once this reaches SITEMAP_MAX_FETCH_FAILURES.
     fetch_failures = Column(Integer, nullable=False, default=0)
     last_fetch_error = Column(String, nullable=True)
+    # DBT-11 (#46): added by scripts/migrate_phase3.sql for the newsletter's
+    # clustering, never written by newsletter_generator.py (it keeps clusters
+    # in the digest JSON). Mirrored here so the ORM matches the schema;
+    # SYS-40 (#126) decides whether it is written or dropped.
+    cluster_id = Column(Integer, nullable=True)
 
     def __init__(self, sitemap: NewsSitemapModel):
         self.headline = sitemap.headline
@@ -65,7 +72,7 @@ class NewsArticlesTable(Base):
 
     articles_id = Column(BigInteger, primary_key=True, autoincrement=True)
     sitemap_id = Column(
-        Integer,
+        BigInteger,   # DBT-11: matches the DB (bigint) and its target column
         ForeignKey(f"{SitemapTable.__tablename__}.{SitemapTable.sitemap_id.name}"),
         unique=True,
     )
@@ -110,7 +117,14 @@ class ChunksTable(Base):
 
     chunk_id       = Column(BigInteger, primary_key=True, autoincrement=True)
     sitemap_id     = Column(BigInteger, ForeignKey(f"{SitemapTable.__tablename__}.{SitemapTable.sitemap_id.name}"), nullable=False)
-    chunk_level    = Column(Integer, nullable=False)
+    # DBT-11 (#46): in the DB since migrate_phase1.sql, absent from the ORM and
+    # 100% NULL until 2026-09-22. Chunks are saved BEFORE the articles row
+    # exists (save_chunk_data, then save_newsdetails_data), so the insert
+    # cannot carry it; SQLAlchemyArticleDataSource.save_newsdetails links it
+    # right after the article commits, and migrate_chunks_article_id.sql
+    # backfilled the existing rows.
+    article_id     = Column(BigInteger, ForeignKey("articles.articles_id"), nullable=True)
+    chunk_level    = Column(SmallInteger, nullable=False)   # DBT-11: SMALLINT in the DB
     chunk_index    = Column(Integer, nullable=False, default=0)
     chunk_total    = Column(Integer, nullable=False, default=1)
     is_first_chunk = Column(Boolean, nullable=False, default=False)
@@ -156,3 +170,45 @@ Index("idx_chunks_status", ChunksTable.chunk_status)
 #     def __init__(self, source_id: int, latest_crawled_time: date):
 #         self.source_id = source_id
 #         self.latest_crawled_time = latest_crawled_time
+
+
+# ── DBT-11 (#46): read-only ORM mirrors of the two raw-SQL tables ────────────
+# crawl_log (scripts/migrate_phase5.sql) and newsletter_digests
+# (scripts/migrate_phase3.sql) are written with text() SQL, never through the
+# ORM. They are declared here so the schema-vs-model reflection test
+# (tests/integration/test_schema_matches_orm.py) covers every table the
+# pipeline owns; the hand-sync rule in CLAUDE.md has a list to sync against.
+class CrawlLogTable(Base):
+    __tablename__ = "crawl_log"
+
+    log_id        = Column(BigInteger, primary_key=True, autoincrement=True)
+    website       = Column(String, nullable=False)
+    task          = Column(String, nullable=False)
+    status        = Column(String, nullable=False)
+    article_count = Column(Integer, nullable=True)
+    error_msg     = Column(String, nullable=True)
+    started_at    = Column(TIMESTAMP, nullable=False)
+    finished_at   = Column(TIMESTAMP, nullable=True)
+
+
+class NewsletterDigestsTable(Base):
+    __tablename__ = "newsletter_digests"
+
+    digest_id     = Column(BigInteger, primary_key=True, autoincrement=True)
+    digest_date   = Column(Date, nullable=False, unique=True)
+    file_path     = Column(String, nullable=False)
+    cluster_count = Column(Integer, nullable=False, default=0)
+    article_count = Column(Integer, nullable=False, default=0)
+    categories    = Column(JSON, nullable=True)
+    source_ids    = Column(JSON, nullable=True)
+    generated_at  = Column(TIMESTAMP, nullable=False)
+    generation_ms = Column(Integer, nullable=True)
+
+
+# Columns the database owns and the ORM deliberately does not declare, and
+# tables that are tooling rather than schema. The reflection test allows
+# exactly these; anything else present in one side only is drift.
+DB_OWNED_COLUMNS = {
+    ("chunks", "fts_vector"),   # GENERATED ALWAYS AS to_tsvector(...) STORED, migrate_phase1.sql
+}
+TOOLING_TABLES = {"schema_migrations"}   # scripts/migrate.py's own ledger

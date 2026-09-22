@@ -58,6 +58,7 @@ MIGRATIONS = [
     "migrate_sitemap_fetch_failures.sql",
     "migrate_sitemaps_unique_link.sql",
     "migrate_articles_topic.sql",
+    "migrate_chunks_article_id.sql",
 ]
 
 # Superseded/dead files kept in scripts/ for reference only -- excluded from both the

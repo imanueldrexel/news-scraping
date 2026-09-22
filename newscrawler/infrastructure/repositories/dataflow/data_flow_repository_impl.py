@@ -177,7 +177,12 @@ class DataFlowRepositoryImpl(DataFlowRepository):
             extracted_text=news_details.extracted_text,
             reporter=news_details.reporter,
             meta_data=meta_data,
-            is_embedded=True
+            # DBT-11 (#46): not a hard-coded lie -- CrawlerServiceImpl only hands
+            # save_newsdetails_data the articles whose chunks save_chunk_data
+            # just embedded (`to_save` is filtered by embedded_sitemap_ids), so
+            # every row that reaches this mapper IS embedded. The column stays
+            # for the schema; nothing reads it as a work queue.
+            is_embedded=True,
         )
 
     # ── Knowledge extraction (Phase 2) ───────────────────────────────────────

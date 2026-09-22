@@ -10,6 +10,7 @@ from newscrawler.infrastructure.datasource.dataflow.model.news_details_model imp
     NewsDetailsModel,
 )
 from newscrawler.infrastructure.datasource.dataflow.write.sqlalchemy.table import (
+    ChunksTable,
     NewsArticlesTable,
     SitemapTable,
 )
@@ -132,6 +133,21 @@ class SQLAlchemyArticleDataSource:
                         f"Failed to add sitemap: {newsdetail}\nException: {e}"
                     )
 
+            # DBT-11 (#46): chunks are saved before the article row exists, so
+            # chunks.article_id was never written. Link them now that the
+            # articles row is in this transaction -- one UPDATE for the batch.
+            if committed_sitemap_ids:
+                session.execute(
+                    text(
+                        f"UPDATE {ChunksTable.__tablename__} c "
+                        f"SET {ChunksTable.article_id.name} = a.{NewsArticlesTable.articles_id.name} "
+                        f"FROM {NewsArticlesTable.__tablename__} a "
+                        f"WHERE c.{ChunksTable.sitemap_id.name} = a.{NewsArticlesTable.sitemap_id.name} "
+                        f"AND c.{ChunksTable.article_id.name} IS NULL "
+                        f"AND c.{ChunksTable.sitemap_id.name} = ANY(:ids)"
+                    ),
+                    {"ids": committed_sitemap_ids},
+                )
             session.commit()
 
         if skipped_existing:

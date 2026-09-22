@@ -45,7 +45,7 @@ def _data_source_with_mock_session():
 
 
 def _bound_extracted_text(session):
-    stmt = session.execute.call_args[0][0]
+    stmt = session.execute.call_args_list[0][0][0]   # the INSERT; the last call is DBT-11's chunks.article_id link
     compiled = stmt.compile(dialect=postgresql.dialect())
     return compiled.params["extracted_text"]
 
