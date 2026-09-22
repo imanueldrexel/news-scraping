@@ -154,13 +154,24 @@ def main(argv=None):
                          len(skipped), skipped[:20])
         return 0
 
+    delete_articles(client, targets, backup_tag="sys31_cleanup_offtopic")
+    return 0
+
+
+def delete_articles(client, sitemap_ids, backup_tag: str) -> int:
+    """The one deletion path (SYS-31/SYS-34, reused by SYS-45's
+    cleanup_soft_by_probe.py): JSON backup of the articles + chunks rows to
+    backups/<tag>_<utc>.json, then chunks + articles deleted and the sitemaps
+    flipped to rejected_filter in one transaction, then the FAISS vectors.
+    Returns the number of sitemap_ids processed."""
+    targets = list(sitemap_ids)
+    if not targets:
+        return 0
     os.makedirs(BACKUP_DIR, exist_ok=True)
-    backup_path = os.path.join(
-        BACKUP_DIR, f"sys31_cleanup_offtopic_{datetime.now(timezone.utc):%Y%m%dT%H%M%SZ}.json"
-    )
+    backup_path = os.path.join(BACKUP_DIR, f"{backup_tag}_{datetime.now(timezone.utc):%Y%m%dT%H%M%SZ}.json")
     with client.get_session() as session:
         backup = {name: [dict(r._mapping) for r in session.execute(sql, {"ids": targets}).fetchall()]
-                   for name, sql in _BACKUP_SQL.items()}
+                  for name, sql in _BACKUP_SQL.items()}
     with open(backup_path, "w", encoding="utf-8") as f:
         json.dump(backup, f, default=str, indent=2)
     logger.info("Backed up %d articles row(s), %d chunks row(s) to %s",
@@ -175,7 +186,7 @@ def main(argv=None):
 
     deleted = delete_faiss_vectors(targets)
     logger.info("Done. FAISS vectors deleted: %s", deleted)
-    return 0
+    return len(targets)
 
 
 if __name__ == "__main__":
