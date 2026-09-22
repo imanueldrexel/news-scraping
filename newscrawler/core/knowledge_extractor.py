@@ -18,6 +18,29 @@ from newscrawler.infrastructure.datasource.dataflow.model.entity_model import (
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
+class ExtractionResult(int):
+    """OPS-11 (#67): `extract_all` returns the processed count as an int (so
+    every existing caller keeps working) that also carries what happened to
+    the calls: how many articles a call was attempted for, how many of those
+    attempts never got a response (GeminiTransientError), and the first such
+    error. `attempted > 0 and transient_failures == attempted` is an outage --
+    a revoked key, a retired model name, a sustained 5xx -- not N independent
+    skips, and the service records it in crawl_log as a failed run."""
+
+    def __new__(cls, processed: int = 0, attempted: int = 0, transient_failures: int = 0,
+                first_transient_error: Optional[str] = None):
+        obj = super().__new__(cls, processed)
+        obj.processed = int(processed)
+        obj.attempted = attempted
+        obj.transient_failures = transient_failures
+        obj.first_transient_error = first_transient_error
+        return obj
+
+    @property
+    def all_calls_failed(self) -> bool:
+        return self.attempted > 0 and self.transient_failures == self.attempted
+
+
 class GeminiTransientError(Exception):
     """OPS-09 (#63): raised by _call_gemini when the API call itself never
     produced a usable response -- network error, timeout, rate limit, server
@@ -66,10 +89,10 @@ class KnowledgeExtractor:
 
     # ── Public entry point ───────────────────────────────────────────────────
 
-    def extract_all(self) -> int:
+    def extract_all(self) -> "ExtractionResult":
         if not self._client:
             logger.warning("Skipping extraction: no Gemini model configured.")
-            return 0
+            return ExtractionResult(0)
 
         current_count = self.ds.get_today_api_call_count(self.model_name)
         if current_count >= self.daily_limit:
@@ -77,7 +100,7 @@ class KnowledgeExtractor:
                 f"Daily API limit reached ({current_count}/{self.daily_limit}). "
                 "Skipping knowledge extraction."
             )
-            return 0
+            return ExtractionResult(0)
 
         remaining = self.daily_limit - current_count
         effective_batch = min(self.batch_size, remaining)
@@ -93,6 +116,13 @@ class KnowledgeExtractor:
         logger.info(f"Found {len(articles)} articles pending extraction.")
 
         processed = 0
+        # OPS-11 (#67): OPS-09 made a transient API failure leave no trace in
+        # any table, by design. Count them here so a run where EVERY call
+        # failed is reported as the outage it is (ERROR + crawl_log failed),
+        # instead of N warnings nobody reads and exit 0.
+        attempted = 0
+        transient_failures = 0
+        first_transient_error = None
         for article_meta in articles:
             current_count = self.ds.get_today_api_call_count(self.model_name)
             if current_count >= self.daily_limit:
@@ -100,6 +130,7 @@ class KnowledgeExtractor:
                 break
 
             article_id = article_meta["article_id"]
+            attempted += 1
             try:
                 extraction = self._call_gemini(article_meta["extracted_text"])
             except GeminiTransientError as e:
@@ -108,6 +139,8 @@ class KnowledgeExtractor:
                 # knowledge_extract_attempts and today's API call count untouched.
                 # continue (not break): the next article gets its own independent
                 # attempt rather than assuming one failure means a full outage.
+                transient_failures += 1
+                first_transient_error = first_transient_error or f"{type(e).__name__}: {e}"[:200]
                 logger.warning(
                     f"Article {article_id}: transient Gemini API failure, leaving "
                     f"attempts and call count untouched: {e}"
@@ -151,7 +184,13 @@ class KnowledgeExtractor:
                 self.ds.record_extraction_failure(article_id, str(e))
 
         logger.info(f"Knowledge extraction complete: {processed} articles processed.")
-        return processed
+        result = ExtractionResult(processed, attempted, transient_failures, first_transient_error)
+        if result.all_calls_failed:
+            logger.error(
+                f"Knowledge extraction: all {attempted} Gemini call(s) failed without a response "
+                f"({first_transient_error}) -- an API outage, not {attempted} skips. Nothing was extracted."
+            )
+        return result
 
     # ── Gemini call ──────────────────────────────────────────────────────────
 

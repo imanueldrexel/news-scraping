@@ -5,6 +5,7 @@ record an attempt (so it eventually drops out of the pending query) instead of b
 silently retried forever, and a partial failure mid-article must roll back instead of
 leaving some mentions committed.
 """
+import logging
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -294,3 +295,55 @@ class TestExtractAllGuards:
         ds.record_extraction_failure.assert_called_once()
         assert ds.record_extraction_failure.call_args.args[0] == 9
         assert "DB exploded" in ds.record_extraction_failure.call_args.args[1]
+
+
+class TestExtractAllOutageSignal:
+    """OPS-11 (#67): a run in which every Gemini call fails without a response
+    is an outage and must be reported as one -- OPS-09 (correctly) stopped
+    those failures from counting against attempts or the call budget, which
+    left them with no trace in any table."""
+
+    def _ds(self, n):
+        ds = MagicMock()
+        ds.get_today_api_call_count.return_value = 0
+        ds.load_alias_map.return_value = {}
+        ds.get_articles_pending_extraction.return_value = [
+            {"article_id": i, "sitemap_id": i, "posted_at": 20260101, "source": "S", "extracted_text": "x"}
+            for i in range(1, n + 1)
+        ]
+        return ds
+
+    def test_every_call_failing_is_reported_as_an_outage(self, caplog):
+        ds = self._ds(3)
+        kx = _make(ds=ds, client=MagicMock())
+
+        def boom(text):
+            raise GeminiTransientError("429 RESOURCE_EXHAUSTED quota")
+        kx._call_gemini = boom
+        with caplog.at_level(logging.ERROR, logger="newscrawler.core.knowledge_extractor"):
+            result = kx.extract_all()
+        assert result == 0 and isinstance(result, int)
+        assert (result.attempted, result.transient_failures, result.all_calls_failed) == (3, 3, True)
+        assert "429" in result.first_transient_error
+        assert any("all 3 Gemini call(s) failed" in r.message for r in caplog.records)
+        ds.increment_api_call_count.assert_not_called()      # OPS-09 semantics untouched
+        ds.record_extraction_failure.assert_not_called()
+
+    def test_a_partial_failure_is_not_an_outage(self):
+        ds = self._ds(2)
+        kx = _make(ds=ds, client=MagicMock())
+        calls = iter([GeminiTransientError("timeout"), None])
+
+        def flaky(text):
+            r = next(calls)
+            if isinstance(r, Exception):
+                raise r
+            return r
+        kx._call_gemini = flaky
+        result = kx.extract_all()
+        assert (result.attempted, result.transient_failures, result.all_calls_failed) == (2, 1, False)
+
+    def test_no_articles_is_not_an_outage(self):
+        ds = self._ds(0)
+        result = _make(ds=ds, client=MagicMock()).extract_all()
+        assert (int(result), result.attempted, result.all_calls_failed) == (0, 0, False)

@@ -316,7 +316,14 @@ SELECT
   COUNT(*) FILTER (WHERE knowledge_extracted = 0 AND knowledge_extract_attempts >= 3) AS retired
 FROM articles;
 ```
-`retired` counts articles `get_articles_pending_extraction` will never select again (SYS-19's attempt cap, default `KNOWLEDGE_EXTRACT_MAX_ATTEMPTS=3`). Plain `knowledge_extracted = 0` (the old query) conflates `pending_retryable` and `retired` -- a growing `retired` count with `pending_retryable` flat is the retirement mechanism doing its job on genuinely bad articles; a `retired` count that jumped in one run is more likely an API-side incident. Since OPS-09's fix, only a response Gemini actually returned but couldn't be used (safety block, unparseable JSON) counts an attempt -- a network/timeout/5xx/rate-limit/auth failure (`GeminiTransientError`) never does, so an API outage no longer inflates `retired` on its own.
+`retired` counts articles `get_articles_pending_extraction` will never select again (SYS-19's attempt cap, default `KNOWLEDGE_EXTRACT_MAX_ATTEMPTS=3`). Plain `knowledge_extracted = 0` (the old query) conflates `pending_retryable` and `retired` -- a growing `retired` count with `pending_retryable` flat is the retirement mechanism doing its job on genuinely bad articles; a `retired` count that jumped in one run is more likely an API-side incident. Since OPS-09's fix, only a response Gemini actually returned but couldn't be used (safety block, unparseable JSON) counts an attempt -- a network/timeout/5xx/rate-limit/auth failure (`GeminiTransientError`) never does, so an API outage no longer inflates `retired` on its own. **Since OPS-11 (#67) that outage is visible where it belongs:** `task=extract_knowledge` and `task=newsletter` write a `crawl_log` row under `website='ALL'`, and a run in which *every* Gemini call failed without a response is `status='failed'` with `error_msg='all N Gemini calls failed without a response: <first error>'`. Check it before reading the counts above:
+
+```sql
+SELECT task, status, started_at, article_count, left(error_msg, 120) AS error
+FROM crawl_log WHERE task IN ('extract_knowledge', 'newsletter') ORDER BY log_id DESC LIMIT 5;
+```
+
+No row for today = the task did not run (scheduling); `failed` with `all N Gemini calls failed` = the key/model/quota (OPS-20); `completed` with `article_count=0` and `pending_retryable > 0` = the daily cap or the window.
 
 See what's actually failing:
 ```sql

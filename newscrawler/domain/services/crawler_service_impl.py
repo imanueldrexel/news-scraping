@@ -393,15 +393,40 @@ class CrawlerServiceImpl(CrawlerService):
         for reason, ids in by_reason.items():
             self.data_flow_repo.increment_fetch_failures(ids, error_msg=reason)
 
+    # OPS-11 (#67): the two website-agnostic tasks get the same crawl_log
+    # bracketing the crawl tasks have had since Phase 5, under website="ALL",
+    # so "did extraction/the newsletter run today, and did it do anything" is
+    # answerable from the runbook's own table. A run in which every Gemini
+    # call failed without a response is recorded as status='failed' with the
+    # first error -- OPS-09 made those failures leave no other trace.
     def extract_knowledge(self) -> int:
         logger.info("Starting knowledge extraction phase...")
-        count = self.data_flow_repo.extract_knowledge()
+        log_id = self.data_flow_repo.log_crawl_start("ALL", "extract_knowledge")
+        try:
+            result = self.data_flow_repo.extract_knowledge()
+        except Exception as e:
+            self.data_flow_repo.log_crawl_failed(log_id, str(e)[:500])
+            raise
+        count = int(result)
+        if getattr(result, "all_calls_failed", False):
+            msg = (f"all {result.attempted} Gemini calls failed without a response: "
+                   f"{result.first_transient_error}")
+            self.data_flow_repo.log_crawl_failed(log_id, msg[:500])
+            logger.error(f"Knowledge extraction FAILED: {msg}")
+            return count
+        self.data_flow_repo.log_crawl_complete(log_id, count)
         logger.info(f"Knowledge extraction complete. Processed {count} articles.")
         return count
 
     def generate_newsletter(self, target_date=None):
         logger.info(f"Starting newsletter generation for {target_date or 'today'}...")
-        path = self.data_flow_repo.generate_newsletter(target_date)
+        log_id = self.data_flow_repo.log_crawl_start("ALL", "newsletter")
+        try:
+            path = self.data_flow_repo.generate_newsletter(target_date)
+        except Exception as e:
+            self.data_flow_repo.log_crawl_failed(log_id, str(e)[:500])
+            raise
+        self.data_flow_repo.log_crawl_complete(log_id, 1 if path else 0)
         logger.info(f"Newsletter generated: {path}")
         return path
 
