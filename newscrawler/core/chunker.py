@@ -1,5 +1,6 @@
 from typing import List, Optional
 
+from newscrawler.core import constants
 from newscrawler.domain.dtos.dataflow.details.chunk_dto import ChunkDTO
 from newscrawler.domain.dtos.dataflow.details.news_details_dto import NewsDetailsDTO
 from newscrawler.domain.dtos.dataflow.details.site_map_dto import SitemapDTO
@@ -25,13 +26,29 @@ def _split_with_overlap(text: str, max_tokens: int, overlap_tokens: int) -> List
 class HierarchicalChunker:
     def __init__(
         self,
-        min_tokens: int = 80,
-        max_tokens: int = 450,
-        overlap_tokens: int = 50,
+        min_tokens: Optional[int] = None,
+        max_tokens: Optional[int] = None,
+        overlap_tokens: Optional[int] = None,
     ):
-        self.min_tokens = min_tokens
-        self.max_tokens = max_tokens
-        self.overlap_tokens = overlap_tokens
+        # DBT-13 (#48): the CHUNK_* env vars were parsed in constants.py and
+        # never reached this constructor -- every call site used the class
+        # defaults, so tuning chunk size via .env did nothing. The defaults
+        # now come from constants (read at call time, so a test can patch
+        # them); an explicit argument still wins.
+        self.min_tokens = constants.CHUNK_MIN_TOKENS if min_tokens is None else min_tokens
+        self.max_tokens = constants.CHUNK_MAX_TOKENS if max_tokens is None else max_tokens
+        self.overlap_tokens = constants.CHUNK_OVERLAP_TOKENS if overlap_tokens is None else overlap_tokens
+        # _split_with_overlap advances by (max - overlap) words per chunk; an
+        # overlap >= max never advances and loops forever. Fail here, not there.
+        if self.max_tokens <= 0 or self.min_tokens <= 0:
+            raise ValueError(f"chunk sizes must be positive (min={self.min_tokens}, max={self.max_tokens})")
+        if self.min_tokens > self.max_tokens:
+            raise ValueError(f"CHUNK_MIN_TOKENS={self.min_tokens} > CHUNK_MAX_TOKENS={self.max_tokens}")
+        if not 0 <= self.overlap_tokens < self.max_tokens:
+            raise ValueError(
+                f"CHUNK_OVERLAP_TOKENS={self.overlap_tokens} must be >= 0 and < CHUNK_MAX_TOKENS={self.max_tokens} "
+                f"(an overlap >= max_tokens would never advance)"
+            )
 
     def chunk(
         self,

@@ -51,6 +51,9 @@ EMBEDDING_MODEL_NAME = os.getenv("EMBEDDING_MODEL_NAME", "nomic-embed-text")
 
 VECTOR_DB_NAME_L1 = os.getenv("VECTOR_DB_NAME_L1", "NEWS_L1")
 VECTOR_DB_NAME_L2 = os.getenv("VECTOR_DB_NAME_L2", "NEWS_L2")
+# DBT-13 (#48): consumed by HierarchicalChunker() as its defaults (validated
+# there: 0 < min <= max, 0 <= overlap < max). Whitespace tokens, not model
+# tokens. Changing them changes the L2 vector count (SYS-41).
 CHUNK_MIN_TOKENS = int(os.getenv("CHUNK_MIN_TOKENS", 80))
 CHUNK_MAX_TOKENS = int(os.getenv("CHUNK_MAX_TOKENS", 450))
 CHUNK_OVERLAP_TOKENS = int(os.getenv("CHUNK_OVERLAP_TOKENS", 50))

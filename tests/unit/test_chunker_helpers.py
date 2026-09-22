@@ -106,3 +106,33 @@ class TestMergeShort:
         result = self.chunker._merge_short(paras)
         # Each pair merges to >= MIN_T, triggering flush; result is [p0+p1, p2+p3, p4]
         assert len(result) == 3
+
+
+class TestChunkerConfigFromEnv:
+    """DBT-13 (#48): the CHUNK_* env vars reach the chunker, and an overlap >=
+    max_tokens fails at construction instead of looping forever in
+    _split_with_overlap."""
+
+    def test_defaults_come_from_constants(self, monkeypatch):
+        from newscrawler.core import constants
+        from newscrawler.core.chunker import HierarchicalChunker
+        monkeypatch.setattr(constants, "CHUNK_MIN_TOKENS", 30)
+        monkeypatch.setattr(constants, "CHUNK_MAX_TOKENS", 120)
+        monkeypatch.setattr(constants, "CHUNK_OVERLAP_TOKENS", 10)
+        c = HierarchicalChunker()
+        assert (c.min_tokens, c.max_tokens, c.overlap_tokens) == (30, 120, 10)
+        # an explicit argument still wins
+        assert HierarchicalChunker(max_tokens=300).max_tokens == 300
+
+    def test_overlap_at_or_above_max_raises_instead_of_hanging(self):
+        import pytest
+        from newscrawler.core.chunker import HierarchicalChunker
+        with pytest.raises(ValueError, match="never advance"):
+            HierarchicalChunker(max_tokens=450, overlap_tokens=450)
+        with pytest.raises(ValueError, match="never advance"):
+            HierarchicalChunker(max_tokens=100, overlap_tokens=150)
+        with pytest.raises(ValueError):
+            HierarchicalChunker(min_tokens=500, max_tokens=450)
+        with pytest.raises(ValueError):
+            HierarchicalChunker(max_tokens=0)
+        HierarchicalChunker(max_tokens=450, overlap_tokens=449)   # the edge that still advances by 1
