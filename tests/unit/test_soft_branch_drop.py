@@ -129,7 +129,12 @@ class TestFleetNeverKeysABranchByItsUrl:
 
     # Sources known to still have the shape, each against its ticket. Removing a
     # name here must turn this test red until that crawler is fixed.
-    KNOWN_URL_KEYERS = {"IDXCHANNEL": "SRC-46 (#156)", "SINDONEWS": "SRC-46 (#156)"}
+    #
+    # Empty since SRC-46 (#156), 2026-09-23: IDXCHANNEL and SINDONEWS were the
+    # last two, and every registered crawler now skips a `<loc>` it cannot name.
+    # A new entry here needs a ticket number, and the companion test below fails
+    # if a fixed crawler is left on the list.
+    KNOWN_URL_KEYERS = {}
 
     UNNAMEABLE = ("<urlset><sitemap><loc>https://unnameable.example.com/"
                   "no-such-section/sitemap_totally_unknown.xml</loc></sitemap></urlset>")

@@ -18,6 +18,9 @@ logger.setLevel(logging.INFO)
 
 
 class SindonewsCrawler(Crawler):
+    # SRC-46 (#156): one subdomain desk per sitemap.
+    _BRANCH_RE = re.compile(r"https?://([a-z0-9-]+)\.sindonews\.com/sitemap\.xml$")
+
     def __init__(self):
         super(SindonewsCrawler, self).__init__()
         self.website_name = WebsiteName.SINDONEWS.value
@@ -25,16 +28,29 @@ class SindonewsCrawler(Crawler):
 
     @staticmethod
     def _get_branches(soup) -> Dict[str, str]:
+        """SRC-46 (#156): `re.match` + skip, never `re.sub` -- a `<loc>` this
+        crawler cannot name is skipped rather than keyed by its own URL, which
+        `Crawler.is_soft_branch` can never match (SRC-39 #133).
+
+        SINDONEWS publishes one sitemap per subdomain desk
+        (`nasional.sindonews.com`, `ekbis.`, `scope.`, ...) plus eight
+        site-wide `sitemap-*.xml` indexes that are not sections and are skipped
+        by name, as before. The branch name is taken from the ORIGINAL `<loc>`
+        and the `-news` variant built afterwards, so the name never depends on
+        the rewrite. A no-op on today's index: all 12 desks still name
+        themselves."""
         branches = {}
-        sitemaps = soup.find_all("sitemap")
-        for sitemap in sitemaps:
+        for sitemap in soup.find_all("sitemap"):
             link = sitemap.find("loc")
-            if link and "sitemap-" not in link.get_text(" "):
-                link = link.get_text(" ").strip()
-                link = link.replace("sitemap.xml", "sitemap-news.xml")
-                branch_name = re.sub(r"(.*)(//)(.*)(.sindonews)(.*)", r"\3", link)
-                branch_name = branch_name.strip()
-                branches[branch_name] = link
+            if not link:
+                continue
+            raw = link.get_text(" ").strip()
+            if "sitemap-" in raw:
+                continue
+            match = SindonewsCrawler._BRANCH_RE.match(raw)
+            if not match:
+                continue
+            branches[match.group(1)] = raw.replace("sitemap.xml", "sitemap-news.xml")
 
         return branches
 

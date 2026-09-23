@@ -33,6 +33,9 @@ class IdxChannelCrawler(Crawler):
     # defensively, so that adding it later on another source's evidence cannot
     # silently take this desk with it.
     SOFT_BRANCH_EXCEPTIONS = frozenset({"foto", "infografis"})
+
+    # SRC-46 (#156): one section path under idxchannel.com.
+    _BRANCH_RE = re.compile(r"https?://(?:www\.)?idxchannel\.com/([a-z0-9-]+)/sitemap\.xml$")
     def __init__(self):
         super(IdxChannelCrawler, self).__init__()
         self.website_name = WebsiteName.IDXCHANNEL.value
@@ -40,18 +43,25 @@ class IdxChannelCrawler(Crawler):
 
     @staticmethod
     def _get_branches(soup) -> Dict[str, str]:
+        """SRC-46 (#156): `re.match` + skip, never `re.sub` -- a `<loc>` this
+        crawler cannot name is skipped rather than keyed by its own URL, which
+        `Crawler.is_soft_branch` can never match (SRC-39 #133).
+
+        A no-op on today's index: all 22 `<loc>` entries are
+        `www.idxchannel.com/<section>/sitemap.xml` and every one still names
+        itself. Five of them are literal duplicate entries in the index, which
+        is why 22 `<loc>` have always produced 17 branches -- no section is
+        lost to that."""
         branches = {}
-        sitemaps = soup.find_all("sitemap")
-        for sitemap in sitemaps:
+        for sitemap in soup.find_all("sitemap"):
             link = sitemap.find("loc")
-            if link:
-                link = link.get_text(" ").strip()
-                if link:
-                    branch_name = re.sub(
-                        r"(https://www.idxchannel.com/)(.*)(/sitemap.xml)", r"\2", link
-                    )
-                    branch_name = branch_name.strip()
-                    branches[branch_name] = link.strip()
+            if not link:
+                continue
+            link = link.get_text(" ").strip()
+            match = IdxChannelCrawler._BRANCH_RE.match(link)
+            if not match:
+                continue
+            branches[match.group(1)] = link
         return branches
 
     @staticmethod
