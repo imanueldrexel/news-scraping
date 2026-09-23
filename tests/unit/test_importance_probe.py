@@ -1,8 +1,9 @@
 """SYS-37 (#121): the probe module (weights + sidecar, softmax, validation) and
 the trainer's gate arithmetic. Offline: no embedding model, synthetic weights.
-The probe is trained and evaluated but not yet wired into the live filter
-(below its gates on 2026-09-21); these tests guard the parts that do not depend
-on that decision so the next attempt starts from something that holds."""
+The probe has decided every article since 2026-09-22, so these are guards on the
+live path. The committed artifact itself is verified in
+tests/unit/test_importance_filter.py (DBT-35 #151): recomputed gates, not the
+sidecar's own record of them."""
 import json
 import os
 import sys
@@ -154,6 +155,10 @@ def _rows(spec):
 
 
 def _probs(p_soft_list, news_topic="markets"):
+    """A 13-column topic-head softmax. DBT-35 (#151): gate_metrics no longer
+    accepts one of these -- it takes P(soft) and the predicted topic by name --
+    so this is now only used to exercise topic_of() and to prove the old
+    confusion is a hard error."""
     out = np.zeros((len(p_soft_list), len(TOPICS)))
     for i, p in enumerate(p_soft_list):
         out[i, TOPICS.index(TOPIC_SOFT)] = p
@@ -161,10 +166,13 @@ def _probs(p_soft_list, news_topic="markets"):
     return out
 
 
+def _topics(n, topic="markets"):
+    return np.array([topic] * n)
+
+
 class TestGateArithmetic:
     def test_live_decision_applies_the_category_deny_before_the_probe(self):
-        probs = _probs([0.1, 0.1, 0.9])
-        pred = live_decision(probs, ["hiburan", "bisnis", "bisnis"], 0.5, TOPICS.index(TOPIC_SOFT))
+        pred = live_decision(np.array([0.1, 0.1, 0.9]), ["hiburan", "bisnis", "bisnis"], 0.5)
         assert pred.tolist() == [False, True, False]
 
     def test_topic_of_never_returns_soft(self):
@@ -179,8 +187,8 @@ class TestGateArithmetic:
             (True, "corporate", "mixed_bucket", "news"),       # kept, wrong topic
             (False, "soft", "soft_category", "hiburan"),       # denied by category
         ])
-        probs = _probs([0.1, 0.9, 0.2, 0.2, 0.1])
-        m = gate_metrics(rows, probs, 0.5, list(TOPICS))
+        m = gate_metrics(rows, np.array([0.1, 0.9, 0.2, 0.2, 0.1]),
+                         np.array(["markets", "markets", "markets", "markets", "markets"]), 0.5)
         assert m["recall_finance"] == 0.5
         assert m["recall_general"] is None                     # no general-strata rows
         assert m["precision_mixed"] == 0.5
@@ -196,12 +204,12 @@ class TestGateArithmetic:
         # at 1.0 -- the first such tau on the grid is what the max picks.
         rows = _rows([(True, "markets", "finance_reject", "bisnis")] * 5 + [(True, "markets", "hard_news", "nasional")] * 5
                      + [(False, "soft", "mixed_bucket", "news")] * 5 + [(True, "markets", "mixed_bucket", "news")] * 5)
-        probs = _probs([0.1] * 5 + [0.1] * 5 + [0.9] * 5 + [0.1] * 5)
-        tau, m = choose_threshold(rows, probs, list(TOPICS))
+        p_soft = np.array([0.1] * 5 + [0.1] * 5 + [0.9] * 5 + [0.1] * 5)
+        tau, m = choose_threshold(rows, p_soft, _topics(20))
         assert 0.1 < tau < 0.9 and gates_pass(m)[0]
         # Inseparable (every row at 0.5): nothing passes; the least-bad tau is
         # reported (never shipped -- gates_pass is what the trainer acts on).
-        tau, m = choose_threshold(rows, _probs([0.5] * 20), list(TOPICS))
+        tau, m = choose_threshold(rows, np.full(20, 0.5), _topics(20))
         assert 0.3 <= tau <= 0.8 and not gates_pass(m)[0]
 
     def test_gates_are_the_ticket_plus_sys45(self):
@@ -217,3 +225,35 @@ class TestGateArithmetic:
         assert gates_pass(base, tolerance=0.0)[0] is False
         assert gates_pass(dict(base, recall_finance=0.929))[0] is False
         assert gates_pass(dict(base, precision_mixed=0.879))[0] is False
+
+
+class TestGateMetricsCannotBeHandedTheWrongMatrix:
+    """DBT-35 (#151): `gate_metrics(rows, probs, tau, classes)` read P(soft) from
+    `probs[:, classes.index("soft")]`, and TWO 13-column matrices in this
+    codebase have a soft column -- the topic head's raw softmax and the
+    assembled gate matrix. Only the second was the live rule. Passing the first
+    raised nothing and reported recall_finance 0.994 instead of 0.946: the
+    numbers moved UP, and topic accuracy was identical, so neither a glance nor
+    a spot-check would catch it. The signature now makes it a hard error."""
+
+    def _rows5(self):
+        return _rows([
+            (True, "markets", "finance_reject", "bisnis"),
+            (True, "markets", "finance_reject", "bisnis"),
+            (False, "soft", "mixed_bucket", "news"),
+            (True, "corporate", "mixed_bucket", "news"),
+            (False, "soft", "soft_category", "hiburan"),
+        ])
+
+    def test_a_probability_matrix_where_p_soft_belongs_raises(self):
+        with pytest.raises(ValueError, match="1-D p_soft"):
+            gate_metrics(self._rows5(), _probs([0.1, 0.9, 0.2, 0.2, 0.1]), _topics(5), 0.5)
+
+    def test_a_length_mismatch_raises_rather_than_silently_zipping_short(self):
+        with pytest.raises(ValueError, match="p_soft"):
+            gate_metrics(self._rows5(), np.array([0.1, 0.9]), _topics(2), 0.5)
+
+    def test_assemble_is_gone(self):
+        """It existed only to build the ambiguous matrix."""
+        import scripts.train_importance_probe as t
+        assert not hasattr(t, "assemble")

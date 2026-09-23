@@ -1,9 +1,16 @@
 #!/usr/bin/env python3
 """
-SYS-37 (#121): train the importance probe -- a multinomial logistic regression
-over the MiniLM embedding the pipeline already computes -- on the SYS-36 gold
-set, evaluate it against the ticket's gates, and (only if every gate passes)
-write the artifact the live filter loads.
+SYS-37 (#121): train the importance probe -- two logistic-regression heads (a
+binary soft-vs-news gate and a 13-class topic head) over the embedding named by
+--encoder, `intfloat/multilingual-e5-large` for the committed artifact -- on the
+SYS-36 gold set, evaluate it against the ticket's gates, and (only if every gate
+passes) write the artifact the live filter loads.
+
+The probe has been live since 2026-09-22; running this script rewrites what the
+pipeline uses to decide every article, so a retrain is a deliberate act with a
+re-measure and a re-verified artifact behind it (DBT-35 #151), not a routine
+step. Note --encoder defaults to e5-base: pass the encoder the committed
+sidecar names, or the filter will refuse to load what you wrote.
 
 What it does, in order:
   1. Load tests/fixtures/filter_gold.jsonl. Build each row's text exactly as the
@@ -33,11 +40,12 @@ Gates (the ticket's Done-when + SYS-45 #140, owner-approved 2026-09-21):
   gate precision >= 0.90 on allow-set categories (category_gate == "allow")
   topic accuracy >= 0.80 on news rows
 
-Status 2026-09-21: on the SYS-36 gold set NO probe shape reaches the gates
-(EXPERIMENTS.md, 2026-09-21 SYS-37 entry; scripts/experiments/probe_design_sweep.py
-has the design sweep). The artifact is therefore not written and the live
-filter still runs the cosine score; --backfill needs the runtime switch-over
-(SemanticImportanceFilter.classify_batch) and says so until it lands.
+Before SYS-47 (#143), on a single multinomial head over the MiniLM embedding, no
+probe shape reached these gates (EXPERIMENTS.md, 2026-09-21 SYS-37 entry;
+scripts/experiments/probe_design_sweep.py has the design sweep). Changing the
+input -- e5-large plus fetched bodies -- and splitting the head in two is what
+moved every gate to its floor, so re-running this on MiniLM will fail the gates
+and correctly refuse to write.
 
 Usage:
     python scripts/train_importance_probe.py                 # train, evaluate, write if gates pass
@@ -134,23 +142,23 @@ def embed_split(encoder: str, gold_path: str, train: Sequence[dict], test: Seque
     return X_train, X_test
 
 
-def tradeoff_curve(rows: Sequence[dict], probs: np.ndarray, classes: List[str], taus=(0.30, 0.35, 0.39, 0.42, 0.45, 0.50, 0.55, 0.60)):
+def tradeoff_curve(rows: Sequence[dict], p_soft: np.ndarray, topic_pred: np.ndarray,
+                   taus=(0.30, 0.35, 0.39, 0.42, 0.45, 0.50, 0.55, 0.60)):
     logger.info("  trade-off on this split (for the owner's operating-point decision; tau is NOT chosen here):")
     logger.info("    tau   rec_fin  rec_gen  prec_mixed  prec_allow  kept")
     for tau in taus:
-        m = gate_metrics(rows, probs, float(tau), classes)
+        m = gate_metrics(rows, p_soft, topic_pred, float(tau))
         kept = sum(d["kept"] for d in m["per_stratum"].values()) / m["n"]
         logger.info("    %.2f   %.3f    %.3f     %.3f       %.3f    %3.0f%%", tau, m["recall_finance"], m["recall_general"],
                     m["precision_mixed"], m["precision_allow"], 100 * kept)
 
 
 # ── the decision, as the live filter makes it ────────────────────────────────
-def live_decision(probs: np.ndarray, categories: Sequence[Optional[str]], tau: float, soft_idx: int) -> np.ndarray:
+def live_decision(p_soft: np.ndarray, categories: Sequence[Optional[str]], tau: float) -> np.ndarray:
     """is_news per row under the full live rule: a `deny` category is rejected
     before the probe; everything else is news iff P(soft) < tau."""
-    p_soft = probs[:, soft_idx]
     denied = np.array([category_gate(c) == "deny" for c in categories])
-    return (p_soft < tau) & ~denied
+    return (np.asarray(p_soft) < tau) & ~denied
 
 
 def topic_of(probs: np.ndarray, classes: List[str]) -> np.ndarray:
@@ -164,11 +172,31 @@ def _rate(num: int, den: int) -> Optional[float]:
     return (num / den) if den else None
 
 
-def gate_metrics(rows: Sequence[dict], probs: np.ndarray, tau: float, classes: List[str]) -> Dict[str, Optional[float]]:
-    """The five gates plus the per-stratum table, for one split at one tau."""
-    soft_idx = classes.index(TOPIC_SOFT)
+def gate_metrics(rows: Sequence[dict], p_soft: np.ndarray, topic_pred: np.ndarray, tau: float) -> Dict[str, Optional[float]]:
+    """The five gates plus the per-stratum table, for one split at one tau.
+
+    DBT-35 (#151): this used to take a 13-column `probs` matrix and read P(soft)
+    out of `probs[:, classes.index("soft")]`. Two different matrices in this
+    codebase have a `soft` column -- the topic head's raw softmax and the
+    assembled gate matrix -- and only the second is the live rule. Passing the
+    wrong one raised nothing and read recall_finance 0.994 instead of 0.946,
+    i.e. it moved the numbers UP, which is not the direction that makes anyone
+    re-check their work. The two quantities this function actually needs are now
+    named arguments, so the confusion is a TypeError rather than a wrong answer:
+
+      p_soft     (n,) the GATE head's P(soft) -- ImportanceProbe.p_soft(X)
+      topic_pred (n,) the predicted news class per row -- topic_of(probe.topic_proba(X), classes)
+    """
+    p_soft = np.asarray(p_soft, dtype=float)
+    topic_pred = np.asarray(topic_pred)
+    if p_soft.ndim != 1 or topic_pred.ndim != 1:
+        raise ValueError(
+            f"gate_metrics expects 1-D p_soft and topic_pred, got {p_soft.shape} and {topic_pred.shape} -- "
+            "a 2-D array here means a probability matrix was passed where P(soft) belongs (DBT-35)")
+    if not (len(p_soft) == len(topic_pred) == len(rows)):
+        raise ValueError(f"gate_metrics: {len(rows)} rows, {len(p_soft)} p_soft, {len(topic_pred)} topic_pred")
     y = np.array([bool(r["is_news"]) for r in rows])
-    pred = live_decision(probs, [r.get("category") for r in rows], tau, soft_idx)
+    pred = live_decision(p_soft, [r.get("category") for r in rows], tau)
     strata = np.array([r["stratum"] for r in rows])
     allow = np.array([category_gate(r.get("category")) == "allow" for r in rows])
 
@@ -183,7 +211,6 @@ def gate_metrics(rows: Sequence[dict], probs: np.ndarray, tau: float, classes: L
     fin = np.isin(strata, FINANCE_STRATA)
     gen = np.isin(strata, GENERAL_STRATA)
     mixed = np.isin(strata, MIXED_STRATA)
-    topic_pred = topic_of(probs, classes)
     topic_true = np.array([r["topic"] for r in rows])
     news_rows = y
     out = {
@@ -194,7 +221,7 @@ def gate_metrics(rows: Sequence[dict], probs: np.ndarray, tau: float, classes: L
         "topic_accuracy": _rate(int((topic_pred[news_rows] == topic_true[news_rows]).sum()), int(news_rows.sum())),
         "recall_all": recall(np.ones_like(y)),
         "precision_all": precision(np.ones_like(y)),
-        "uncertain_band_share": float(((probs[:, soft_idx] >= UNCERTAIN_BAND[0]) & (probs[:, soft_idx] <= UNCERTAIN_BAND[1])).mean()),
+        "uncertain_band_share": float(((p_soft >= UNCERTAIN_BAND[0]) & (p_soft <= UNCERTAIN_BAND[1])).mean()),
         "n": int(len(rows)),
     }
     per_stratum = {}
@@ -216,7 +243,7 @@ def gates_pass(metrics: Dict[str, Optional[float]], tolerance: float = GATE_TOLE
     return not failures, failures
 
 
-def choose_threshold(rows: Sequence[dict], cv_probs: np.ndarray, classes: List[str],
+def choose_threshold(rows: Sequence[dict], cv_p_soft: np.ndarray, cv_topic_pred: np.ndarray,
                      grid=np.round(np.arange(0.30, 0.81, 0.01), 2)) -> Tuple[float, Dict]:
     """The tau with the largest minimum slack over the tau-dependent gates on
     the cross-validated train predictions -- the widest margin when every gate
@@ -224,7 +251,7 @@ def choose_threshold(rows: Sequence[dict], cv_probs: np.ndarray, classes: List[s
     of the search (it does not depend on tau)."""
     best_tau, best_slack, best_metrics = 0.5, -9.0, None
     for tau in grid:
-        m = gate_metrics(rows, cv_probs, float(tau), classes)
+        m = gate_metrics(rows, cv_p_soft, cv_topic_pred, float(tau))
         if any(m.get(name) is None for name in TAU_GATES):
             continue
         # The tau with the largest MINIMUM slack over the tau-dependent gates.
@@ -236,7 +263,7 @@ def choose_threshold(rows: Sequence[dict], cv_probs: np.ndarray, classes: List[s
         if slack > best_slack:
             best_tau, best_slack, best_metrics = float(tau), slack, m
     if best_metrics is None:
-        best_metrics = gate_metrics(rows, cv_probs, best_tau, classes)
+        best_metrics = gate_metrics(rows, cv_p_soft, cv_topic_pred, best_tau)
     return best_tau, best_metrics
 
 
@@ -259,18 +286,12 @@ def fit_topic(X: np.ndarray, topics, C: float, seed: int = SEED):
     return LogisticRegression(C=C, class_weight="balanced", max_iter=4000, random_state=seed).fit(X, topics)
 
 
-def assemble(p_soft: np.ndarray, topic_probs13: np.ndarray, classes: List[str]) -> np.ndarray:
-    """The 13-column matrix gate_metrics() scores: P(soft) from the gate, the
-    news columns from the topic head renormalised over the news classes and
-    scaled by 1 - P(soft) (so argmax over news classes is the topic head's)."""
-    soft_idx = classes.index(TOPIC_SOFT)
-    out = np.zeros((len(p_soft), len(classes)), dtype=np.float64)
-    news_cols = [i for i in range(len(classes)) if i != soft_idx]
-    news = topic_probs13[:, news_cols]
-    news = news / np.clip(news.sum(axis=1, keepdims=True), 1e-12, None)
-    out[:, soft_idx] = p_soft
-    out[:, news_cols] = (1 - p_soft)[:, None] * news
-    return out
+# DBT-35 (#151): assemble() is gone. It existed only to pack the gate head's
+# P(soft) and the topic head's softmax into one 13-column matrix for
+# gate_metrics, and that matrix was indistinguishable at the call site from the
+# topic head's raw softmax -- the ambiguity this ticket removed. gate_metrics
+# now takes the two quantities by name. (Scaling the news columns by 1 - P(soft)
+# never changed the argmax over news classes, so dropping it changes no number.)
 
 
 def cv_gate_probs(X, is_news, C, seed: int = SEED, folds: int = 5) -> np.ndarray:
@@ -311,8 +332,7 @@ def select_heads(X_train, train, classes):
     best_gate = (None, None, -9.0, None)
     for C in GATE_C_GRID:
         cv_g = cv_gate_probs(X_train, is_news, C)
-        probs = assemble(cv_g, cv_topic, classes)
-        tau, m = choose_threshold(train, probs, classes)
+        tau, m = choose_threshold(train, cv_g, topic_of(cv_topic, classes))
         ok = all(m.get(k) is not None and m[k] >= v for k, v in TAU_GATES.items())
         slack = min(m[k] - v for k, v in TAU_GATES.items() if m[k] is not None)
         logger.info("  gate head C=%-5s tau=%.2f  cv rec_fin=%.3f rec_gen=%.3f prec_mixed=%.3f prec_allow=%.3f  %s",
@@ -324,8 +344,8 @@ def select_heads(X_train, train, classes):
     return C_gate, tau, C_topic, cv_metrics
 
 
-def confusion(rows: Sequence[dict], probs: np.ndarray, classes: List[str]) -> Dict[str, Dict[str, int]]:
-    pred = topic_of(probs, classes)
+def confusion(rows: Sequence[dict], topic_pred: np.ndarray, classes: List[str]) -> Dict[str, Dict[str, int]]:
+    pred = topic_pred
     table: Dict[str, Dict[str, int]] = {c: collections.Counter() for c in classes if c != TOPIC_SOFT}
     for r, p in zip(rows, pred):
         if r["is_news"]:
@@ -333,12 +353,12 @@ def confusion(rows: Sequence[dict], probs: np.ndarray, classes: List[str]) -> Di
     return {k: dict(v) for k, v in table.items()}
 
 
-def macro_f1(rows: Sequence[dict], probs: np.ndarray, classes: List[str]) -> float:
+def macro_f1(rows: Sequence[dict], topic_pred: np.ndarray) -> float:
     from sklearn.metrics import f1_score
     news = [i for i, r in enumerate(rows) if r["is_news"]]
     if not news:
         return 0.0
-    pred = topic_of(probs[news], classes)
+    pred = np.asarray(topic_pred)[news]
     true = [rows[i]["topic"] for i in news]
     return float(f1_score(true, pred, average="macro", zero_division=0))
 
@@ -404,15 +424,16 @@ def cmd_train(args) -> int:
     if max_diff > 1e-6:
         logger.error("npz heads differ from sklearn predict_proba by %.2e -- refusing to write", max_diff)
         return 3
-    probs_test = assemble(probe.p_soft(X_test), probe.topic_proba(X_test), classes)
-    test_metrics = gate_metrics(test, probs_test, tau, classes)
-    test_metrics["topic_macro_f1"] = macro_f1(test, probs_test, classes)
+    p_soft_test = probe.p_soft(X_test)
+    topic_pred_test = topic_of(probe.topic_proba(X_test), classes)
+    test_metrics = gate_metrics(test, p_soft_test, topic_pred_test, tau)
+    test_metrics["topic_macro_f1"] = macro_f1(test, topic_pred_test)
     ok, failures = gates_pass(test_metrics)
     print_report(f"TEST at tau={tau:.2f}", test_metrics)
     logger.info("  topic macro-F1 on news rows: %.3f", test_metrics["topic_macro_f1"])
-    tradeoff_curve(test, probs_test, classes)
+    tradeoff_curve(test, p_soft_test, topic_pred_test)
     logger.info("  labels' measured noise floor is ~%.0f%% (SYS-46): read every gate as +/-%.2f", 100 * NOISE_FLOOR, NOISE_FLOOR)
-    conf = confusion(test, probs_test, classes)
+    conf = confusion(test, topic_pred_test, classes)
     logger.info("  confusion (gold topic -> predicted, news rows):")
     for true_topic, preds in conf.items():
         top = sorted(preds.items(), key=lambda kv: -kv[1])[:4]
@@ -465,7 +486,8 @@ def cmd_train(args) -> int:
 
 # ── backfill: topics for existing articles ───────────────────────────────────
 _ARTICLES_SQL = """
-    SELECT a.articles_id, a.sitemap_id, s.headline, LEFT(a.extracted_text, :n) AS body_head, s.sources, s.category
+    SELECT a.articles_id, a.sitemap_id, s.headline, LEFT(a.extracted_text, :n) AS body_head, s.sources, s.category,
+           a.topic AS prev_topic, a.topic_confidence AS prev_topic_confidence
     FROM articles a JOIN sitemaps s USING (sitemap_id)
     WHERE (:only_missing = FALSE OR a.topic IS NULL)
     ORDER BY a.articles_id
@@ -479,11 +501,17 @@ def cmd_backfill(args) -> int:
     from newscrawler.core.importance_filter import SemanticImportanceFilter
     from newscrawler.infrastructure.network.clients.sqlalchemy_client import SQLAlchemyClient
 
-    if not hasattr(SemanticImportanceFilter, "classify_batch"):
-        logger.error("--backfill needs the probe wired into SemanticImportanceFilter (classify_batch); "
-                     "the runtime switch-over has not landed (SYS-37 is below its gates). Nothing done.")
-        return 2
-    filt = SemanticImportanceFilter()
+    from newscrawler.core.constants import SOFT_THRESHOLD
+    from newscrawler.core.importance_probe import artifact_identity
+
+    # DBT-37 (#153): the live service is built as
+    # SemanticImportanceFilter(soft_threshold=SOFT_THRESHOLD). Constructing it
+    # without the override here would write articles.topic at the sidecar's tau
+    # while the pipeline runs at the env's -- same probe, different decision.
+    filt = SemanticImportanceFilter(soft_threshold=SOFT_THRESHOLD)
+    identity = artifact_identity(soft_threshold=filt.probe.soft_threshold)
+    logger.info("probe: %s tau=%.2f gold=%s artifact=%s", identity["embedding_model"], identity["soft_threshold"],
+                (identity["gold_sha256"] or "?")[:12], identity["artifact_sha256"][:12])
     client = SQLAlchemyClient()
     with client.get_session() as session:
         logger.info("database: %s", session.execute(text("SELECT current_database()")).scalar())
@@ -494,7 +522,14 @@ def cmd_backfill(args) -> int:
     texts = [build_check_text(r.headline, r.body_head) for r in rows]
     decisions = []
     for i in range(0, len(rows), 256):
-        decisions.extend(filt.classify_batch(texts[i:i + 256], [r.category for r in rows[i:i + 256]]))
+        chunk = rows[i:i + 256]
+        batch = filt.classify_batch(texts[i:i + 256], [r.category for r in chunk])
+        # DBT-36 (#152): `zip(rows, decisions)` below writes articles.topic for
+        # 11.8k rows in one transaction. One short batch would write the wrong
+        # topic to every row after the gap, so the length is asserted here too.
+        if len(batch) != len(chunk):
+            raise RuntimeError(f"classify_batch returned {len(batch)} decisions for {len(chunk)} article(s)")
+        decisions.extend(batch)
     topics = collections.Counter(d.topic for d in decisions)
     soft = [(r, d) for r, d in zip(rows, decisions) if not d.is_important]
     logger.info("topic distribution: %s", ", ".join(f"{t}={n}" for t, n in topics.most_common()))
@@ -509,11 +544,27 @@ def cmd_backfill(args) -> int:
         logger.info("[dry-run] would UPDATE articles.topic/topic_confidence on %d row(s). Nothing written.", len(rows))
         return 0
     os.makedirs(os.path.join(REPO_ROOT, "backups"), exist_ok=True)
-    backup = os.path.join(REPO_ROOT, "backups", f"sys37_topic_backfill_{datetime.now(timezone.utc):%Y%m%dT%H%M%SZ}.json")
+    # DBT-34 (#150): two changes to what this file is.
+    #  (1) `meta` records WHICH probe produced these verdicts. cleanup_soft_by_probe.py
+    #      deletes production articles on them by default; without an identity a
+    #      retrain or a threshold move leaves it deleting on stale verdicts and
+    #      saying nothing. A file without `meta` is refused there.
+    #  (2) the rows carry the PREVIOUS topic/topic_confidence as well as the new
+    #      ones, so the name "backup" is true -- the first run's values were all
+    #      NULL, a second run after a retrain used to overwrite 11.8k topics with
+    #      no record of what they were. Named *_applied_* for the same reason.
+    backup = os.path.join(REPO_ROOT, "backups",
+                          f"sys37_topic_backfill_applied_{datetime.now(timezone.utc):%Y%m%dT%H%M%SZ}.json")
     with open(backup, "w", encoding="utf-8") as f:
-        json.dump([{"articles_id": r.articles_id, "topic": d.topic, "topic_confidence": d.topic_confidence,
-                    "is_news": d.is_important} for r, d in zip(rows, decisions)], f)
-    logger.info("backup of the new values written to %s", backup)
+        json.dump({
+            "meta": dict(identity, applied_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                         n_rows=len(rows), scope="all" if args.all else "topic IS NULL"),
+            "rows": [{"articles_id": r.articles_id, "topic": d.topic, "topic_confidence": d.topic_confidence,
+                      "is_news": d.is_important, "prev_topic": r.prev_topic,
+                      "prev_topic_confidence": float(r.prev_topic_confidence) if r.prev_topic_confidence is not None else None}
+                     for r, d in zip(rows, decisions)],
+        }, f)
+    logger.info("backup (previous + new values, with the probe's identity) written to %s", backup)
     with client.get_session() as session:
         n = 0
         for r, d in zip(rows, decisions):
