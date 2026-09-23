@@ -498,4 +498,18 @@ class TestSoftBranchCounters:
         r = cc._blank_result("DETIK")
         r.update({"branch": "berita", "branches": 242, "soft_branches": 62, "status": cc.STATUS_OK})
         out = cc.render_table([r])
-        assert "242-62" in out
+        assert "242/62" in out
+
+    def test_render_does_not_truncate_counts_behind_a_long_branch_name(self):
+        """OPS-21 (#148): the counts used to share a 14-char cell with the
+        branch name, so DETIK's real row ('berita-ekonomi-bisnis', 242, 62)
+        printed as '242-6' -- 62 dropped branches read as 6. The name may be
+        shortened; the two numbers may not."""
+        r = cc._blank_result("MEDIAINDONESIA")
+        r.update({"branch": "berita-ekonomi-bisnis", "branches": 283, "soft_branches": 62,
+                  "status": cc.STATUS_OK})
+        out = cc.render_table([r])
+        assert "283/62" in out, out
+        assert "283/6 " not in out and "283/-" not in out, out
+        # the header names the column, so a reader knows what the pair means
+        assert "LISTED/SOFT" in out

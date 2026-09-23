@@ -252,15 +252,20 @@ def run_checks(targets: dict, sample_size: int, workers: int, timeout: int) -> l
 
 
 def render_table(results: list) -> str:
-    rows = ["%-14s %-8s %-14s %-6s %-5s %-15s %-6s %s" % (
-        "SOURCE", "STATUS", "BRANCH", "LINKS", "DTOs", "DETAIL(ok/tot)", "SECS", "NOTE"),
-        "-" * 120]
+    # OPS-21 (#148): the branch name and SRC-35's listed/soft counts are two
+    # columns, not one. Packed into a single 14-char cell they were truncated
+    # ("berita-e 242-6"), so DETIK's 62 dropped soft branches read as 6 -- an
+    # order of magnitude, in the one number that says whether the scope
+    # decision took effect, in the output the Telegram alert and the SRC-39
+    # sign-off are read from. The counts get their own un-truncated column.
+    rows = ["%-14s %-8s %-12s %-11s %-6s %-5s %-15s %-6s %s" % (
+        "SOURCE", "STATUS", "BRANCH", "LISTED/SOFT", "LINKS", "DTOs", "DETAIL(ok/tot)", "SECS", "NOTE"),
+        "-" * 132]
     for r in results:
         detail = "%d/%d (%dch)" % (r["detail_ok"], r["detail_total"], r["avg_chars"])
-        # SRC-35: branches listed / dropped as soft, next to the branch sampled.
-        branch_cell = "%s %d-%d" % (r.get("branch", "")[:8], r.get("branches", 0), r.get("soft_branches", 0))
-        rows.append("%-14s %-8s %-14s %-6d %-5d %-15s %-6s %s" % (
-            r["website"][:14], r["status"], branch_cell[:14], r["sitemap_links"],
+        counts = "%d/%d" % (r.get("branches", 0), r.get("soft_branches", 0))
+        rows.append("%-14s %-8s %-12s %-11s %-6d %-5d %-15s %-6s %s" % (
+            r["website"][:14], r["status"], r.get("branch", "")[:12], counts, r["sitemap_links"],
             r["dto_count"], detail, "%.1f" % r["duration_sec"], r["note"][:60]))
     return "\n".join(rows)
 
