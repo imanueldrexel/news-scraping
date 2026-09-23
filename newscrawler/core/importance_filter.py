@@ -45,8 +45,11 @@ logger.setLevel(logging.INFO)
 # Every entry added on 2026-09-20 was sampled (3-4 random titles) before it
 # went in -- OKEZONE `muslim` (haji security, Wamenhaj) and `ototekno` (Meta
 # subscriptions, an AI presenter) looked soft by name and are news, so they
-# are NOT here. `foto`/`video` on IDXCHANNEL are finance posts with bodies;
-# gallery-only branches are SRC-35's branch-level call, not this list's.
+# are NOT here. Galleries, video pages and calendar archives are a
+# branch-level call (SRC-35/SRC-45), not this list's: IDXCHANNEL `foto` is
+# finance posts with bodies and is kept there by exception, while its `video`
+# is dropped. No `foto`/`video`/`galeri` category is denied here, so the rows
+# those sections already produced keep their saved articles.
 OFFTOPIC_CATEGORIES_EXACT = {
     "hiburan", "fashion", "lifestyle", "olahraga", "bola", "sport", "sports",
     "kuliner", "sajian", "travel", "wisata", "destinasi", "piknik",

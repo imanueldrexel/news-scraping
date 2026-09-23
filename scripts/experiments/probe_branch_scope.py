@@ -62,25 +62,32 @@ def main():
             rows.append(f.result())
     rows.sort()
     offenders = {}
-    totals = [0, 0, 0]
-    print(f"{'source':16} {'status':10} {'n':>3} {'soft':>4} {'fin':>3}  keys")
+    totals = [0, 0, 0, 0]
+    print(f"{'source':16} {'status':10} {'n':>4} {'soft':>4} {'arch':>4} {'crawl':>5} {'fin':>3}  keys")
     for name, status, branches in rows:
         crawler = CRAWLER_DICT[name]
         keys = list(branches)
-        # The shipped predicate, not a copy of it.
+        # The shipped predicates, not copies of them -- and both of them, or
+        # the table understates the drop by every archive partition (SRC-45).
         soft = [k for k in keys if crawler.is_soft_branch(k)]
+        archive = [k for k in keys if not crawler.is_soft_branch(k) and crawler.is_archive_branch(k)]
+        crawled = len(keys) - len(soft) - len(archive)
         fin = [k for k in keys if FINANCE.search(k)]
         url_keys = [k for k in keys if k.startswith("http")]
-        totals = [totals[0] + len(keys), totals[1] + len(soft), totals[2] + len(url_keys)]
+        totals = [totals[0] + len(keys), totals[1] + len(soft), totals[2] + len(url_keys),
+                  totals[3] + len(archive)]
         if url_keys:
             offenders[name] = len(url_keys)
-        shown = ", ".join(keys[:12]) + (f" … +{len(keys) - 12}" if len(keys) > 12 else "")
+        shown = ", ".join(keys[:10]) + (f" … +{len(keys) - 10}" if len(keys) > 10 else "")
         flag = f" URL-KEYS={len(url_keys)}" if url_keys else ""
-        print(f"{name:16} {status:10} {len(keys):3d} {len(soft):4d} {len(fin):3d}  {shown}{flag}")
+        print(f"{name:16} {status:10} {len(keys):4d} {len(soft):4d} {len(archive):4d} {crawled:5d} {len(fin):3d}  {shown}{flag}")
         if soft:
             print(f"{'':16} soft -> {', '.join(sorted(soft)[:15])}")
+        if archive:
+            print(f"{'':16} archive -> {len(archive)} partition(s), e.g. {', '.join(sorted(archive)[:3])}")
 
-    print(f"\nfleet: {totals[0]} branches listed, {totals[1]} dropped as soft, {totals[2]} keyed by URL")
+    print(f"\nfleet: {totals[0]} branches listed, {totals[1]} dropped as soft, {totals[3]} dropped as archive, "
+          f"{totals[0] - totals[1] - totals[3]} crawled, {totals[2]} keyed by URL")
     untracked = {n: c for n, c in offenders.items() if n not in URL_KEY_WHITELIST}
     for name, count in sorted(offenders.items()):
         note = URL_KEY_WHITELIST.get(name, "UNTRACKED -- a <loc> must be skipped, not keyed by its URL (SRC-39 #133)")

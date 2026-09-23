@@ -65,8 +65,15 @@ class SitemapScrapeBatch(list):
 # Ebola, BPJS), `otomotif` (SINDONEWS/JPNN/WARTAEKONOMI: Toyota global sales,
 # EV market share, dealer expansion -- SYS-31 sampled the same and kept it),
 # `transportasi` (WARTAEKONOMI: toll traffic, ganjil-genap -- and the `sport`
-# trap it is famous for), `edukasi`, `syariah`, `muslim` (haji registration),
-# `video`/`foto` (IDXCHANNEL: IHSG analysis, the Menkeu handover).
+# trap it is famous for), `edukasi`, `syariah`, `muslim` (haji registration).
+#
+# SRC-45 (#155, 2026-09-23) revisited the one entry that did not survive
+# re-measurement: `video`/`foto` were kept here on 2026-09-22 as "IDXCHANNEL:
+# IHSG analysis, the Menkeu handover". Measuring the extracted body split them
+# -- IDXCHANNEL `foto` is 597/842 chars of real reporting and is now a
+# SOFT_BRANCH_EXCEPTION on that crawler, while `video` is 205/198 chars of
+# caption on a player. The words are in the list below; the evidence-backed
+# keeps are per-crawler exceptions.
 #
 # Matching is word-bounded on the separators a branch key actually uses
 # (`-`, `_`, `/`, `.`), so `transportasi` never matches `sport` while
@@ -105,6 +112,25 @@ SOFT_BRANCH_WORDS = (
     # SINDONEWS `scope` (table on SYS-49). `analisis` is deliberately absent.
     "opini", "opinion", "editorial", "editorials", "kolom", "kolom-pakar",
     "tajuk", "tajuk-rencana", "surat-pembaca", "scope",
+    # photo galleries and video pages -- a page whose content is the medium,
+    # not an article (SRC-45 #155, owner decision 2026-09-23: "exclude
+    # archives, galleries, photos"). Decided by SUBSTANCE, not by the name:
+    # every leaf below was sampled and its extracted body measured through the
+    # source's own `_get_whole_text` (table on SRC-45).
+    #   DROPPED: MEDIAINDONESIA `gallery-YYYY-MM` (365/370 chars of caption on
+    #     `detail_galleries` pages) and `video` (`detail_video` pages);
+    #     IDXCHANNEL `video` (205/198 chars of caption on a player -- below or
+    #     at MIN_ARTICLE_CHARS=200); GRIDID `Video`.
+    #   KEPT as SOFT_BRANCH_EXCEPTIONS, because the sample says they are
+    #     ordinary reporting that merely sits under a medium's name:
+    #     IDXCHANNEL `foto` (597/842: "Komisi V DPR Setujui Anggaran Kemendes
+    #     PDT Rp2,785 Triliun") and `infografis`; BERITASATU `multimedia`
+    #     (759/899: "Babak Akhir BLBI: Utang Rp 640 Triliun Lunas"); VIVA
+    #     `viva-visual` (1157/2514). `multimedia`, `visual`, `infografis` and
+    #     `tv` are therefore deliberately NOT in this list -- on this corpus
+    #     their default meaning is news, so a blanket name rule would be the
+    #     `transportasi`/`sport` false positive again.
+    "gallery", "galleries", "galeri", "video", "foto", "photo",
     # duplicate translations of a desk we already list (KONTAN's market wire
     # is the exception -- see its crawler)
     "english", "english_edition",
@@ -115,6 +141,12 @@ SOFT_BRANCH_WORDS = (
     # desks we already list. Same ground as `english` above.
     "indonesianow",
 )
+
+
+# SRC-45 (#155): a YYYY-MM calendar partition in a branch key -- `article-2026-09`,
+# `gallery-2026-09`, `arsip/2015-02`. Bounded by a non-digit so a bare year or an
+# id like `12345-6` cannot match.
+_ARCHIVE_PARTITION_RE = re.compile(r"(?:^|[^0-9])(?:19|20)\d{2}[-_/.]\d{1,2}(?:[^0-9]|$)")
 
 
 class Crawler:
@@ -175,6 +207,27 @@ class Crawler:
         return "news"
 
     @classmethod
+    def is_archive_branch(cls, branch_key: str) -> bool:
+        """SRC-45 (#155): a branch keyed by a calendar partition is a
+        back-catalogue, not a section -- MEDIAINDONESIA publishes
+        `article-2026-09` and `gallery-2026-09` for every month back to
+        2015-02, 280 partitions and roughly 1.24 million URLs against the 904
+        in its `news` sitemap.
+
+        This is a SHAPE, not a vocabulary word, which is why it is its own
+        rule: "archive" is a structural property of the key, and writing
+        `article` into SOFT_BRANCH_WORDS would deny the most ordinary section
+        name there is on every other source. It is fleet-general on purpose --
+        any source that starts publishing month partitions is covered the day
+        it does, without another ticket.
+
+        A bare year is NOT an archive: `piala-dunia-2026` is a tournament desk
+        (already soft for other reasons) and a year alone is too common in a
+        section name to be evidence. The partition must be YYYY-MM."""
+        key = (branch_key or "").strip().lower()
+        return bool(_ARCHIVE_PARTITION_RE.search(key))
+
+    @classmethod
     def is_soft_branch(cls, branch_key: str) -> bool:
         """SRC-35 (#128): True when this branch is a soft vertical for this
         crawler. Word-bounded on the separators branch keys use, so
@@ -193,17 +246,31 @@ class Crawler:
     def drop_soft_branches(self, branches: Dict[str, str]) -> Dict[str, str]:
         """SRC-35: the scope decision for a source, applied once for every
         crawler after its own `_get_branches`. Dropped keys are logged once per
-        run, so a site adding a vertical is visible the day it appears."""
-        kept, dropped = {}, []
+        run, so a site adding a vertical is visible the day it appears.
+
+        SRC-45 (#155) adds the archive rule. The two reasons are logged
+        separately and the archive list is summarised rather than enumerated --
+        MEDIAINDONESIA alone drops 280 partitions, and a 280-name log line
+        would bury the soft-vertical list that is actually worth reading."""
+        kept, dropped, archived = {}, [], []
         for key, link in (branches or {}).items():
             if self.is_soft_branch(key):
                 dropped.append(key)
+            elif self.is_archive_branch(key):
+                archived.append(key)
             else:
                 kept[key] = link
         if dropped:
             logger.info(
                 f"{self.website_name}: dropped {len(dropped)} soft branch(es) before listing "
                 f"(SRC-35): {', '.join(sorted(dropped))}"
+            )
+        if archived:
+            sample = ", ".join(sorted(archived)[:5])
+            more = f" ... +{len(archived) - 5} more" if len(archived) > 5 else ""
+            logger.info(
+                f"{self.website_name}: dropped {len(archived)} archive partition(s) before listing "
+                f"(SRC-45): {sample}{more}"
             )
         return kept
 

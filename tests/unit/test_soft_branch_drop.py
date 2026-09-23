@@ -38,8 +38,13 @@ class TestIsSoftBranch:
     @pytest.mark.parametrize("key", [
         # sampled 2026-09-22 and kept -- the whole point of SRC-35's "verify per
         # source, not per regex": every one of these reads as news or business.
+        # SRC-45 (#155, 2026-09-23) removed `video` and `foto` from this list:
+        # re-measured, IDXCHANNEL's `video` pages carry 205/198 chars of caption
+        # on a player. They are soft by default now, and the sections that do
+        # publish articles under those names are SOFT_BRANCH_EXCEPTIONS with
+        # their char counts -- see TestArchiveAndMediaBranches.
         "transportasi", "teknologi", "tekno", "tekno-sains", "ototekno", "kesehatan", "sehat",
-        "otomotif", "edukasi", "syariah", "muslim", "video", "foto", "pariwisata",
+        "otomotif", "edukasi", "syariah", "muslim", "pariwisata",
         "nasional", "internasional", "ekonomi", "bisnis", "daerah", "megapolitan", "pendidikan",
         "humaniora", "kriminal", "hukum", "politik", "bali/politik", "market-news", "banking",
         "the-founder", "entrepreneur", "mymoney", "research", "news", "berita", "",
@@ -157,3 +162,76 @@ class TestFleetNeverKeysABranchByItsUrl:
     def test_the_three_src43_sources_now_name_every_branch(self):
         for name in ("OKEZONE", "DETIK", "MEDIAINDONESIA"):
             assert self._url_keyed(CRAWLER_DICT[name]) == [], name
+
+
+class TestArchiveAndMediaBranches:
+    """SRC-45 (#155), owner decision 2026-09-23: exclude archives, galleries and
+    non-article media pages fleet-wide -- decided by SUBSTANCE, not by the
+    branch's name. Every drop and every keep below was settled by sampling the
+    leaf and measuring its extracted body through the source's own
+    `_get_whole_text` (table on the ticket)."""
+
+    @pytest.mark.parametrize("key", [
+        "article-2026-09", "gallery-2026-09", "article-2015-02", "arsip/2020-1",
+        "sitemap_2019-12", "archive-2024-06",
+    ])
+    def test_calendar_partitions_are_archives(self, key):
+        assert Crawler.is_archive_branch(key) is True
+
+    @pytest.mark.parametrize("key", [
+        # A bare year is not an archive: a tournament desk is a section.
+        "piala-dunia-2026", "euro-2024", "pemilu-2024",
+        # Nor is an id, a version, or an ordinary section name.
+        "berita", "12345-6", "liga-1", "bali/politik", "top-100", "",
+    ])
+    def test_a_year_or_an_id_alone_is_not_an_archive(self, key):
+        assert Crawler.is_archive_branch(key) is False
+
+    @pytest.mark.parametrize("key", ["gallery", "galleries", "galeri", "video", "foto", "photo",
+                                     "gallery-2026-09", "foto/berita"])
+    def test_gallery_and_video_branches_are_soft_by_default(self, key):
+        assert Crawler.is_soft_branch(key) is True
+
+    def test_the_measured_keeps_survive(self):
+        """These four sections are named after a medium and publish ordinary
+        reporting; dropping them by name would be the `transportasi`/`sport`
+        false positive again. Body chars measured 2026-09-23."""
+        assert CRAWLER_DICT["IDXCHANNEL"].is_soft_branch("foto") is False        # 597 / 842
+        assert CRAWLER_DICT["IDXCHANNEL"].is_soft_branch("infografis") is False  # macro-policy news
+        assert CRAWLER_DICT["BERITASATU"].is_soft_branch("multimedia") is False  # 759 / 899
+        assert CRAWLER_DICT["VIVA"].is_soft_branch("viva-visual") is False       # 1157 / 2514
+        # ... and the exception does not leak to other sources
+        assert Crawler.is_soft_branch("foto") is True
+        assert CRAWLER_DICT["OKEZONE"].is_soft_branch("foto") is True
+
+    def test_idxchannel_video_still_drops_although_its_foto_is_kept(self):
+        """The half of SRC-35's note re-measurement did not support: IDXCHANNEL
+        `video` is 205/198 chars of caption on a player, at or below
+        MIN_ARTICLE_CHARS."""
+        assert CRAWLER_DICT["IDXCHANNEL"].is_soft_branch("video") is True
+
+    def test_drop_soft_branches_removes_archives_and_logs_them_separately(self, caplog):
+        import logging
+        c = Crawler()
+        c.website_name = "TEST"
+        branches = {"news": "n", "article-2026-09": "a", "gallery-2026-08": "g",
+                    "bola": "b", "ekonomi": "e"}
+        with caplog.at_level(logging.INFO, logger="newscrawler.infrastructure.datasource.scrapers.crawler"):
+            kept = c.drop_soft_branches(branches)
+        assert kept == {"news": "n", "ekonomi": "e"}
+        soft_lines = [r.message for r in caplog.records if "soft branch(es)" in r.message]
+        arch_lines = [r.message for r in caplog.records if "archive partition(s)" in r.message]
+        assert len(soft_lines) == 1 and "bola" in soft_lines[0] and "gallery-2026-08" in soft_lines[0]
+        assert len(arch_lines) == 1 and "1 archive partition(s)" in arch_lines[0]
+
+    def test_a_large_archive_list_is_summarised_not_enumerated(self, caplog):
+        """MEDIAINDONESIA drops 140 partitions; a 140-name log line would bury
+        the soft-vertical list that is worth reading."""
+        import logging
+        c = Crawler()
+        c.website_name = "TEST"
+        branches = {f"article-2026-{m:02d}": str(m) for m in range(1, 13)}
+        with caplog.at_level(logging.INFO, logger="newscrawler.infrastructure.datasource.scrapers.crawler"):
+            assert c.drop_soft_branches(branches) == {}
+        line = [r.message for r in caplog.records if "archive partition(s)" in r.message][0]
+        assert "12 archive partition(s)" in line and "+7 more" in line
