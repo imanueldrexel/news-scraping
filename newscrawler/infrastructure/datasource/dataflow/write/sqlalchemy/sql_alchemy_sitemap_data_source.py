@@ -192,8 +192,8 @@ class SQLAlchemySitemapDataSource:
                 f"WHERE {SitemapTable.sources.name} = {website} "
                 f"AND b.{NewsArticlesTable.sitemap_id.name} is NULL "
                 # SYS-16: a sitemap the semantic filter already rejected is a
-                # deterministic, permanent "no" (same headline/text, same
-                # INTERESTS list) -- re-fetching it every cooldown window forever
+                # deterministic, permanent "no" (same headline/text, same probe
+                # artifact) -- re-fetching it every cooldown window forever
                 # wastes the per-run budget that should go to genuinely-pending
                 # sitemaps. empty_extraction and pending both still retry normally,
                 # since a layout fix or a first attempt can change their outcome.

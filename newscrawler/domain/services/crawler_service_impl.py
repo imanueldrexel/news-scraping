@@ -169,7 +169,7 @@ class CrawlerServiceImpl(CrawlerService):
             # --- Semantic Filtering ---
             important_newsdetails = []
             # SYS-16: a rejection is either permanent (real text, but off-topic --
-            # the same headline/body will fail the same INTERESTS check every time)
+            # the same headline/body gets the same verdict from the same probe)
             # or transient (no extractor produced usable text this run -- a layout
             # fix or a later attempt could still succeed). Only the former should
             # stop being re-queued; the latter keeps the normal cooldown retry.
