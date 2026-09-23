@@ -1,15 +1,22 @@
-"""SYS-37 (#121): the importance probe -- a multinomial logistic regression over
-the MiniLM embedding the pipeline already computes -- and the text/embedding
-helpers that give the trainer and the runtime the same input by construction.
+"""SYS-37 (#121): the importance probe -- two logistic-regression heads over the
+`intfloat/multilingual-e5-large` embedding of title + body[:500] -- and the
+text/embedding helpers that give the trainer and the runtime the same input by
+construction.
 
-Status 2026-09-21: TRAINED AND EVALUATED, NOT WIRED INTO THE LIVE FILTER. On the
-SYS-36 gold set no probe shape reaches the ticket's gates (best linear gate:
-mixed-bucket precision 0.71 at finance recall 0.95; topic accuracy 0.65 against
-labels whose inter-labeller topic agreement is 0.71) -- see the 2026-09-21
-SYS-37 entry in EXPERIMENTS.md and the ticket. Per the ticket's rule the
-artifact is not written and importance_filter.py keeps the cosine score until
-the owner decides how the gates move. What is here is the part that does not
-depend on that decision: scripts/train_importance_probe.py imports it.
+Status: LIVE since 2026-09-22 (`e44de43`). This probe is the one news-worthy
+decision in the pipeline. The artifact is committed in newscrawler/core/models/,
+`SemanticImportanceFilter` loads exactly the encoder its sidecar names, and the
+cosine-vs-INTERESTS score it replaced is deleted, not disabled. tau = 0.39, with
+an owner-accepted +/-0.02 tolerance on the five gates (2026-09-22). SOFT_THRESHOLD
+is the only runtime knob; anything else is a retrain.
+
+The encoder is NOT the MiniLM the FAISS store uses. Before SYS-47 (#143) the
+probe was a single multinomial head over MiniLM, and on that input no shape
+reached the gates (mixed-bucket precision 0.71 at finance recall 0.95; topic
+accuracy 0.65) -- SYS-47 changed the input (e5-large, 1024-d, fetched bodies for
+95% of the gold set) and split the head in two, which is what moved every gate
+to its floor. The 2.2 GB e5-large download is therefore a runtime dependency of
+the crawler, next to MiniLM.
 
 The artifact is plain weights (.npz) + a JSON sidecar, not a pickle: the runtime
 needs numpy, not a matching sklearn; the trainer asserts its softmax reproduces
@@ -89,6 +96,33 @@ def sha256_of_file(path: str) -> str:
         for chunk in iter(lambda: f.read(1 << 20), b""):
             h.update(chunk)
     return h.hexdigest()
+
+
+def artifact_identity(directory: str = PROBE_DIR, soft_threshold: Optional[float] = None) -> dict:
+    """DBT-34 (#150): who decided. Any verdict derived from the probe and cached
+    to disk carries this block, and any script that acts on cached verdicts --
+    `cleanup_soft_by_probe.py` deletes production articles on them -- compares it
+    with the artifact committed now and refuses on a mismatch.
+
+    `soft_threshold` is the EFFECTIVE tau, not the sidecar's: `constants.SOFT_THRESHOLD`
+    overrides it for the live service, so passing it here is what makes an
+    operating-point move visible to the comparison (DBT-37 #153). Pass what the
+    filter was actually constructed with.
+
+    `artifact_sha256` is the weights file itself, so a half-trained checkpoint or
+    an artifact copied from an experiment branch is caught even when the encoder,
+    the threshold and the gold hash all still agree."""
+    weights = os.path.join(directory, PROBE_WEIGHTS)
+    sidecar_path = os.path.join(directory, PROBE_SIDECAR)
+    with open(sidecar_path, encoding="utf-8") as f:
+        sidecar = json.load(f)
+    return {
+        "embedding_model": sidecar.get("embedding_model"),
+        "soft_threshold": float(soft_threshold if soft_threshold is not None else sidecar.get("soft_threshold")),
+        "gold_sha256": sidecar.get("gold_sha256"),
+        "trained_at": sidecar.get("trained_at"),
+        "artifact_sha256": sha256_of_file(weights),
+    }
 
 
 class ProbeArtifactError(RuntimeError):

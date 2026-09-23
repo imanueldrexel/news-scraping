@@ -14,9 +14,17 @@ Two populations, reported separately because they are different decisions:
                         bigger delete; the owner decides whether at all.
 
 Verdicts come from the probe. By default they are re-derived from the
-backfill's backup (backups/sys37_topic_backfill_*.json records is_news per
-articles_id, same artifact) so this does not re-embed 11,700 rows through
-e5-large; --recompute runs the live filter instead (30 min on CPU).
+backfill's backup (backups/sys37_topic_backfill_applied_*.json records is_news
+per articles_id) so this does not re-embed 11,700 rows through e5-large;
+--recompute runs the live filter instead (30 min on CPU).
+
+DBT-34 (#150): the cached verdicts carry the probe's identity -- encoder,
+effective tau, gold sha256 and the sha256 of importance_probe.npz -- and this
+script refuses to delete anything when they do not match the artifact committed
+now. A retrain, a threshold move or an artifact swapped in from an experiment
+branch therefore stops the run instead of quietly deleting on the old probe's
+opinion. A verdict file written before DBT-34 has no identity and is refused
+the same way: re-run --backfill, or use --recompute.
 
 The delete itself is cleanup_offtopic_articles.py's machinery: JSON backup of
 the articles + chunks about to go, SQL delete of articles/chunks/entity
@@ -63,22 +71,62 @@ _ARTICLES_SQL = text("""
 
 
 def latest_backfill_backup():
+    # Both names on purpose: the pre-DBT-34 files are still on disk and must be
+    # *found and refused* for having no identity, not silently skipped as if no
+    # verdicts existed at all.
     files = sorted(glob.glob(os.path.join(BACKUP_DIR, "sys37_topic_backfill_*.json")))
     return files[-1] if files else None
 
 
 def verdicts_from_backup(path):
+    """(verdicts, meta). `meta` is None for a pre-DBT-34 file -- a bare JSON
+    list of rows with no record of which probe produced them."""
     with open(path, encoding="utf-8") as f:
-        return {r["articles_id"]: bool(r["is_news"]) for r in json.load(f)}
+        payload = json.load(f)
+    if isinstance(payload, list):          # legacy shape, no identity
+        return {r["articles_id"]: bool(r["is_news"]) for r in payload}, None
+    rows = payload.get("rows", [])
+    return {r["articles_id"]: bool(r["is_news"]) for r in rows}, payload.get("meta")
 
 
-def verdicts_recomputed(rows):
+# The fields that must match for cached verdicts to still be this probe's.
+# `trained_at` is informational and deliberately not compared: a rebuild of the
+# same weights is not a different decision.
+IDENTITY_FIELDS = ("embedding_model", "soft_threshold", "gold_sha256", "artifact_sha256")
+
+
+def identity_mismatch(meta, current):
+    """DBT-34 (#150): which identity fields disagree, as human-readable lines.
+    Empty list = the cached verdicts came from the artifact committed now."""
+    if not meta:
+        return ["the verdict file records no probe identity (written before DBT-34 #150)"]
+    out = []
+    for field in IDENTITY_FIELDS:
+        want, got = current.get(field), meta.get(field)
+        if isinstance(want, float) or isinstance(got, float):
+            same = want is not None and got is not None and abs(float(want) - float(got)) < 1e-9
+        else:
+            same = want == got
+        if not same:
+            out.append(f"{field}: verdicts say {got!r}, committed artifact is {want!r}")
+    return out
+
+
+def verdicts_recomputed(rows, soft_threshold=None):
     from newscrawler.core.importance_filter import SemanticImportanceFilter
-    filt = SemanticImportanceFilter()
+    # DBT-37 (#153): same construction as the live service, or this scores at
+    # the sidecar's tau while the pipeline runs at the env override's.
+    filt = SemanticImportanceFilter(soft_threshold=soft_threshold)
     out = {}
     for i in range(0, len(rows), 256):
         chunk = rows[i:i + 256]
         decisions = filt.classify_batch([build_check_text(r.headline, r.body_head) for r in chunk], [r.category for r in chunk])
+        # DBT-36 (#152): this pairing decides which production articles are
+        # deleted. Assert the length at the delete boundary as well as inside
+        # the filter, so a future regression fails here instead of attributing
+        # every verdict after a gap to the wrong article.
+        if len(decisions) != len(chunk):
+            raise RuntimeError(f"classify_batch returned {len(decisions)} decisions for {len(chunk)} article(s)")
         out.update({r.articles_id: d.is_important for r, d in zip(chunk, decisions)})
     return out
 
@@ -117,16 +165,39 @@ def main(argv=None) -> int:
         logger.info("database: %s", session.execute(text("SELECT current_database()")).scalar())
         rows = session.execute(_ARTICLES_SQL, {"n": PROBE_BODY_CHARS}).fetchall()
 
+    from newscrawler.core.constants import SOFT_THRESHOLD
+    from newscrawler.core.importance_probe import artifact_identity
+
+    # The artifact committed right now, at the tau the live pipeline runs at.
+    current = artifact_identity(soft_threshold=SOFT_THRESHOLD)
+    logger.info("committed probe: %s tau=%.2f gold=%s artifact=%s", current["embedding_model"],
+                current["soft_threshold"], (current["gold_sha256"] or "?")[:12], current["artifact_sha256"][:12])
+
     if args.recompute:
-        verdicts = verdicts_recomputed(rows)
+        verdicts = verdicts_recomputed(rows, soft_threshold=SOFT_THRESHOLD)
         logger.info("verdicts recomputed through the live filter for %d articles", len(verdicts))
     else:
         path = latest_backfill_backup()
         if not path:
             logger.error("no backups/sys37_topic_backfill_*.json -- run the backfill or pass --recompute")
             return 1
-        verdicts = verdicts_from_backup(path)
+        verdicts, meta = verdicts_from_backup(path)
         logger.info("verdicts from %s (%d articles)", os.path.basename(path), len(verdicts))
+        # DBT-34 (#150): this script deletes articles, their chunks and their
+        # FAISS vectors, and flips their sitemaps to the terminal
+        # rejected_filter. Doing that on verdicts from a probe that is no longer
+        # the committed one is unrecoverable and, before this check, silent --
+        # the log line only ever said which file it read.
+        problems = identity_mismatch(meta, current)
+        if problems:
+            logger.error("REFUSING to act on %s -- it was not produced by the committed probe:",
+                         os.path.basename(path))
+            for line in problems:
+                logger.error("  %s", line)
+            logger.error("Re-run `train_importance_probe.py --backfill` to refresh the verdicts, "
+                         "or pass --recompute to score through the live filter now.")
+            return 1
+        logger.info("verdict file matches the committed probe (%s)", ", ".join(IDENTITY_FIELDS))
 
     scoped, soft, unknown, referenced, deletable = select(rows, verdicts, args.scope)
     logger.info("scope %s: %d articles; probe says soft: %d (%.1f%%); %d referenced by entity_mentions (kept); "
