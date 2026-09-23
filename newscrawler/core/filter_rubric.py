@@ -12,6 +12,18 @@ Amended 2026-09-21 (SYS-46 #142, owner decision from the SYS-36 hand check):
 school/campus regulations and guidance are soft even from a ministry, and a
 celebrity's own criminal case is soft unless a public institution or policy is
 the subject. Every gold label was re-derived under this wording.
+
+Amended 2026-09-23 (SYS-49 #147, owner decision): opinion, analysis and
+editorial columns are soft. The rubric had never ruled on the class, so the
+gold set labelled the opinion buckets 8 news / 12 soft and the probe split
+near-identical op-eds on wording (SINDONEWS `scope`: two Iran-war analyses at
+P(soft) 0.34 and 0.47). The fix is not a better classifier -- near-identical
+texts cannot be separated by one -- it is the boundary: an op-ed is not a
+reported event, so it is soft here, its sections are dropped in the base
+crawler (SOFT_BRANCH_WORDS) and its categories denied before the probe runs
+(OFFTOPIC_CATEGORIES_EXACT). Only the gold rows in those buckets were
+re-labelled; SYS-46 measured that a full re-label moves ~5% of labels that
+have nothing to do with the change.
 """
 from typing import List
 
@@ -67,9 +79,24 @@ issues them ("Kemenag Batasi Penggunaan HP di Sekolah" is soft); and a
 celebrity's OWN criminal case -- arrest, suspect status, trial, KDRT, drugs --
 which is entertainment coverage ("Rizky Billar Ditetapkan Tersangka KDRT" is
 soft) unless the story's subject is a public institution or a policy.
+ALSO SOFT (owner decision 2026-09-23): OPINION, ANALYSIS, COMMENTARY AND
+EDITORIAL columns -- a signed op-ed, an expert column, a masthead editorial
+(tajuk, editorials), a reader's letter (surat-pembaca), a geopolitical or
+market analysis essay. These argue about, interpret or forecast an event;
+they are not themselves a reported, time-bound event, so they fall outside
+the definition above exactly as advertorials and siaran-pers reprints do.
+This holds however serious the subject and whoever signs it: "Perang Iran
+Ubah Tatanan Dunia" and "Mungkinkah Iran Menang Perang?" are soft, while
+"Iran Luncurkan Rudal ke Pangkalan AS" -- the reported event they comment
+on -- is news (international). "Darah Baru Kabinet" (an editorial on the
+reshuffle) is soft; "Prabowo Lantik Enam Menteri Baru" is news
+(politics_government). A quoted analyst INSIDE a report of an event does not
+make that report an opinion piece; the test is whether the piece exists to
+report something that happened or to argue a view about it.
 
-TIE-BREAK: would a national desk editor put it in the front section, or in
-the lifestyle / entertainment / sports supplement?
+TIE-BREAK: would a national desk editor put it in the front section, or on
+the opinion page, or in the lifestyle / entertainment / sports supplement?
+Only the front section is news.
 
 TOPIC (for is_news = true), pick exactly one:
   markets            - stock/bond/forex/crypto prices, IHSG, rupiah, capital flows, an emiten's shares

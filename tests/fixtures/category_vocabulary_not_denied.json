@@ -1,5 +1,5 @@
 {
- "_about": "SYS-42 (#137): every live (source, category) in `sitemaps` that the category gate did NOT deny on 2026-09-21, after SYS-34's title sampling. tests/unit/test_importance_filter.py asserts is_offtopic_category() is still False for all of them, so a new deny stem that collides with a real desk (`celeb` -> INEWS `celebes`, `sport` -> `transportasi`) fails a test instead of permanently rejecting the desk. To deny one of these on purpose, remove it here in the same commit, with the 3-title sample on the ticket (SRC-39 rule). `gate` is informational (allow / null = scored).",
+ "_about": "SYS-42 (#137): every live (source, category) in `sitemaps` that the category gate did NOT deny on 2026-09-21, after SYS-34's title sampling. tests/unit/test_importance_filter.py asserts is_offtopic_category() is still False for all of them, so a new deny stem that collides with a real desk (`celeb` -> INEWS `celebes`, `sport` -> `transportasi`) fails a test instead of permanently rejecting the desk. To deny one of these on purpose, remove it here in the same commit, with the 3-title sample on the ticket (SRC-39 rule). `gate` is informational (allow / null = scored). SYS-49 (2026-09-23) removed the six opinion/editorial pairs below on purpose: they are denied from that date (4-title sample per bucket on the ticket).",
  "generated": "2026-09-21",
  "pairs": [
   {
@@ -50,11 +50,6 @@
   {
    "source": "CNBC",
    "category": "news",
-   "gate": null
-  },
-  {
-   "source": "CNBC",
-   "category": "opini",
    "gate": null
   },
   {
@@ -1034,11 +1029,6 @@
   },
   {
    "source": "JPNN",
-   "category": "opini",
-   "gate": null
-  },
-  {
-   "source": "JPNN",
    "category": "otomotif",
    "gate": null
   },
@@ -1199,11 +1189,6 @@
   },
   {
    "source": "MEDIAINDONESIA",
-   "category": "editorials",
-   "gate": null
-  },
-  {
-   "source": "MEDIAINDONESIA",
    "category": "ekonomi",
    "gate": "allow"
   },
@@ -1240,11 +1225,6 @@
   {
    "source": "MEDIAINDONESIA",
    "category": "kesehatan",
-   "gate": null
-  },
-  {
-   "source": "MEDIAINDONESIA",
-   "category": "kolom-pakar",
    "gate": null
   },
   {
@@ -1296,11 +1276,6 @@
    "source": "MEDIAINDONESIA",
    "category": "politik-dan-hukum",
    "gate": "allow"
-  },
-  {
-   "source": "MEDIAINDONESIA",
-   "category": "surat-pembaca",
-   "gate": null
   },
   {
    "source": "MEDIAINDONESIA",
@@ -1765,11 +1740,6 @@
   {
    "source": "SINDONEWS",
    "category": "otomotif",
-   "gate": null
-  },
-  {
-   "source": "SINDONEWS",
-   "category": "scope",
    "gate": null
   },
   {

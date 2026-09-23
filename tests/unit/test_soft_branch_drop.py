@@ -21,9 +21,19 @@ class TestIsSoftBranch:
         "religi", "ramadan", "kalam", "games", "games-news", "quiz", "zodiak", "fiction",
         "fotostop_news", "konsultasigadget", "gadget", "bobo", "intisari", "gridoto", "motorplus",
         "donwori", "advetorial", "siaran-pers", "vstory", "blog", "english", "english_edition",
+        # SYS-49 (#147): opinion / analysis / editorial sections.
+        "opini", "opinion", "editorial", "editorials", "kolom", "kolom-pakar",
+        "tajuk", "tajuk-rencana", "surat-pembaca", "scope", "bali/opini", "jabar/kolom",
     ])
     def test_soft_branches_are_dropped(self, key):
         assert Crawler.is_soft_branch(key) is True
+
+    @pytest.mark.parametrize("key", ["horoscope", "opinionated-news", "periskop", "kolombia"])
+    def test_sys49_opinion_words_are_word_bounded(self, key):
+        """SYS-49 uses the same word-bounded matching SYS-42 mandated: `scope`
+        must never be found inside `horoscope`, and no opinion stem may be a
+        prefix that swallows an unrelated section name."""
+        assert Crawler.is_soft_branch(key) is False
 
     @pytest.mark.parametrize("key", [
         # sampled 2026-09-22 and kept -- the whole point of SRC-35's "verify per
@@ -97,3 +107,53 @@ class TestDropSoftBranches:
         assert c.get_news_in_bulk() == [{"link": "x"}]
         assert c._scrape.call_count == 1
         assert c._scrape.call_args.kwargs["branch_name"] == "ekonomi"
+
+
+class TestFleetNeverKeysABranchByItsUrl:
+    """SRC-43 (#146) / SRC-39 (#133): `is_soft_branch` matches a branch NAME, so
+    a branch keyed by its URL silently bypasses the one enforcement point. The
+    trap is `re.sub`, which returns the input unchanged when the pattern does not
+    match; the rule is `re.match` + skip.
+
+    This is the offline half of the guard: every registered crawler is handed an
+    index entry no crawler can name, and must skip it rather than key it by its
+    URL. It cannot see a source whose regex matches a live `<loc>` into something
+    URL-shaped -- that is VIVA (SRC-33 #119) -- so the live half is
+    `scripts/experiments/probe_branch_scope.py`, which exits non-zero on any URL
+    key."""
+
+    # Sources known to still have the shape, each against its ticket. Removing a
+    # name here must turn this test red until that crawler is fixed.
+    KNOWN_URL_KEYERS = {"IDXCHANNEL": "SRC-46 (#156)", "SINDONEWS": "SRC-46 (#156)"}
+
+    UNNAMEABLE = ("<urlset><sitemap><loc>https://unnameable.example.com/"
+                  "no-such-section/sitemap_totally_unknown.xml</loc></sitemap></urlset>")
+
+    def _url_keyed(self, crawler):
+        from bs4 import BeautifulSoup
+        try:
+            branches = crawler._get_branches(BeautifulSoup(self.UNNAMEABLE, "lxml-xml")) or {}
+        except NotImplementedError:
+            return []
+        return [k for k in branches if str(k).startswith("http")]
+
+    @pytest.mark.parametrize("name", sorted(CRAWLER_DICT))
+    def test_an_unnameable_loc_is_skipped_not_keyed_by_its_url(self, name):
+        offenders = self._url_keyed(CRAWLER_DICT[name])
+        if name in self.KNOWN_URL_KEYERS:
+            pytest.xfail(f"{name} keys unnameable branches by URL -- {self.KNOWN_URL_KEYERS[name]}")
+        assert offenders == [], (
+            f"{name}._get_branches keyed a branch by its URL ({offenders[0][:60]}...). "
+            "Use re.match + skip, never re.sub (SRC-39 #133)."
+        )
+
+    def test_the_whitelist_only_contains_sources_that_still_need_it(self):
+        """So a fixed crawler cannot be left on the list, quietly unguarded."""
+        for name, ticket in self.KNOWN_URL_KEYERS.items():
+            assert self._url_keyed(CRAWLER_DICT[name]), (
+                f"{name} no longer keys branches by URL -- remove it from KNOWN_URL_KEYERS ({ticket})"
+            )
+
+    def test_the_three_src43_sources_now_name_every_branch(self):
+        for name in ("OKEZONE", "DETIK", "MEDIAINDONESIA"):
+            assert self._url_keyed(CRAWLER_DICT[name]) == [], name

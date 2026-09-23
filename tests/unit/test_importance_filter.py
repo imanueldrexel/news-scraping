@@ -19,9 +19,13 @@ means the score cannot reject, the probe can). Offline tests use a stub
 probe; the real-encoder tests load the committed artifact and skip when
 multilingual-e5-large is not cached locally.
 """
+import json
 import os
+import sys
 import unittest
 from unittest.mock import MagicMock
+
+import pytest
 
 from newscrawler.core.importance_filter import (
     FilterDecision,
@@ -185,6 +189,35 @@ class TestNewsWorthyScopeDenyList(unittest.TestCase):
         self.assertFalse(is_offtopic_category("menteri"))
         self.assertFalse(is_offtopic_category("mengenal-saham"))
 
+    def test_sys49_opinion_buckets_are_denied(self):
+        """SYS-49 (#147, owner 2026-09-23): an op-ed argues about an event, it
+        is not one. All five live buckets were sampled (4 titles each, table on
+        the ticket) and left category_vocabulary_not_denied.json in the same
+        commit. The URL/host-qualified forms matter because a widened crawler
+        reaches these sections through SRC-41's `<region>/<section>` keys."""
+        for cat in (
+            "opini", "opinion", "editorial", "editorials", "kolom", "kolom-pakar",
+            "surat-pembaca", "scope", "tajuk", "tajuk-rencana",
+            "bali/opini", "jabar/kolom", "https://www.mediaindonesia.com/editorials/sitemap.xml",
+        ):
+            self.assertTrue(is_offtopic_category(cat), f"{cat!r} should be off-topic")
+
+    def test_sys49_opinion_stems_are_word_bounded(self):
+        """SYS-42's rule applied to SYS-49's names: `scope` must not be found
+        inside `horoscope`, and no stem may swallow an unrelated section.
+        `analisis` is deliberately not denied -- a market-analysis desk reports
+        as often as it argues and no sample was taken of one."""
+        for cat in ("horoscope", "periskop", "kolombia", "opinionated", "analisis", "analisis-pasar"):
+            self.assertFalse(is_offtopic_category(cat), f"{cat!r} should not be off-topic")
+
+    def test_sys49_the_near_duplicate_oped_pair_now_gets_one_verdict(self):
+        """The defect SYS-49 was filed on: two SINDONEWS `scope` analyses of the
+        same war landed on opposite sides of tau (P(soft) 0.34 vs 0.47). The
+        category decides now, so both are denied before the probe -- which is
+        the only way near-identical texts can get a consistent verdict."""
+        self.assertEqual(category_gate("scope"), "deny")
+        self.assertEqual(category_gate("opini"), "deny")
+
 
 class TestNewsCategoryAllowSet(unittest.TestCase):
     """SYS-35 (#118): the symmetric half of the gate."""
@@ -335,6 +368,29 @@ class TestSemanticImportanceFilterCategoryGate(unittest.TestCase):
         with self.assertRaises(ValueError):
             filt.classify_batch(["a"], [])
 
+    def test_classify_batch_raises_when_the_probe_returns_a_short_list(self):
+        """DBT-36 (#152): `classify_batch` used to end in
+        `[d for d in decisions if d is not None]`, so a probe returning one row
+        fewer than it was given produced a silently shortened list. Every caller
+        pairs it with its inputs by `zip`, and two of them delete articles and
+        write `articles.topic`, so the gap would attribute every verdict after
+        it to the wrong article -- undetectable afterwards. It must raise."""
+        filt = _make_filter_with_stub_probe()
+        filt.probe.predict.side_effect = lambda emb: [(True, "markets", 0.8, 0.1) for _ in range(len(emb) - 1)]
+        with self.assertRaises(ProbeArtifactError) as ctx:
+            filt.classify_batch(["a", "b", "c"], [None, None, None])
+        self.assertIn("2 rows for 3", str(ctx.exception))
+
+    def test_classify_batch_returns_one_decision_per_input_in_order(self):
+        """The contract the callers rely on, pinned: same length, same order,
+        including the rows the probe never sees (empty text, denied category)."""
+        filt = _make_filter_with_stub_probe(p_soft=0.1)
+        texts = ["news one", "", "gossip", "news two", "   "]
+        cats = ["bisnis", "bisnis", "hiburan", "news", None]
+        decisions = filt.classify_batch(texts, cats)
+        self.assertEqual(len(decisions), len(texts))
+        self.assertEqual([d.gate for d in decisions], ["allow", "empty", "deny", "score", "empty"])
+
     def test_is_important_is_a_thin_wrapper_over_classify(self):
         filt = _make_filter_with_stub_probe()
         filt.classify = MagicMock(return_value=FilterDecision(True, "score", True, "markets", 0.9, 0.1))
@@ -371,10 +427,12 @@ class TestCommittedProbeArtifact(unittest.TestCase):
         self.assertEqual(self.probe.sidecar["gold_sha256"], sha256_of_file(gold),
                          "the artifact was trained on a different filter_gold.jsonl than the one committed -- retrain")
 
-    def test_recorded_metrics_meet_the_gates_within_the_owner_tolerance(self):
-        # SYS-37 Done-when + SYS-45; owner decision 2026-09-22: within 0.02 of
-        # each floor is accepted (the gold set cannot resolve less). A retrain
-        # that regresses by 0.02 or more fails here.
+    def test_sidecar_records_metrics_meeting_the_gates(self):
+        # A fast smoke test on the sidecar's OWN record of itself -- it proves
+        # the file says the right thing, not that the weights do. DBT-35 (#151):
+        # the real verification is TestCommittedProbeGatesRecomputed below,
+        # which executes the committed weights over the gold test split. Do not
+        # read this one as evidence the artifact is accurate.
         gates = {"recall_finance": 0.95, "recall_general": 0.90, "precision_mixed": 0.90,
                  "precision_allow": 0.90, "topic_accuracy": 0.80}
         m = self.probe.sidecar["metrics_test"]
@@ -460,3 +518,128 @@ class TestSemanticImportanceFilterRealModel(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestCommittedProbeGatesRecomputed(unittest.TestCase):
+    """DBT-35 (#151): run the COMMITTED weights over the committed gold `test`
+    split under the live rule, and check the five gates that were actually
+    measured -- not the sidecar's record of them.
+
+    What this catches that nothing else did: the weights and the sidecar
+    drifting apart. An honest retrain that regresses never reaches a test,
+    because the trainer refuses to write below its gates. A half-trained
+    checkpoint, an artifact copied from an experiment branch, or a binary merge
+    resolved the wrong way passes every other check -- shapes validate, the
+    class list matches, the gold hash is unchanged -- while the live filter
+    makes different decisions from the ones the sidecar advertises.
+
+    The embedding matrix is committed (tests/fixtures/probe_test_embeddings.npz,
+    763 x 1024 float32) and keyed by the encoder and the gold sha256, so this
+    runs offline in ~2 s and an edited fixture invalidates it. That the matrix
+    is genuine encoder output is the separate, slower check below -- otherwise
+    the cache would just be the next unverified artifact.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        import numpy as np
+        sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
+            os.path.abspath(__file__)))), "scripts"))
+        from newscrawler.core.filter_rubric import TOPICS
+        from newscrawler.core.importance_probe import build_check_text, sha256_of_file
+        import train_importance_probe as trainer
+
+        cls.np, cls.trainer, cls.TOPICS = np, trainer, TOPICS
+        cls.probe = ImportanceProbe.load()
+        fixtures = os.path.join(os.path.dirname(__file__), "..", "fixtures")
+        cls.gold_path = os.path.join(fixtures, "filter_gold.jsonl")
+        with open(cls.gold_path, encoding="utf-8") as f:
+            gold = [json.loads(line) for line in f if line.strip()]
+        cls.test_rows = [r for r in gold if r["split"] == "test"]
+        cls.texts = [build_check_text(r["headline"], r.get("body_head")) for r in cls.test_rows]
+        cls.cache = np.load(os.path.join(fixtures, "probe_test_embeddings.npz"))
+        cls.gold_sha = sha256_of_file(cls.gold_path)
+
+    def test_the_embedding_matrix_belongs_to_this_gold_set_and_this_encoder(self):
+        """The cache key. If any of these drifts the recomputation below would
+        be measuring the wrong rows, so it must fail here first -- offline, with
+        no encoder needed."""
+        import hashlib
+        self.assertEqual(str(self.cache["encoder"]), self.probe.encoder_name)
+        self.assertEqual(str(self.cache["gold_sha256"]), self.gold_sha,
+                         "the committed embeddings were built from a different filter_gold.jsonl -- rebuild them")
+        self.assertEqual(int(self.cache["n"]), len(self.test_rows))
+        self.assertEqual(self.cache["X"].shape, (len(self.test_rows), self.probe.dim))
+        self.assertEqual(str(self.cache["texts_sha256"]),
+                         hashlib.sha256("\n".join(self.texts).encode("utf-8")).hexdigest(),
+                         "the gold test rows' text changed but the embeddings did not -- rebuild them")
+
+    def _recompute(self):
+        X = self.cache["X"]
+        p_soft = self.probe.p_soft(X)
+        topic_pred = self.trainer.topic_of(self.probe.topic_proba(X), list(self.TOPICS))
+        return self.trainer.gate_metrics(self.test_rows, p_soft, topic_pred, self.probe.soft_threshold)
+
+    def test_the_committed_weights_meet_every_gate(self):
+        metrics = self._recompute()
+        ok, failures = self.trainer.gates_pass(metrics)
+        self.assertTrue(ok, "the committed probe does not meet its gates: %s" % "; ".join(failures))
+
+    def test_the_committed_weights_reproduce_the_sidecar(self):
+        """The drift check. If the weights and the sidecar disagree, one of them
+        is lying about what the live filter does."""
+        recomputed = self._recompute()
+        recorded = self.probe.sidecar["metrics_test"]
+        for name in self.trainer.GATES:
+            self.assertAlmostEqual(
+                recomputed[name], recorded[name], places=9,
+                msg="%s: weights say %.10f, sidecar claims %.10f -- the artifact and its sidecar have "
+                    "drifted apart (half-trained checkpoint? artifact from another branch?)"
+                    % (name, recomputed[name], recorded[name]))
+
+    def test_the_live_rule_is_what_was_measured(self):
+        """The recomputation must apply the category deny-gate, not the bare
+        probe -- otherwise it is not the decision the pipeline makes."""
+        denied = [i for i, r in enumerate(self.test_rows) if category_gate(r.get("category")) == "deny"]
+        self.assertTrue(denied, "no denied rows in the test split -- this assertion proves nothing")
+        pred = self.trainer.live_decision(self.probe.p_soft(self.cache["X"]),
+                                          [r.get("category") for r in self.test_rows],
+                                          self.probe.soft_threshold)
+        self.assertFalse(any(pred[i] for i in denied), "a deny-category row was kept")
+
+
+class TestCommittedEmbeddingsAreRealEncoderOutput(unittest.TestCase):
+    """DBT-35 (#151) fix 2: the committed matrix above makes the gate check fast,
+    which only helps if the matrix is genuinely what the encoder produces. This
+    re-encodes a sample of the gold test rows through the encoder the sidecar
+    names and compares. Slow (loads multilingual-e5-large); skipped only when
+    the encoder is not available locally -- the gate checks above never skip."""
+
+    N_SAMPLE = 24
+
+    @pytest.mark.timeout(1800)
+    def test_sampled_rows_reencode_to_the_committed_vectors(self):
+        import hashlib
+        import random
+        import numpy as np
+        from newscrawler.core.importance_probe import build_check_text, embed_for_probe
+
+        probe = ImportanceProbe.load()
+        fixtures = os.path.join(os.path.dirname(__file__), "..", "fixtures")
+        cache = np.load(os.path.join(fixtures, "probe_test_embeddings.npz"))
+        with open(os.path.join(fixtures, "filter_gold.jsonl"), encoding="utf-8") as f:
+            rows = [json.loads(line) for line in f if line.strip()]
+        rows = [r for r in rows if r["split"] == "test"]
+        try:
+            from sentence_transformers import SentenceTransformer
+            model = SentenceTransformer(probe.encoder_name)
+        except Exception as e:  # noqa: BLE001 -- encoder not cached on this machine
+            raise unittest.SkipTest("encoder %r unavailable offline: %r" % (probe.encoder_name, e))
+
+        idx = random.Random(20260923).sample(range(len(rows)), min(self.N_SAMPLE, len(rows)))
+        fresh = embed_for_probe(model, [build_check_text(rows[i]["headline"], rows[i].get("body_head")) for i in idx],
+                                model_name=probe.encoder_name)
+        delta = float(np.abs(fresh - cache["X"][idx]).max())
+        self.assertLess(delta, 1e-4,
+                        "committed embeddings differ from a fresh encode by %.2e -- they are not this encoder's "
+                        "output for these rows" % delta)

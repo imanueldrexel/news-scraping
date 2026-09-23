@@ -97,9 +97,23 @@ SOFT_BRANCH_WORDS = (
     # hobby magazines (GRIDID's network, SRC-37) and user/PR columns
     "bobo", "intisari", "fotokita", "gridhealth", "gridoto", "motorplus", "otoseken", "hai",
     "idea", "donwori", "advetorial", "advertorial", "siaran-pers", "vstory", "blog",
+    # opinion / analysis / editorial columns (SYS-49 #147, owner 2026-09-23):
+    # an op-ed argues about an event, it is not one. Dropped here so the
+    # section is never listed, and denied at category level for the rows
+    # already in `sitemaps`. Sampled 4 titles each -- CNBC/JPNN `opini`,
+    # MEDIAINDONESIA `editorials`/`kolom-pakar`/`surat-pembaca`,
+    # SINDONEWS `scope` (table on SYS-49). `analisis` is deliberately absent.
+    "opini", "opinion", "editorial", "editorials", "kolom", "kolom-pakar",
+    "tajuk", "tajuk-rencana", "surat-pembaca", "scope",
     # duplicate translations of a desk we already list (KONTAN's market wire
     # is the exception -- see its crawler)
     "english", "english_edition",
+    # SRC-43 (#146): DETIK's English edition lives on its own domain, so it
+    # never carried the word `english` in its key. Sampled 2026-09-23 --
+    # "Influenza Cases Rise in Indonesia", "Update on KM Virgo SAR: 18 Dead",
+    # "Anak Krakatau Status Downgraded": real news, in English, duplicating
+    # desks we already list. Same ground as `english` above.
+    "indonesianow",
 )
 
 

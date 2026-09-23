@@ -76,6 +76,22 @@ OFFTOPIC_CATEGORIES_EXACT = {
     "nova", "infokomputer", "gridoto", "otomotifnet", "hai", "motorplus",
     "gridhealth", "nextren", "juara", "cewekbanget", "bolasport", "stylo",
     "superball", "bobo", "otoseken",
+    # SYS-49 (#147, owner decision 2026-09-23): opinion / analysis / editorial
+    # columns are soft -- they argue about an event, they are not one. This is
+    # the enforcement point, not the probe: the four SINDONEWS `scope` Iran-war
+    # analyses that split across tau are near-identical as text, so no
+    # classifier separates them; the publisher's own section name does.
+    # Every name below was sampled (4 live titles each, table on SYS-49) and
+    # removed from category_vocabulary_not_denied.json in the same commit:
+    #   CNBC/JPNN `opini`          -- "Ekonomi Pancasila dan Strategi Rantai Pasok Hijau"
+    #   MEDIAINDONESIA `editorials`-- "Pastikan IKN bukan Proyek Mangkrak"
+    #   MEDIAINDONESIA `kolom-pakar`-- "Aroma Politik dalam Putusan MK"
+    #   MEDIAINDONESIA `surat-pembaca` -- "Kemacetan di Jalan Raya Lenteng Agung"
+    #   SINDONEWS `scope`          -- "Standar Ganda Amerika, Kian Nyata Dukung Genosida di Gaza"
+    # `analisis` is deliberately NOT here: a market-analysis desk reports as
+    # often as it argues, and no sample was taken of one.
+    "opini", "opinion", "editorial", "editorials", "kolom", "kolom-pakar",
+    "surat-pembaca", "scope", "tajuk", "tajuk-rencana",
 }
 # Substring match for category values that are not clean labels -- e.g. a
 # raw per-region sitemap URL stored as `category` (JPNN before SRC-41, VIVA's
@@ -108,6 +124,12 @@ OFFTOPIC_CATEGORY_KEYWORDS_WORD = (
     "sport", "wisata", "bola", "food", "piala", "gossip", "gosip",
     # SYS-42: `celeb`/`celebs` as a word only -- never the prefix of `celebes`.
     "celeb",
+    # SYS-49: the same names word-bounded, so a host-qualified key
+    # (`bali/opini`, SRC-41's shape) or a URL-shaped category is caught too.
+    # Word-bounded on purpose: `scope` must never match `horoscope`, and
+    # `opini` must not swallow an unrelated word that merely starts with it --
+    # `opinion` is listed separately for the same reason (SYS-42's rule).
+    "opini", "opinion", "editorial", "kolom", "tajuk", "scope", "surat-pembaca",
 )
 
 # SYS-35 (#118): the category gate was asymmetric by accident -- a category
@@ -310,7 +332,13 @@ class SemanticImportanceFilter:
         the topic backfill and SYS-38's re-queue all go through here, so "same
         decision as the live filter" is true by construction. Category gate
         first: `deny` rejects without embedding; `allow` and mixed buckets are
-        embedded once as a batch and decided by the probe."""
+        embedded once as a batch and decided by the probe.
+
+        CONTRACT (DBT-36 #152): exactly one FilterDecision per input text, in
+        input order. Every caller pairs the result with its inputs positionally
+        by `zip`, and two of them write to or delete from production, so a
+        result one element short would silently attribute every verdict after
+        the gap to the wrong article. A violation raises here instead."""
         if len(texts) != len(categories):
             raise ValueError("texts and categories must have the same length")
         decisions: List[Optional[FilterDecision]] = [None] * len(texts)
@@ -326,9 +354,24 @@ class SemanticImportanceFilter:
             to_score.append((i, text, gate))
         if to_score:
             embeddings = embed_for_probe(self.model, [t for _, t, _ in to_score], model_name=self.model_name)
-            for (i, _, gate), (is_news, topic, confidence, p_soft) in zip(to_score, self.probe.predict(embeddings)):
+            predictions = list(self.probe.predict(embeddings))
+            # A short `predict` must fail at its source, not propagate through
+            # `zip` as a truncation nobody can see downstream.
+            if len(predictions) != len(to_score):
+                raise ProbeArtifactError(
+                    f"probe.predict returned {len(predictions)} rows for {len(to_score)} embedded text(s)")
+            for (i, _, gate), (is_news, topic, confidence, p_soft) in zip(to_score, predictions):
                 decisions[i] = FilterDecision(
                     is_important=is_news, gate=gate or "score", score_passed=is_news,
                     topic=topic, topic_confidence=confidence, p_soft=p_soft,
                 )
-        return [d for d in decisions if d is not None]
+        # Backstop: the check above already guarantees every scored slot is
+        # filled, so this can only fire if the assignment logic itself grows a
+        # hole. It replaces `[d for d in decisions if d is not None]`, which
+        # turned exactly that bug into a silently shortened, misaligned list.
+        undecided = [i for i, d in enumerate(decisions) if d is None]
+        if undecided:
+            raise ProbeArtifactError(
+                f"classify_batch left {len(undecided)} of {len(texts)} text(s) undecided "
+                f"(first at index {undecided[0]}) -- refusing to return a short, misaligned list")
+        return list(decisions)
