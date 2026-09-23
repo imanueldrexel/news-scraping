@@ -20,23 +20,39 @@ class OkezoneCrawler(Crawler):
         self.website_name = WebsiteName.OKEZONE.value
         self.website_url = URL.OKEZONE.value
 
+    # SRC-43 (#146): OKEZONE publishes one sitemap per <subdomain>/<section>.
+    # The old re.sub kept only the subdomain (`news`, `women`, `celebrity`), so
+    # (a) every section under a subdomain collapsed onto one key and all but the
+    # last were silently never crawled -- `news.okezone.com/nasional`,
+    # `/megapolitan`, `/international`, `/nusantara` and nine regional desks all
+    # became the single key `news` -- and (b) `sitemap-web.xml` did not match the
+    # pattern at all, so 23 branches were keyed by their URL and `is_soft_branch`
+    # could never see `women/beauty` or `celebrity/hotgossip` (SRC-35 #128).
+    # Measured live 2026-09-23: 72 <loc> -> 34 keys (11 named). Host+path naming
+    # gives 49 distinct sections, none keyed by a URL.
+    #
+    # Only `sitemap.xml` is listed: every section publishes both, and
+    # `sitemap-web.xml` is the same URLs WITHOUT news:title/news:publication_date
+    # (verified on news/nasional -- 100 urls, news:title absent), i.e. the
+    # lastmod-only duplicate SYS-32 exists to drop. 49 sections, 0 web-only, so
+    # nothing is lost by skipping them. Same shape as DETIK's sitemap_news filter.
+    _BRANCH_RE = re.compile(r"https?://([a-z0-9-]+)\.okezone\.com/(?:([a-z0-9-]+)/)?sitemap\.xml$")
+
     @staticmethod
     def _get_branches(soup) -> Dict[str, str]:
         branches = {}
-        sitemaps = soup.find_all("sitemap")
-        for sitemap in sitemaps:
+        for sitemap in soup.find_all("sitemap"):
             link = sitemap.find("loc")
-            if link:
-                link = link.get_text(" ").strip()
-                branch_name = re.sub(
-                    r"(https://)(.*)(\.okezone.*/sitemap.xml)",
-                    r"\2",
-                    link,
-                )
-                if branch_name == "www":
-                    branch_name = "news"
-
-                branches[branch_name] = link.strip()
+            if not link:
+                continue
+            link = link.get_text(" ").strip()
+            match = OkezoneCrawler._BRANCH_RE.match(link)
+            if not match:
+                # SRC-39: a <loc> this crawler cannot name is skipped, never
+                # keyed by its URL -- re.match + skip, not re.sub.
+                continue
+            host, section = match.group(1), match.group(2)
+            branches["%s/%s" % (host, section) if section else host] = link
 
         return branches
 

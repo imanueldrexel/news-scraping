@@ -22,16 +22,19 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 
 from newscrawler.core.crawler_dict_list import CRAWLER_DICT  # noqa: E402
 
-# Same vocabulary SRC-34 proposes for the branch-level deny-list.
-SOFT = re.compile(
-    r"sport|bola|olahraga|showbiz|hiburan|entertain|seleb|celeb|lifestyle|gaya-?hidup|"
-    r"fashion|kuliner|food|resep|travel|wisata|otomotif|religi|kalam|ramadan|hype|"
-    r"\blife\b|korea|fiction|\bmen\b|\bwomen\b|games|quiz|horoskop|zodiak|video|photo|foto|"
-    r"english|health|sehat|kesehatan|tekno|gadget|musik|film|movie|kpop|jelita|nova|nakita|"
-    r"intisari|bobo|hai\b|cewekbanget|stylo|gridoto|motorplus|idea|ecotainment|tainment",
-    re.I,
-)
+# SRC-43 (#146): this script used to carry its own SOFT regex. It was a
+# DIFFERENT predicate from the one that ships -- unbounded substrings, and a
+# vocabulary that included `otomotif`, `kesehatan`, `tekno`, `video`/`foto`,
+# all of which SRC-35's sampling deliberately KEPT -- so the two disagreed and
+# this script's numbers were not the pipeline's. A fleet claim is verified with
+# the shipped function or it is not verified. `is_soft_branch` is a classmethod,
+# so per-crawler SOFT_BRANCH_EXCEPTIONS are honoured too.
 FINANCE = re.compile(r"ekonomi|bisnis|finan|keuangan|uang|saham|bursa|invest|makro|business|econ|market|emiten", re.I)
+
+# Sources whose live index still yields URL-shaped keys, each against its
+# ticket. --fail-on-url-keys exits 0 while only these appear, so the check can
+# be wired into a run without going red on known, tracked work.
+URL_KEY_WHITELIST = {"VIVA": "SRC-33 (#119)"}
 
 
 def probe(name, crawler):
@@ -48,6 +51,8 @@ def probe(name, crawler):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--website", default=None)
+    ap.add_argument("--fail-on-url-keys", action="store_true",
+                    help="Exit 2 if any source outside URL_KEY_WHITELIST keys a branch by its URL (SRC-43 #146)")
     args = ap.parse_args()
     names = [w.strip().upper() for w in args.website.split(",")] if args.website else sorted(CRAWLER_DICT)
     rows = []
@@ -56,18 +61,35 @@ def main():
         for f in as_completed(futs):
             rows.append(f.result())
     rows.sort()
+    offenders = {}
+    totals = [0, 0, 0]
     print(f"{'source':16} {'status':10} {'n':>3} {'soft':>4} {'fin':>3}  keys")
     for name, status, branches in rows:
+        crawler = CRAWLER_DICT[name]
         keys = list(branches)
-        soft = [k for k in keys if SOFT.search(k)]
+        # The shipped predicate, not a copy of it.
+        soft = [k for k in keys if crawler.is_soft_branch(k)]
         fin = [k for k in keys if FINANCE.search(k)]
         url_keys = [k for k in keys if k.startswith("http")]
+        totals = [totals[0] + len(keys), totals[1] + len(soft), totals[2] + len(url_keys)]
+        if url_keys:
+            offenders[name] = len(url_keys)
         shown = ", ".join(keys[:12]) + (f" … +{len(keys) - 12}" if len(keys) > 12 else "")
-        flag = " URL-KEYS" if url_keys else ""
+        flag = f" URL-KEYS={len(url_keys)}" if url_keys else ""
         print(f"{name:16} {status:10} {len(keys):3d} {len(soft):4d} {len(fin):3d}  {shown}{flag}")
         if soft:
-            print(f"{'':16} soft -> {', '.join(soft[:15])}")
+            print(f"{'':16} soft -> {', '.join(sorted(soft)[:15])}")
+
+    print(f"\nfleet: {totals[0]} branches listed, {totals[1]} dropped as soft, {totals[2]} keyed by URL")
+    untracked = {n: c for n, c in offenders.items() if n not in URL_KEY_WHITELIST}
+    for name, count in sorted(offenders.items()):
+        note = URL_KEY_WHITELIST.get(name, "UNTRACKED -- a <loc> must be skipped, not keyed by its URL (SRC-39 #133)")
+        print(f"  URL-keyed: {name:16} {count:4d}  {note}")
+    if args.fail_on_url_keys and untracked:
+        print(f"\nFAIL: {len(untracked)} source(s) key branches by URL with no ticket: {', '.join(sorted(untracked))}")
+        return 2
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
