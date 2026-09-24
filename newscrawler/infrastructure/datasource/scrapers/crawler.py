@@ -148,6 +148,20 @@ SOFT_BRANCH_WORDS = (
 # id like `12345-6` cannot match.
 _ARCHIVE_PARTITION_RE = re.compile(r"(?:^|[^0-9])(?:19|20)\d{2}[-_/.]\d{1,2}(?:[^0-9]|$)")
 
+# DBT-38 (#159): both drop lists get the same cap. SRC-45 capped only the
+# archive list, but `is_soft_branch` is evaluated first, so MEDIAINDONESIA's 140
+# `gallery-YYYY-MM` partitions match the word `gallery` and land in the SOFT
+# list -- which logged all 141 names on one ~2 KB line, hiding the single
+# interesting entry in it (`video`). The cap belongs on whichever list can grow,
+# and that is decided by evaluation order, not by intent.
+_LOG_SAMPLE = 5
+
+
+def _summarise(keys) -> str:
+    names = sorted(keys)
+    head = ", ".join(names[:_LOG_SAMPLE])
+    return head + (f" ... +{len(names) - _LOG_SAMPLE} more" if len(names) > _LOG_SAMPLE else "")
+
 
 class Crawler:
     # SRC-35: names this crawler keeps although they are in SOFT_BRANCH_WORDS,
@@ -202,9 +216,36 @@ class Crawler:
     def _get_branches(soup) -> Dict[str, str]:
         raise NotImplementedError
 
+    # SRC-48 (#158): the longest a derived section name may be before we assume
+    # the extraction failed and fall back to the branch name.
+    MAX_CATEGORY_LEN = 40
+
     @staticmethod
     def _get_branch_name_from_url(url) -> str:
         return "news"
+
+    @classmethod
+    def derives_category_from_url(cls) -> bool:
+        """SRC-48: does this crawler actually implement a per-article section?
+
+        The base returns the constant "news", which is strictly worse than a
+        real branch name, so only a subclass's own implementation is used. This
+        replaces `branch_name == link` in `_scrape`, which tested whether the
+        crawler could name its BRANCH -- an unrelated question that tied the
+        two together, so SRC-43 (#146) naming MEDIAINDONESIA's branches silently
+        stopped its per-article section from ever being consulted."""
+        return cls._get_branch_name_from_url is not Crawler._get_branch_name_from_url
+
+    @classmethod
+    def usable_section_name(cls, value) -> bool:
+        """SRC-48: a derived category we are willing to store.
+
+        A broken extractor must degrade to the branch name, never write a URL
+        into `sitemaps.category` -- that is the SRC-36/SRC-41 damage (6,104
+        rows repaired) and `category_gate` cannot read it. MEDIAINDONESIA's
+        override returned its input unchanged for exactly this reason."""
+        v = (value or "").strip()
+        return bool(v) and not v.lower().startswith("http") and len(v) <= cls.MAX_CATEGORY_LEN
 
     @classmethod
     def is_archive_branch(cls, branch_key: str) -> bool:
@@ -263,14 +304,12 @@ class Crawler:
         if dropped:
             logger.info(
                 f"{self.website_name}: dropped {len(dropped)} soft branch(es) before listing "
-                f"(SRC-35): {', '.join(sorted(dropped))}"
+                f"(SRC-35): {_summarise(dropped)}"
             )
         if archived:
-            sample = ", ".join(sorted(archived)[:5])
-            more = f" ... +{len(archived) - 5} more" if len(archived) > 5 else ""
             logger.info(
                 f"{self.website_name}: dropped {len(archived)} archive partition(s) before listing "
-                f"(SRC-45): {sample}{more}"
+                f"(SRC-45): {_summarise(archived)}"
             )
         return kept
 
@@ -308,7 +347,18 @@ class Crawler:
                     "headline": title,
                     "keywords": keywords,
                     "timestamp": timestamp_datetime,
-                    "category": new_branch_name if branch_name == link else branch_name,
+                    # SRC-48 (#158): prefer the article's own section when this
+                    # crawler derives one and the value is usable; otherwise the
+                    # branch name. The old test was `branch_name == link`, i.e.
+                    # "this crawler could not name its branch" -- which SRC-43
+                    # made permanently false for MEDIAINDONESIA, so every row
+                    # became `news` and the deny-list stopped seeing its
+                    # olahraga/hiburan content.
+                    "category": (
+                        new_branch_name
+                        if self.derives_category_from_url() and self.usable_section_name(new_branch_name)
+                        else branch_name
+                    ),
                     "sources": self.website_name,
                 }
                 articles.append(attributes)

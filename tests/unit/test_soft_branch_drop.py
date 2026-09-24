@@ -92,6 +92,21 @@ class TestDropSoftBranches:
         lines = [r.message for r in caplog.records if "soft branch(es)" in r.message]
         assert len(lines) == 1 and "bola" in lines[0] and "gaya-hidup" in lines[0] and "2 soft" in lines[0]
 
+    def test_a_large_soft_list_is_summarised_too(self, caplog):
+        """DBT-38 (#159): SRC-45 capped only the archive line, but
+        `is_soft_branch` runs first, so MEDIAINDONESIA's 140 `gallery-YYYY-MM`
+        partitions match the word `gallery` and land in the SOFT list. That
+        logged 141 names on one ~2 KB line and hid the one entry worth seeing."""
+        import logging
+        c = self._crawler()
+        branches = {f"gallery-2026-{m:02d}": str(m) for m in range(1, 13)}
+        branches["video"] = "v"
+        with caplog.at_level(logging.INFO, logger="newscrawler.infrastructure.datasource.scrapers.crawler"):
+            assert c.drop_soft_branches(branches) == {}
+        line = [r.message for r in caplog.records if "soft branch(es)" in r.message][0]
+        assert "13 soft branch(es)" in line and "+8 more" in line
+        assert len(line) < 300, line
+
     def test_nothing_to_drop_logs_nothing(self, caplog):
         import logging
         with caplog.at_level(logging.INFO, logger="newscrawler.infrastructure.datasource.scrapers.crawler"):
@@ -240,3 +255,62 @@ class TestArchiveAndMediaBranches:
             assert c.drop_soft_branches(branches) == {}
         line = [r.message for r in caplog.records if "archive partition(s)" in r.message][0]
         assert "12 archive partition(s)" in line and "+7 more" in line
+
+
+class TestCategorySourceSelection:
+    """SRC-48 (#158): which value lands in `sitemaps.category`.
+
+    `_scrape` used to choose with `branch_name == link` -- "this crawler could
+    not name its branch". SRC-43 (#146) gave MEDIAINDONESIA real branch names,
+    which made that permanently false, so its per-article section stopped being
+    consulted and every row became `category='news'`: a deliberately mixed
+    bucket the deny-list cannot reject. 185 soft-section URLs were filed that
+    way in one crawl."""
+
+    def test_base_crawler_does_not_derive_a_category_from_the_url(self):
+        # The base returns the constant "news", which is worse than a real
+        # branch name -- so it must not be preferred over one.
+        assert Crawler.derives_category_from_url() is False
+
+    def test_the_overriding_crawlers_are_detected(self):
+        for name in ("MEDIAINDONESIA", "MERDEKA", "PIKIRANRAKYAT", "GRIDID"):
+            assert CRAWLER_DICT[name].derives_category_from_url() is True, name
+
+    @pytest.mark.parametrize("value", ["olahraga", "uang", "politik-dan-hukum", "bali/politik"])
+    def test_a_section_name_is_usable(self, value):
+        assert Crawler.usable_section_name(value) is True
+
+    @pytest.mark.parametrize("value", [
+        None, "", "   ",
+        # A URL must never reach sitemaps.category -- the SRC-36/SRC-41 damage.
+        "https://mediaindonesia.com/olahraga/936920/jorge-martin-senang",
+        "http://x.com/a",
+        "a" * 41,
+    ])
+    def test_a_url_empty_or_overlong_value_is_not_usable(self, value):
+        assert Crawler.usable_section_name(value) is False
+
+    def test_mediaindonesia_derives_the_real_section(self):
+        c = CRAWLER_DICT["MEDIAINDONESIA"]
+        assert c._get_branch_name_from_url("https://mediaindonesia.com/olahraga/936920/jorge-martin-senang") == "olahraga"
+        assert c._get_branch_name_from_url("https://www.mediaindonesia.com/hiburan/936484/film-x") == "hiburan"
+        assert c._get_branch_name_from_url("https://mediaindonesia.com/politik-dan-hukum/1/x") == "politik-dan-hukum"
+        # Unnameable -> None, so _scrape falls back to the branch name.
+        assert c._get_branch_name_from_url("https://mediaindonesia.com/sitemap-news.xml") is None
+        assert c._get_branch_name_from_url("") is None
+
+    def test_mediaindonesia_soft_sections_are_denied_again(self):
+        """The regression, pinned end to end: the section the URL carries must
+        reach `category_gate` as a deny, not as the mixed bucket `news`."""
+        from newscrawler.core.importance_filter import category_gate
+        c = CRAWLER_DICT["MEDIAINDONESIA"]
+        for url, expected in (
+            ("https://mediaindonesia.com/olahraga/936920/jorge-martin-senang", "olahraga"),
+            ("https://mediaindonesia.com/hiburan/936913/weird-al-yankovic", "hiburan"),
+            ("https://mediaindonesia.com/sepak-bola/936918/timnas-vietnam", "sepak-bola"),
+            ("https://mediaindonesia.com/opini/936902/deindustrialisasi", "opini"),
+        ):
+            section = c._get_branch_name_from_url(url)
+            assert section == expected
+            assert category_gate(section) == "deny", section
+        assert category_gate("news") is None   # what they were being stored as

@@ -56,11 +56,23 @@ class MediaIndonesiaCrawler(Crawler):
             branches[match.group(1)] = link
         return branches
 
+    # SRC-48 (#158): the article's own section, e.g.
+    # https://mediaindonesia.com/olahraga/936920/jorge-martin-... -> `olahraga`.
+    # The previous implementation was
+    #   re.sub(r"(https://www.mediaindonesia.com/)(.*)(/)", r"\1", url)
+    # which substituted group 1 (the host prefix) and required a `www.` the live
+    # URLs do not have, so it returned its input unchanged -- a URL-shaped
+    # category, the damage SRC-36/SRC-41 repaired 6,104 rows for. Since
+    # MEDIAINDONESIA's only news-format sitemap is one mixed feed, this is the
+    # single thing that lets the category gate reject its soft sections.
+    _SECTION_RE = re.compile(r"https?://(?:www\.)?mediaindonesia\.com/([a-z0-9-]+)/")
+
     @staticmethod
     def _get_branch_name_from_url(url) -> str:
-        branch_name = re.sub(r"(https://www.mediaindonesia.com/)(.*)(/)", r"\1", url)
-        if branch_name:
-            return branch_name.strip()
+        match = MediaIndonesiaCrawler._SECTION_RE.match(url or "")
+        # None on no match: the base `_scrape` then falls back to the branch
+        # name rather than storing something unusable (SRC-48).
+        return match.group(1) if match else None
 
     @staticmethod
     def _get_whole_text(soup) -> List[str]:
