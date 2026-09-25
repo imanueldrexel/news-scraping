@@ -89,10 +89,43 @@ python -m newscrawler.tools.kb_query --ticker GOTO --format json --output goto.j
 
 ---
 
+## Database: container, backup, restore (OPS-23)
+
+Production Postgres is a Docker container on port **5431**, database `newsaggregator`, Postgres **12.2**. Its definition is `docker/docker-compose.yaml` (restart `unless-stopped`, named volume `newsaggregator_pgdata`, container `newsaggregator-postgres`). A fresh volume is empty: restore a dump into it, or run `scripts/migrate.py`. Never bring back the old `docker/postgresql_tables/init.sql`; it predates every migration.
+
+**Current state (2026-09-25):** the live container is still the old one, `docker-news-aggregator-postgres-local-1`. It was created from a compose file in a since-deleted `.claude` worktree and keeps its data in an **anonymous** volume (`a3ebbe69…`). Its restart policy was `no` (it did not come back after a Docker restart on 2026-09-25) and is now `unless-stopped` via `docker update`. It still needs moving onto the checked-in definition (below, owner-approved). Until then, **never `docker rm` it, and never run `docker volume prune` or `docker system prune --volumes` on this machine**. Either one orphans or deletes the database.
+
+**Backup.** `scripts/backup_db.py` runs `pg_dump -Fc` *inside* the container, so client and server versions always match and the host needs no Postgres install. It writes `backups/pg_dump/newsaggregator_<UTC stamp>.dump` (gitignored) and verifies it with `pg_restore --list`, which must show a TABLE DATA entry for sitemaps, articles, chunks, entities, entity_mentions and crawl_log. Only then does it prune to the newest `DB_BACKUP_KEEP` (default 14). A dump that fails verification is deleted, prunes nothing, sends a Telegram alert and exits 1. It finds the container as the one running container publishing `POSTGRES_DB_PORT`; set `DB_CONTAINER` to override. Registered daily at 05:00 as **"NewsAggregator DB Backup"**, with the same battery/wake settings as OPS-01 (command in the script's docstring). The 05:30 health check alerts when the newest dump is missing or older than `DB_BACKUP_MAX_AGE_HOURS` (default 48), because a backup job cannot report that it stopped firing. `venv\Scripts\python.exe scripts\backup_db.py --check` gives the same answer by hand. A dump is ~60 MB (2026-09-25: 152,928 sitemaps, 11,847 articles, 99,221 chunks). The FAISS indexes (`NEWS_L1/`, `NEWS_L2/`) are **not** in the dump. They can be rebuilt from `chunks` (`scripts/reset_faiss_index.py`) but are slow to re-embed, so copy them alongside a dump before any risky operation.
+
+**Restore check** (safe, does not touch `newsaggregator` or the integration DB `newsaggregator_test`):
+
+```bash
+# Git Bash: MSYS_NO_PATHCONV=1 stops /tmp being rewritten to a Windows path
+export MSYS_NO_PATHCONV=1; C=<container>; F=backups/pg_dump/<newest>.dump
+docker exec $C createdb -U postgres newsaggregator_restore_check
+docker exec -i $C pg_restore -U postgres -d newsaggregator_restore_check --no-owner < "$F"
+# compare SELECT count(*) of the six tables against newsaggregator, then:
+docker exec $C dropdb -U postgres newsaggregator_restore_check
+```
+
+Last run 2026-09-25 on `newsaggregator_20260925T140752Z.dump`: `pg_restore` rc 0, all six tables equal row-for-row.
+
+**Moving onto the checked-in definition** (a write: needs the owner's go-ahead and a window with no crawl running):
+
+1. `venv\Scripts\python.exe scripts\backup_db.py`, then copy `NEWS_L1/` and `NEWS_L2/` aside.
+2. `docker update --restart no docker-news-aggregator-postgres-local-1` then `docker stop docker-news-aggregator-postgres-local-1`. **Stop it, do not remove it.** It is the rollback, and its anonymous volume stays with it.
+3. `docker compose -f docker/docker-compose.yaml up -d`, and wait for `docker inspect -f "{{.State.Health.Status}}" newsaggregator-postgres` to report `healthy`.
+4. `docker exec -i newsaggregator-postgres pg_restore -U postgres -d newsaggregator --no-owner < backups/pg_dump/<that dump>`, then compare the six counts against the old container's (start it on another port if needed).
+5. `docker restart newsaggregator-postgres`, then restart Docker Desktop itself. The container must come back **without** a manual start. `venv\Scripts\python.exe scripts\migrate.py` must report nothing to apply.
+6. After a week of clean runs, `docker rm docker-news-aggregator-postgres-local-1` and `docker volume rm a3ebbe69…`. That is the only step that cannot be undone.
+
+---
+
 ## Recommended Schedule (Windows Task Scheduler)
 
 | Time (WIB) | Task | Command |
 |---|---|---|
+| 05:00 | Database backup (OPS-23) | `scripts/backup_db.py` — registered as **"NewsAggregator DB Backup"**, see "Database: container, backup, restore" |
 | 05:30 | Crawler health check (OPS-01) | `scripts/run_scheduled_health_check.py` — registered, see below |
 | 05:45 | Store consistency check (OPS-04) | `scripts/check_store_consistency.py --quiet --report-dir crawler_health` — not yet wired to Task Scheduler/Telegram; run manually or add alongside OPS-01 |
 | 07:00 | Morning crawl (OPS-19) | `scripts/run_scheduled_crawl.py` — **not yet registered; the first unattended run is an owner decision.** `python __main__.py` remains the manual equivalent |
@@ -112,16 +145,16 @@ One process, one model load — `init_crawler()` costs ~2 min and ~4 GB RSS, so 
 Summary line (Telegram, via the OPS-01 notifier): `N sources, +X sitemaps, +Y articles, Z with 0 saved`, then failures by name, then any source that has saved nothing for `SCHEDULE_ZERO_SAVE_RUNS` runs, then what was skipped. Exit code 0 when every source completed, 1 when any failed or timed out.
 
 ```powershell
-venv\Scripts\python.exe scriptsun_scheduled_crawl.py --dry-run          # print the plan, crawl nothing
-venv\Scripts\python.exe scriptsun_scheduled_crawl.py --phase sitemap
-venv\Scripts\python.exe scriptsun_scheduled_crawl.py --website KOMPAS,CNBC
+venv\Scripts\python.exe scripts\run_scheduled_crawl.py --dry-run          # print the plan, crawl nothing
+venv\Scripts\python.exe scripts\run_scheduled_crawl.py --phase sitemap
+venv\Scripts\python.exe scripts\run_scheduled_crawl.py --website KOMPAS,CNBC
 ```
 
 Registration (the two battery settings matter for the same reason they do for OPS-01 — this is a laptop, and Task Scheduler silently skips a battery run without marking it "missed", so `-StartWhenAvailable` never queues a catch-up):
 
 ```powershell
 schtasks /Create /TN "NewsAggregator Scheduled Crawl (morning)" /SC DAILY /ST 07:00 ^
-    /TR "<repo>env\Scripts\python.exe <repo>\scriptsun_scheduled_crawl.py" /RU "<user>"
+    /TR "<repo>\venv\Scripts\python.exe <repo>\scripts\run_scheduled_crawl.py" /RU "<user>"
 $s = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
         -StartWhenAvailable -WakeToRun -ExecutionTimeLimit (New-TimeSpan -Hours 4)
 Set-ScheduledTask -TaskName "NewsAggregator Scheduled Crawl (morning)" -Settings $s

@@ -1,0 +1,42 @@
+# OPS-23 (#164): the production Postgres for newscrawler, checked in.
+#
+# Until 2026-09-25 the live container was created from a compose file inside a
+# since-deleted .claude worktree, with restart policy "no" and an anonymous data
+# volume -- it did not come back after a Docker restart, nobody could re-create
+# it from the repo, and `docker volume prune` would have deleted the database.
+#
+#   docker compose -f docker/docker-compose.yaml up -d
+#
+# The schema is NOT created here. A fresh volume is either restored from a dump
+# (OPERATIONS.md, "Database: container, backup, restore") or built with
+# `scripts/migrate.py`. The old docker/postgresql_tables/init.sql (removed in
+# 2cd7be0) predates every migration -- posted_at as a timestamp, no unique keys --
+# and must not come back.
+name: newsaggregator
+
+services:
+  postgres:
+    # Same version the data directory was initialised with (PG_VERSION=12.2 on the
+    # old container). A major-version change needs a dump/restore, not a new tag.
+    image: postgres:12.2-alpine
+    container_name: newsaggregator-postgres
+    restart: unless-stopped
+    ports:
+      - "5431:5432"
+    environment:
+      POSTGRES_DB: newsaggregator
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d newsaggregator"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:
+    # A fixed name, so `docker volume ls` says what it is and a prune of
+    # "unused anonymous volumes" can never select it.
+    name: newsaggregator_pgdata

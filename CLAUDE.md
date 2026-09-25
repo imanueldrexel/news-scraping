@@ -96,7 +96,7 @@ Run `tests/unit` / `tests/integration` explicitly rather than bare `pytest` (the
 
 ## Configuration
 
-All settings are read from env vars in `newscrawler/core/constants.py` **at import time**, so `load_dotenv()` must run before any `newscrawler` import (`__main__.py`, `web/app.py`, and the `scripts/*.py` all do this). The `.env` file at the repo root is the live config (gitignored). Defaults worth knowing: Postgres is `localhost:5431/newsaggregator` (non-standard port), `SITEMAP_RECRAWL_COOLDOWN_DAYS=7`, `DAILY_API_CALL_LIMIT=1400` Gemini calls, `PARALLELIZE` is hard-coded `True`, `MAX_WORKER` controls the thread pool.
+All settings are read from env vars in `newscrawler/core/constants.py` **at import time**, so `load_dotenv()` must run before any `newscrawler` import (`__main__.py`, `web/app.py`, and the `scripts/*.py` all do this). The `.env` file at the repo root is the live config (gitignored). Defaults worth knowing: Postgres is `localhost:5431/newsaggregator` (non-standard port) — a Docker container defined by `docker/docker-compose.yaml` (the live one; not the abandoned root `docker-compose.yml`), dumped daily by `scripts/backup_db.py`; never `docker volume prune` on this machine (OPS-23, see OPERATIONS.md "Database: container, backup, restore"), `SITEMAP_RECRAWL_COOLDOWN_DAYS=7`, `DAILY_API_CALL_LIMIT=1400` Gemini calls, `PARALLELIZE` is hard-coded `True`, `MAX_WORKER` controls the thread pool.
 
 ## Architecture
 

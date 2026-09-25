@@ -22,12 +22,26 @@ HEALTH_ALERT_ON_NO_CHANGE=false. The decision is a pure function, tested directl
 import importlib.util
 import json
 import os
+import sys
 from unittest.mock import MagicMock, patch
 
-_SCRIPT = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-    "scripts", "run_scheduled_health_check.py",
+import pytest
+
+_SCRIPTS = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "scripts",
 )
+_SCRIPT = os.path.join(_SCRIPTS, "run_scheduled_health_check.py")
+if _SCRIPTS not in sys.path:
+    sys.path.insert(0, _SCRIPTS)
+
+
+@pytest.fixture(autouse=True)
+def _fresh_backup():
+    """OPS-23: every test runs with a fresh dump, so the backup-age alert never
+    leaks into the notification counts the tests below assert. The alert's own
+    tests override it."""
+    with patch("backup_db.newest_dump_age_hours", return_value=1.0):
+        yield
 
 
 def _load():
@@ -218,3 +232,30 @@ class TestMissedRunGapDetection:
         ), patch("notify_telegram.send"):
             mod.main()
         assert call_order == ["gap_check", "subprocess"]
+
+
+class TestStaleBackupAlert:
+    """OPS-23 (#164): the backup job cannot report its own failure to fire."""
+
+    def _run(self, age):
+        mod = _load()
+        with patch("backup_db.newest_dump_age_hours", return_value=age), \
+             patch.object(mod, "_hours_since_last_health_check", return_value=None), \
+             patch.object(mod.subprocess, "run") as mock_run, \
+             patch("notify_telegram.send") as mock_send:
+            mock_run.return_value = MagicMock(returncode=0, stdout="ALL OK", stderr="")
+            result = mod.main()
+        return result, [c[0][0] for c in mock_send.call_args_list]
+
+    def test_an_old_dump_alerts_and_the_check_still_runs(self):
+        result, sent = self._run(72.0)
+        assert result == 0
+        assert len(sent) == 1 and "72.0h old" in sent[0] and "NewsAggregator DB Backup" in sent[0]
+
+    def test_no_dump_at_all_alerts(self):
+        _, sent = self._run(None)
+        assert len(sent) == 1 and "backup_db.py" in sent[0]
+
+    def test_a_fresh_dump_is_silent(self):
+        _, sent = self._run(3.0)
+        assert sent == []

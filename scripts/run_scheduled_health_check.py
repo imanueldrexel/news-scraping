@@ -106,6 +106,25 @@ def _hours_since_last_health_check():
         return None
 
 
+def _stale_backup_message():
+    """OPS-23 (#164): a message when the newest verified pg_dump is missing or older
+    than DB_BACKUP_MAX_AGE_HOURS, else None. The backup job cannot report its own
+    failure to fire, so this job does it. Never raises."""
+    try:
+        import backup_db
+        age = backup_db.newest_dump_age_hours()
+        limit = backup_db.MAX_AGE_HOURS
+    except Exception as e:
+        logger.warning(f"Could not check the database backup's age: {e}")
+        return None
+    if age is None:
+        return "no verified dump in backups/pg_dump -- run scripts/backup_db.py"
+    if age > limit:
+        return (f"the newest dump is {age:.1f}h old (limit {limit:.0f}h) -- the backup job may not be "
+                f'firing. Check `schtasks /Query /TN "NewsAggregator DB Backup" /FO LIST /V`.')
+    return None
+
+
 def main() -> int:
     gap_hours = _hours_since_last_health_check()
     if gap_hours is not None and gap_hours > MISSED_RUN_GAP_HOURS:
@@ -117,6 +136,12 @@ def main() -> int:
             f'Health Check" /FO LIST /V`.'
         )
         logger.warning(f"Missed-run gap detected: {gap_hours:.1f}h since last health_check row")
+
+    stale_backup = _stale_backup_message()
+    if stale_backup:
+        from notify_telegram import send
+        send(f"💾 NewsAggregator DB backup: {stale_backup}")
+        logger.warning(stale_backup)
 
     python = sys.executable
     check_script = os.path.join(REPO_ROOT, "scripts", "check_crawlers.py")
