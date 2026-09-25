@@ -18,7 +18,6 @@ class URL(enum.Enum):
     # RSS on a subdomain with no sitemap) 404s permanently and hid 60 live
     # Indonesian feeds behind an unrelated liveness check.
     ANTARANEWS = "https://www.antaranews.com/rss/ekonomi.xml"
-    GRIDID = "https://www.grid.id/sitemap/news/sitemap.xml"
     KONTAN = "https://www.kontan.co.id/sitemap.xml"
     VIVA = "https://www.viva.co.id/sitemap.xml"
     BISNIS = "https://www.bisnis.com/sitemap-news.xml"

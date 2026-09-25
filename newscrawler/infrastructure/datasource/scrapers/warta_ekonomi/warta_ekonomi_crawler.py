@@ -15,10 +15,9 @@ logger.setLevel(logging.INFO)
 
 
 class WartaEkonomiCrawler(Crawler):
-    # SRC-35: WARTAEKONOMI `travel` sampled 2026-09-22 as tourism-INDUSTRY coverage
-    # ("Rupiah Melemah, Turis Asing Justru Makin Ramai Serbu Indonesia, BPS Catat
-    # Lonjakan Wisman"), not travel guides -- the call SYS-31 made for its `otomotif`.
-    SOFT_BRANCH_EXCEPTIONS = frozenset({"travel"})
+    # SRC-52 (#169, owner decision 2026-09-25): no exceptions. `travel` was kept by
+    # SRC-35 as tourism-industry coverage, but the category gate denies `travel`, so
+    # every row was fetched only to be rejected (24 rows, 0 saved). Dropped.
 
     def __init__(self):
         super(WartaEkonomiCrawler, self).__init__()

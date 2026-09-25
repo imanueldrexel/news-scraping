@@ -15,10 +15,11 @@ logger.setLevel(logging.INFO)
 
 
 class KontanCrawler(Crawler):
-    # SRC-35: KONTAN `english` is its market wire, not a translated soft desk
-    # ("GLOBAL MARKETS-Tech Rally Boosts Asian Stocks", "Global Oil Prices Plummet to
-    # 12-Day Low"), sampled 2026-09-22.
-    SOFT_BRANCH_EXCEPTIONS = frozenset({"english"})
+    # SRC-52 (#169, owner decision 2026-09-25): no exceptions. `english` was kept
+    # by SRC-35 as KONTAN's market wire ("GLOBAL MARKETS-Oil Jump Sends 30-Year
+    # Yields to Two-Decade High"), but the category gate denies `english`, so the
+    # exception only bought a fetch per row before a certain rejection (300 rows,
+    # 0 saved). The owner chose to drop the branch rather than scope an allow.
 
     def __init__(self):
         super(KontanCrawler, self).__init__()

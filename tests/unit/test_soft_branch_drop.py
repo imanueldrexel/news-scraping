@@ -65,10 +65,11 @@ class TestIsSoftBranch:
 
 
 class TestPerCrawlerExceptions:
-    def test_wartaekonomi_keeps_travel_and_kontan_keeps_english(self):
-        # Their samples are cited in each crawler; every other source drops both.
-        assert CRAWLER_DICT["WARTAEKONOMI"].is_soft_branch("travel") is False
-        assert CRAWLER_DICT["KONTAN"].is_soft_branch("english") is False
+    def test_kontan_english_and_wartaekonomi_travel_are_dropped_now(self):
+        # SRC-52 (#169): their exceptions were undone by the category gate, so the
+        # owner removed them; like every other source they drop both.
+        assert CRAWLER_DICT["WARTAEKONOMI"].is_soft_branch("travel") is True
+        assert CRAWLER_DICT["KONTAN"].is_soft_branch("english") is True
         assert CRAWLER_DICT["JPNN"].is_soft_branch("english") is True
         assert CRAWLER_DICT["JPNN"].is_soft_branch("travel") is True
         assert CRAWLER_DICT["WARTAEKONOMI"].is_soft_branch("english_edition") is True
@@ -274,7 +275,7 @@ class TestCategorySourceSelection:
         assert Crawler.derives_category_from_url() is False
 
     def test_the_overriding_crawlers_are_detected(self):
-        for name in ("MEDIAINDONESIA", "MERDEKA", "PIKIRANRAKYAT", "GRIDID"):
+        for name in ("MEDIAINDONESIA", "MERDEKA", "PIKIRANRAKYAT"):
             assert CRAWLER_DICT[name].derives_category_from_url() is True, name
 
     @pytest.mark.parametrize("value", ["olahraga", "uang", "politik-dan-hukum", "bali/politik"])
@@ -560,3 +561,37 @@ class TestScrapeCategorySelection:
         assert not CRAWLER_DICT["KOMPAS"].derives_category_from_url()
         rows = scrape_with("KOMPAS", "money", "https://money.kompas.com/read/2026/09/24/1/harga-emas")
         assert rows[0]["category"] == "money"
+
+
+class TestExceptionsSurviveTheCategoryGate:
+    """SRC-52 (#169): a SOFT_BRANCH_EXCEPTIONS entry keeps a branch listed, and the
+    crawler stores the branch key as the category, so an exception the category
+    gate denies only buys a fetch per row before a certain rejection (KONTAN
+    `english`: 300 rows, 0 saved). Every exception must survive the gate for its
+    own source."""
+
+    @pytest.mark.parametrize("name", sorted(CRAWLER_DICT))
+    def test_no_exception_is_denied_at_category_level(self, name):
+        crawler = CRAWLER_DICT[name]
+        if crawler.derives_category_from_url():
+            pytest.skip("stores a per-article section, not the branch key")
+        undone = sorted(k for k in crawler.SOFT_BRANCH_EXCEPTIONS if category_gate(k, name) == "deny")
+        assert undone == []
+
+
+def test_gridid_is_retired_everywhere():
+    """SRC-37 (#130) / SRC-52: registered nowhere (the SYS-31 deny entries for its
+    brands stay, and so do its stored rows)."""
+    import importlib.util
+    import os
+    from newscrawler.core.crawler_url_list import WEB_URL_DICT
+    from newscrawler.domain.entities.extraction.url_data import URL
+    from newscrawler.domain.entities.extraction.website_name import WebsiteName
+    assert "GRIDID" not in CRAWLER_DICT and "GRIDID" not in WEB_URL_DICT
+    assert "GRIDID" not in WebsiteName.__members__ and "GRIDID" not in URL.__members__
+    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    spec = importlib.util.spec_from_file_location("nm", os.path.join(root, "__main__.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    assert "GRIDID" not in mod.HEALTHY
+    assert not os.path.exists(os.path.join(root, "newscrawler", "infrastructure", "datasource", "scrapers", "grid_id"))

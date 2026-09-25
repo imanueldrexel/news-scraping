@@ -13,9 +13,6 @@ from newscrawler.infrastructure.datasource.scrapers.cnn.cnn_crawler import CNNCr
 from newscrawler.infrastructure.datasource.scrapers.emitennews.emitennews_crawler import (
     EmitennewsCrawler,
 )
-from newscrawler.infrastructure.datasource.scrapers.grid_id.grid_id_crawler import (
-    GridIdCrawler,
-)
 from newscrawler.infrastructure.datasource.scrapers.idx_channel.idxchannel_crawler import (
     IdxChannelCrawler,
 )
@@ -92,7 +89,6 @@ CRAWLER_DICT = {
     WebsiteName.TRIBUN.value: TribunCrawler(),
     WebsiteName.TEMPO.value: TempoCrawler(),
     WebsiteName.ANTARANEWS.value: AntaraNewsCrawler(),
-    WebsiteName.GRIDID.value: GridIdCrawler(),
     WebsiteName.KONTAN.value: KontanCrawler(),
     WebsiteName.BISNIS.value: BisnisCrawler(),
     WebsiteName.LIPUTAN6.value: LiputanEnamCrawler(),

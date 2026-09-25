@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 # CNBC/CNN/KONTAN/PIKIRANRAKYAT). Override with
 #   CRAWL_WEBSITES=KOMPAS,CNBC   (comma-separated)   CRAWL_TASK=sitemap|full_text|all
 HEALTHY = [
-    "ANTARANEWS", "BERITASATU", "CNBC", "CNN", "DETIK", "EMITENNEWS", "ERAID", "GRIDID",
+    "ANTARANEWS", "BERITASATU", "CNBC", "CNN", "DETIK", "EMITENNEWS", "ERAID",
     "IDNTIMES", "IDXCHANNEL", "INEWS", "INVESTORID", "JPNN", "KOMPAS", "KONTAN", "KUMPARAN",
     "LIPUTAN6", "MEDIAINDONESIA", "MERDEKA", "OKEZONE", "PIKIRANRAKYAT", "SINDONEWS",
     "SUARA", "TEMPO", "TIRTO", "TRIBUN", "TVONENEWS", "VIVA", "WARTAEKONOMI",
@@ -23,7 +23,8 @@ HEALTHY = [
 #   BISNIS   SRC-03   genuine Cloudflare managed challenge, needs a headless
 #            browser to even attempt (confirmed 2026-09-19, not pursued)
 # KAPANLAGI and BATAMPOS were retired 2026-09-20 (SRC-17/SRC-18) -- no usable
-# finance content -- and are no longer registered anywhere in the pipeline.
+# finance content -- and GRIDID 2026-09-25 (SRC-37/SRC-52: every branch a
+# lifestyle/gossip/hobby magazine, 0 articles ever). None is registered anywhere.
 
 
 def main():

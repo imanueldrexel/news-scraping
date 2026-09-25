@@ -2,7 +2,6 @@ from newscrawler.domain.entities.extraction.url_data import URL
 from newscrawler.domain.entities.extraction.website_name import WebsiteName
 
 WEB_URL_DICT = {
-    WebsiteName.GRIDID.value: URL.GRIDID.value,
     WebsiteName.SINDONEWS.value: URL.SINDONEWS.value,
     WebsiteName.PIKIRANRAKYAT.value: URL.PIKIRANRAKYAT.value,
     WebsiteName.KOMPAS.value: URL.KOMPAS.value,

@@ -285,9 +285,9 @@ class TestSummaryLine:
     def test_a_persistent_zero_saver_is_called_out(self):
         line = rc.summary_line(
             self._phases({"KOMPAS": "ok"}), {"KOMPAS": {"sitemaps": 10, "articles": 0}},
-            ["GRIDID"], {},
+            ["TVONENEWS"], {},
         )
-        assert "0 saved for %d runs: GRIDID" % rc.ZERO_SAVE_RUNS_BEFORE_ALERT in line
+        assert "0 saved for %d runs: TVONENEWS" % rc.ZERO_SAVE_RUNS_BEFORE_ALERT in line
 
     def test_skipped_sources_are_reported(self):
         line = rc.summary_line(self._phases({"KOMPAS": "ok"}), {"KOMPAS": {"sitemaps": 1, "articles": 1}},
@@ -325,8 +325,8 @@ class TestZeroSaveWindow:
         return SimpleNamespace(website=website, article_count=count)
 
     def test_a_source_with_three_zero_runs_is_flagged(self):
-        s = self._Session([self._row("GRIDID", 0) for _ in range(3)])
-        assert rc.zero_save_sources(s) == ["GRIDID"]
+        s = self._Session([self._row("TVONENEWS", 0) for _ in range(3)])
+        assert rc.zero_save_sources(s) == ["TVONENEWS"]
 
     def test_one_non_zero_run_clears_it(self):
         s = self._Session([self._row("KOMPAS", 0), self._row("KOMPAS", 5), self._row("KOMPAS", 0)])

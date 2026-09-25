@@ -80,4 +80,7 @@ class TestDrainWebsite:
 class TestDefaults:
     def test_default_websites_includes_wartaekonomi(self):
         assert "WARTAEKONOMI" in backfill.DEFAULT_WEBSITES
-        assert len(backfill.DEFAULT_WEBSITES) >= 30
+        # Every default must be a registered crawler (a count broke on each
+        # retirement: KAPANLAGI/BATAMPOS, then GRIDID).
+        from newscrawler.core.crawler_dict_list import CRAWLER_DICT
+        assert set(backfill.DEFAULT_WEBSITES) <= set(CRAWLER_DICT)
