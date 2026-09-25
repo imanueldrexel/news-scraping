@@ -301,8 +301,11 @@ class TestCategorySourceSelection:
         assert c._get_branch_name_from_url("") is None
 
     def test_mediaindonesia_soft_sections_are_denied_again(self):
-        """The regression, pinned end to end: the section the URL carries must
-        reach `category_gate` as a deny, not as the mixed bucket `news`."""
+        """The helpers' half: the section a URL carries is a deny, not the mixed
+        bucket `news`. This does NOT call `_scrape`, so it cannot catch the
+        SRC-48 regression itself (DBT-39 #166: the pre-fix expression passed
+        every test while this one claimed to pin it "end to end").
+        TestScrapeCategorySelection drives `_scrape`."""
         from newscrawler.core.importance_filter import category_gate
         c = CRAWLER_DICT["MEDIAINDONESIA"]
         for url, expected in (
@@ -498,3 +501,62 @@ class TestEveryCallerPassesTheSource:
         assert ("newscrawler/domain/services/crawler_service_impl.py", "classify") in seen
         assert ("scripts/reject_denied_categories.py", "category_gate") in seen
         assert ("scripts/train_importance_probe.py", "classify_batch") in seen
+
+
+def _urlset(*locs):
+    body = "".join(
+        f"<url><loc>{loc}</loc><news:news><news:publication_date>2026-09-24T10:00:00+07:00"
+        f"</news:publication_date><news:title>Judul {i}</news:title></news:news></url>"
+        for i, loc in enumerate(locs))
+    return ('<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" '
+            'xmlns:news="http://www.google.com/schemas/sitemap-news/0.9">' + body + "</urlset>")
+
+
+@pytest.fixture
+def scrape_with(monkeypatch):
+    """Drive a registered crawler's real `_scrape` on a recorded <urlset>; the page
+    loader is restored afterwards (CRAWLER_DICT instances are shared)."""
+    from bs4 import BeautifulSoup
+
+    def run(name, branch_name, *locs):
+        crawler = CRAWLER_DICT[name]
+        loader = MagicMock()
+        loader.get_soup = lambda url: BeautifulSoup(_urlset(*locs), "xml")
+        monkeypatch.setattr(crawler, "page_loader", loader)
+        return crawler._scrape("https://example.invalid/%s/sitemap.xml" % branch_name, branch_name)
+    return run
+
+
+class TestScrapeCategorySelection:
+    """DBT-39 (#166): SRC-48's regression was ONE expression in `_scrape`, and the
+    test that claimed to pin it "end to end" never called `_scrape` -- QA put the
+    exact pre-fix expression back and all 1,039 unit tests passed. These call it.
+
+    The pre-SRC-48 expression was
+        "category": new_branch_name if branch_name == link else branch_name
+    With a real branch name (`news`) the condition is always False, so every row
+    was stored as `news`."""
+
+    OLAHRAGA = "https://mediaindonesia.com/olahraga/936490/jadwal-asian-games-2026-hari-ini"
+    POLITIK = "https://mediaindonesia.com/politik-dan-hukum/936501/dpr-sahkan-ruu"
+    UNNAMEABLE = "https://mediaindonesia.com/936777"
+
+    def test_mediaindonesia_stores_each_articles_own_section_under_a_real_branch_name(self, scrape_with):
+        rows = scrape_with("MEDIAINDONESIA", "news", self.OLAHRAGA, self.POLITIK)
+        assert [r["category"] for r in rows] == ["olahraga", "politik-dan-hukum"]
+
+    def test_the_stored_soft_section_is_denied_and_the_news_desk_is_not(self, scrape_with):
+        rows = scrape_with("MEDIAINDONESIA", "news", self.OLAHRAGA, self.POLITIK)
+        gates = [category_gate(r["category"], r["sources"]) for r in rows]
+        assert gates == ["deny", "allow"]
+
+    def test_an_unnameable_link_falls_back_to_the_branch_name(self, scrape_with):
+        rows = scrape_with("MEDIAINDONESIA", "news", self.UNNAMEABLE)
+        assert rows[0]["category"] == "news"
+
+    def test_a_crawler_that_derives_no_section_stores_its_branch_name_never_news(self, scrape_with):
+        """The base counterpart: the base `_get_branch_name_from_url` returns the
+        constant `news`, which must never win over a real branch name."""
+        assert not CRAWLER_DICT["KOMPAS"].derives_category_from_url()
+        rows = scrape_with("KOMPAS", "money", "https://money.kompas.com/read/2026/09/24/1/harga-emas")
+        assert rows[0]["category"] == "money"
