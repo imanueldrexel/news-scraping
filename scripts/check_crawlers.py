@@ -65,12 +65,22 @@ STATUS_FALLBACK = "FALLBACK"
 STATUS_PARTIAL = "PARTIAL"
 STATUS_BROKEN = "BROKEN"
 STATUS_ERROR = "ERROR"
+# OPS-17 (#89): the listing parses and returns links, but the newest entry in it
+# is older than HEALTH_STALE_LISTING_DAYS. ">=1 link parsed" was the whole
+# definition of a healthy listing, which reports a frozen sitemap as OK --
+# SUARA's 20 regional sitemaps all return 200 with 150 <url> each, every one
+# last updated 2022-10-23. Needs attention, non-fatal like FALLBACK: the source
+# is serving, it just is not serving anything new.
+STATUS_STALE = "STALE"
 # Severity order: drives the table sort and the "(10 BROKEN, 1 ERROR, 6 FALLBACK)" breakdowns.
-STATUSES = (STATUS_BROKEN, STATUS_ERROR, STATUS_PARTIAL, STATUS_FALLBACK, STATUS_OK)
+STATUSES = (STATUS_BROKEN, STATUS_ERROR, STATUS_PARTIAL, STATUS_FALLBACK, STATUS_STALE, STATUS_OK)
 # UNHEALTHY drives the exit code -- FALLBACK is deliberately excluded (OPS-02:
 # "needs attention but non-fatal", since articles are still being produced).
 UNHEALTHY = {STATUS_PARTIAL, STATUS_BROKEN, STATUS_ERROR}
-NEEDS_ATTENTION = UNHEALTHY | {STATUS_FALLBACK}
+NEEDS_ATTENTION = UNHEALTHY | {STATUS_FALLBACK, STATUS_STALE}
+
+# OPS-17: how old the newest listed entry may be before the listing is STALE.
+HEALTH_STALE_LISTING_DAYS = int(os.getenv("HEALTH_STALE_LISTING_DAYS", "7"))
 
 # OPS-13: how an outlet moved relative to its previous crawl_log row.
 CHANGE_NEW = "new"                # was OK, now needs attention -- the line the operator must read
@@ -117,7 +127,51 @@ def pick_branch(branches: dict):
     return next(iter(branches.items()))
 
 
-def classify(sitemap_links: int, detail_ok: int, extractors: list = None, error: bool = False) -> str:
+def _fetch_with_reason(page_loader, url):
+    """OPS-17: prefer the reason-carrying API (`get_soup_with_reason`, added by
+    OPS-15), and fall back to plain `get_soup` for a loader or a test double that
+    does not provide it. The result is only used when it is a real 2-tuple, so a
+    stub returning something else degrades to "no reason" instead of raising
+    inside the one check that is supposed to never raise."""
+    getter = getattr(page_loader, "get_soup_with_reason", None)
+    if getter is not None:
+        try:
+            out = getter(url)
+        except TypeError:
+            out = None
+        if isinstance(out, tuple) and len(out) == 2:
+            return out
+    return page_loader.get_soup(url), None
+
+
+def newest_listed_age(articles, now=None):
+    """OPS-17: (newest timestamp seen in the listing, its age in whole days).
+
+    `_scrape` puts the parsed `news:publication_date`/`lastmod` on each entry as
+    `timestamp`. Entries without one are ignored; (None, None) when nothing in
+    the listing carries a date, which is SYS-32's lastmod-only shape and must not
+    be reported as stale."""
+    stamps = []
+    for a in articles or []:
+        ts = (a or {}).get("timestamp") if isinstance(a, dict) else getattr(a, "timestamp", None)
+        if ts is None:
+            continue
+        stamps.append(ts)
+    if not stamps:
+        return None, None
+    newest = max(stamps)
+    reference = now or datetime.now(getattr(newest, "tzinfo", None))
+    try:
+        age = (reference - newest).days
+    except TypeError:
+        # naive vs aware -- compare on the naive wall clock rather than crash.
+        newest_naive = newest.replace(tzinfo=None)
+        age = (datetime.now() - newest_naive).days
+    return newest, age
+
+
+def classify(sitemap_links: int, detail_ok: int, extractors: list = None, error: bool = False,
+             listing_age_days: int = None) -> str:
     """Pure classification from sample-crawl counts. `extractors` is the
     meta_data["extractor"] value (see crawler.py's _get_news_details) for each
     sample that produced text -- OPS-02: if none of them is "site", the site's own
@@ -130,6 +184,10 @@ def classify(sitemap_links: int, detail_ok: int, extractors: list = None, error:
         return STATUS_PARTIAL
     if extractors and "site" not in extractors:
         return STATUS_FALLBACK
+    # OPS-17: checked last -- a broken extractor is the more urgent finding, and
+    # `None` (no dated entries at all) is not staleness.
+    if listing_age_days is not None and listing_age_days > HEALTH_STALE_LISTING_DAYS:
+        return STATUS_STALE
     return STATUS_OK
 
 
@@ -140,6 +198,9 @@ def _blank_result(name: str, started_at: datetime = None) -> dict:
         # them the base Crawler drops as soft verticals before anything is
         # fetched. A site adding a vertical shows up here on the day it does.
         "branches": 0, "soft_branches": 0,
+        # OPS-17: the newest publication date among the listed entries, so a
+        # sitemap that still serves but stopped updating is visible.
+        "newest_listed": None, "listing_age_days": None,
         "detail_total": 0, "detail_ok": 0, "avg_chars": 0,
         "status": STATUS_BROKEN, "note": "", "extractors": [],
         # OPS-12: the outlet's own check window, not the logging transaction's NOW().
@@ -157,9 +218,13 @@ def check_one(name: str, crawler, sample_size: int) -> dict:
     """Sample-crawl one outlet using the real code paths. Never raises."""
     result = _blank_result(name)
     try:
-        soup = crawler.page_loader.get_soup(crawler.website_url)
+        # OPS-17: the loader already knows WHY (OPS-15 gave it
+        # get_soup_with_reason) -- "HTTP 404", "HTTP 403", "SSLError after 5
+        # retries", "soft-404: ...". Writing one constant for all of them put
+        # three different tickets behind one message in the morning alert.
+        soup, reason = _fetch_with_reason(crawler.page_loader, crawler.website_url)
         if not soup:
-            result["note"] = "sitemap fetch failed (get_soup returned None)"
+            result["note"] = "sitemap fetch failed: %s" % (reason or "unknown reason")
             return result
         raw_branches = crawler._get_branches(soup) or {}
         branches = crawler.drop_soft_branches(dict(raw_branches))
@@ -177,6 +242,10 @@ def check_one(name: str, crawler, sample_size: int) -> dict:
         if not articles:
             result["note"] = "first branch scraped 0 article links"
             return result
+        # OPS-17: freshness of the listing itself.
+        newest, age_days = newest_listed_age(articles)
+        result["newest_listed"] = newest
+        result["listing_age_days"] = age_days
 
         dtos = crawler.batch_crawling_sitemap(articles[:sample_size], name) or []
         result["dto_count"] = len(dtos)
@@ -205,12 +274,17 @@ def check_one(name: str, crawler, sample_size: int) -> dict:
         # OPS-02: which extractor produced the text, for the samples that succeeded.
         extractors = [(getattr(d, "meta_data", None) or {}).get("extractor") for d, l in zip(details, lengths) if l > 0]
         result["extractors"] = extractors
-        result["status"] = classify(result["sitemap_links"], result["detail_ok"], extractors)
+        result["status"] = classify(result["sitemap_links"], result["detail_ok"], extractors,
+                                    listing_age_days=result["listing_age_days"])
         if result["status"] == STATUS_PARTIAL:
             result["note"] = "listing OK but article body extraction returned empty"
         elif result["status"] == STATUS_FALLBACK:
             used = sorted({e for e in extractors if e} or {"unknown"})
             result["note"] = "site selector produced nothing; rescued by " + "/".join(used)
+        elif result["status"] == STATUS_STALE:
+            result["note"] = ("listing serves fine but its newest entry is %d days old "
+                              "(> HEALTH_STALE_LISTING_DAYS=%d)"
+                              % (result["listing_age_days"], HEALTH_STALE_LISTING_DAYS))
         return result
     except Exception as e:
         result["status"] = STATUS_ERROR
@@ -360,9 +434,36 @@ def build_payload(results: list, delta: dict = None) -> dict:
     }
 
 
-def write_report(payload: dict, report_dir: str) -> str:
+def report_filename(full_run: bool, websites=None, now=None) -> str:
+    """OPS-10 (#66): only a FULL run owns the dated report.
+
+    The daily `<date>.json` is what OPS-01 keeps for per-outlet trend history --
+    it is the only place `avg_chars`, `extractors`, `dto_count` and `note` are
+    recorded, none of which `crawl_log` carries. It was opened in "w" mode and
+    keyed on the date alone, so any later `--website X` spot check the same day
+    replaced the whole scheduled run: on 2026-09-17 a 32-outlet report written at
+    07:21 became a 1-outlet report at 13:23, and CLAUDE.md tells every
+    contributor to run exactly that spot check before closing an SRC ticket.
+
+    A partial run gets its own `<date>-<websites>.json` so it is still on disk
+    for whoever asked for it, and the scheduled report is left alone."""
+    now = now or datetime.now()
+    stamp = now.strftime("%Y-%m-%d")
+    if full_run:
+        return stamp + ".json"
+    names = sorted(websites or [])
+    if not names:
+        suffix = "partial"
+    elif len(names) <= 3:
+        suffix = "-".join(n.lower() for n in names)
+    else:
+        suffix = "%s-and-%d-more" % (names[0].lower(), len(names) - 1)
+    return "%s-%s.json" % (stamp, suffix)
+
+
+def write_report(payload: dict, report_dir: str, full_run: bool = True, websites=None) -> str:
     os.makedirs(report_dir, exist_ok=True)
-    path = os.path.join(report_dir, datetime.now().strftime("%Y-%m-%d") + ".json")
+    path = os.path.join(report_dir, report_filename(full_run, websites))
     with open(path, "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, indent=2, default=_json_default)
     return path
@@ -510,7 +611,13 @@ def main() -> int:
     delta = compute_delta(results, previous) if previous is not None else None
     payload = build_payload(results, delta)
 
-    report_path = write_report(payload, args.report_dir)
+    # OPS-10: `--website` makes this a partial run, which must not claim the
+    # dated report the scheduled full run owns.
+    full_run = not args.website
+    report_path = write_report(payload, args.report_dir, full_run=full_run, websites=list(targets))
+    if not full_run:
+        print("NOTE: partial run (--website) -> %s; the scheduled %s.json is left intact (OPS-10)"
+              % (os.path.basename(report_path), datetime.now().strftime("%Y-%m-%d")), file=sys.stderr)
     if args.log_db:
         try:
             with _db_session() as session:

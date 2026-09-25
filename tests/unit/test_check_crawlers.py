@@ -118,6 +118,9 @@ def _mock_crawler(soup="SOUP", branches=None, articles=None, dtos=None, details=
     c = MagicMock()
     c.website_url = "http://example.com/sitemap.xml"
     c.page_loader.get_soup.return_value = soup
+    # OPS-17: check_one reads the reason-carrying API now, so the double has to
+    # speak it -- otherwise every test here exercises the compatibility path.
+    c.page_loader.get_soup_with_reason.return_value = (soup, None if soup else "HTTP 404")
     c._get_branches.return_value = branches if branches is not None else {"news": "http://e.com/news.xml"}
     # SRC-35: check_one drops soft branches before sampling one -- apply the
     # real vocabulary here so the mock behaves like a crawler, not a MagicMock.
@@ -267,6 +270,9 @@ class TestCheckOneTimestamps:
 class TestRunChecksTimeoutRow:
     def test_timeout_row_carries_its_own_window(self):
         c = _mock_crawler()
+        # OPS-17: the listing stage fetches through get_soup_with_reason now, so
+        # the delay has to be on the call check_one actually makes.
+        c.page_loader.get_soup_with_reason.side_effect = lambda url: time.sleep(0.6) or (None, "slow")
         c.page_loader.get_soup.side_effect = lambda url: time.sleep(0.6) or None
         before = cc._utcnow()
         results = cc.run_checks({"SLOW": c}, sample_size=1, workers=1, timeout=0.2)
@@ -513,3 +519,86 @@ class TestSoftBranchCounters:
         assert "283/6 " not in out and "283/-" not in out, out
         # the header names the column, so a reader knows what the pair means
         assert "LISTED/SOFT" in out
+
+
+class TestPartialRunDoesNotOwnTheDatedReport:
+    """OPS-10 (#66): the dated `<date>.json` is the only place `avg_chars`,
+    `extractors`, `dto_count` and `note` are kept per outlet -- `crawl_log`
+    carries none of them. It was opened in "w" mode and keyed on the date, so a
+    `--website X` spot check replaced the scheduled 32-outlet run: on 2026-09-17
+    a 32-outlet report written at 07:21 became a 1-outlet report at 13:23. And
+    CLAUDE.md tells every contributor to run that spot check before closing an
+    SRC ticket."""
+
+    def test_a_full_run_owns_the_dated_report(self):
+        from datetime import datetime as dt
+        assert cc.report_filename(True, None, now=dt(2026, 9, 17)) == "2026-09-17.json"
+        assert cc.report_filename(True, ["KOMPAS"], now=dt(2026, 9, 17)) == "2026-09-17.json"
+
+    def test_a_partial_run_gets_its_own_file(self):
+        from datetime import datetime as dt
+        assert cc.report_filename(False, ["TRIBUN"], now=dt(2026, 9, 17)) == "2026-09-17-tribun.json"
+        assert cc.report_filename(False, ["KOMPAS", "DETIK"], now=dt(2026, 9, 17)) == "2026-09-17-detik-kompas.json"
+
+    def test_a_large_partial_run_gets_a_bounded_name(self):
+        from datetime import datetime as dt
+        name = cc.report_filename(False, ["A", "B", "C", "D", "E"], now=dt(2026, 9, 17))
+        assert name == "2026-09-17-a-and-4-more.json" and len(name) < 40
+
+    def test_the_full_report_survives_a_later_partial_run(self, tmp_path):
+        full = {"total": 32, "results": [{"website": "KOMPAS"}]}
+        partial = {"total": 1, "results": [{"website": "TRIBUN"}]}
+        p_full = cc.write_report(full, str(tmp_path), full_run=True)
+        p_part = cc.write_report(partial, str(tmp_path), full_run=False, websites=["TRIBUN"])
+        assert p_full != p_part
+        with open(p_full, encoding="utf-8") as f:
+            assert json.load(f)["total"] == 32, "the scheduled run's report was overwritten"
+
+
+class TestListingFreshnessAndFetchReason:
+    """OPS-17 (#89): two blind spots in the one signal the operator reads daily."""
+
+    def test_the_fetch_reason_reaches_the_note(self):
+        crawler = MagicMock()
+        crawler.page_loader.get_soup_with_reason.return_value = (None, "HTTP 403")
+        r = cc.check_one("BISNIS", crawler, 2)
+        assert r["note"] == "sitemap fetch failed: HTTP 403"
+        assert r["status"] == cc.STATUS_BROKEN
+
+    @pytest.mark.parametrize("reason,expected", [
+        ("HTTP 404", "sitemap fetch failed: HTTP 404"),
+        ("SSLError after 5 retries", "sitemap fetch failed: SSLError after 5 retries"),
+        ("soft-404: redirected to /", "sitemap fetch failed: soft-404: redirected to /"),
+        (None, "sitemap fetch failed: unknown reason"),
+    ])
+    def test_each_reason_is_distinguishable(self, reason, expected):
+        crawler = MagicMock()
+        crawler.page_loader.get_soup_with_reason.return_value = (None, reason)
+        assert cc.check_one("X", crawler, 2)["note"] == expected
+
+    def test_newest_listed_age_ignores_undated_entries(self):
+        now = datetime(2026, 9, 25, tzinfo=timezone.utc)
+        arts = [{"timestamp": None}, {"timestamp": datetime(2026, 9, 20, tzinfo=timezone.utc)},
+                {"timestamp": datetime(2026, 9, 24, tzinfo=timezone.utc)}]
+        newest, age = cc.newest_listed_age(arts, now=now)
+        assert newest == datetime(2026, 9, 24, tzinfo=timezone.utc) and age == 1
+
+    def test_a_listing_with_no_dates_is_not_stale(self):
+        """SYS-32's lastmod-only shape: absent dates must not be read as old."""
+        newest, age = cc.newest_listed_age([{"timestamp": None}, {}])
+        assert newest is None and age is None
+        assert cc.classify(150, 1, ["site"], listing_age_days=None) == cc.STATUS_OK
+
+    def test_a_frozen_listing_is_stale_not_ok(self):
+        """SUARA's regional sitemaps: 200, 150 links each, last updated 2022."""
+        assert cc.classify(150, 1, ["site"], listing_age_days=1068) == cc.STATUS_STALE
+        assert cc.classify(150, 1, ["site"], listing_age_days=3) == cc.STATUS_OK
+
+    def test_stale_is_needs_attention_but_not_fatal(self):
+        assert cc.STATUS_STALE in cc.NEEDS_ATTENTION
+        assert cc.STATUS_STALE not in cc.UNHEALTHY
+
+    def test_a_broken_extractor_outranks_staleness(self):
+        """A dead selector is the more urgent finding."""
+        assert cc.classify(150, 0, [], listing_age_days=999) == cc.STATUS_PARTIAL
+        assert cc.classify(150, 1, ["trafilatura"], listing_age_days=999) == cc.STATUS_FALLBACK

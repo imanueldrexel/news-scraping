@@ -23,6 +23,16 @@ logger.setLevel(logging.INFO)
 
 
 class SQLAlchemyArticleDataSource:
+    # OPS-07 (#55): `crawl_log` is the pipeline's only non-silent failure record
+    # -- CLAUDE.md's rule is "process_event catches BaseException and logs at
+    # INFO, so check crawl_log instead". A failure to WRITE it was logged at
+    # DEBUG, below the INFO level this module sets, so the safety net was itself
+    # silent when it broke and the runbook read the absent row as "the scheduler
+    # did not fire". These stay non-raising -- a logging failure must not abort a
+    # crawl -- but they are WARNINGs now, and the disabled state is stated once
+    # at the top of the log rather than inferred from a missing row.
+    _crawl_log_disabled_warned = False
+
     def __init__(self, sql_alchemy_client: SQLAlchemyClient):
         self.client = sql_alchemy_client
 
@@ -38,10 +48,25 @@ class SQLAlchemyArticleDataSource:
             with self.client.get_session() as session:
                 row = session.execute(sql, {"website": website, "task": task}).fetchone()
                 session.commit()
-            return row.log_id if row else None
+            log_id = row.log_id if row else None
+            if log_id is None:
+                self._warn_crawl_log_disabled("INSERT returned no log_id")
+            return log_id
         except Exception as e:
-            logger.debug(f"crawl_log not available yet: {e}")
+            logger.warning(f"crawl_log INSERT failed for {website}/{task}: {type(e).__name__}: {e}")
+            self._warn_crawl_log_disabled(f"{type(e).__name__}: {e}")
             return None
+
+    @classmethod
+    def _warn_crawl_log_disabled(cls, reason: str) -> None:
+        """OPS-07: say it once, at the top of the log, instead of leaving the
+        operator to infer it from an absent row. Class-level so a run that
+        builds several datasources still states it once."""
+        if not cls._crawl_log_disabled_warned:
+            cls._crawl_log_disabled_warned = True
+            logger.warning(
+                "crawl_log disabled for this run: %s -- this run will leave NO crawl_log row, "
+                "which is not the same as the scheduler failing to fire (OPS-07)", reason)
 
     def log_crawl_complete(self, log_id: Optional[int], article_count: int = 0) -> None:
         if not log_id:
@@ -56,7 +81,7 @@ class SQLAlchemyArticleDataSource:
                 session.execute(sql, {"count": article_count, "log_id": log_id})
                 session.commit()
         except Exception as e:
-            logger.debug(f"crawl_log update failed: {e}")
+            logger.warning(f"crawl_log completion update failed for log_id={log_id}: {type(e).__name__}: {e}")
 
     def log_crawl_failed(self, log_id: Optional[int], error_msg: str) -> None:
         if not log_id:
@@ -71,7 +96,7 @@ class SQLAlchemyArticleDataSource:
                 session.execute(sql, {"msg": error_msg[:1000], "log_id": log_id})
                 session.commit()
         except Exception as e:
-            logger.debug(f"crawl_log failed-update failed: {e}")
+            logger.warning(f"crawl_log failure update failed for log_id={log_id}: {type(e).__name__}: {e}")
 
     # ── Article persistence ───────────────────────────────────────────────────
 
