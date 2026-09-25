@@ -314,3 +314,64 @@ class TestCategorySourceSelection:
             assert section == expected
             assert category_gate(section) == "deny", section
         assert category_gate("news") is None   # what they were being stored as
+
+
+class TestCompoundSoftNames:
+    """SRC-49 (#160): SYS-42 made the vocabulary word-bounded so `sport` could
+    not match `transportasi`. The cost is that a compound name is unreachable --
+    `sport` + `setup` is one token. KONTAN listed 27 sports rows under
+    `sportsetup` before an anchored prefix was added.
+
+    Found by OPS-19's (#132) first-run `task=sitemap` on the never-crawled
+    sources, which is the argument for that step being a prerequisite."""
+
+    @pytest.mark.parametrize("key", [
+        "sportsetup", "sportstyle", "sportfeat", "Sportfeat", "sportaliga",
+        "sport-lain", "sports", "sport", "sportsbook",
+    ])
+    def test_a_compound_sport_name_is_dropped_by_the_prefix(self, key):
+        assert Crawler.is_soft_branch(key) is True
+
+    @pytest.mark.parametrize("key", ["pop/korean-wave", "korean-wave", "korean", "korea"])
+    def test_korean_wave_is_dropped(self, key):
+        assert Crawler.is_soft_branch(key) is True
+
+    def test_the_prefix_is_anchored_so_transportasi_survives(self):
+        """The whole reason SYS-42 word-bounded the vocabulary. A prefix is safe
+        precisely because it is anchored; a substring was not."""
+        assert Crawler.is_soft_branch("transportasi") is False
+        assert Crawler.is_soft_branch("pariwisata") is False
+        assert Crawler.is_soft_branch("passport-services") is False
+
+    def test_exceptions_still_beat_the_prefix(self):
+        """An outlet with a genuinely-business `sport*` desk must still be
+        keepable with a sample, so the exception check runs first."""
+        class SportBusiness(Crawler):
+            SOFT_BRANCH_EXCEPTIONS = frozenset({"sportbusiness"})
+        assert SportBusiness.is_soft_branch("sportbusiness") is False
+        assert SportBusiness.is_soft_branch("sportsetup") is True
+        # and it does not leak to other crawlers
+        assert Crawler.is_soft_branch("sportbusiness") is True
+
+    def test_no_prefix_collides_with_the_live_not_denied_vocabulary(self):
+        """SYS-42's fixture test, extended to prefixes: a prefix that catches a
+        live category nobody denied fails here instead of on the next run."""
+        import json
+        import os
+        from newscrawler.infrastructure.datasource.scrapers.crawler import SOFT_BRANCH_PREFIXES
+        path = os.path.join(os.path.dirname(__file__), "..", "fixtures", "category_vocabulary_not_denied.json")
+        with open(path, encoding="utf-8") as f:
+            pairs = json.load(f)["pairs"]
+        collisions = [f"{p['source']}/{p['category']}" for p in pairs
+                      if p["category"].lower().startswith(SOFT_BRANCH_PREFIXES)]
+        assert collisions == [], (
+            "a SOFT_BRANCH_PREFIXES entry now catches live categories that were not denied -- "
+            "sample their titles before denying them (SRC-39), then update the fixture"
+        )
+
+    def test_the_observed_categories_are_denied_for_rows_already_stored(self):
+        """The branch fix stops them being listed again; these rows are already
+        in `sitemaps`, so the category gate has to reject them."""
+        from newscrawler.core.importance_filter import category_gate
+        for cat in ("sportsetup", "sportstyle", "korean-wave"):
+            assert category_gate(cat) == "deny", cat

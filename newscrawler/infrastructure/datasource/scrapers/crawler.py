@@ -79,13 +79,37 @@ class SitemapScrapeBatch(list):
 # (`-`, `_`, `/`, `.`), so `transportasi` never matches `sport` while
 # `bali/sport` does. A per-crawler SOFT_BRANCH_EXCEPTIONS set keeps a name
 # whose sample proved it is that outlet's business coverage.
+# SRC-49 (#160): a soft vertical whose name is a COMPOUND word is unreachable by
+# the word-bounded vocabulary -- `sport` + `setup` is one token, so
+# `is_soft_branch("sportsetup")` was False and KONTAN listed 27 sports rows
+# (Man Utd vs Man City, MMA medals at the Asian Games) that then went to the
+# probe instead of being denied. Enumerating variants does not scale; the
+# existing literal `sportaliga` in the vocabulary below is the previous attempt.
+#
+# A PREFIX is safe here, and was measured before being added: `^sport` matches 15
+# live branch keys across the fleet and **every one is sports** (`sport`,
+# `sport-lain`, `sportstyle`, `Sportfeat`, `sportsetup`, `sports/*`, `Sportaliga`,
+# `sports`), and collides with **0** pairs in
+# tests/fixtures/category_vocabulary_not_denied.json. Critically it is anchored,
+# so `transportasi` -- the SYS-42 false positive this whole boundary exists for --
+# does not start with `sport` and is untouched.
+#
+# Checked AFTER SOFT_BRANCH_EXCEPTIONS, so an outlet with a genuinely-business
+# `sport*` desk can still be kept with a 3-title sample.
+SOFT_BRANCH_PREFIXES = ("sport",)
+
 SOFT_BRANCH_WORDS = (
     # sport (owner decision 2026-09-20: out)
     "sport", "sports", "esport", "esports", "olahraga", "bola", "sepakbola", "sepak-bola",
     "bolasport", "bolanita", "bolastylo", "bolanas", "superskor", "sportaliga", "piala", "juara",
     # entertainment / celebrity / music / film
     "showbiz", "seleb", "selebriti", "celeb", "celebs", "celebrity", "hiburan", "entertainment",
-    "hype", "kpop", "korea", "musik", "film", "filmon", "movie", "sinetron", "klikseleb",
+    # SRC-49: `korean` as a word -- DETIK's key is `pop/korean-wave`, so `korea`
+    # word-bounded cannot reach it ("korea" is followed by "n") and a `^korea`
+    # prefix matches 0 live keys. Sampled: "Teaser Comeback Kim Woo Bin di
+    # Drakor", "Lee Min Ho Saingan Berat Byun Yo Han" -- the IDNTIMES `korea`
+    # class SYS-34 already denies.
+    "hype", "kpop", "korea", "korean", "musik", "film", "filmon", "movie", "sinetron", "klikseleb",
     "idxtainment", "ecotainment", "entertainment_life_style",
     # lifestyle / fashion / beauty / women & parenting
     "lifestyle", "gaya-hidup", "gayahidup", "fashion", "beauty", "kecantikan", "stylo", "jelita",
@@ -279,6 +303,11 @@ class Crawler:
             return False
         if key in {e.lower() for e in cls.SOFT_BRANCH_EXCEPTIONS}:
             return False
+        # SRC-49: the anchored prefixes catch compound names the word-bounded
+        # vocabulary cannot reach (`sportsetup`, `sportstyle`). Exceptions above
+        # still win, and being anchored it cannot repeat the `transportasi` bug.
+        if key.startswith(SOFT_BRANCH_PREFIXES):
+            return True
         return any(
             re.search(rf"(?:^|[^a-z0-9]){re.escape(word)}(?:[^a-z0-9]|$)", key)
             for word in SOFT_BRANCH_WORDS

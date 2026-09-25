@@ -95,6 +95,18 @@ OFFTOPIC_CATEGORIES_EXACT = {
     # often as it argues, and no sample was taken of one.
     "opini", "opinion", "editorial", "editorials", "kolom", "kolom-pakar",
     "surat-pembaca", "scope", "tajuk", "tajuk-rencana",
+    # SRC-49 (#160): compound soft-vertical names the word-bounded stems cannot
+    # reach, found by OPS-19's first-run crawl of the never-crawled sources.
+    # These are the values already sitting in `sitemaps.category`, so the branch
+    # fix alone would not deny them. All sampled:
+    #   KONTAN `sportsetup` (27 rows, sportsetup.kontan.co.id) -- "Manchester
+    #     United vs Manchester City: Rekor Head to Head", "Prediksi Borneo FC vs
+    #     Persija", "Jadwal Timnas Bulu Tangkis di Asian Games 2026"
+    #   DETIK `sportstyle` -- "Tennis Cup 2026", "Chair Pilates Bisa Jadi
+    #     Tantangan Baru", "Ajak Main Gokart di Kelapa Gading"
+    #   DETIK `korean-wave` -- "Teaser Comeback Kim Woo Bin di Drakor",
+    #     "Lee Min Ho Saingan Berat Byun Yo Han di Bioskop"
+    "sportsetup", "sportstyle", "korean-wave",
 }
 # Substring match for category values that are not clean labels -- e.g. a
 # raw per-region sitemap URL stored as `category` (JPNN before SRC-41, VIVA's
