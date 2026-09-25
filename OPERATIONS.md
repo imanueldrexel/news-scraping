@@ -131,13 +131,15 @@ Last run 2026-09-25 on `newsaggregator_20260925T140752Z.dump`: `pg_restore` rc 0
 | 05:00 | Database backup (OPS-23) | `scripts/backup_db.py` — registered as **"NewsAggregator DB Backup"**, see "Database: container, backup, restore" |
 | 05:30 | Crawler health check (OPS-01) | `scripts/run_scheduled_health_check.py` — registered, see below |
 | 05:45 | Store consistency check (OPS-04) | `scripts/check_store_consistency.py --quiet --report-dir crawler_health` — not yet wired to Task Scheduler/Telegram; run manually or add alongside OPS-01 |
-| 07:00 | Morning crawl (OPS-19) | `scripts/run_scheduled_crawl.py` — **not yet registered; the first unattended run is an owner decision.** `python __main__.py` remains the manual equivalent |
+| 07:00 | Morning crawl (OPS-19) | `scripts/run_scheduled_crawl.py` — registered 2026-09-25 as **"NewsAggregator Scheduled Crawl (morning)"** (owner decision); first unattended run 2026-09-26 07:00. `python __main__.py` remains the manual equivalent |
 | 06:45 | Knowledge extraction | task=extract_knowledge |
 | 07:00 | Newsletter | task=newsletter |
-| 19:00 | Evening crawl (OPS-19) | `scripts/run_scheduled_crawl.py` — see above |
+| 19:00 | Evening crawl (OPS-19) | `scripts/run_scheduled_crawl.py` — registered as **"NewsAggregator Scheduled Crawl (evening)"** |
 | 18:45 | Knowledge extraction | task=extract_knowledge |
 
-### Scheduled crawl (OPS-19) — built, not yet registered
+### Scheduled crawl (OPS-19) — registered 2026-09-25
+
+Two Task Scheduler jobs, **"NewsAggregator Scheduled Crawl (morning)"** (07:00) and **"(evening)"** (19:00), both running `venv\Scripts\python.exe scriptsun_scheduled_crawl.py` with the repo as the working directory. Settings: runs on battery and doesn't stop on battery, StartWhenAvailable, WakeToRun, a 4 h ExecutionTimeLimit, and `MultipleInstances=IgnoreNew`, so a slow morning run never overlaps the evening one. Inspect with `Get-ScheduledTask -TaskName "NewsAggregator*" | Get-ScheduledTaskInfo`. Verified the same night through a temporary task (`--website ERAID --phase sitemap`): LastTaskResult 0, crawl_log row 628 `completed` (+7), no leftover worker. Schedule on that date: 27 sources (HEALTHY minus VIVA; GRIDID retired). Pause it with `Disable-ScheduledTask -TaskName "NewsAggregator Scheduled Crawl (morning)"` (and evening).
 
 `scripts/run_scheduled_crawl.py` is the scheduled entry point for the crawl itself. Two phases, in this order: `task=sitemap` for every scheduled source, then `task=full_text` for `SCHEDULE_FULL_TEXT_WEBSITES`. Listing first for everyone, so a slow source's fetch phase cannot delay another source's listing.
 
