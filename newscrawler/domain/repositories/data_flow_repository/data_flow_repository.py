@@ -30,6 +30,12 @@ class DataFlowRepository:
     def save_chunk_data(self, chunks: List[ChunkDTO]) -> List[int]:
         raise NotImplementedError
 
+    def deferred_embeddings(self, website: Optional[str] = None):
+        """DBT-10: a context manager under which vector-store writes are persisted
+        once, at exit. The default does nothing special (every save persists)."""
+        from contextlib import nullcontext
+        return nullcontext(self)
+
     def mark_sitemaps_attempted(self, sitemap_ids: List[int]) -> None:
         raise NotImplementedError
 

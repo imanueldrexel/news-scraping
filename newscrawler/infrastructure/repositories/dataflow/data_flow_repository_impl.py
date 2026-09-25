@@ -1,3 +1,5 @@
+from contextlib import contextmanager
+from dataclasses import replace
 from datetime import date
 from typing import Dict, List, Optional, Set, Tuple, Union
 
@@ -79,10 +81,60 @@ class DataFlowRepositoryImpl(DataFlowRepository):
 
         if to_process:
             chunks_with_ids = self.chunk_faiss_datasource.save(to_process)
+            if self.chunk_faiss_datasource.is_deferred:
+                # DBT-10: the vectors are in memory only until the block's flush.
+                # Write the rows as NOT embedded, and give them their ids after
+                # the flush, so a kill in between leaves them repairable (NULL)
+                # rather than pointing at vectors that never reached disk.
+                pending = self.__dict__.setdefault("_pending_embedding_ids", {})
+                for c in chunks_with_ids:
+                    pending[(c.sitemap_id, c.chunk_level, c.chunk_index)] = c.embedding_id
+                chunks_with_ids = [replace(c, embedding_id=None, chunk_status="pending_embedding")
+                                   for c in chunks_with_ids]
             new_models = [self._to_chunk_model(c) for c in chunks_with_ids]
             self.sql_alchemy_chunk_datasource.save_chunks(new_models)
 
         return list(all_sitemap_ids)
+
+    @contextmanager
+    def deferred_embeddings(self, website: Optional[str] = None):
+        """DBT-10 (#45): one FAISS save per block instead of one per batch.
+
+        On entry, this source's chunk rows that are still unembedded (a previous
+        block killed before its flush; OPS-22 kills on timeout) are re-embedded
+        first. Their sitemaps already have an `articles` row, so they will never
+        re-enter the crawl queue and nothing else would repair them. On exit,
+        even after an exception, FAISS is flushed FIRST and only then are the
+        rows given their ids. A kill between the two leaves NULL rows whose
+        vectors are on disk; the next block finds those vectors by key and
+        reuses their ids."""
+        faiss = self.chunk_faiss_datasource
+        outermost = faiss.begin_deferred()
+        try:
+            if outermost:
+                self._reembed_unembedded(website)
+            yield self
+        finally:
+            if faiss.end_deferred():
+                # end_deferred() flushed FAISS successfully (it raises if the save
+                # fails, and then no id is assigned: the rows stay NULL, which is
+                # the repairable state). Only now may SQL point at the vectors.
+                self._assign_pending_embedding_ids()
+
+    def _reembed_unembedded(self, website: Optional[str]) -> int:
+        rows = self.sql_alchemy_chunk_datasource.load_unembedded_chunks(website)
+        if not rows:
+            return 0
+        chunks_with_ids = self.chunk_faiss_datasource.save(rows)
+        pending = self.__dict__.setdefault("_pending_embedding_ids", {})
+        for c in chunks_with_ids:
+            pending[(c.sitemap_id, c.chunk_level, c.chunk_index)] = c.embedding_id
+        return len(chunks_with_ids)
+
+    def _assign_pending_embedding_ids(self) -> int:
+        pending = self.__dict__.pop("_pending_embedding_ids", {})
+        return self.sql_alchemy_chunk_datasource.set_embedding_ids(
+            {k: v for k, v in pending.items() if v})
 
     def mark_sitemaps_attempted(self, sitemap_ids: List[int]) -> None:
         self.news_data_source.mark_sitemaps_attempted(sitemap_ids)

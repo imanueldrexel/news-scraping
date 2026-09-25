@@ -1,6 +1,7 @@
 import logging
 import os
 import shutil
+from contextlib import contextmanager
 from dataclasses import replace
 from typing import Dict, List, Tuple
 
@@ -46,7 +47,7 @@ class ChunkFAISSDatasource:
         # whose SQL insert failed after FAISS already had its vectors gets retried,
         # finds those exact vectors here, and reuses their ids instead of either
         # skipping the SQL insert (the old bug) or adding duplicate vectors.
-        existing = self._get_existing_embedding_ids(vs)
+        existing = self._existing_ids(vs, db_name)
         result = []
         new_chunks = []
         seen_this_batch = set()
@@ -75,12 +76,91 @@ class ChunkFAISSDatasource:
 
         docs = [self._to_document(c) for c in new_chunks]
         embedding_ids = vs.add_documents(docs)  # LangChain returns list of UUID strings
-        self._atomic_save_local(vs, db_name)
+        for chunk, eid in zip(new_chunks, embedding_ids):
+            existing[(chunk.sitemap_id, chunk.chunk_level, chunk.chunk_index)] = eid
+        self._remember_size(vs, db_name)
+        if self.is_deferred:
+            # DBT-10: persisted once, by flush() at the end of the deferred block.
+            self._dirty().add(db_name)
+        else:
+            self._atomic_save_local(vs, db_name)
         logger.info(f"  {db_name}: embedded {len(new_chunks)} new chunks")
 
         for chunk, eid in zip(new_chunks, embedding_ids):
             result.append(replace(chunk, embedding_id=eid, chunk_status='embedded'))
         return result
+
+    # ── DBT-10 (#45): write frequency ────────────────────────────────────────
+    # Every batch used to rewrite the whole index pair (L1 ~68 MB + L2 ~204 MB,
+    # plus the same again for the .bak copy): about 10 saves per level per source,
+    # ~150-220 GB of writes per scheduled run. Inside `deferred()` the adds stay in
+    # memory and flush() persists each touched level ONCE. Outside it (every
+    # script) behaviour is unchanged: save after every add.
+    #
+    # Deferring is only safe together with DataFlowRepositoryImpl.deferred_
+    # embeddings, which writes the SQL chunk rows with embedding_id NULL until
+    # the flush has happened. That way a process killed mid-block (OPS-22's
+    # timeout kill) leaves rows that say "not embedded", not rows that point at
+    # vectors which never reached disk.
+
+    @property
+    def is_deferred(self) -> bool:
+        return getattr(self, "_defer_depth", 0) > 0
+
+    def _dirty(self):
+        if not hasattr(self, "_dirty_dbs"):
+            self._dirty_dbs = set()
+        return self._dirty_dbs
+
+    def begin_deferred(self) -> bool:
+        """Enter a deferred block; True when it is the outermost one."""
+        self._defer_depth = getattr(self, "_defer_depth", 0) + 1
+        return self._defer_depth == 1
+
+    def end_deferred(self) -> bool:
+        """Leave a deferred block. The outermost one flushes and returns True
+        once the flush has succeeded; a failed flush raises instead."""
+        self._defer_depth -= 1
+        if self._defer_depth > 0:
+            return False
+        self.flush()
+        return True
+
+    @contextmanager
+    def deferred(self):
+        """Batch persistence: flush once when the outermost block exits, also on
+        an exception (the batches before it were committed to SQL and must not be
+        left unsaved). Only a hard kill skips the flush."""
+        self.begin_deferred()
+        try:
+            yield self
+        finally:
+            self.end_deferred()
+
+    def flush(self) -> None:
+        for db_name in sorted(self._dirty()):
+            vs = self.vs_l1 if db_name == VECTOR_DB_NAME_L1 else self.vs_l2
+            self._atomic_save_local(vs, db_name)
+            logger.info(f"  {db_name}: index saved (deferred flush)")
+        self._dirty().clear()
+
+    def _existing_ids(self, vs, db_name) -> Dict[Tuple[int, int, int], str]:
+        """(sitemap_id, level, index) -> embedding_id, built once per index instead
+        of walking the whole docstore on every batch. Rebuilt whenever the
+        docstore's size differs from the size it was built at, so an add or a
+        delete made outside this class (dedupe_chunks.py) cannot leave it stale."""
+        caches = self.__dict__.setdefault("_key_caches", {})
+        cached = caches.get(db_name)
+        size = len(vs.docstore._dict)
+        if cached is None or cached[0] != size:
+            cached = [size, self._get_existing_embedding_ids(vs)]
+            caches[db_name] = cached
+        return cached[1]
+
+    def _remember_size(self, vs, db_name) -> None:
+        cached = self.__dict__.get("_key_caches", {}).get(db_name)
+        if cached is not None:
+            cached[0] = len(vs.docstore._dict)
 
     @staticmethod
     def _atomic_save_local(vs: FAISS, db_name: str) -> None:

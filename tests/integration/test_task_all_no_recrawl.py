@@ -131,6 +131,12 @@ class TestTaskAllDoesNotReCrawlAlreadyArticledSitemaps:
             def __init__(self, ds):
                 self.ds = ds
 
+            def deferred_embeddings(self, website=None):
+                # DBT-10: the repository contract; fake chunk storage has nothing
+                # to defer.
+                from contextlib import nullcontext
+                return nullcontext(self)
+
             def load_sitemap_data(self, website, n_limit):
                 from newscrawler.infrastructure.repositories.dataflow.data_flow_repository_impl import (
                     DataFlowRepositoryImpl,

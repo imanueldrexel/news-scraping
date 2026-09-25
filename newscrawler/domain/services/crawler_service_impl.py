@@ -86,6 +86,11 @@ class CrawlerServiceImpl(CrawlerService):
             raise
 
     def _crawl_newsdetails_inner(self, website_name: str, specific_sitemaps: List[SitemapDTO] = None) -> int:
+        # DBT-10 (#45): one vector-store save per source run, not one per batch.
+        with self.data_flow_repo.deferred_embeddings(website_name):
+            return self._crawl_newsdetails_batches(website_name, specific_sitemaps)
+
+    def _crawl_newsdetails_batches(self, website_name: str, specific_sitemaps: List[SitemapDTO] = None) -> int:
         web_crawler: Crawler = self.crawler_dict.get(website_name)
         if specific_sitemaps:
             target_news = specific_sitemaps

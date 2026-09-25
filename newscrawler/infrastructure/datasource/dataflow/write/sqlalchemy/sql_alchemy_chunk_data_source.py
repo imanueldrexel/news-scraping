@@ -56,6 +56,42 @@ class SQLAlchemyChunkDataSource:
                 text(f"SELECT COUNT(*) FROM {ChunksTable.__tablename__} WHERE {ChunksTable.embedding_id.name} IS NULL")
             ).scalar()
 
+    def load_unembedded_chunks(self, website=None):
+        """DBT-10: chunk rows with no embedding_id, as ChunkDTOs ready to embed
+        (the DBT-17 repair's query, shared with the deferred-save recovery)."""
+        from newscrawler.domain.dtos.dataflow.details.chunk_dto import ChunkDTO
+        with self.sql_alchemy_client.get_session() as session:
+            rows = session.execute(text(
+                "SELECT c.chunk_id, c.sitemap_id, c.chunk_level, c.chunk_index, c.chunk_total, "
+                "c.is_first_chunk, c.is_last_chunk, c.text_content, c.token_count, "
+                "s.headline, s.sources, s.category, s.posted_at "
+                "FROM chunks c JOIN sitemaps s ON s.sitemap_id = c.sitemap_id "
+                "WHERE c.embedding_id IS NULL AND (:website IS NULL OR s.sources = :website) "
+                "ORDER BY c.chunk_id"), {"website": website}).fetchall()
+        return [ChunkDTO(sitemap_id=r.sitemap_id, chunk_level=r.chunk_level, chunk_index=r.chunk_index,
+                         chunk_total=r.chunk_total, is_first_chunk=r.is_first_chunk,
+                         is_last_chunk=r.is_last_chunk, text_content=r.text_content,
+                         token_count=r.token_count, title=r.headline, source=r.sources,
+                         category=r.category, posted_at=r.posted_at, chunk_id=r.chunk_id)
+                for r in rows]
+
+    def set_embedding_ids(self, ids_by_key) -> int:
+        """DBT-10: after a deferred FAISS flush, give each chunk row its vector's id
+        and mark it embedded. Keyed by the DBT-09 unique key; only rows still
+        unembedded are touched. Returns rows updated."""
+        if not ids_by_key:
+            return 0
+        params = [{"sid": k[0], "lvl": k[1], "idx": k[2], "eid": v} for k, v in ids_by_key.items()]
+        with self.sql_alchemy_client.get_session() as session:
+            n = 0
+            for p in params:
+                n += session.execute(text(
+                    "UPDATE chunks SET embedding_id = :eid, chunk_status = 'embedded' "
+                    "WHERE sitemap_id = :sid AND chunk_level = :lvl AND chunk_index = :idx "
+                    "AND embedding_id IS NULL"), p).rowcount
+            session.commit()
+        return n
+
     def save_chunks(self, chunks: List[ChunkModel]) -> None:
         """Insert, or -- DBT-23 (#74) -- on the DBT-09 unique key
         (sitemap_id, chunk_level, chunk_index) update the row in place with the

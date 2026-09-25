@@ -481,6 +481,12 @@ lambda_handler.process_event({'task': 'newsletter'}, None)
 
 ## Troubleshooting
 
+**FAISS index corrupt or won't load** (DBT-10 #45)
+- Every save is atomic: written to `NEWS_L*.tmp`, then swapped in with `os.replace`, pkl before faiss. The previous generation is kept as `index.faiss.bak`/`index.pkl.bak`. A crash can leave a stale-but-consistent pair, not a mismatched one.
+- To roll back one generation, with no crawl running: `cd NEWS_L1; copy index.faiss.bak index.faiss; copy index.pkl.bak index.pkl` (same for `NEWS_L2`). Then `venv\Scripts\python.exe scripts\check_store_consistency.py`.
+- Older copies: `backups/faiss_*/` (taken before risky operations, e.g. the OPS-23 migration). A full rebuild from SQL is `scripts/backfill_orphan_chunks.py` (re-chunks from `articles.extracted_text`), which is slow.
+- Since DBT-10 the crawl saves each index **once per source** (in `deferred_embeddings`), not once per batch. Chunk rows are written with `embedding_id` NULL / `pending_embedding` until that save has succeeded. A run killed mid-source (OPS-22's timeout) therefore leaves NULL rows, never rows pointing at vectors that were not saved. The source's next article crawl re-embeds them before it starts. To check: `SELECT count(*) FROM chunks WHERE embedding_id IS NULL` is 0 between runs. To repair outside a crawl: `scripts/backfill_pending_embeddings.py`.
+
 **FAISS index not found on startup**
 - First run creates empty indexes automatically. Run a crawl to populate them.
 
