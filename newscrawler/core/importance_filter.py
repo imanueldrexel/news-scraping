@@ -106,7 +106,7 @@ OFFTOPIC_CATEGORIES_EXACT = {
     #     Tantangan Baru", "Ajak Main Gokart di Kelapa Gading"
     #   DETIK `korean-wave` -- "Teaser Comeback Kim Woo Bin di Drakor",
     #     "Lee Min Ho Saingan Berat Byun Yo Han di Bioskop"
-    "sportsetup", "sportstyle", "korean-wave",
+    "sportsetup", "sportstyle",
 }
 # Substring match for category values that are not clean labels -- e.g. a
 # raw per-region sitemap URL stored as `category` (JPNN before SRC-41, VIVA's
@@ -139,6 +139,14 @@ OFFTOPIC_CATEGORY_KEYWORDS_WORD = (
     "sport", "wisata", "bola", "food", "piala", "gossip", "gosip",
     # SYS-42: `celeb`/`celebs` as a word only -- never the prefix of `celebes`.
     "celeb",
+    # SRC-49 (#160): DETIK stores the BRANCH key as the category, so its K-drama
+    # desk lands as `pop/korean-wave` (100 rows). `is_offtopic_category` matches
+    # the whole value, not the last segment, so the exact entry `korean-wave`
+    # could not reach it and `korea` word-bounded stops at the "n". Word-bounded
+    # `korean` matches at the `-`. This asymmetry is worth remembering: a name
+    # added to SOFT_BRANCH_WORDS is NOT thereby denied at category level -- the
+    # two vocabularies are separate, and a compound branch key needs both.
+    "korean",
     # SYS-49: the same names word-bounded, so a host-qualified key
     # (`bali/opini`, SRC-41's shape) or a URL-shaped category is caught too.
     # Word-bounded on purpose: `scope` must never match `horoscope`, and
