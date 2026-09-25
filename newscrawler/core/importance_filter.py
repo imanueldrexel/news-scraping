@@ -242,6 +242,25 @@ SOURCE_SOFT_LEAVES = {
         # Apa?", KRL timetables, BMKG weather forecasts x3
         "jawa-barat", "jawa-tengah", "jawa-timur", "kalimantan-barat", "kalimantan-timur", "banten",
     }),
+    # SRC-33 (#119, 2026-09-26): VIVA keyed properly for the first time (its 29
+    # subdomains used to be keyed by URL). All 42 kept leaves sampled; these 10
+    # were soft on all 3 titles. Kept: the news desks, `digital` (product news is
+    # the probe's call, SRC-35), `indepth`, `ragam`, and 23 regional sites.
+    "VIVA": frozenset({
+        # lifestyle / celebrity / sport under a place or brand name: "4
+        # Rekomendasi Kafe Ikonik di Jl Braga", "Taylor Swift Resmi Umumkan",
+        # "Arsenal Nekat Goda Vinicius", "Apakah Ozempic Menyebabkan Diare?"
+        "bandung", "jabar", "mindset", "ceritakita", "olret",
+        # hobby automotive tips and gadget listicles
+        "otomotif", "teknodaily",
+        # sponsored/press-release items, reader complaints, humour
+        "trending", "surat", "vbuzz",
+        # its BRANCH was already dropped by the vocabulary word `gadget`, which the
+        # category deny list does not carry -- so its 507 stored rows still went to
+        # the probe (SRC-49's two-list gap; a fleet sweep found only this one plus
+        # IDXCHANNEL `video`, which SRC-45 keeps on purpose)
+        "gadget",
+    }),
 }
 
 # SYS-35 (#118): the category gate was asymmetric by accident -- a category

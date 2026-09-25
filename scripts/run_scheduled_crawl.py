@@ -78,11 +78,10 @@ logger = logging.getLogger("run_scheduled_crawl")
 
 # The sources the schedule drives, and the ones it must not.
 #
-# VIVA is excluded by a standing hard rule, not by preference: SRC-33 (#119) is
-# open, its `_get_branches` still keeps all 53 branches (29 of them keyed by URL),
-# and one sitemap crawl would add ~53k rows onto a 39k backlog that is 97.8%
-# non-finance. Remove it from here when SRC-33 lands, not before.
-DEFAULT_EXCLUDED = {"VIVA": "SRC-33 (#119) open -- 53 branches, ~53k rows per run onto a 39k backlog"}
+# A source goes here only against an open ticket, with the ticket in the reason,
+# and comes out when that ticket lands. VIVA was here until SRC-33 (#119) landed
+# on 2026-09-26 (URL-keyed branches fixed, soft leaves denied, backlog settled).
+DEFAULT_EXCLUDED = {}
 
 SOURCE_TIMEOUT = int(os.getenv("SCHEDULE_SOURCE_TIMEOUT", "900"))
 # OPS-19 proposal 5: a source that lists rows but saves nothing for this many

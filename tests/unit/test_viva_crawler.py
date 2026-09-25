@@ -52,3 +52,56 @@ class TestVivaReporterExtraction:
         </div>
         """
         assert VivaCrawler._get_reporter_from_text(_soup(html)) == []
+
+
+
+# -- SRC-33 (#119): branch keys --------------------------------------------------
+from bs4 import BeautifulSoup as _BS  # noqa: E402
+
+from newscrawler.core.crawler_dict_list import CRAWLER_DICT as _CD  # noqa: E402
+from newscrawler.core.importance_filter import category_gate as _gate  # noqa: E402
+from newscrawler.infrastructure.datasource.scrapers.viva.viva_crawler import VivaCrawler as _V  # noqa: E402
+
+_VIVA_INDEX = _BS(
+    '<?xml version="1.0"?><sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' + "".join(
+        "<sitemap><loc>%s</loc></sitemap>" % l for l in (
+            "https://www.viva.co.id/sitemap/news/news-sitemap.xml",   # aggregate: skipped
+            "https://www.viva.co.id/sitemap/web/news-sitemap.xml",    # web: skipped
+            "https://www.viva.co.id/sitemap/photo/news-sitemap.xml",  # media: skipped
+            "https://www.viva.co.id/sitemap/video/video.xml",
+            "https://www.viva.co.id/sitemap/news/bisnis.xml",
+            "https://www.viva.co.id/sitemap/web/bisnis.xml",          # lastmod-only duplicate
+            "https://www.viva.co.id/sitemap/news/bola.xml",
+            "https://www.viva.co.id/sitemap/tag/sitemap.xml",
+            "https://jogja.viva.co.id/sitemap/news/news-sitemap.xml",
+            "https://olret.viva.co.id/sitemap/news/news-sitemap.xml",
+        )) + "</sitemapindex>", "xml")
+
+
+def test_branch_keys_are_names_never_urls():
+    assert _V._get_branches(_VIVA_INDEX) == {
+        "bisnis": "https://www.viva.co.id/sitemap/news/bisnis.xml",
+        "bola": "https://www.viva.co.id/sitemap/news/bola.xml",
+        "jogja": "https://jogja.viva.co.id/sitemap/news/news-sitemap.xml",
+        "olret": "https://olret.viva.co.id/sitemap/news/news-sitemap.xml",
+    }
+
+
+def test_the_soft_drop_keeps_bisnis_and_jogja():
+    kept = _CD["VIVA"].drop_soft_branches(_V._get_branches(_VIVA_INDEX))
+    assert set(kept) == {"bisnis", "jogja"}
+
+
+def test_stored_url_shaped_categories_map_to_todays_key():
+    assert _V.branch_name_from_url("https://jogja.viva.co.id/sitemap/news/news-sitemap.xml") == "jogja"
+    assert _V.branch_name_from_url("https://www.viva.co.id/sitemap/news/bisnis.xml") == "bisnis"
+    assert _V.branch_name_from_url("https://www.viva.co.id/sitemap/news/news-sitemap.xml") is None
+    assert _V.branch_name_from_url("https://www.viva.co.id/sitemap/web/bisnis.xml") is None
+    assert _V.branch_name_from_url("bisnis") is None
+
+
+def test_viva_soft_leaves_are_denied_for_viva_only():
+    for leaf in ("olret", "mindset", "otomotif", "vbuzz", "surat", "bandung"):
+        assert _CD["VIVA"].is_soft_branch(leaf), leaf
+        assert _gate(leaf, "VIVA") == "deny", leaf
+    assert _gate("bandung", "KOMPAS") != "deny"   # KOMPAS's bandung desk is news

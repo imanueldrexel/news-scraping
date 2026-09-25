@@ -35,22 +35,27 @@ HEALTHY = ["ANTARANEWS", "CNBC", "KOMPAS", "VIVA", "WARTAEKONOMI"]
 
 
 class TestScheduledSources:
-    def test_viva_is_excluded_with_its_reason(self):
-        """Standing hard rule, not a preference: SRC-33 (#119) is open, VIVA still
-        keeps all 53 branches, and one crawl adds ~53k rows onto a 39k backlog
-        that is 97.8% non-finance."""
-        sources, skipped = rc._scheduled_sources(HEALTHY)
+    # An exclusion is exercised with an explicit list: VIVA's own (SRC-33) ended
+    # 2026-09-26, and the mechanism must keep working for the next one.
+    EXCLUDED = {"VIVA": "SRC-00 (#0) example -- a source under an open ticket"}
+
+    def test_an_excluded_source_is_skipped_with_its_reason(self):
+        sources, skipped = rc._scheduled_sources(HEALTHY, excluded=self.EXCLUDED)
         assert "VIVA" not in sources
-        assert "VIVA" in skipped and "SRC-33" in skipped["VIVA"]
+        assert "VIVA" in skipped and "#0" in skipped["VIVA"]
 
     def test_everything_else_is_scheduled_in_order(self):
-        sources, _ = rc._scheduled_sources(HEALTHY)
+        sources, _ = rc._scheduled_sources(HEALTHY, excluded=self.EXCLUDED)
         assert sources == ["ANTARANEWS", "CNBC", "KOMPAS", "WARTAEKONOMI"]
 
-    def test_an_override_still_cannot_smuggle_viva_in(self):
-        """--website is an operator convenience, not a way past the hard rule."""
-        sources, skipped = rc._scheduled_sources(HEALTHY, website_override="KOMPAS,VIVA")
+    def test_an_override_still_cannot_smuggle_an_excluded_source_in(self):
+        """--website is an operator convenience, not a way past an exclusion."""
+        sources, skipped = rc._scheduled_sources(HEALTHY, website_override="KOMPAS,VIVA", excluded=self.EXCLUDED)
         assert sources == ["KOMPAS"] and "VIVA" in skipped
+
+    def test_viva_is_scheduled_now_that_src33_landed(self):
+        sources, skipped = rc._scheduled_sources(HEALTHY)
+        assert "VIVA" in sources and skipped == {}
 
     def test_the_override_is_normalised(self):
         sources, _ = rc._scheduled_sources(HEALTHY, website_override=" kompas , cnbc ")
@@ -291,8 +296,8 @@ class TestSummaryLine:
 
     def test_skipped_sources_are_reported(self):
         line = rc.summary_line(self._phases({"KOMPAS": "ok"}), {"KOMPAS": {"sitemaps": 1, "articles": 1}},
-                               [], rc.DEFAULT_EXCLUDED)
-        assert "skipped: VIVA" in line
+                               [], {"VIVA": "SRC-00 (#0) -- example"})
+        assert "skipped: VIVA (SRC-00 (#0))" in line
 
 
 class TestZeroSaveWindow:

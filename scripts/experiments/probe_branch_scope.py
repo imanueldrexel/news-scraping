@@ -34,7 +34,7 @@ FINANCE = re.compile(r"ekonomi|bisnis|finan|keuangan|uang|money|saham|bursa|inve
 # Sources whose live index still yields URL-shaped keys, each against its
 # ticket. --fail-on-url-keys exits 0 while only these appear, so the check can
 # be wired into a run without going red on known, tracked work.
-URL_KEY_WHITELIST = {"VIVA": "SRC-33 (#119)"}
+URL_KEY_WHITELIST = {}  # VIVA left 2026-09-26 (SRC-33 #119)
 
 
 def probe(name, crawler):
