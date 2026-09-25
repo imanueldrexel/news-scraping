@@ -43,3 +43,25 @@ class TestProcessEventFailurePropagation:
     def test_LH04_a_successful_batch_returns_normally(self):
         with _patched(None):
             lambda_handler.process_event({"task": "sitemap", "website": "CNN"}, None)  # no raise
+
+
+class TestProcessEventValidatesBeforeTheModelLoad:
+    """OPS-24 (#167): `init_crawler()` loads the models and both FAISS indexes
+    (~2 min, ~4 GB). A typo must be rejected before that, not after."""
+
+    def test_an_unknown_name_raises_without_calling_init_crawler(self):
+        from unittest.mock import patch
+        from newscrawler.application.api.lambda_function import lambda_handler
+        with patch.object(lambda_handler, "init_crawler",
+                          side_effect=AssertionError("init_crawler ran before validation")) as init:
+            with pytest.raises(ValueError, match="KOMPASS"):
+                lambda_handler.process_event({"task": "sitemap", "website": "KOMPASS"}, None)
+        init.assert_not_called()
+
+    def test_a_known_name_still_builds_and_dispatches(self):
+        from unittest.mock import MagicMock, patch
+        from newscrawler.application.api.lambda_function import lambda_handler
+        api = MagicMock()
+        with patch.object(lambda_handler, "init_crawler", return_value=api):
+            lambda_handler.process_event({"task": "sitemap", "website": "KOMPAS, CNBC"}, None)
+        api.crawl_websites_in_batch.assert_called_once_with(website_names=["KOMPAS", "CNBC"], task="sitemap")

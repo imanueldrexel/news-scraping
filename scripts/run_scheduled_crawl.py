@@ -121,6 +121,31 @@ def _scheduled_sources(healthy, website_override=None, excluded=None):
     return [w for w in wanted if w not in excluded], skipped
 
 
+def validate_sources(sources):
+    """OPS-24 (#167): every name must be a known source, checked before anything
+    else runs -- the DB, the ~2 min crawler build, and even --dry-run's plan.
+
+    DBT-12 put this check in `process_event`, and this wrapper calls
+    `CrawlerAPI.crawl_website` below that boundary, so a typo in --website or
+    in __main__.py's HEALTHY reached `crawl_sitemaps` and failed there as
+    `'NoneType' object has no attribute 'get_news_in_bulk'`, after the model
+    load and with a crawl_log row that read like a real source failure. A bad
+    name is a config error: the whole run fails, by name, and main() sends the
+    Telegram message."""
+    from newscrawler.infrastructure.datasource.dataflow.write.sqlalchemy.sql_alchemy_sitemap_data_source import (
+        validate_website_name,
+    )
+    bad = []
+    for name in sources:
+        try:
+            validate_website_name(name)
+        except ValueError:
+            bad.append(name)
+    if bad:
+        raise ValueError("unknown website name(s): %s -- fix --website or HEALTHY in __main__.py"
+                         % ", ".join(bad))
+
+
 def full_text_sources(sources):
     """OPS-19 proposal 3: `SCHEDULE_FULL_TEXT_WEBSITES` limits which sources get
     their articles fetched. It existed as the gate for "no full_text until SYS-37"
@@ -269,6 +294,7 @@ def _run(args) -> int:
 
     healthy = _healthy_list()
     sources, skipped = _scheduled_sources(healthy, args.website)
+    validate_sources(sources)
     ft_sources = full_text_sources(sources) if args.phase in ("full_text", "both") else []
     sm_sources = sources if args.phase in ("sitemap", "both") else []
 

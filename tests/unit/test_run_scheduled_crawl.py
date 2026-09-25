@@ -344,3 +344,38 @@ class TestZeroSaveWindow:
     def test_null_article_count_counts_as_zero(self):
         s = self._Session([self._row("X", None) for _ in range(3)])
         assert rc.zero_save_sources(s) == ["X"]
+
+
+class TestWebsiteNamesAreValidatedFirst:
+    """OPS-24 (#167): a typo is a config error, caught before the DB, the ~2 min
+    crawler build, or any crawl_log row -- and it fails the run by name."""
+
+    def test_a_typo_in_website_exits_1_naming_it_without_building_the_crawler(self, harness):
+        seen = harness(argv=("--website", "KOMPASS", "--phase", "sitemap"))
+        assert seen["rc"] == 1
+        assert seen["worker"].spawned == 0 and seen["worker"].calls == []
+        assert "KOMPASS" in seen["notified"][-1] and "FAILED to start" in seen["notified"][-1]
+
+    def test_a_typo_in_healthy_is_caught_the_same_way(self, harness, monkeypatch):
+        monkeypatch.setattr(rc, "_healthy_list", lambda: ["KOMPAS", "CNBCC"])
+        seen = harness()
+        assert seen["rc"] == 1 and seen["worker"].spawned == 0
+        assert "CNBCC" in seen["notified"][-1] and "KOMPAS," not in seen["notified"][-1]
+
+    def test_every_bad_name_is_listed_not_just_the_first(self):
+        with pytest.raises(ValueError, match="KOMPASS, TEMPOO"):
+            rc.validate_sources(["KOMPASS", "CNBC", "TEMPOO"])
+
+    def test_dry_run_catches_it_too_and_does_not_notify(self, harness):
+        """A dry run is how an operator checks a config change, so it must fail on
+        a typo; it must not page anyone for it."""
+        seen = harness(argv=("--website", "KOMPASS", "--dry-run"))
+        assert seen["rc"] == 1 and seen["notified"] == []
+
+    def test_known_names_pass(self):
+        rc.validate_sources(["KOMPAS", "CNBC", "DETIK"])
+
+    def test_the_scheduled_list_itself_is_valid(self):
+        """The real HEALTHY list, as the scheduler will read it."""
+        sources, _ = rc._scheduled_sources(rc._healthy_list())
+        rc.validate_sources(sources)

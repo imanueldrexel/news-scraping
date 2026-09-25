@@ -25,10 +25,12 @@ def init_crawler():
 
 def process_event(event, context):
     logger.info(event)
-    scraper_api = init_crawler()
     websites = event.get("website")
     task = event.get("task")
 
+    # OPS-24 (#167): names are validated BEFORE init_crawler(), which loads the
+    # models and both FAISS indexes (~2 min, ~4 GB). A typo used to cost the full
+    # load before it was rejected.
     if websites:
         websites = [website.strip() for website in websites.split(",")]
         # DBT-12 (#47): validate the list at the dispatch boundary, before any
@@ -45,6 +47,7 @@ def process_event(event, context):
     else:
         websites = []  # extract_knowledge does not need a website list
 
+    scraper_api = init_crawler()
     try:
         scraper_api.crawl_websites_in_batch(website_names=websites, task=task)
     except Exception:
