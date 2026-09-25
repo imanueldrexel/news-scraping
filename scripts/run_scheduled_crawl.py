@@ -18,15 +18,26 @@ What it does, in this order (OPS-19 proposal 2):
 Listing first, for every source, so a slow source's fetch phase cannot delay
 another source's listing -- the listing is cheap and is what keeps the queue fed.
 
-One process, one model load. `init_crawler()` builds the sentence-transformers
-models and both FAISS indexes (~2 min, ~4 GB RSS), so the sources are looped
-inside a single crawler rather than one subprocess each.
+One model load in the normal case. `init_crawler()` builds the sentence-transformers
+models and both FAISS indexes (~2 min, ~4 GB RSS). It runs once, in a child
+process (`newscrawler/tools/source_worker.py`), and the sources run one after
+another inside it. This process only dispatches, counts and reports.
 
-Per-source timeout: each source runs in a worker thread and the wrapper stops
-waiting after SCHEDULE_SOURCE_TIMEOUT. Python cannot kill a thread, so a timed-out
-source keeps running in the background -- the same trade `check_crawlers.py`
-makes. It is recorded as a timeout and the wrapper moves on, which is the point:
-one hung outlet must not eat the window.
+Per-source timeout (OPS-22, #161): a source that exceeds SCHEDULE_SOURCE_TIMEOUT
+has its child process **killed**, and the kill finishes before the next source
+starts. That source's `crawl_log` row is closed as `failed`, and the next source
+gets a fresh child (one more model load). This used to be a worker thread, which
+Python cannot kill. Its timeout never freed the caller (the executor's context
+exit waited for it), and freeing it would have left the abandoned source writing
+the same service state and FAISS stores as the next one. `check_crawlers.py` can
+make the thread trade only because it writes nothing. Why a kill is safe for the
+stores is in source_worker's docstring.
+
+Run budget: no source is started once the elapsed time plus one per-source
+timeout would pass SCHEDULE_RUN_BUDGET (default 3 h 30 min). The remaining
+sources are reported as skipped, so the summary always goes out before Task
+Scheduler's 4 h `ExecutionTimeLimit` kills the process. A killed process sends
+nothing.
 
 Windows Task Scheduler registration (see OPERATIONS.md; mirrors OPS-01's, and the
 two battery settings matter for the same reason they do there -- this machine is a
@@ -54,7 +65,7 @@ import argparse
 import logging
 import os
 import sys
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
+import time
 from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -82,6 +93,16 @@ ZERO_SAVE_RUNS_BEFORE_ALERT = int(os.getenv("SCHEDULE_ZERO_SAVE_RUNS", "3"))
 # all zero, while it actually holds 2,695 articles -- an alert that says "needs
 # attention now" must not be answerable from four-month-old rows.
 ZERO_SAVE_WITHIN_DAYS = int(os.getenv("SCHEDULE_ZERO_SAVE_WITHIN_DAYS", "7"))
+# Hours since the last crawl before the run says so. OPS-01 was reopened twice
+# because "a missed window produces no alert, no exit code, no crawl_log row --
+# indistinguishable from a healthy run"; this is the crawl's version of its 36 h
+# gap check. It only helps when a later run DOES fire, which is its limit.
+GAP_ALERT_HOURS = int(os.getenv("SCHEDULE_GAP_ALERT_HOURS", "36"))
+# OPS-22: seconds the whole run may take. It must stay below the Task Scheduler
+# ExecutionTimeLimit (4 h) by at least one SOURCE_TIMEOUT plus the reporting time.
+RUN_BUDGET = int(os.getenv("SCHEDULE_RUN_BUDGET", str(3 * 3600 + 1800)))
+# How long the child may take to build the crawler before the start counts as failed.
+INIT_TIMEOUT = int(os.getenv("SCHEDULE_INIT_TIMEOUT", "1200"))
 
 
 def scheduled_sources(website_override=None, excluded=None):
@@ -152,19 +173,54 @@ def zero_save_sources(session, runs=ZERO_SAVE_RUNS_BEFORE_ALERT, within_days=ZER
     return sorted(w for w, counts in by_site.items() if len(counts) >= runs and not any(counts))
 
 
-def run_one(api, website, task, timeout=SOURCE_TIMEOUT):
-    """(status, detail). Never raises -- one source must not end the run."""
-    with ThreadPoolExecutor(max_workers=1) as ex:
-        future = ex.submit(api.crawl_website, website, task)
-        try:
-            future.result(timeout=timeout)
-            return "ok", ""
-        except FutureTimeout:
-            # The thread cannot be killed and keeps running; recorded and moved
-            # past, so one hung outlet does not eat the window.
-            return "timeout", "exceeded %ds" % timeout
-        except Exception as e:  # noqa: BLE001 -- the next source must still run
-            return "failed", "%s: %s" % (type(e).__name__, str(e)[:200])
+def hours_since_last_crawl(session):
+    """Hours since the newest `sitemap`/`full_text` crawl_log row, or None when
+    there has never been one. Pure enough to test with a stub session."""
+    from sqlalchemy import text
+    newest = session.execute(text(
+        "SELECT MAX(started_at) FROM crawl_log WHERE task IN ('sitemap', 'full_text')"
+    )).scalar()
+    if newest is None:
+        return None
+    if newest.tzinfo is None:
+        newest = newest.replace(tzinfo=timezone.utc)
+    return (datetime.now(timezone.utc) - newest).total_seconds() / 3600.0
+
+
+def run_one(worker, website, task, timeout=SOURCE_TIMEOUT):
+    """(status, detail). Never raises -- one source must not end the run. On
+    timeout the worker has already killed the source's process when this returns."""
+    try:
+        return worker.run(website, task, timeout)
+    except Exception as e:  # noqa: BLE001 -- the next source must still run
+        return "failed", "%s: %s" % (type(e).__name__, str(e)[:200])
+
+
+def db_now(session):
+    """The database's clock. crawl_log.started_at is stamped by the DB's NOW(), so
+    a window compared against it has to come from the same clock."""
+    from sqlalchemy import text
+    return session.execute(text("SELECT NOW()::timestamp")).scalar()
+
+
+def _close_abandoned_log_rows(session, website, task, since, reason):
+    """A killed source never writes its crawl_log completion, so its row would
+    stay 'started' forever and read as "still running". Close every row the
+    killed source opened (started at or after `since`) as failed, with the reason.
+    Returns how many were closed."""
+    from sqlalchemy import text
+    result = session.execute(text(
+        "UPDATE crawl_log SET status = 'failed', finished_at = NOW(), error_msg = :msg "
+        "WHERE website = :website AND task = :task AND status = 'started' AND started_at >= :since"
+    ), {"msg": ("killed by run_scheduled_crawl: " + reason)[:1000], "website": website,
+        "task": task, "since": since})
+    session.commit()
+    return result.rowcount
+
+
+def over_budget(elapsed, timeout, budget=None):
+    """Whether starting one more source could run past the budget."""
+    return elapsed + timeout > (RUN_BUDGET if budget is None else budget)
 
 
 def summary_line(phase_results, deltas, zero_savers, skipped):
@@ -193,7 +249,22 @@ def main(argv=None) -> int:
     ap.add_argument("--dry-run", action="store_true", help="Print the plan and exit; crawl nothing")
     ap.add_argument("--timeout", type=int, default=SOURCE_TIMEOUT, help="Per-source timeout in seconds")
     args = ap.parse_args(argv)
+    try:
+        return _run(args)
+    except Exception as e:  # noqa: BLE001 -- see below
+        # The most likely catastrophic failure is init_crawler(): a missing probe
+        # artifact, a corrupt FAISS index, or OOM loading e5-large. That happens
+        # BEFORE any source runs, so without this the operator gets no Telegram
+        # message at all -- only a non-zero exit buried in Task Scheduler history,
+        # which is the exact hole OPS-01 was reopened twice for. A crawl that
+        # could not start has to say so.
+        logger.exception("scheduled crawl failed before it could report")
+        if not args.dry_run:
+            _notify("FAILED to start or complete: %s: %s" % (type(e).__name__, str(e)[:300]))
+        return 1
 
+
+def _run(args) -> int:
     from newscrawler.infrastructure.network.clients.sqlalchemy_client import SQLAlchemyClient
 
     healthy = _healthy_list()
@@ -216,24 +287,48 @@ def main(argv=None) -> int:
     client = SQLAlchemyClient()
     with client.get_session() as session:
         before = _counts(session)
+        gap_hours = hours_since_last_crawl(session)
+    if gap_hours is None:
+        logger.warning("no previous sitemap/full_text crawl_log row -- this is the first recorded crawl")
+    elif gap_hours > GAP_ALERT_HOURS:
+        msg = ("last recorded crawl was %.1f h ago (expected ~every 12 h) -- the schedule may not be firing"
+               % gap_hours)
+        logger.warning(msg)
+        _notify("Scheduled crawl gap: " + msg)
 
-    from newscrawler.application.api.lambda_function.lambda_handler import init_crawler
-    logger.info("building the crawler (models + FAISS; this is the slow part)...")
-    api = init_crawler()
+    logger.info("building the crawler in its worker process (models + FAISS; this is the slow part)...")
+    worker = _make_worker()
+    worker.start()  # a crawler that cannot start at all is main()'s "FAILED to start"
+    run_started = time.monotonic()
 
     phase_results = {}
-    for phase, phase_sources in (("sitemap", sm_sources), ("full_text", ft_sources)):
-        if not phase_sources:
-            continue
-        results = {}
-        for i, website in enumerate(phase_sources, 1):
-            started = datetime.now(timezone.utc)
-            status, detail = run_one(api, website, phase, timeout=args.timeout)
-            results[website] = (status, detail)
-            logger.info("[%s %d/%d] %s -> %s%s (%.0fs)", phase, i, len(phase_sources), website, status,
-                        " (%s)" % detail if detail else "",
-                        (datetime.now(timezone.utc) - started).total_seconds())
-        phase_results[phase] = results
+    try:
+        for phase, phase_sources in (("sitemap", sm_sources), ("full_text", ft_sources)):
+            if not phase_sources:
+                continue
+            results = {}
+            for i, website in enumerate(phase_sources, 1):
+                if over_budget(time.monotonic() - run_started, args.timeout):
+                    skipped["%s/%s" % (website, phase)] = "run budget %ds reached -- not started" % RUN_BUDGET
+                    continue
+                with client.get_session() as session:
+                    since = db_now(session)
+                started = time.monotonic()
+                status, detail = run_one(worker, website, phase, timeout=args.timeout)
+                if status != "ok" and not worker.alive:
+                    # The source's process is gone (killed on timeout, or died), so
+                    # its crawl_log row will never be completed by the pipeline.
+                    with client.get_session() as session:
+                        closed = _close_abandoned_log_rows(session, website, phase, since, detail)
+                    logger.warning("%s/%s: closed %d abandoned crawl_log row(s)", website, phase, closed)
+                results[website] = (status, detail)
+                logger.info("[%s %d/%d] %s -> %s%s (%.0fs)", phase, i, len(phase_sources), website, status,
+                            " (%s)" % detail if detail else "", time.monotonic() - started)
+            phase_results[phase] = results
+    finally:
+        worker.close()
+    if worker.spawned > 1:
+        logger.warning("the crawler was rebuilt %d time(s) after a killed or dead source", worker.spawned - 1)
 
     with client.get_session() as session:
         after = _counts(session)
@@ -253,6 +348,12 @@ def main(argv=None) -> int:
 
     failed = [s for results in phase_results.values() for s, (st, _) in results.items() if st != "ok"]
     return 1 if failed else 0
+
+
+def _make_worker():
+    """Seam for the tests: the production worker builds the real crawler in its child."""
+    from newscrawler.tools.source_worker import SourceWorker
+    return SourceWorker(init_timeout=INIT_TIMEOUT)
 
 
 def _healthy_list():

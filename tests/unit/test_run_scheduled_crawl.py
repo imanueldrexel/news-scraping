@@ -78,24 +78,188 @@ class TestFullTextSelection:
 
 
 class TestRunOne:
-    def test_ok(self):
-        class _Api:
-            def crawl_website(self, w, t): return None
-        assert rc.run_one(_Api(), "KOMPAS", "sitemap") == ("ok", "")
+    """run_one is a thin guard over SourceWorker.run; the process behaviour itself
+    (the timeout frees the caller, the killed source stops writing) is
+    tests/unit/test_source_worker.py, against real child processes."""
 
-    def test_a_failure_is_recorded_and_does_not_raise(self):
-        class _Api:
-            def crawl_website(self, w, t): raise RuntimeError("boom")
-        status, detail = rc.run_one(_Api(), "KOMPAS", "sitemap")
-        assert status == "failed" and "RuntimeError" in detail and "boom" in detail
+    class _Worker:
+        def __init__(self, result=None, exc=None):
+            self.result, self.exc = result, exc
 
-    def test_a_hung_source_times_out_instead_of_eating_the_window(self):
-        import time
+        def run(self, website, task, timeout):
+            if self.exc:
+                raise self.exc
+            return self.result
 
-        class _Api:
-            def crawl_website(self, w, t): time.sleep(5)
-        status, detail = rc.run_one(_Api(), "TEMPO", "sitemap", timeout=0.3)
-        assert status == "timeout" and "0s" in detail or "exceeded" in detail
+    def test_passes_the_worker_result_through(self):
+        assert rc.run_one(self._Worker(("ok", "")), "KOMPAS", "sitemap") == ("ok", "")
+        assert rc.run_one(self._Worker(("timeout", "x")), "TEMPO", "sitemap", timeout=1) == ("timeout", "x")
+
+    def test_a_worker_error_is_a_failed_source_not_a_crashed_run(self):
+        status, detail = rc.run_one(self._Worker(exc=OSError("pipe closed")), "KOMPAS", "sitemap")
+        assert status == "failed" and "OSError" in detail and "pipe closed" in detail
+
+
+class _FakeSession:
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+
+class _FakeClient:
+    def get_session(self):
+        return _FakeSession()
+
+
+class _ScriptedWorker:
+    """Plays back per-source outcomes. `alive` goes False after a timeout or a
+    death, the way SourceWorker's does once it has killed or reaped the child."""
+
+    def __init__(self, outcomes):
+        self.outcomes = outcomes
+        self.calls = []
+        self.alive = False
+        self.spawned = 0
+        self.closed = False
+
+    def start(self):
+        self.alive = True
+        self.spawned += 1
+
+    def run(self, website, task, timeout):
+        if not self.alive:
+            self.start()
+        self.calls.append((website, task))
+        status, detail = self.outcomes.get((website, task), ("ok", ""))
+        if status == "timeout" or "died" in detail:
+            self.alive = False
+        return status, detail
+
+    def close(self):
+        self.closed = True
+        self.alive = False
+
+
+@pytest.fixture
+def harness(monkeypatch):
+    """_run with every DB, model and Telegram touch replaced; returns what it saw."""
+    import newscrawler.infrastructure.network.clients.sqlalchemy_client as sac
+    seen = {"closed_rows": [], "notified": []}
+    monkeypatch.setattr(sac, "SQLAlchemyClient", _FakeClient)
+    monkeypatch.setattr(rc, "_healthy_list", lambda: ["KOMPAS", "TEMPO", "CNBC"])
+    monkeypatch.setattr(rc, "_counts", lambda session: {})
+    monkeypatch.setattr(rc, "zero_save_sources", lambda session: [])
+    monkeypatch.setattr(rc, "hours_since_last_crawl", lambda session: 1.0)
+    monkeypatch.setattr(rc, "db_now", lambda session: "T0")
+    monkeypatch.setattr(rc, "_close_abandoned_log_rows",
+                        lambda session, w, t, since, reason: seen["closed_rows"].append((w, t, since, reason)) or 1)
+    monkeypatch.setattr(rc, "_notify", seen["notified"].append)
+
+    def run(outcomes=None, argv=("--phase", "sitemap"), worker=None):
+        worker = worker or _ScriptedWorker(outcomes or {})
+        monkeypatch.setattr(rc, "_make_worker", lambda: worker)
+        seen["rc"] = rc.main(list(argv))
+        seen["worker"] = worker
+        return seen
+    return run
+
+
+class TestRunLoop:
+    def test_a_timed_out_source_does_not_stop_the_next_and_its_log_row_is_closed(self, harness):
+        seen = harness({("TEMPO", "sitemap"): ("timeout", "exceeded 900s; worker process killed")})
+        assert seen["worker"].calls == [("KOMPAS", "sitemap"), ("TEMPO", "sitemap"), ("CNBC", "sitemap")]
+        assert seen["closed_rows"] == [("TEMPO", "sitemap", "T0", "exceeded 900s; worker process killed")]
+        assert seen["rc"] == 1
+        assert "FAILED: TEMPO" in seen["notified"][-1]
+        assert seen["worker"].closed
+
+    def test_a_plain_failure_leaves_the_log_row_to_the_pipeline(self, harness):
+        """The child survived and the pipeline's own log_crawl_failed closed the
+        row; rewriting it would overwrite the real error."""
+        seen = harness({("TEMPO", "sitemap"): ("failed", "RuntimeError: boom")})
+        assert seen["closed_rows"] == []
+        assert seen["rc"] == 1
+
+    def test_a_dead_child_is_closed_like_a_timeout(self, harness):
+        seen = harness({("KOMPAS", "sitemap"): ("failed", "worker process died (exit code 7)")})
+        assert [r[0] for r in seen["closed_rows"]] == ["KOMPAS"]
+
+    def test_the_run_budget_skips_sources_instead_of_being_killed_silently(self, harness, monkeypatch):
+        """Task Scheduler's 4 h kill sends nothing. A source is not started once it
+        could run past the budget, and the skip is in the summary."""
+        clock = iter([0, 0, 0, 5000, 5000, 5000, 5000]).__next__
+        monkeypatch.setattr(rc.time, "monotonic", lambda: clock())
+        monkeypatch.setattr(rc, "RUN_BUDGET", 5000)
+        seen = harness(argv=("--phase", "sitemap", "--timeout", "900"))
+        assert seen["worker"].calls == [("KOMPAS", "sitemap")]
+        assert "TEMPO/sitemap" in seen["notified"][-1] and "CNBC/sitemap" in seen["notified"][-1]
+
+    def test_the_worker_is_closed_even_when_the_loop_raises(self, harness, monkeypatch):
+        def boom(session):
+            raise RuntimeError("db gone")
+        monkeypatch.setattr(rc, "db_now", boom)
+        seen = harness()
+        assert seen["rc"] == 1 and seen["worker"].closed
+        assert "FAILED to start or complete" in seen["notified"][-1] and "db gone" in seen["notified"][-1]
+
+
+class TestOverBudget:
+    def test_boundaries(self):
+        assert not rc.over_budget(0, 900, budget=900)
+        assert rc.over_budget(1, 900, budget=900)
+
+    def test_default_budget_leaves_room_under_the_4h_task_limit(self):
+        assert rc.RUN_BUDGET + rc.SOURCE_TIMEOUT < 4 * 3600
+
+
+class TestStartFailureIsReported:
+    """A crawler that cannot start (missing probe artifact, corrupt FAISS, OOM)
+    fails before any source runs; without main()'s catch the operator got no
+    message at all -- only a non-zero exit in Task Scheduler history."""
+
+    def test_notifies_and_exits_1(self, harness, monkeypatch):
+        from newscrawler.tools.source_worker import WorkerInitError
+
+        class _Unstartable(_ScriptedWorker):
+            def start(self):
+                raise WorkerInitError("FileNotFoundError: importance_probe.npz")
+        seen = harness(worker=_Unstartable({}))
+        assert seen["rc"] == 1 and seen["worker"].calls == []
+        assert "FAILED to start or complete" in seen["notified"][-1]
+        assert "importance_probe.npz" in seen["notified"][-1]
+
+
+class TestGapCheck:
+    class _Session:
+        def __init__(self, value):
+            self.value = value
+
+        def execute(self, *a, **k):
+            value = self.value
+
+            class _R:
+                def scalar(self_inner):
+                    return value
+            return _R()
+
+    def test_never_crawled_is_none(self):
+        assert rc.hours_since_last_crawl(self._Session(None)) is None
+
+    def test_a_naive_utc_timestamp_is_read_as_utc(self):
+        from datetime import datetime, timedelta, timezone
+        naive = (datetime.now(timezone.utc) - timedelta(hours=40)).replace(tzinfo=None)
+        assert rc.hours_since_last_crawl(self._Session(naive)) == pytest.approx(40, abs=0.1)
+
+    def test_a_gap_past_the_threshold_notifies(self, harness, monkeypatch):
+        monkeypatch.setattr(rc, "hours_since_last_crawl", lambda session: rc.GAP_ALERT_HOURS + 12.0)
+        seen = harness()
+        assert any(m.startswith("Scheduled crawl gap:") for m in seen["notified"])
+
+    def test_within_the_threshold_is_silent(self, harness):
+        seen = harness()
+        assert not any(m.startswith("Scheduled crawl gap:") for m in seen["notified"])
 
 
 class TestSummaryLine:
