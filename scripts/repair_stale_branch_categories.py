@@ -91,11 +91,11 @@ def report(website, rows, changes, unmappable):
     logger.info("  %-24s -> %-24s %6s  %s", "stored now", "article's own section", "rows", "gate change")
     for (old, new), n in pairs.most_common(30):
         logger.info("  %-24s -> %-24s %6d  %s -> %s", str(old), new, n,
-                    category_gate(old), category_gate(new))
+                    category_gate(old, website), category_gate(new, website))
     by_status = collections.Counter(st for _, _, _, st in changes)
     logger.info("  by crawl_status: %s", dict(by_status))
     now_denied = sum(n for (old, new), n in pairs.items()
-                     if category_gate(old) != "deny" and category_gate(new) == "deny")
+                     if category_gate(old, website) != "deny" and category_gate(new, website) == "deny")
     logger.info("  rows that become DENY at the category gate: %d", now_denied)
     if unmappable:
         logger.warning("  %d row(s) whose link the crawler cannot name -- left as is, e.g. %s",

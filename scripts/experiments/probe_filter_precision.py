@@ -149,7 +149,7 @@ def main(argv=None) -> int:
 
     # 2. weak-labeled precision/recall: before (every saved row passed by
     # construction) vs. after (re-run the NEW filter on the same real text).
-    neg = [(src, cat, title, text) for _, _, src, cat, title, text in scored if is_offtopic_category(cat)]
+    neg = [(src, cat, title, text) for _, _, src, cat, title, text in scored if is_offtopic_category(cat, src)]
     pos = [(src, cat, title, text) for _, _, src, cat, title, text in scored if (cat or "").strip().lower() in WEAK_POSITIVE_CATEGORIES]
     print(f"weak-labeled sample: {len(pos)} positive-category, {len(neg)} negative-category "
           f"(of {len(scored)} sampled; rest unlabeled/ambiguous)")

@@ -203,7 +203,7 @@ class CrawlerServiceImpl(CrawlerService):
                         continue
 
                     check_text = build_check_text(title, full_text)
-                    decision = self.semantic_filter.classify(check_text, category=category)
+                    decision = self.semantic_filter.classify(check_text, category=category, source=website_name)
                     gate_counts[decision.gate] += 1
                     if decision.gate == "allow":
                         allow_total[category] += 1

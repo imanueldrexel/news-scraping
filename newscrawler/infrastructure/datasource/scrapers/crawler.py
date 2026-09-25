@@ -192,6 +192,12 @@ class Crawler:
     # because a 3-title sample proved they are that outlet's business or news
     # coverage. Every entry cites its evidence on SRC-35 (#128).
     SOFT_BRANCH_EXCEPTIONS = frozenset()
+    # SRC-50 (#162): exact branch keys this crawler drops although no vocabulary
+    # word is in them (DETIK's `f1`, `relationship`). Point it at
+    # `importance_filter.SOURCE_SOFT_LEAVES[<source>]`, never a local literal:
+    # that set is also what the category gate denies, and a copy is SRC-49's
+    # two-list drift again (a test enforces the mirror).
+    SOFT_BRANCH_DENY = frozenset()
 
     def __init__(self):
         self.verbose = VERBOSE
@@ -303,6 +309,8 @@ class Crawler:
             return False
         if key in {e.lower() for e in cls.SOFT_BRANCH_EXCEPTIONS}:
             return False
+        if key in cls.SOFT_BRANCH_DENY:
+            return True
         # SRC-49: the anchored prefixes catch compound names the word-bounded
         # vocabulary cannot reach (`sportsetup`, `sportstyle`). Exceptions above
         # still win, and being anchored it cannot repeat the `transportasi` bug.

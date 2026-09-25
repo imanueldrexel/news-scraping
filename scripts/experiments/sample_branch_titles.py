@@ -8,6 +8,14 @@ saved).
 
     python scripts/experiments/sample_branch_titles.py --website VIVA --branches bola,otomotif
     python scripts/experiments/sample_branch_titles.py --ambiguous          # the SRC-35 shortlist
+    python scripts/experiments/sample_branch_titles.py --website DETIK --all-kept
+
+--all-kept (SRC-50 #162) samples EVERY branch the source would crawl today: the
+live index is fetched once and passed through the shipped `drop_soft_branches`
+predicates, so the list is what a real run lists. It exists because a sweep that
+searches for vocabulary words cannot find a soft leaf that contains none (DETIK
+kept `f1`, `raket`, `relationship` = horoscopes). The only complete check is
+reading every kept leaf's titles.
 """
 import argparse
 import os
@@ -52,12 +60,17 @@ def from_db(session, source, branch, n):
     return [r.headline for r in rows]
 
 
-def from_live(crawler, branch, n):
+def live_branches(crawler):
+    soup = crawler.page_loader.get_soup(crawler.website_url)
+    return crawler._get_branches(soup) if soup else {}
+
+
+def from_live(crawler, branch, n, branches=None):
     try:
-        soup = crawler.page_loader.get_soup(crawler.website_url)
-        if not soup:
-            return ["(no index)"]
-        branches = crawler._get_branches(soup)
+        if branches is None:
+            branches = live_branches(crawler)
+            if not branches:
+                return ["(no index)"]
         link = branches.get(branch)
         if not link:
             return [f"(branch {branch!r} not in the live index: {sorted(branches)[:6]}...)"]
@@ -81,10 +94,24 @@ def main(argv=None) -> int:
     parser.add_argument("--website")
     parser.add_argument("--branches", help="Comma-separated branch keys")
     parser.add_argument("--ambiguous", action="store_true", help="The SRC-35 shortlist above")
+    parser.add_argument("--all-kept", action="store_true",
+                        help="Every branch --website would crawl today (live index, shipped drop predicates)")
     parser.add_argument("-n", type=int, default=3)
     args = parser.parse_args(argv)
 
-    targets = dict(AMBIGUOUS) if args.ambiguous else {args.website.upper(): [b.strip() for b in args.branches.split(",")]}
+    index = {}
+    if args.all_kept:
+        source = args.website.upper()
+        crawler = CRAWLER_DICT[source]
+        listed = live_branches(crawler)
+        index[source] = listed
+        kept = sorted(crawler.drop_soft_branches(listed))
+        print(f"{source}: {len(listed)} listed, {len(kept)} kept")
+        targets = {source: kept}
+    elif args.ambiguous:
+        targets = dict(AMBIGUOUS)
+    else:
+        targets = {args.website.upper(): [b.strip() for b in args.branches.split(",")]}
     from newscrawler.infrastructure.network.clients.sqlalchemy_client import SQLAlchemyClient
     client = SQLAlchemyClient()
 
@@ -98,7 +125,7 @@ def main(argv=None) -> int:
     todo = [(i, s, b) for i, (s, b, t) in enumerate(jobs) if not t]
     if todo:
         with ThreadPoolExecutor(max_workers=6) as ex:
-            live = list(ex.map(lambda x: from_live(CRAWLER_DICT[x[1]], x[2], args.n), todo))
+            live = list(ex.map(lambda x: from_live(CRAWLER_DICT[x[1]], x[2], args.n, index.get(x[1])), todo))
         for (i, _, _), titles in zip(todo, live):
             jobs[i] = (jobs[i][0], jobs[i][1], [f"[live] {t}" for t in titles])
 

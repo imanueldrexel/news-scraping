@@ -61,7 +61,7 @@ logger.setLevel(logging.INFO)
 # `rejected_filter` (terminal) that way. Such rows are never candidates here;
 # they are counted and left for recrawl_faiss_orphans.py.
 _FETCH_SQL = text("""
-    SELECT s.sitemap_id, s.headline, s.category
+    SELECT s.sitemap_id, s.headline, s.category, s.sources
     FROM sitemaps s
     WHERE s.crawl_status = 'pending'
       AND s.last_crawl_attempt IS NOT NULL
@@ -104,7 +104,7 @@ def fetch_candidates(session, website, l1_ids):
     return rows, evidenced
 
 
-def classify_batch(filter_: SemanticImportanceFilter, headlines, categories):
+def classify_batch(filter_: SemanticImportanceFilter, headlines, categories, sources=None):
     """The live filter's own batch decision -- SemanticImportanceFilter
     .classify_batch (SYS-37 #121: category gate, then the probe on the
     encoder the artifact names). Headline-only here, because a row that was
@@ -115,7 +115,8 @@ def classify_batch(filter_: SemanticImportanceFilter, headlines, categories):
     Returns one bool per row: True = news-worthy (stays pending), False =
     rejected (a soft category, or the probe's P(soft) >= its threshold).
     An empty headline is neither: the caller marks it empty_extraction."""
-    decisions = filter_.classify_batch(list(headlines), list(categories))
+    decisions = filter_.classify_batch(list(headlines), list(categories),
+                                       None if sources is None else list(sources))
     return [d.is_important for d in decisions]
 
 

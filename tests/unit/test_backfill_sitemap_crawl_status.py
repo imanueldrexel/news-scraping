@@ -35,7 +35,7 @@ class TestClassifyBatchUsesTheLiveFilter(unittest.TestCase):
 
         important = classify_batch(filt, headlines, categories)
 
-        filt.classify_batch.assert_called_once_with(headlines, categories)
+        filt.classify_batch.assert_called_once_with(headlines, categories, None)
         self.assertEqual(important, [False, True, False, False])
 
     def test_a_news_desk_row_is_the_probes_call_not_an_automatic_keep(self):

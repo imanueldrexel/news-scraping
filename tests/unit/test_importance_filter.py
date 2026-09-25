@@ -394,8 +394,8 @@ class TestSemanticImportanceFilterCategoryGate(unittest.TestCase):
     def test_is_important_is_a_thin_wrapper_over_classify(self):
         filt = _make_filter_with_stub_probe()
         filt.classify = MagicMock(return_value=FilterDecision(True, "score", True, "markets", 0.9, 0.1))
-        self.assertTrue(filt.is_important("x", category="news"))
-        filt.classify.assert_called_once_with("x", "news")
+        self.assertTrue(filt.is_important("x", category="news", source="DETIK"))
+        filt.classify.assert_called_once_with("x", "news", "DETIK")
 
     def test_missing_or_mismatched_artifact_is_a_hard_failure(self):
         with self.assertRaises(ProbeArtifactError):

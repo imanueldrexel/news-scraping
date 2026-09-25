@@ -81,7 +81,7 @@ def find_offtopic_sitemap_ids(session):
     targets, skipped = [], []
     by_category = {}
     for r in rows:
-        if not is_offtopic_category(r.category):
+        if not is_offtopic_category(r.category, r.sources):
             continue
         if r.referenced:
             skipped.append(r.sitemap_id)

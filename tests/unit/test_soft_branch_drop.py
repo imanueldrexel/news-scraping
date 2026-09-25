@@ -7,6 +7,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from newscrawler.core.crawler_dict_list import CRAWLER_DICT
+from newscrawler.core.importance_filter import SOURCE_SOFT_LEAVES, category_gate
 from newscrawler.infrastructure.datasource.scrapers.crawler import SOFT_BRANCH_WORDS, Crawler
 
 
@@ -375,3 +376,125 @@ class TestCompoundSoftNames:
         from newscrawler.core.importance_filter import category_gate
         for cat in ("sportsetup", "sportstyle", "korean-wave"):
             assert category_gate(cat) == "deny", cat
+
+
+class TestSourceSoftLeaves:
+    """SRC-50 (#162): soft leaves no vocabulary word reaches, decided per leaf
+    from 3 stored titles, denied at BOTH the branch and the category level from
+    one definition."""
+
+    QA_NAMED = ["f1", "moto-gp", "raket", "basket", "relationship", "hikmah/doa-dan-hadits",
+                "hikmah/khazanah", "hikmah/kisah", "hikmah/muslimah", "tempat-makan", "destination",
+                "domestic-destination", "international-destination", "cerita-perjalanan", "jogja/plesir",
+                "music", "pop/music", "pop/pensi", "pop/trending", "wedding", "hijab", "diet",
+                "sexual-health", "sale-and-shop", "modifikasi"]
+
+    @pytest.mark.parametrize("leaf", QA_NAMED)
+    def test_every_leaf_qa_named_is_dropped_and_denied(self, leaf):
+        assert CRAWLER_DICT["DETIK"].is_soft_branch(leaf)
+        assert category_gate(leaf, "DETIK") == "deny"
+
+    @pytest.mark.parametrize("leaf", ["living", "hikmah/ziswaf", "properti/kepemilikan-rumah", "sumut/budaya",
+                                      "bali/budaya", "kendaraan-niaga", "perencanaan-keuangan", "berita",
+                                      "jogja/berita", "mobil"])
+    def test_mixed_and_empty_leaves_stay_for_the_probe(self, leaf):
+        """A leaf is denied only when all 3 titles are soft. `living` is 2 soft + 1
+        news (a Lampung woman stranded by the Anak Krakatau eruption); an empty
+        leaf has no titles to decide by."""
+        assert not CRAWLER_DICT["DETIK"].is_soft_branch(leaf)
+        assert category_gate(leaf, "DETIK") != "deny"
+
+    def test_a_source_leaf_is_that_sources_fact_not_a_fleet_rule(self):
+        """`f1` is soft on DETIK because DETIK files F1 results there. The branch
+        rule is per crawler; nothing else drops a branch called `f1`."""
+        others = [n for n, c in CRAWLER_DICT.items() if n != "DETIK" and c.is_soft_branch("f1")]
+        assert others == []
+
+    def test_detik_uses_the_shared_set_not_a_copy(self):
+        """One definition. A copied literal would drift from the category gate,
+        which is SRC-49's two-list bug."""
+        assert CRAWLER_DICT["DETIK"].SOFT_BRANCH_DENY is SOURCE_SOFT_LEAVES["DETIK"]
+
+    @pytest.mark.parametrize("name", sorted(CRAWLER_DICT))
+    def test_every_crawlers_branch_deny_is_also_a_category_deny(self, name):
+        """The mirror, for any crawler that grows a deny set: a branch dropped by
+        name but whose stored rows are not denied sends those rows to the probe."""
+        crawler = CRAWLER_DICT[name]
+        leaked = sorted(k for k in crawler.SOFT_BRANCH_DENY if category_gate(k, name) != "deny")
+        assert leaked == []
+        assert not (crawler.SOFT_BRANCH_DENY & {e.lower() for e in crawler.SOFT_BRANCH_EXCEPTIONS})
+
+    def test_no_source_leaf_is_a_news_desk(self):
+        from newscrawler.core.importance_filter import NEWS_CATEGORIES
+        for source, leaves in SOURCE_SOFT_LEAVES.items():
+            assert not (leaves & NEWS_CATEGORIES), source
+
+    def test_a_leaf_is_denied_only_for_its_own_source(self):
+        """KONTAN lists a `sehat` branch too -- empty on 2026-09-25, so it could not
+        be sampled. A fleet-wide `sehat` would have denied it by name alone, which
+        is the one thing SRC-39 forbids. The probe that found it:
+        scripts/experiments/probe_branch_category_mismatch.py."""
+        assert category_gate("sehat", "DETIK") == "deny"
+        assert category_gate("sehat", "KONTAN") is None
+        assert category_gate("sehat") is None
+        assert category_gate("f1", "detik") == "deny", "source match is case-insensitive"
+
+    def test_edutainment_is_no_longer_listed_only_to_be_rejected(self):
+        """It was already category-denied through `tainment`; the branch was still
+        listed, so every row cost a fetch to be rejected."""
+        assert category_gate("edu/edutainment", "DETIK") == "deny"
+        assert CRAWLER_DICT["DETIK"].is_soft_branch("edu/edutainment")
+
+    def test_leaves_are_stored_lowercase(self):
+        """is_offtopic_category lower-cases the value before the exact match."""
+        for leaves in SOURCE_SOFT_LEAVES.values():
+            assert all(k == k.strip().lower() for k in leaves)
+
+
+class TestEveryCallerPassesTheSource:
+    """SRC-50: a per-source leaf is denied only when the caller says whose row it
+    is. A caller that forgets the source silently disagrees with the live filter
+    on exactly those rows, so every production call site must pass it. Checked
+    by AST over newscrawler/ and scripts/*.py (tests call the bare form on purpose)."""
+
+    # the positional index the source occupies in each signature
+    FUNCTIONS = {"category_gate": 1, "is_offtopic_category": 1}
+    METHODS = {"classify_batch": 2, "classify": 2, "is_important": 2}
+    # The one intentional bare call: the import-time overlap check against
+    # NEWS_CATEGORIES, which is fleet vocabulary by definition.
+    ALLOWED = {("newscrawler/core/importance_filter.py", "is_offtopic_category")}
+
+    def _calls(self):
+        import ast
+        import glob
+        import os
+        root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        files = glob.glob(os.path.join(root, "newscrawler", "**", "*.py"), recursive=True)
+        # Top-level scripts only: scripts/experiments/ are records of a past
+        # measurement, several of which score text with no category on purpose.
+        files += glob.glob(os.path.join(root, "scripts", "*.py"))
+        for path in files:
+            rel = os.path.relpath(path, root).replace(os.sep, "/")
+            tree = ast.parse(open(path, encoding="utf-8").read())
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call):
+                    continue
+                f = node.func
+                name = f.id if isinstance(f, ast.Name) else f.attr if isinstance(f, ast.Attribute) else None
+                index = self.FUNCTIONS.get(name) if isinstance(f, ast.Name) else self.METHODS.get(name)
+                if index is None:
+                    continue
+                passed = len(node.args) > index or any(k.arg in ("source", "sources") for k in node.keywords)
+                yield rel, name, node.lineno, passed
+
+    def test_no_call_site_drops_the_source(self):
+        missing = [f"{rel}:{line} {name}" for rel, name, line, passed in self._calls()
+                   if not passed and (rel, name) not in self.ALLOWED]
+        assert missing == []
+
+    def test_the_guard_sees_the_call_sites_it_claims_to(self):
+        """A guard that matches nothing passes forever."""
+        seen = {(rel, name) for rel, name, _, _ in self._calls()}
+        assert ("newscrawler/domain/services/crawler_service_impl.py", "classify") in seen
+        assert ("scripts/reject_denied_categories.py", "category_gate") in seen
+        assert ("scripts/train_importance_probe.py", "classify_batch") in seen

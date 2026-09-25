@@ -4,6 +4,7 @@ from typing import List, Dict
 
 from newscrawler.domain.entities.extraction.url_data import URL
 from newscrawler.domain.entities.extraction.website_name import WebsiteName
+from newscrawler.core.importance_filter import SOURCE_SOFT_LEAVES
 from newscrawler.infrastructure.datasource.scrapers.crawler import Crawler
 from newscrawler.core.utils.utils import (
     preprocess_text,
@@ -21,6 +22,9 @@ class DetikCrawler(Crawler):
     _BRANCH_RE = re.compile(r"https?://[a-z0-9-]+\.detik\.com/(.+)/sitemap_news\.xml$")
     # DETIK's English edition, on its own domain (SRC-43 #146).
     _INDONESIANOW_RE = re.compile(r"https?://(?:www\.)?indonesianow\.co/(.+)/sitemap_news\.xml$")
+    # SRC-50 (#162): 58 soft leaves no vocabulary word reaches, each decided from
+    # 3 stored titles (the evidence is on the set's definition).
+    SOFT_BRANCH_DENY = SOURCE_SOFT_LEAVES["DETIK"]
 
     def __init__(self):
         super(DetikCrawler, self).__init__()

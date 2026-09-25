@@ -155,6 +155,79 @@ OFFTOPIC_CATEGORY_KEYWORDS_WORD = (
     "opini", "opinion", "editorial", "kolom", "tajuk", "scope", "surat-pembaca",
 )
 
+# SRC-50 (#162): soft leaves a source names after the SPECIFIC sport, meal or
+# ritual, so no vocabulary word reaches them -- DETIK's `f1`, `raket`,
+# `tempat-makan`, `hikmah/doa-dan-hadits`, and `relationship`, which holds its
+# horoscopes. A vocabulary sweep cannot find a leaf that contains no vocabulary
+# word, so these were decided the only complete way: 3 stored titles for EVERY
+# leaf the source crawls (`sample_branch_titles.py --website DETIK --all-kept`,
+# 2026-09-25: 242 listed, 173 kept, all 173 read; table on SRC-50).
+#
+# Rule: a leaf is listed here only when all 3 titles are soft. A mixed leaf stays
+# crawled and the probe decides inside it (`living`, `properti/kepemilikan-rumah`,
+# `sumut/budaya`, `hikmah/ziswaf`, `cerita-perjalanan`'s one news item notwithstanding
+# -- its 3 were all travel). An empty leaf (`mobil`, `review`, `kebugaran`, `x/*`)
+# has no titles, so it is not decided by name.
+#
+# ONE definition, used twice: the category gate denies these values for that
+# source (DETIK stores the branch key as `sitemaps.category`, SRC-49's lesson),
+# and `DetikCrawler.SOFT_BRANCH_DENY` is this same set, so the two cannot drift.
+#
+# SOURCE-SCOPED, exact-match. `category_gate(value, source)` denies a leaf only
+# for the source that owns it. The first version was fleet-wide, and the live
+# collision probe (scripts/experiments/probe_branch_category_mismatch.py) found
+# KONTAN listing a `sehat` branch of its own -- empty, so unsampleable -- that a
+# fleet-wide `sehat` would have denied by name alone. A stored-rows check cannot
+# see a branch that has never been stored; the source scope makes the question
+# moot. Also checked 2026-09-25: none of these is in NEWS_CATEGORIES, and none
+# has a saved article or a gold-set row.
+SOURCE_SOFT_LEAVES = {
+    "DETIK": frozenset({
+        # sport named by the sport -- F1 GP results, MotoGP standings, Asian
+        # Games badminton; `basket` carries football (Van Dijk, Mbappe)
+        "basket", "f1", "moto-gp", "raket",
+        # horoscopes and love advice: "Ramalan Zodiak 25 September" x3,
+        # "Zodiak Capricorn Kenapa Susah Dapat Jodoh?"
+        "relationship", "ask-the-expert",
+        # religion guides, stories and umrah-package adverts (`hikmah/ziswaf`,
+        # 2 of 3 Kemenag policy, stays)
+        "hikmah/dakwah", "hikmah/doa-dan-hadits", "hikmah/haji-dan-umrah", "hikmah/khazanah",
+        "hikmah/kisah", "hikmah/muslimah", "hikmah/pesantren",
+        # travel: "5 Destinasi Dekat Sydney", "Beach Club di Lantai 28",
+        # "Menepi Sejenak di Bukit Pamoyanan"
+        "cerita-perjalanan", "destination", "domestic-destination", "international-destination",
+        "jogja/plesir",
+        # food: "5 Coffee Shop di Senayan", "5 Resep MPASI 6 Bulan"
+        "tempat-makan", "makanan-anak",
+        # music / celebrity / pop culture: Grammy nominees, concert line-ups,
+        # anime, film synopses and song lyrics filed under regional `budaya`
+        "music", "pop/awards", "pop/culture", "pop/music", "pop/pensi", "pop/trending", "culture",
+        "jabar/jabar-gaskeun", "jabar/budaya", "jateng/budaya", "jatim/budaya", "jogja/budaya",
+        "kalimantan/budaya", "sulsel/budaya", "sumbagsel/budaya",
+        # lifestyle, beauty, sex and self-care advice, health explainers
+        "hijab", "wedding", "diet", "sexual-health", "sale-and-shop", "sehat",
+        "bank-obat-dan-penyakit", "konsultasi", "true-story", "work-and-money",
+        # celebrity houses, interior tips, property listings
+        "properti/review-properti", "properti/arsitektur-dan-interior", "properti/tips-dan-panduan",
+        "properti/list-properti",
+        # hobby automotive and product reviews: "Modifikasi Grand Filano",
+        # "Segini Harga Suzuki RGR 150 yang Dinaiki Duta Sheila On 7",
+        # "Membedah Fitur Keamanan Daihatsu Rocky Hybrid"
+        "modifikasi", "road-warriors", "editors-choice", "tips-and-tricks",
+        # how-to, glossary and press-release columns: "Cara Menentukan Safety
+        # Stock untuk Seller", "Apa itu EBITDA?", "Sangfor Partner Summit"
+        "insight", "kamus", "story",
+        # reader complaints and reader polls -- the `surat-pembaca`/opinion class
+        # (SYS-49): "Koneksi Indosat Hifi Sering Mati", "Setuju atau Nggak?"
+        "suara-pembaca", "prokontra",
+        # Already denied at category level by the `tainment` stem, yet still
+        # listed as a branch, so every row was fetched to be rejected (the
+        # mismatch probe found it). Its titles agree: "Kisah Nanda dan Ninda,
+        # Kembar ... Kuliah Kedokteran Bareng", "Mau Bikin Website dengan AI?"
+        "edu/edutainment",
+    }),
+}
+
 # SYS-35 (#118): the category gate was asymmetric by accident -- a category
 # known to be soft won before the score, but a category known to be news
 # still had to survive a score that rejects world oil prices at 0.254 and
@@ -206,13 +279,19 @@ def _normalize(category: Optional[str]) -> str:
     return (category or "").strip().lower()
 
 
-def is_offtopic_category(category: Optional[str]) -> bool:
+def is_offtopic_category(category: Optional[str], source: Optional[str] = None) -> bool:
     """SYS-31: hard deny-list applied before the semantic score, on categories
-    that are never news-worthy regardless of what the article text scores."""
+    that are never news-worthy regardless of what the article text scores.
+
+    SRC-50: `source` adds that source's own SOURCE_SOFT_LEAVES. Every caller
+    that has the row's source passes it, so the live filter and every script
+    decide alike (a test checks the call sites)."""
     normalized = _normalize(category)
     if not normalized:
         return False
     if normalized in OFFTOPIC_CATEGORIES_EXACT:
+        return True
+    if source and normalized in SOURCE_SOFT_LEAVES.get(source.strip().upper(), ()):
         return True
     if any(keyword in normalized for keyword in OFFTOPIC_CATEGORY_KEYWORDS_SUBSTRING):
         return True
@@ -250,13 +329,14 @@ def is_finance_category(category: Optional[str]) -> bool:
     return normalized in NEWS_CATEGORIES_FINANCE or _section_name(category) in NEWS_CATEGORIES_FINANCE
 
 
-def category_gate(category: Optional[str]) -> Optional[str]:
+def category_gate(category: Optional[str], source: Optional[str] = None) -> Optional[str]:
     """The ONE category decision every caller uses (live filter, backfill and
     re-queue scripts): "deny" for a soft vertical, "allow" for a news desk,
     None for a mixed or unknown bucket that the score has to arbitrate. Deny
     is checked first so a URL-shaped or hyphenated value that happens to
-    contain a soft stem can never be allowed by accident."""
-    if is_offtopic_category(category):
+    contain a soft stem can never be allowed by accident. `source` scopes the
+    per-source soft leaves (SRC-50)."""
+    if is_offtopic_category(category, source):
         return "deny"
     if is_news_category(category):
         return "allow"
@@ -342,15 +422,16 @@ class SemanticImportanceFilter:
             f"precision_mixed={sidecar.get('metrics_test', {}).get('precision_mixed', float('nan')):.3f}"
         )
 
-    def is_important(self, text: str, category: Optional[str] = None) -> bool:
+    def is_important(self, text: str, category: Optional[str] = None, source: Optional[str] = None) -> bool:
         """Thin wrapper: news-worthy or not."""
-        return self.classify(text, category).is_important
+        return self.classify(text, category, source).is_important
 
-    def classify(self, text: str, category: Optional[str] = None) -> FilterDecision:
+    def classify(self, text: str, category: Optional[str] = None, source: Optional[str] = None) -> FilterDecision:
         """One article. Thin wrapper over classify_batch."""
-        return self.classify_batch([text], [category])[0]
+        return self.classify_batch([text], [category], [source])[0]
 
-    def classify_batch(self, texts: Sequence[str], categories: Sequence[Optional[str]]) -> List[FilterDecision]:
+    def classify_batch(self, texts: Sequence[str], categories: Sequence[Optional[str]],
+                       sources: Optional[Sequence[Optional[str]]] = None) -> List[FilterDecision]:
         """THE decision function -- the live filter, backfill_sitemap_crawl_status.py,
         the topic backfill and SYS-38's re-queue all go through here, so "same
         decision as the live filter" is true by construction. Category gate
@@ -364,13 +445,17 @@ class SemanticImportanceFilter:
         the gap to the wrong article. A violation raises here instead."""
         if len(texts) != len(categories):
             raise ValueError("texts and categories must have the same length")
+        if sources is None:
+            sources = [None] * len(texts)
+        elif len(sources) != len(texts):
+            raise ValueError("texts and sources must have the same length")
         decisions: List[Optional[FilterDecision]] = [None] * len(texts)
         to_score = []
-        for i, (text, category) in enumerate(zip(texts, categories)):
+        for i, (text, category, source) in enumerate(zip(texts, categories, sources)):
             if not text or not text.strip():
                 decisions[i] = FilterDecision(is_important=False, gate="empty")
                 continue
-            gate = category_gate(category)
+            gate = category_gate(category, source)
             if gate == "deny":
                 decisions[i] = FilterDecision(is_important=False, gate="deny")
                 continue

@@ -154,10 +154,13 @@ def tradeoff_curve(rows: Sequence[dict], p_soft: np.ndarray, topic_pred: np.ndar
 
 
 # ── the decision, as the live filter makes it ────────────────────────────────
-def live_decision(p_soft: np.ndarray, categories: Sequence[Optional[str]], tau: float) -> np.ndarray:
+def live_decision(p_soft: np.ndarray, categories: Sequence[Optional[str]], tau: float,
+                  sources: Optional[Sequence[Optional[str]]] = None) -> np.ndarray:
     """is_news per row under the full live rule: a `deny` category is rejected
-    before the probe; everything else is news iff P(soft) < tau."""
-    denied = np.array([category_gate(c) == "deny" for c in categories])
+    before the probe; everything else is news iff P(soft) < tau. `sources`
+    scopes SRC-50's per-source soft leaves, as the live filter does."""
+    sources = [None] * len(categories) if sources is None else sources
+    denied = np.array([category_gate(c, s) == "deny" for c, s in zip(categories, sources)])
     return (np.asarray(p_soft) < tau) & ~denied
 
 
@@ -196,9 +199,9 @@ def gate_metrics(rows: Sequence[dict], p_soft: np.ndarray, topic_pred: np.ndarra
     if not (len(p_soft) == len(topic_pred) == len(rows)):
         raise ValueError(f"gate_metrics: {len(rows)} rows, {len(p_soft)} p_soft, {len(topic_pred)} topic_pred")
     y = np.array([bool(r["is_news"]) for r in rows])
-    pred = live_decision(p_soft, [r.get("category") for r in rows], tau)
+    pred = live_decision(p_soft, [r.get("category") for r in rows], tau, [r.get("source") for r in rows])
     strata = np.array([r["stratum"] for r in rows])
-    allow = np.array([category_gate(r.get("category")) == "allow" for r in rows])
+    allow = np.array([category_gate(r.get("category"), r.get("source")) == "allow" for r in rows])
 
     def recall(mask):
         m = mask & y
@@ -523,7 +526,7 @@ def cmd_backfill(args) -> int:
     decisions = []
     for i in range(0, len(rows), 256):
         chunk = rows[i:i + 256]
-        batch = filt.classify_batch(texts[i:i + 256], [r.category for r in chunk])
+        batch = filt.classify_batch(texts[i:i + 256], [r.category for r in chunk], [r.sources for r in chunk])
         # DBT-36 (#152): `zip(rows, decisions)` below writes articles.topic for
         # 11.8k rows in one transaction. One short batch would write the wrong
         # topic to every row after the gap, so the length is asserted here too.

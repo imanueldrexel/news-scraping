@@ -108,7 +108,7 @@ class TestTerminalStateClassification:
         service.data_flow_repo.mark_sitemaps_status.assert_any_call([3], "saved")
 
     def test_mixed_batch_classifies_each_sitemap_independently(self, service):
-        def fake_classify(text, category=None):
+        def fake_classify(text, category=None, source=None):
             return decision("banking" in text)
 
         service.semantic_filter.classify.side_effect = fake_classify
@@ -138,14 +138,16 @@ class TestTerminalStateClassification:
 
         service.data_flow_repo.mark_sitemaps_status.assert_not_called()
 
-    def test_category_is_passed_to_the_filter(self, service):
+    def test_category_and_source_are_passed_to_the_filter(self, service):
+        """SRC-50: the source scopes the per-source soft leaves (DETIK's `sehat` is
+        not KONTAN's), so the live filter must be told whose row it is."""
         service.semantic_filter.classify.return_value = decision(False)
         service.data_flow_repo.load_sitemap_data.return_value = [sitemap(1, "hiburan")]
         service.crawler_dict["TEST_SITE"].batch_crawling_details.return_value = [article(1, ["x"], title="T")]
 
         service.crawl_newsdetails("TEST_SITE")
 
-        service.semantic_filter.classify.assert_called_once_with("T x", category="hiburan")
+        service.semantic_filter.classify.assert_called_once_with("T x", category="hiburan", source="TEST_SITE")
 
 
 class TestFilterTelemetry:
@@ -153,7 +155,7 @@ class TestFilterTelemetry:
     news categories and the uncertain-band count."""
 
     def test_probe_keep_rate_on_news_categories_is_logged_per_category(self, service, caplog):
-        def fake_classify(text, category=None):
+        def fake_classify(text, category=None, source=None):
             # bisnis: 2 rows on a news desk, the probe rejected 1 of them (SYS-45).
             keep = "oil" not in text
             return decision(keep, gate="allow", score_passed=keep)
@@ -177,7 +179,7 @@ class TestFilterTelemetry:
     def test_uncertain_band_is_counted_per_run_and_topic_rides_on_the_saved_dto(self, service, caplog):
         from newscrawler.core.importance_filter import FilterDecision
 
-        def fake_classify(text, category=None):
+        def fake_classify(text, category=None, source=None):
             return FilterDecision(True, "score", True, topic="law_crime", topic_confidence=0.7,
                                   p_soft=0.5 if "oil" in text else 0.1)
 

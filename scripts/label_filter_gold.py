@@ -139,11 +139,11 @@ _MIXED_NAMES = {"news", "berita", "news-sitemap", "sitemap", "breaking-news", "a
 
 def assign_stratum(source: str, category: Optional[str], crawl_status: str, has_body: bool, headline: str) -> str:
     cat = (category or "").strip()
-    gate = category_gate(cat)
+    gate = category_gate(cat, source)
     finance = is_finance_category(cat)
     if finance and crawl_status == "rejected_filter" and not has_body:
         return "finance_reject"
-    if has_body and is_offtopic_category(cat):
+    if has_body and is_offtopic_category(cat, source):
         return "soft_save"
     if _RELIGION_RE.search(headline or ""):
         return "religion_boundary"

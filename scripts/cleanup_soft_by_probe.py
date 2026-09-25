@@ -120,7 +120,8 @@ def verdicts_recomputed(rows, soft_threshold=None):
     out = {}
     for i in range(0, len(rows), 256):
         chunk = rows[i:i + 256]
-        decisions = filt.classify_batch([build_check_text(r.headline, r.body_head) for r in chunk], [r.category for r in chunk])
+        decisions = filt.classify_batch([build_check_text(r.headline, r.body_head) for r in chunk],
+                                        [r.category for r in chunk], [r.sources for r in chunk])
         # DBT-36 (#152): this pairing decides which production articles are
         # deleted. Assert the length at the delete boundary as well as inside
         # the filter, so a future regression fails here instead of attributing
@@ -137,7 +138,7 @@ def in_scope(row, scope):
     stamp = row.last_crawl_attempt
     if stamp is not None and stamp.tzinfo is None:
         stamp = stamp.replace(tzinfo=timezone.utc)
-    return category_gate(row.category) == "allow" and stamp is not None and stamp >= ALLOW_SINCE
+    return category_gate(row.category, row.sources) == "allow" and stamp is not None and stamp >= ALLOW_SINCE
 
 
 def select(rows, verdicts, scope):
