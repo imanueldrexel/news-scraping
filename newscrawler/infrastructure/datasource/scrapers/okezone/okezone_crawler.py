@@ -1,8 +1,10 @@
 import logging
 import re
-from typing import List, Dict
+from datetime import datetime, timedelta, timezone
+from typing import List, Dict, Optional
 
 from newscrawler.domain.entities.extraction.url_data import URL
+from newscrawler.domain.utils.date_time_reader import DateTimeReader
 from newscrawler.infrastructure.datasource.scrapers.crawler import Crawler
 from newscrawler.core.utils.utils import (
     preprocess_text,
@@ -37,6 +39,40 @@ class OkezoneCrawler(Crawler):
     # lastmod-only duplicate SYS-32 exists to drop. 49 sections, 0 web-only, so
     # nothing is lost by skipping them. Same shape as DETIK's sitemap_news filter.
     _BRANCH_RE = re.compile(r"https?://([a-z0-9-]+)\.okezone\.com/(?:([a-z0-9-]+)/)?sitemap\.xml$")
+
+    # SRC-51 (#163): OKEZONE's sitemap generator stamps EVERY <news:publication_date>
+    # (and <lastmod>) with the moment the file was rendered, not when the article
+    # was published: news/nasional, 100 <url>, 1 distinct publication date, URLs
+    # dated 09/22..09/24. Trusting it made `posted_at` the crawl date -- 2,299
+    # stored rows had 2 distinct values -- which breaks the queue order, the RAG
+    # recency weight and the newsletter's per-day clustering. Every article URL
+    # carries its own date: /read/, /play/ (video) and /view/ (foto), all 2,299
+    # stored links and every live branch (scripts/experiments/probe_okezone_dates.py).
+    _URL_DATE_RE = re.compile(
+        r"^https?://[a-z0-9-]+\.okezone\.com/(?:read|play|view)/(\d{4})/(\d{1,2})/(\d{1,2})/")
+    _WIB = timezone(timedelta(hours=7))
+
+    @classmethod
+    def date_from_url(cls, link: str) -> Optional[datetime]:
+        """The publication DAY from the article URL, as 00:00 WIB, or None when the
+        URL carries no valid date. Only the day is stored (`posted_at` is an int
+        yyyymmdd), and OKEZONE publishes no trustworthy time of day to keep."""
+        match = cls._URL_DATE_RE.match((link or "").strip())
+        if not match:
+            return None
+        try:
+            return datetime(*(int(g) for g in match.groups()), tzinfo=cls._WIB)
+        except ValueError:  # 2026/02/30
+            return None
+
+    @staticmethod
+    def _get_timestamp(news_soup, date_time_reader: DateTimeReader):
+        """SRC-51: the URL's date, never the sitemap's render-time stamp. A URL
+        with no date returns None and the row is dropped (SYS-32's path in
+        `_get_sitemap`), because the only other date on offer is known to be
+        wrong."""
+        loc = news_soup.find("loc")
+        return OkezoneCrawler.date_from_url(loc.get_text(" ").strip()) if loc else None
 
     @staticmethod
     def _get_branches(soup) -> Dict[str, str]:
