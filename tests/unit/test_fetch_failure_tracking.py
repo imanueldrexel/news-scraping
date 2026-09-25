@@ -30,6 +30,11 @@ def service():
     return svc
 
 
+def _sitemap(sitemap_id):
+    """OPS-16: the tests above the floor need more than the fixture's 3 rows."""
+    return MagicMock(sitemap_id=sitemap_id)
+
+
 def article(sitemap_id, text="Berita ekonomi tentang suku bunga.", title="Title"):
     return NewsDetailsDTO(sitemap_id=sitemap_id, extracted_text=[text], meta_data={"title": title}, reporter=[])
 
@@ -105,33 +110,103 @@ def _error_msgs(mock_call):
 
 
 class TestWholeSourceFailure:
-    """OPS-15 (#81): SYS-09's cap retires individually dead URLs. When EVERY
-    attempted sitemap fails in one run, that is the source failing (a block, TLS,
-    DNS, a crawler regression), and counting it would retire up to 1,000 rows per
-    run per source after three such runs, silently. Count nothing, log ERROR."""
+    """OPS-15 (#81) then OPS-16 (#87): SYS-09's cap retires individually dead
+    URLs. When the whole run fails, that can be the source failing (a block, TLS,
+    DNS, a crawler regression) and counting it would retire up to 1,000 rows per
+    source after three such runs.
 
-    def test_every_sitemap_failing_increments_nothing_and_logs_an_error(self, service, caplog):
+    OPS-15 implemented that as a pure ratio with no floor and no persisted output.
+    The tests below used to assert THAT behaviour with N=3 -- which OPS-16 showed
+    is the bug, not the specification: with 3 rows left and all 3 dead, "100%
+    failed" is evidence about those 3 URLs, and sparing them meant they were
+    re-fetched on every run forever with no cooldown, worse than before OPS-15."""
+
+    def test_a_small_run_is_dead_urls_not_a_source_failure(self, service, caplog):
+        """OPS-16 (a): 3 of 3 failing is below SITEMAP_SOURCE_FAILURE_MIN, so it
+        counts individually -- 3 increments and 3 cooldown stamps. This is the
+        exact case that kept BISNIS's 3-row queue being re-fetched forever."""
         service.crawler_dict["TEST_SITE"].batch_crawling_details.return_value = _batch(
             [], {1: "HTTP 403", 2: "HTTP 403", 3: "HTTP 403"}
         )
 
-        with caplog.at_level("ERROR"):
+        with caplog.at_level("WARNING"):
             service.crawl_newsdetails("TEST_SITE")
 
+        service.data_flow_repo.increment_fetch_failures.assert_called_once_with(
+            [1, 2, 3], error_msg="HTTP 403"
+        )
+        assert any("below SITEMAP_SOURCE_FAILURE_MIN" in r.message for r in caplog.records), caplog.text
+
+    def test_a_large_all_failing_run_is_source_wide(self, service):
+        """OPS-16: above the floor, a 100%-failed run of source-level reasons
+        spares the counters -- but stamps the cooldown so the window rotates out
+        of load_all_sitemaps' ORDER BY posted_at DESC LIMIT 1000, instead of the
+        same dead rows being handed to every run forever."""
+        n = 40
+        failures = {i: "HTTP 403" for i in range(1, n + 1)}
+        service.crawler_dict["TEST_SITE"].batch_crawling_details.return_value = _batch([], failures)
+        service.data_flow_repo.load_sitemap_data.return_value = [_sitemap(i) for i in range(1, n + 1)]
+
+        service.crawl_newsdetails("TEST_SITE")
+
         service.data_flow_repo.increment_fetch_failures.assert_not_called()
-        assert any("source-wide failure" in r.message and "3/3" in r.message and "HTTP 403" in r.message
-                   for r in caplog.records if r.levelname == "ERROR"), caplog.text
-        # Nothing was marked attempted either, so all three are eligible next run.
-        service.data_flow_repo.mark_sitemaps_attempted.assert_not_called()
+        stamped = service.data_flow_repo.mark_sitemaps_attempted.call_args_list[-1][0][0]
+        assert sorted(stamped) == list(range(1, n + 1)), "the spared rows must still get a cooldown"
+
+    def test_a_404_still_counts_even_in_a_source_wide_run(self, service):
+        """OPS-16: a 404 is a fact about the URL, not the source -- true whether
+        3 of 3 or 1,000 of 1,000 came back that way. Sparing them is what stalled
+        a dead top-1,000 window and starved the 10,000 rows behind it."""
+        n = 40
+        failures = {i: ("HTTP 404" if i <= 25 else "ConnectionError") for i in range(1, n + 1)}
+        service.crawler_dict["TEST_SITE"].batch_crawling_details.return_value = _batch([], failures)
+        service.data_flow_repo.load_sitemap_data.return_value = [_sitemap(i) for i in range(1, n + 1)]
+
+        service.crawl_newsdetails("TEST_SITE")
+
+        counted = {c.kwargs.get("error_msg"): sorted(c.args[0])
+                   for c in service.data_flow_repo.increment_fetch_failures.call_args_list}
+        assert counted == {"HTTP 404": list(range(1, 26))}, counted
+        stamped = service.data_flow_repo.mark_sitemaps_attempted.call_args_list[-1][0][0]
+        assert sorted(stamped) == list(range(26, n + 1)), "only the source-level rows are spared"
+
+    def test_the_verdict_reaches_the_crawl_log_row(self, service):
+        """OPS-16 (c): the row used to be status='completed', article_count=0,
+        error_msg=NULL -- identical to "1,000 pages fetched fine, all off-topic".
+        And basicConfig() has no file handler, so under Task Scheduler the ERROR
+        line was gone too."""
+        n = 40
+        service.crawler_dict["TEST_SITE"].batch_crawling_details.return_value = _batch(
+            [], {i: "HTTP 403" for i in range(1, n + 1)}
+        )
+        service.data_flow_repo.load_sitemap_data.return_value = [_sitemap(i) for i in range(1, n + 1)]
+
+        service.crawl_newsdetails("TEST_SITE")
+
+        note = service.data_flow_repo.log_crawl_complete.call_args.kwargs["note"]
+        assert note and "source-wide fetch failure" in note and "40/40" in note and "HTTP 403" in note
+
+    def test_a_clean_run_records_no_verdict(self, service):
+        service.crawl_newsdetails("TEST_SITE")
+        assert service.data_flow_repo.log_crawl_complete.call_args.kwargs["note"] is None
+
+    def test_per_url_classification(self):
+        from newscrawler.domain.services.crawler_service_impl import CrawlerServiceImpl as C
+        for reason in ("HTTP 404", "http 404", "soft-404: redirected to /", "HTTP 410"):
+            assert C._is_per_url_failure(reason) is True, reason
+        for reason in ("HTTP 403", "HTTP 500", "ConnectionError", "SSLError after 5 retries",
+                       "ReadTimeout after 5 retries", "AttributeError", ""):
+            assert C._is_per_url_failure(reason) is False, reason
 
     def test_ratio_threshold_is_honoured(self, service):
-        """With SITEMAP_SOURCE_FAILURE_RATIO lowered to 0.6, 2 of 3 failing (67%)
-        is also a source-wide failure; at the default 1.0 it is two dead URLs."""
+        """With SITEMAP_SOURCE_FAILURE_RATIO lowered to 0.6 AND the floor lowered,
+        2 of 3 failing (67%) is a source-wide failure; at the default floor of 20
+        it is two dead URLs however the ratio is set (OPS-16)."""
         service.crawler_dict["TEST_SITE"].batch_crawling_details.side_effect = [
-            [article(1)], _batch([], {2: "HTTP 404"}), _batch([], {3: "HTTP 404"}),
+            [article(1)], _batch([], {2: "ConnectionError"}), _batch([], {3: "ConnectionError"}),
         ]
 
-        with patch("newscrawler.domain.services.crawler_service_impl.SITEMAP_SOURCE_FAILURE_RATIO", 0.6):
+        with patch("newscrawler.domain.services.crawler_service_impl.SITEMAP_SOURCE_FAILURE_RATIO", 0.6),              patch("newscrawler.domain.services.crawler_service_impl.SITEMAP_SOURCE_FAILURE_MIN", 2):
             service.crawl_newsdetails("TEST_SITE")
 
         service.data_flow_repo.increment_fetch_failures.assert_not_called()

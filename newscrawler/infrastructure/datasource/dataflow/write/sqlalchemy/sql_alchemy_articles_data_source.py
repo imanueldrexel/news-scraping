@@ -68,17 +68,24 @@ class SQLAlchemyArticleDataSource:
                 "crawl_log disabled for this run: %s -- this run will leave NO crawl_log row, "
                 "which is not the same as the scheduler failing to fire (OPS-07)", reason)
 
-    def log_crawl_complete(self, log_id: Optional[int], article_count: int = 0) -> None:
+    def log_crawl_complete(self, log_id: Optional[int], article_count: int = 0, note: Optional[str] = None) -> None:
+        """OPS-16 (#87): `note` records a verdict about a run that still
+        completed -- today only the source-wide fetch-failure summary. It lands in
+        `error_msg` with `status='completed'`, so the runbook can tell a run that
+        fetched nothing because the source was down from one that fetched 1,000
+        pages and filtered them all out. Those two rows used to be identical."""
         if not log_id:
             return
         sql = text("""
             UPDATE crawl_log
-            SET status = 'completed', article_count = :count, finished_at = NOW()
+            SET status = 'completed', article_count = :count, finished_at = NOW(),
+                error_msg = COALESCE(:note, error_msg)
             WHERE log_id = :log_id
         """)
         try:
             with self.client.get_session() as session:
-                session.execute(sql, {"count": article_count, "log_id": log_id})
+                session.execute(sql, {"count": article_count, "log_id": log_id,
+                                      "note": note[:1000] if note else None})
                 session.commit()
         except Exception as e:
             logger.warning(f"crawl_log completion update failed for log_id={log_id}: {type(e).__name__}: {e}")

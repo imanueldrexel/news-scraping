@@ -49,7 +49,7 @@ class TestCrawlLogArticleCount:
         service.crawl_newsdetails("TEST_SITE")
 
         service.data_flow_repo.log_crawl_complete.assert_called_once_with(
-            service.data_flow_repo.log_crawl_start.return_value, 1
+            service.data_flow_repo.log_crawl_start.return_value, 1, note=None
         )
 
     def test_zero_articles_extracted_still_logs_zero_correctly(self, service):
@@ -59,7 +59,7 @@ class TestCrawlLogArticleCount:
         service.crawl_newsdetails("TEST_SITE")
 
         service.data_flow_repo.log_crawl_complete.assert_called_once_with(
-            service.data_flow_repo.log_crawl_start.return_value, 0
+            service.data_flow_repo.log_crawl_start.return_value, 0, note=None
         )
 
     def test_articles_filtered_out_are_not_counted_as_saved(self, service):
@@ -70,7 +70,7 @@ class TestCrawlLogArticleCount:
         service.crawl_newsdetails("TEST_SITE")
 
         service.data_flow_repo.log_crawl_complete.assert_called_once_with(
-            service.data_flow_repo.log_crawl_start.return_value, 0
+            service.data_flow_repo.log_crawl_start.return_value, 0, note=None
         )
 
     def test_saved_count_sums_across_multiple_batches(self, service):
@@ -91,7 +91,7 @@ class TestCrawlLogArticleCount:
         assert total_returned == 25
         service.crawl_newsdetails("TEST_SITE")
         service.data_flow_repo.log_crawl_complete.assert_called_once_with(
-            service.data_flow_repo.log_crawl_start.return_value, 25
+            service.data_flow_repo.log_crawl_start.return_value, 25, note=None
         )
 
     def test_embedded_sitemap_ids_empty_means_nothing_saved(self, service):
@@ -130,7 +130,7 @@ class TestCrawlLogArticleCount:
         service.crawl_newsdetails("TEST_SITE")
 
         service.data_flow_repo.log_crawl_complete.assert_called_once_with(
-            service.data_flow_repo.log_crawl_start.return_value, 0
+            service.data_flow_repo.log_crawl_start.return_value, 0, note=None
         )
         saved_calls = [
             c for c in service.data_flow_repo.mark_sitemaps_status.call_args_list

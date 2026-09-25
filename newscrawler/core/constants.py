@@ -21,6 +21,12 @@ SITEMAP_MAX_FETCH_FAILURES = int(os.getenv("SITEMAP_MAX_FETCH_FAILURES", 3))
 # the run logs at ERROR and does not touch fetch_failures at all, so an outage
 # cannot retire a source's whole queue. 1.0 = only when every single one failed.
 SITEMAP_SOURCE_FAILURE_RATIO = float(os.getenv("SITEMAP_SOURCE_FAILURE_RATIO", 1.0))
+# OPS-16 (#87): a ratio alone is undefined at small N. With 3 rows left in a
+# source's eligible queue and all 3 dead, "100% failed" is not evidence the
+# source is down -- it is evidence those 3 URLs are. Below this many failures the
+# run is never called source-wide, so genuinely dead tails still retire under
+# SYS-09's cap instead of being re-fetched on every run forever.
+SITEMAP_SOURCE_FAILURE_MIN = int(os.getenv("SITEMAP_SOURCE_FAILURE_MIN", 20))
 # Article text shorter than this (total chars) is treated as an extraction failure and
 # handed to the next extractor (site selector -> trafilatura -> newspaper). 0 disables.
 MIN_ARTICLE_CHARS = int(os.getenv("MIN_ARTICLE_CHARS", 200))

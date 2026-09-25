@@ -211,10 +211,12 @@ class SQLAlchemySitemapDataSource:
         rows. Column and table names still come from the ORM (`Table.column.name`),
         which is code, not input.
 
-        The name is also validated against `WebsiteName` before any query runs, so
-        a typo in a scheduler entry fails loudly here instead of returning 0 rows
-        and crashing later on `NoneType has no batch_crawling_details`."""
-        website = validate_website_name(website)
+        The name is NOT validated here. `validate_website_name` runs at the
+        dispatch boundary (`process_event`), where operator input actually enters
+        -- this datasource is also driven by integration tests and ad-hoc tooling
+        with synthetic source names, and with the value bound rather than
+        interpolated an unknown name is simply 0 rows, not a hazard."""
+        website = (website or "").strip()
         news_list = []
         with self.client.get_session() as session:
             query = (

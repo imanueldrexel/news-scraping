@@ -159,7 +159,9 @@ class TestTaskAllDoesNotReCrawlAlreadyArticledSitemaps:
             def log_crawl_start(self, website, task):
                 return self.ds.sql_alchemy_article.log_crawl_start(website, task)
 
-            def log_crawl_complete(self, log_id, article_count=0):
+            # OPS-16 (#87): `note` carries the source-wide fetch-failure verdict
+            # onto the crawl_log row, so the interface takes it.
+            def log_crawl_complete(self, log_id, article_count=0, note=None):
                 self.ds.sql_alchemy_article.log_crawl_complete(log_id, article_count)
 
             def log_crawl_failed(self, log_id, error_msg):

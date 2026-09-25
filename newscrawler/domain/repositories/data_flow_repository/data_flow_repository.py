@@ -79,7 +79,7 @@ class DataFlowRepository:
     def log_crawl_start(self, website: str, task: str) -> Optional[int]:
         return None
 
-    def log_crawl_complete(self, log_id: Optional[int], article_count: int = 0) -> None:
+    def log_crawl_complete(self, log_id: Optional[int], article_count: int = 0, note: Optional[str] = None) -> None:
         pass
 
     def log_crawl_failed(self, log_id: Optional[int], error_msg: str) -> None:

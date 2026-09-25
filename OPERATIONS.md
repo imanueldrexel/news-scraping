@@ -27,7 +27,8 @@
 | `RAG_TOP_K` | `5` | Chunks used for RAG answer |
 | `SITEMAP_RECRAWL_COOLDOWN_DAYS` | `7` | Days before a sitemap with no `articles` row is offered to the article crawl again |
 | `SITEMAP_MAX_FETCH_FAILURES` | `3` | SYS-09: runs that produced no article for a sitemap before `load_all_sitemaps` stops offering it; undo with `scripts/reset_fetch_failures.py` |
-| `SITEMAP_SOURCE_FAILURE_RATIO` | `1.0` | OPS-15: if at least this fraction of a run's attempted sitemaps fail for one source, it is logged at ERROR as a source-wide failure and `fetch_failures` is not touched (`1.0` = only when every one failed) |
+| `SITEMAP_SOURCE_FAILURE_RATIO` | `1.0` | OPS-15: the fraction of a run's attempted sitemaps that must fail before the run is considered source-wide (`1.0` = only when every one failed). Both this **and** `SITEMAP_SOURCE_FAILURE_MIN` must be met |
+| `SITEMAP_SOURCE_FAILURE_MIN` | `20` | OPS-16: the minimum number of failures before a run can be called source-wide. A ratio alone is undefined at small N — with 3 rows left in a source's queue and all 3 dead, "100% failed" is evidence about those 3 URLs, not about the source, and sparing them meant they were re-fetched every run forever with no cooldown |
 | `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` | — | Health-check alerts (OPS-01); unset = notifications skipped, logged only |
 | `HEALTH_ALERT_ON_NO_CHANGE` | `true` | OPS-13: `false` mutes the daily alert on a red day whose per-outlet statuses all match the previous run (exit code unaffected; NEW/CHANGED/RECOVERED always notify) |
 | `HEALTH_STALE_LISTING_DAYS` | `7` | OPS-17: a listing whose newest `news:publication_date`/`lastmod` is older than this is reported `STALE` — serving, but not serving anything new. Needs attention, non-fatal (does not affect the exit code) |
@@ -251,6 +252,17 @@ FROM sitemaps
 GROUP BY crawl_status
 ORDER BY sitemaps DESC;
 ```
+**Was the last run a source-wide fetch failure?** (OPS-16) A run in which the source itself was down used to be indistinguishable in `crawl_log` from a run that fetched everything and filtered it all out — both `status='completed', article_count=0, error_msg=NULL` — and `logging.basicConfig()` has no file handler, so under Task Scheduler the ERROR line was gone too. The verdict is now persisted on the row:
+
+```sql
+SELECT website, started_at, article_count, error_msg
+FROM crawl_log
+WHERE task = 'full_text' AND error_msg LIKE 'source-wide fetch failure%'
+ORDER BY started_at DESC
+LIMIT 20;
+```
+The message carries the counts and the reason breakdown, e.g. `source-wide fetch failure: 40/40 (100%); 0 counted as per-URL, 40 spared and cooldown-stamped. Reasons: 'HTTP 403': 40`. A 404/soft-404 is a fact about the URL, so it is still counted toward `SITEMAP_MAX_FETCH_FAILURES` even at 100% — only source-level reasons (403, 5xx, connection, TLS, timeouts, extractor regressions) are spared, and those rows get `last_crawl_attempt` stamped so the window rotates out of `load_all_sitemaps`' `ORDER BY posted_at DESC LIMIT 1000`.
+
 **No `crawl_log` row for a run that should have happened?** Since OPS-07 that is stated explicitly rather than inferred. A failure to *write* `crawl_log` used to be logged at DEBUG — below the INFO level the pipeline runs at — so a missing table, a column drift, a brief DB outage or a permission change left no row and no message, and the runbook read that as "the scheduler did not fire". The writers still never raise (a logging failure must not abort a crawl), but they log at WARNING now, and the first failure emits `crawl_log disabled for this run: <reason> -- this run will leave NO crawl_log row, which is not the same as the scheduler failing to fire (OPS-07)` once at the top of the log. So: if there is no row, check the run's log for that line before concluding the task never started.
 
 `rejected_filter` rows are excluded from `load_all_sitemaps` permanently (off-topic, will fail the same semantic filter again) — a large and growing `pending`+`past_cooldown` count for a source that keeps producing few articles usually means its extractor is broken (`empty_extraction`), not that it has nothing to say; check `scripts/check_crawlers.py --website <NAME>` before assuming the source has gone quiet. If `SOFT_THRESHOLD` moves, or the probe artifact in `newscrawler/core/models/` is retrained, re-run `scripts/backfill_sitemap_crawl_status.py` to reclassify — `rejected_filter` is a one-time decision, not re-evaluated automatically. (`INTERESTS` and the 0.35 cosine threshold no longer exist; SYS-37 replaced them on 2026-09-22.)

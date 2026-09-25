@@ -220,8 +220,8 @@ class DataFlowRepositoryImpl(DataFlowRepository):
     def log_crawl_start(self, website: str, task: str) -> Optional[int]:
         return self.news_data_source.sql_alchemy_article.log_crawl_start(website, task)
 
-    def log_crawl_complete(self, log_id: Optional[int], article_count: int = 0) -> None:
-        self.news_data_source.sql_alchemy_article.log_crawl_complete(log_id, article_count)
+    def log_crawl_complete(self, log_id: Optional[int], article_count: int = 0, note: Optional[str] = None) -> None:
+        self.news_data_source.sql_alchemy_article.log_crawl_complete(log_id, article_count, note=note)
 
     def log_crawl_failed(self, log_id: Optional[int], error_msg: str) -> None:
         self.news_data_source.sql_alchemy_article.log_crawl_failed(log_id, error_msg)

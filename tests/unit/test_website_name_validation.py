@@ -64,10 +64,46 @@ class TestLoadAllSitemapsUsesBoundParameters:
         assert params["website"] == "KOMPAS" and params["n_limit"] == 7
         assert isinstance(params["cooldown_days"], int) and isinstance(params["max_fetch_failures"], int)
 
-    def test_an_unknown_name_raises_before_any_query_runs(self):
-        class _Client:
-            def get_session(self):
-                raise AssertionError("a query was attempted for an unvalidated website name")
+    def test_an_injection_payload_is_bound_not_interpolated(self):
+        """The datasource deliberately does NOT validate: it is also driven by
+        integration tests and ad-hoc tooling with synthetic source names, and
+        validating domain names in a low-level datasource couples it to the enum.
+        The injection fix is the binding -- the payload becomes a literal value
+        that matches no row, not a predicate."""
+        captured = {}
 
-        with pytest.raises(ValueError):
-            SQLAlchemySitemapDataSource(_Client()).load_all_sitemaps(website="KOMPAS' OR '1'='1", n_limit=5)
+        class _Session:
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+            def execute(self, statement, params=None):
+                captured["sql"], captured["params"] = str(statement), params
+                return []
+
+        class _Client:
+            def get_session(self): return _Session()
+
+        payload = "KOMPAS' OR '1'='1"
+        SQLAlchemySitemapDataSource(_Client()).load_all_sitemaps(website=payload, n_limit=5)
+        assert captured["params"]["website"] == payload
+        assert "OR '1'='1" not in captured["sql"], "the payload reached the SQL text"
+
+    def test_the_dispatch_boundary_rejects_an_unknown_name(self):
+        """DBT-12: this is where operator input enters -- the event's website list
+        or CRAWL_WEBSITES. A typo used to reach load_all_sitemaps, return 0 rows,
+        and only crash later on `NoneType has no batch_crawling_details`."""
+        from unittest.mock import patch
+        from newscrawler.application.api.lambda_function import lambda_handler
+
+        with patch.object(lambda_handler, "init_crawler") as init:
+            with pytest.raises(ValueError, match="unknown website name"):
+                lambda_handler.process_event({"task": "sitemap", "website": "KOMPAS,NOPE"}, None)
+            init.return_value.crawl_websites_in_batch.assert_not_called()
+
+    def test_the_dispatch_boundary_accepts_a_valid_list(self):
+        from unittest.mock import patch
+        from newscrawler.application.api.lambda_function import lambda_handler
+
+        with patch.object(lambda_handler, "init_crawler") as init:
+            lambda_handler.process_event({"task": "sitemap", "website": "KOMPAS, DETIK"}, None)
+        init.return_value.crawl_websites_in_batch.assert_called_once_with(
+            website_names=["KOMPAS", "DETIK"], task="sitemap")

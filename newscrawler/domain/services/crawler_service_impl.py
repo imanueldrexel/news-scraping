@@ -6,7 +6,7 @@ from typing import List, Optional
 from newscrawler.core.chunker import HierarchicalChunker
 from newscrawler.core.crawler_dict_list import CRAWLER_DICT
 from newscrawler.core.crawler_url_list import WEB_URL_DICT
-from newscrawler.core.constants import SITEMAP_SOURCE_FAILURE_RATIO, SOFT_THRESHOLD
+from newscrawler.core.constants import SITEMAP_SOURCE_FAILURE_MIN, SITEMAP_SOURCE_FAILURE_RATIO, SOFT_THRESHOLD
 from newscrawler.core.importance_filter import SemanticImportanceFilter
 from newscrawler.core.importance_probe import build_check_text
 from newscrawler.domain.dtos.dataflow.details.news_details_dto import NewsDetailsDTO
@@ -71,9 +71,16 @@ class CrawlerServiceImpl(CrawlerService):
 
     def crawl_newsdetails(self, website_name: str, specific_sitemaps: List[SitemapDTO] = None):
         log_id = self.data_flow_repo.log_crawl_start(website_name, "full_text")
+        # OPS-16 (c): `_record_fetch_failures` decides whether this run was a
+        # source-wide failure, and that verdict has to outlive the log line. The
+        # crawl_log row for such a run used to read status='completed',
+        # article_count=0, error_msg=NULL -- byte-identical to "1,000 pages
+        # fetched fine, all off-topic" -- and logging.basicConfig() has no file
+        # handler, so under Task Scheduler the ERROR line was gone too.
+        self._source_failure_verdict = None
         try:
             total_saved = self._crawl_newsdetails_inner(website_name, specific_sitemaps)
-            self.data_flow_repo.log_crawl_complete(log_id, total_saved)
+            self.data_flow_repo.log_crawl_complete(log_id, total_saved, note=self._source_failure_verdict)
         except Exception as e:
             self.data_flow_repo.log_crawl_failed(log_id, str(e))
             raise
@@ -257,7 +264,7 @@ class CrawlerServiceImpl(CrawlerService):
                     logger.error(f"Error saving batch {i//batch_size+1} for {website_name}: {e}")
                     continue
 
-        self._record_fetch_failures(website_name, attempted, run_failures)
+        self._source_failure_verdict = self._record_fetch_failures(website_name, attempted, run_failures)
         self._log_filter_stats(website_name, gate_counts, allow_total, allow_score_passed, uncertain)
 
         logger.info(
@@ -352,23 +359,50 @@ class CrawlerServiceImpl(CrawlerService):
             f"{', '.join(parts)}"
         )
 
-    def _record_fetch_failures(self, website_name: str, attempted: int, run_failures: dict) -> None:
-        """OPS-15: turn this run's fetch failures into sitemaps.fetch_failures --
-        unless the run shows the SOURCE failed, in which case count nothing.
+    # OPS-16 (#87): a failure reason that is a fact about THE URL, not about the
+    # source. A 404 or a soft-404 means that page is gone whether 3 of 3 or 1,000
+    # of 1,000 came back that way, so it must still count toward SYS-09's cap --
+    # otherwise a window of dead URLs is re-fetched on every run forever and the
+    # queue behind it is never reached. Everything else (403, 5xx, connection,
+    # TLS, timeouts, an extractor regression) is a statement about the source.
+    PER_URL_FAILURE_MARKERS = ("http 404", "http 410", "soft-404")
+
+    @classmethod
+    def _is_per_url_failure(cls, reason: str) -> bool:
+        text = (reason or "").strip().lower()
+        return any(marker in text for marker in cls.PER_URL_FAILURE_MARKERS)
+
+    def _record_fetch_failures(self, website_name: str, attempted: int, run_failures: dict):
+        """OPS-15/OPS-16: turn this run's fetch failures into sitemaps.fetch_failures.
 
         SYS-09's cap exists to retire individually dead URLs. A site blocking
-        article pages for a while, a TLS/DNS problem, or a regression in
-        _get_news_details fails every URL in the run at once; counting those would
-        retire up to 1,000 sitemaps per run per source after three such runs, with
-        no alert (OPS-09 made the same distinction for Gemini outages a day before
-        SYS-09 landed without it). So: when at least SITEMAP_SOURCE_FAILURE_RATIO
-        of the attempted sitemaps failed, log at ERROR and leave fetch_failures
-        alone -- every one of them stays eligible for the next run. Otherwise
-        record the failures grouped by reason, so last_fetch_error says what
-        actually happened to each row.
+        article pages, a TLS/DNS problem, or a regression in _get_news_details
+        fails every URL at once; counting those would retire up to 1,000 sitemaps
+        per run per source. OPS-15 handled that with a pure ratio and no persisted
+        output, which broke three ways (OPS-16):
+
+          1. No minimum count. With 3 rows left and all 3 dead, every run was
+             100% ⇒ "source-wide" ⇒ nothing counted AND no cooldown stamped, so
+             they were re-fetched on every run forever -- worse than before
+             OPS-15, when they at least retired after 3 runs. BISNIS's eligible
+             queue is 3 rows and BISNIS is 403-blocked.
+          2. A dead top-1,000 window stalled the whole queue: `load_all_sitemaps`
+             is ORDER BY posted_at DESC LIMIT 1000, so the same dead rows were
+             handed to every run and the 10,000+ behind them were never reached.
+          3. No trace but stderr. The crawl_log row was
+             status='completed', article_count=0, error_msg=NULL -- identical to
+             "1,000 pages fetched fine, all off-topic".
+
+        Now: the floor (SITEMAP_SOURCE_FAILURE_MIN) must be cleared as well as the
+        ratio; per-URL reasons are counted even in a source-wide run; the
+        source-level remainder gets its cooldown stamped so the window rotates;
+        and the verdict is returned for the caller to persist on the crawl_log row.
+
+        Returns the verdict string to record, or None when there is nothing
+        remarkable to say.
         """
         if not run_failures:
-            return
+            return None
         failed = len(run_failures)
         ratio = failed / attempted if attempted else 0.0
         by_reason = {}
@@ -376,15 +410,39 @@ class CrawlerServiceImpl(CrawlerService):
             by_reason.setdefault(reason, []).append(sitemap_id)
         reason_summary = ", ".join(f"{r!r}: {len(ids)}" for r, ids in sorted(by_reason.items(), key=lambda kv: -len(kv[1])))
 
-        if ratio >= SITEMAP_SOURCE_FAILURE_RATIO:
-            logger.error(
-                f"{website_name}: {failed}/{attempted} sitemaps failed to fetch/extract this run "
-                f"({ratio:.0%}) -- treating this as a source-wide failure, not {failed} dead URLs: "
-                f"fetch_failures NOT incremented, all stay eligible. Reasons: {reason_summary}"
-            )
-            return
+        source_wide = ratio >= SITEMAP_SOURCE_FAILURE_RATIO and failed >= SITEMAP_SOURCE_FAILURE_MIN
 
-        if ratio >= 0.5:
+        if source_wide:
+            # Per-URL facts still count; only the source-level reasons are spared.
+            per_url = {r: ids for r, ids in by_reason.items() if self._is_per_url_failure(r)}
+            source_level = {r: ids for r, ids in by_reason.items() if not self._is_per_url_failure(r)}
+            for reason, ids in per_url.items():
+                self.data_flow_repo.increment_fetch_failures(ids, error_msg=reason)
+            spared = [sid for ids in source_level.values() for sid in ids]
+            if spared:
+                # OPS-16 (b): stamp the cooldown even though nothing was counted,
+                # so a blocked source is not re-hammered 1,000 requests per run
+                # and a dead window rotates out of the LIMIT 1000.
+                try:
+                    self.data_flow_repo.mark_sitemaps_attempted(spared)
+                except Exception as e:  # noqa: BLE001 -- telemetry must not fail the crawl
+                    logger.warning(f"{website_name}: could not stamp cooldown on {len(spared)} spared sitemap(s): {e!r}")
+            verdict = (
+                f"source-wide fetch failure: {failed}/{attempted} ({ratio:.0%}); "
+                f"{sum(len(i) for i in per_url.values())} counted as per-URL, "
+                f"{len(spared)} spared and cooldown-stamped. Reasons: {reason_summary}"
+            )
+            logger.error(f"{website_name}: {verdict}")
+            return verdict
+
+        if ratio >= SITEMAP_SOURCE_FAILURE_RATIO:
+            # Ratio met but below the floor: explicitly NOT source-wide (OPS-16 a).
+            logger.warning(
+                f"{website_name}: {failed}/{attempted} sitemaps failed ({ratio:.0%}) but that is below "
+                f"SITEMAP_SOURCE_FAILURE_MIN={SITEMAP_SOURCE_FAILURE_MIN}, so this is {failed} dead URL(s), "
+                f"not a source-wide failure: counting them individually. Reasons: {reason_summary}"
+            )
+        elif ratio >= 0.5:
             logger.warning(
                 f"{website_name}: {failed}/{attempted} sitemaps failed to fetch/extract this run "
                 f"({ratio:.0%}, below SITEMAP_SOURCE_FAILURE_RATIO={SITEMAP_SOURCE_FAILURE_RATIO}); "
