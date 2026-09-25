@@ -79,11 +79,10 @@ def url_is_soft(crawler, link: str):
 def check(name, crawler, verbose=False):
     result = {"website": name, "status": "OK", "listed": 0, "branches": 0, "kept": 0,
               "dropped_soft": [], "dropped_archive": [], "leaks_by_category": {}, "leaks_by_url": {}}
-    soup = crawler.page_loader.get_soup(crawler.website_url)
-    if not soup:
+    branches = crawler.list_branches()  # every index (SRC-38)
+    if branches is None:
         result["status"] = "NO_INDEX"
         return result
-    branches = crawler._get_branches(soup) or {}
     kept = crawler.drop_soft_branches(branches)
     result["branches"] = len(branches)
     result["kept"] = len(kept)

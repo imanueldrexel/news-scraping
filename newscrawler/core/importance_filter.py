@@ -226,6 +226,22 @@ SOURCE_SOFT_LEAVES = {
         # Kembar ... Kuliah Kedokteran Bareng", "Mau Bikin Website dengan AI?"
         "edu/edutainment",
     }),
+    # SRC-38 (#131, 2026-09-25): www.kompas.com's sections, listed for the first
+    # time. All 32 kept leaves sampled (sample_branch_titles.py --website KOMPAS
+    # --all-kept); these 11 were soft on all 3 titles. Kept as mixed or hard:
+    # money, properti, global, edu, tren, cekfakta, lampung, riau,
+    # sumatera-utara, sumatera-barat, sulawesi-selatan.
+    "KOMPAS": frozenset({
+        # sport named by the sport: "Hasil Bulu Tangkis Asian Games 2026"
+        "badminton", "motogp",
+        # home decor ("6 Elemen Esensial untuk Rumah Gaya Japandi"), exam question
+        # banks ("50 Soal PTS IPA Kelas 7"), science curiosities rather than
+        # developments ("Ikan Moonwalk", "Pohon Berjalan")
+        "homey", "skola", "sains",
+        # provincial SEO/service desks: "Tanggal 25 September Memperingati Hari
+        # Apa?", KRL timetables, BMKG weather forecasts x3
+        "jawa-barat", "jawa-tengah", "jawa-timur", "kalimantan-barat", "kalimantan-timur", "banten",
+    }),
 }
 
 # SYS-35 (#118): the category gate was asymmetric by accident -- a category

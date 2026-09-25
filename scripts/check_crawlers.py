@@ -226,7 +226,10 @@ def check_one(name: str, crawler, sample_size: int) -> dict:
         if not soup:
             result["note"] = "sitemap fetch failed: %s" % (reason or "unknown reason")
             return result
-        raw_branches = crawler._get_branches(soup) or {}
+        raw_branches = dict(crawler._get_branches(soup) or {})
+        # SRC-38: a source with more than one sitemap index (KOMPAS).
+        for key, link in crawler.extra_index_branches().items():
+            raw_branches.setdefault(key, link)
         branches = crawler.drop_soft_branches(dict(raw_branches))
         result["branches"] = len(raw_branches)
         result["soft_branches"] = len(raw_branches) - len(branches)

@@ -198,6 +198,11 @@ class Crawler:
     # that set is also what the category gate denies, and a copy is SRC-49's
     # two-list drift again (a test enforces the mirror).
     SOFT_BRANCH_DENY = frozenset()
+    # SRC-38 (#131): sitemap indexes this source publishes besides `website_url`.
+    # KOMPAS has three (news., money., www.); every other source has one. Their
+    # branches are merged into the primary index's by `list_branches`, the primary
+    # winning a key collision.
+    EXTRA_INDEX_URLS = ()
 
     def __init__(self):
         self.verbose = VERBOSE
@@ -350,13 +355,38 @@ class Crawler:
             )
         return kept
 
-    def get_news_in_bulk(self) -> List:
+    def extra_index_branches(self) -> Dict[str, str]:
+        """SRC-38: branches from EXTRA_INDEX_URLS. An extra index that does not
+        load is logged and skipped, since the primary index still stands."""
+        merged: Dict[str, str] = {}
+        for url in self.EXTRA_INDEX_URLS:
+            soup = self.page_loader.get_soup(url)
+            if not soup:
+                logger.warning(f"{self.website_name}: could not load extra sitemap index {url}")
+                continue
+            for key, link in (self._get_branches(soup) or {}).items():
+                merged.setdefault(key, link)
+        return merged
+
+    def list_branches(self) -> Optional[Dict[str, str]]:
+        """Every branch this source lists, across all its indexes, BEFORE the soft
+        drop -- or None when the primary index does not load. The one place that
+        answers "what does this source list" (get_news_in_bulk and the probes)."""
         soup = self.page_loader.get_soup(self.website_url)
         if not soup:
+            return None
+        branches = dict(self._get_branches(soup) or {})
+        for key, link in self.extra_index_branches().items():
+            branches.setdefault(key, link)
+        return branches
+
+    def get_news_in_bulk(self) -> List:
+        listed = self.list_branches()
+        if listed is None:
             logger.warning(f"Could not load sitemap from {self.website_url}")
             return []
 
-        branches_to_crawl = self.drop_soft_branches(self._get_branches(soup))
+        branches_to_crawl = self.drop_soft_branches(listed)
         links_to_crawl = []
 
         for branch_name, branch_link in branches_to_crawl.items():

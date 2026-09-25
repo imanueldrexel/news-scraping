@@ -29,7 +29,7 @@ from newscrawler.core.crawler_dict_list import CRAWLER_DICT  # noqa: E402
 # this script's numbers were not the pipeline's. A fleet claim is verified with
 # the shipped function or it is not verified. `is_soft_branch` is a classmethod,
 # so per-crawler SOFT_BRANCH_EXCEPTIONS are honoured too.
-FINANCE = re.compile(r"ekonomi|bisnis|finan|keuangan|uang|saham|bursa|invest|makro|business|econ|market|emiten", re.I)
+FINANCE = re.compile(r"ekonomi|bisnis|finan|keuangan|uang|money|saham|bursa|invest|makro|business|econ|market|emiten", re.I)
 
 # Sources whose live index still yields URL-shaped keys, each against its
 # ticket. --fail-on-url-keys exits 0 while only these appear, so the check can
@@ -39,10 +39,9 @@ URL_KEY_WHITELIST = {"VIVA": "SRC-33 (#119)"}
 
 def probe(name, crawler):
     try:
-        soup = crawler.page_loader.get_soup(crawler.website_url)
-        if not soup:
+        branches = crawler.list_branches()  # every index (SRC-38)
+        if branches is None:
             return name, "NO_INDEX", {}
-        branches = crawler._get_branches(soup)
         return name, "OK", branches
     except Exception as e:  # noqa: BLE001 -- report, don't die
         return name, f"ERROR {type(e).__name__}: {str(e)[:80]}", {}

@@ -32,8 +32,7 @@ from newscrawler.core.importance_filter import category_gate  # noqa: E402
 def probe(name):
     crawler = CRAWLER_DICT[name]
     try:
-        soup = crawler.page_loader.get_soup(crawler.website_url)
-        listed = crawler._get_branches(soup) if soup else {}
+        listed = crawler.list_branches() or {}  # every index (SRC-38)
     except Exception as e:  # noqa: BLE001 -- report, don't die
         return name, "ERROR %s" % type(e).__name__, []
     kept = crawler.drop_soft_branches(listed)

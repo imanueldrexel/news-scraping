@@ -61,8 +61,7 @@ def from_db(session, source, branch, n):
 
 
 def live_branches(crawler):
-    soup = crawler.page_loader.get_soup(crawler.website_url)
-    return crawler._get_branches(soup) if soup else {}
+    return crawler.list_branches() or {}  # every index (SRC-38)
 
 
 def from_live(crawler, branch, n, branches=None):
