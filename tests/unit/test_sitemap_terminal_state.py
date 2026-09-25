@@ -142,12 +142,12 @@ class TestTerminalStateClassification:
         """SRC-50: the source scopes the per-source soft leaves (DETIK's `sehat` is
         not KONTAN's), so the live filter must be told whose row it is."""
         service.semantic_filter.classify.return_value = decision(False)
-        service.data_flow_repo.load_sitemap_data.return_value = [sitemap(1, "hiburan")]
+        service.data_flow_repo.load_sitemap_data.return_value = [sitemap(1, "news")]
         service.crawler_dict["TEST_SITE"].batch_crawling_details.return_value = [article(1, ["x"], title="T")]
 
         service.crawl_newsdetails("TEST_SITE")
 
-        service.semantic_filter.classify.assert_called_once_with("T x", category="hiburan", source="TEST_SITE")
+        service.semantic_filter.classify.assert_called_once_with("T x", category="news", source="TEST_SITE")
 
 
 class TestFilterTelemetry:
@@ -216,14 +216,17 @@ class TestUnseenCategoryWarning:
         service.data_flow_repo.save_chunk_data.side_effect = lambda chunks: list(range(1, len(categories) + 1))
 
     def test_first_save_under_an_unseen_category_warns_once(self, service, caplog):
-        self._run(service, known={("TEST_SITE", "business")}, categories=["hype", "hype", "business"])
+        # `ragam` is a mixed bucket the gate does not deny. SYS-34's own example,
+        # `hype`, is denied now and is settled before any fetch (SYS-50), so it
+        # can no longer reach a save.
+        self._run(service, known={("TEST_SITE", "business")}, categories=["ragam", "ragam", "business"])
 
         with caplog.at_level(logging.WARNING, logger="newscrawler.domain.services.crawler_service_impl"):
             service.crawl_newsdetails("TEST_SITE")
 
         warnings = [r.message for r in caplog.records if "never seen before" in r.message]
         assert len(warnings) == 1
-        assert "'hype'" in warnings[0] and "H1" in warnings[0]
+        assert "'ragam'" in warnings[0] and "H1" in warnings[0]
 
     def test_known_category_does_not_warn(self, service, caplog):
         self._run(service, known={("TEST_SITE", "business")}, categories=["business", "Business"])
@@ -236,7 +239,7 @@ class TestUnseenCategoryWarning:
     def test_repository_that_cannot_answer_skips_the_check(self, service, caplog):
         service.data_flow_repo.get_saved_category_pairs.side_effect = RuntimeError("db down")
         service.semantic_filter.classify.return_value = decision(True)
-        service.data_flow_repo.load_sitemap_data.return_value = [sitemap(1, "hype")]
+        service.data_flow_repo.load_sitemap_data.return_value = [sitemap(1, "ragam")]
         service.crawler_dict["TEST_SITE"].batch_crawling_details.return_value = [article(1, ["body"])]
         service.data_flow_repo.save_chunk_data.return_value = [1]
 
@@ -246,3 +249,76 @@ class TestUnseenCategoryWarning:
         assert not [r for r in caplog.records if "never seen before" in r.message]
         assert [r for r in caplog.records if "unseen-category check skipped" in r.message]
         service.data_flow_repo.mark_sitemaps_status.assert_any_call([1], "saved")
+
+
+class TestCategoryDenyBeforeFetch:
+    """SYS-50 (#165): `deny` is decided from sitemaps.category, which is known at
+    listing time, so a denied row must not cost a fetch."""
+
+    def _load(self, service, sitemaps):
+        service.data_flow_repo.load_sitemap_data.return_value = sitemaps
+        service.semantic_filter.classify.return_value = decision(True)
+        service.data_flow_repo.save_chunk_data.side_effect = lambda chunks: sorted({c.sitemap_id for c in chunks})
+
+    def test_a_batch_of_denied_rows_is_never_fetched_and_ends_rejected_filter(self, service):
+        self._load(service, [sitemap(1, "hiburan"), sitemap(2, "olahraga"), sitemap(3, "Lifestyle")])
+
+        service.crawl_newsdetails("TEST_SITE")
+
+        service.crawler_dict["TEST_SITE"].batch_crawling_details.assert_not_called()
+        service.data_flow_repo.mark_sitemaps_status.assert_any_call([1, 2, 3], "rejected_filter")
+        service.semantic_filter.classify.assert_not_called()
+        assert service.data_flow_repo.log_crawl_complete.call_args.args[1] == 0  # article_count
+
+    def test_only_the_undenied_rows_are_fetched(self, service):
+        self._load(service, [sitemap(1, "hiburan"), sitemap(2, "news"), sitemap(3, "ekonomi"), sitemap(4, "bola")])
+        fetched = []
+
+        def crawl(news, website_name):
+            fetched.extend(s.sitemap_id for s in news)
+            return [article(s.sitemap_id, ["body"]) for s in news]
+        service.crawler_dict["TEST_SITE"].batch_crawling_details.side_effect = crawl
+
+        service.crawl_newsdetails("TEST_SITE")
+
+        assert sorted(fetched) == [2, 3]
+        service.data_flow_repo.mark_sitemaps_status.assert_any_call([1, 4], "rejected_filter")
+
+    def test_the_source_scopes_the_pre_fetch_deny_too(self, service):
+        """SRC-50's per-source leaves apply before the fetch exactly as after it:
+        `sehat` is denied for DETIK, not for another source."""
+        split = CrawlerServiceImpl._split_denied_by_category
+        rows = [sitemap(1, "sehat"), sitemap(2, "f1")]
+        assert split("DETIK", rows) == ([], [1, 2])
+        to_fetch, denied = split("KONTAN", rows)
+        assert [s.sitemap_id for s in to_fetch] == [1, 2] and denied == []
+
+    def test_a_row_with_no_category_is_left_to_the_post_fetch_gate(self, service):
+        to_fetch, denied = CrawlerServiceImpl._split_denied_by_category("TEST_SITE", [sitemap(1, None)])
+        assert [s.sitemap_id for s in to_fetch] == [1] and denied == []
+
+    def test_pre_denied_rows_are_counted_in_the_deny_gate(self, service, caplog):
+        self._load(service, [sitemap(1, "hiburan"), sitemap(2, "news")])
+        service.crawler_dict["TEST_SITE"].batch_crawling_details.side_effect = per_batch([article(2, ["body"])])
+        with caplog.at_level(logging.INFO, logger="newscrawler.domain.services.crawler_service_impl"):
+            service.crawl_newsdetails("TEST_SITE")
+        assert any("1 sitemap(s) rejected by category before fetching" in r.message for r in caplog.records)
+        assert any("pre_denied=1 attempted=1" in r.message for r in caplog.records)
+
+    def test_pre_denied_rows_do_not_dilute_the_source_wide_ratio(self, service):
+        """The ratio's denominator is what was FETCHED. 30 denied + 25 fetched-and-
+        blocked is a 100% outage (25/25), not 45% (25/55) -- counting the denied
+        rows would stop OPS-16's guard from ever firing on MEDIAINDONESIA (48%
+        denied), and 25 x HTTP 403 would be counted toward SYS-09's cap."""
+        from newscrawler.infrastructure.datasource.scrapers.crawler import NewsDetailsBatch
+        denied = [sitemap(i, "hiburan") for i in range(1, 31)]
+        blocked = [sitemap(i, "news") for i in range(31, 56)]
+        self._load(service, denied + blocked)
+        service.crawler_dict["TEST_SITE"].batch_crawling_details.side_effect = (
+            lambda news, website_name: NewsDetailsBatch([], failures={s.sitemap_id: "HTTP 403" for s in news}))
+
+        service.crawl_newsdetails("TEST_SITE")
+
+        service.data_flow_repo.increment_fetch_failures.assert_not_called()
+        note = service.data_flow_repo.log_crawl_complete.call_args.kwargs["note"]
+        assert note.startswith("source-wide fetch failure: 25/25 (100%)")

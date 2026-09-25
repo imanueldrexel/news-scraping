@@ -7,7 +7,7 @@ from newscrawler.core.chunker import HierarchicalChunker
 from newscrawler.core.crawler_dict_list import CRAWLER_DICT
 from newscrawler.core.crawler_url_list import WEB_URL_DICT
 from newscrawler.core.constants import SITEMAP_SOURCE_FAILURE_MIN, SITEMAP_SOURCE_FAILURE_RATIO, SOFT_THRESHOLD
-from newscrawler.core.importance_filter import SemanticImportanceFilter
+from newscrawler.core.importance_filter import SemanticImportanceFilter, category_gate
 from newscrawler.core.importance_probe import build_check_text
 from newscrawler.domain.dtos.dataflow.details.news_details_dto import NewsDetailsDTO
 from newscrawler.domain.dtos.dataflow.details.site_map_dto import SitemapDTO
@@ -94,12 +94,30 @@ class CrawlerServiceImpl(CrawlerService):
 
         logger.info(f"Found {len(target_news)} news to crawl for {website_name}")
 
+        # SYS-50 (#165): `deny` is decided from sitemaps.category alone, which is
+        # known before the page is fetched, so a denied row is settled here
+        # instead of costing a full fetch + extraction just to be rejected on
+        # information we already had (MEDIAINDONESIA's queue was 48% denied).
+        # Same function, same terminal status, same per-gate counter as the
+        # post-fetch gate, which stays as the backstop. The source scopes
+        # SRC-50's per-source leaves exactly as the live filter does.
+        target_news, pre_denied_ids = self._split_denied_by_category(website_name, target_news)
+        gate_counts = collections.Counter()
+        if pre_denied_ids:
+            self.data_flow_repo.mark_sitemaps_status(pre_denied_ids, "rejected_filter")
+            gate_counts["deny"] += len(pre_denied_ids)
+            logger.info(f"{website_name}: {len(pre_denied_ids)} sitemap(s) rejected by category before "
+                        f"fetching (SYS-50); {len(target_news)} left to fetch")
+
         # Calculate batch size so that we have at most 10 batches
         batch_size = max(1, math.ceil(len(target_news) / 10))
 
         # SYS-04: track the funnel so crawl_log.article_count reflects reality and
         # the extracted/attempted ratio is visible per source -- the single most
-        # useful "is this scraper rotting" signal.
+        # useful "is this scraper rotting" signal. SYS-50: `attempted` counts the
+        # rows actually FETCHED. It is the denominator of OPS-16's source-wide
+        # ratio, and counting the pre-denied rows would make a 100% fetch outage
+        # on MEDIAINDONESIA read as ~52% and never trip the guard.
         attempted = len(target_news)
         extracted_total = 0
         passed_filter_total = 0
@@ -117,7 +135,6 @@ class CrawlerServiceImpl(CrawlerService):
         # regression visible per run. SYS-37 fix 4: `uncertain` counts the
         # decisions with P(soft) in the band -- the size of a possible
         # LLM tie-break, not filed until the number exists.
-        gate_counts = collections.Counter()
         allow_total = collections.Counter()
         allow_score_passed = collections.Counter()
         uncertain = 0
@@ -157,9 +174,9 @@ class CrawlerServiceImpl(CrawlerService):
             # `newsdetails`; SYS-09 counts them in sitemaps.fetch_failures at the end of
             # the run (also stamping the cooldown), and load_all_sitemaps stops
             # offering a sitemap once it reaches SITEMAP_MAX_FETCH_FAILURES -- so a
-            # failure is retried after the cooldown, at most that many times, unless
-            # the whole source failed this run (OPS-15, below), in which case nothing
-            # is counted and everything stays eligible for the next run.
+            # failure is retried after the cooldown, at most that many times. A
+            # source-wide failure (OPS-15/OPS-16, _record_fetch_failures) still
+            # counts per-URL reasons and cooldown-stamps the rest.
             self.data_flow_repo.mark_sitemaps_attempted([n.sitemap_id for n in newsdetails])
 
             # SYS-33 (#114): a lastmod-only source (TIRTO, TEMPO) stored the
@@ -269,10 +286,24 @@ class CrawlerServiceImpl(CrawlerService):
 
         logger.info(
             f"Full-text crawl finished for {website_name}: "
-            f"attempted={attempted} extracted={extracted_total} "
+            f"pre_denied={len(pre_denied_ids)} attempted={attempted} extracted={extracted_total} "
             f"passed_filter={passed_filter_total} saved={saved_total}"
         )
         return saved_total
+
+    @staticmethod
+    def _split_denied_by_category(website_name: str, sitemaps):
+        """SYS-50: (rows to fetch, sitemap_ids the category gate denies). Pure. A
+        category that is not a string (None: no category) is never denied here;
+        the post-fetch gate decides it as before."""
+        to_fetch, denied = [], []
+        for s in sitemaps:
+            category = getattr(s, "category", None)
+            if isinstance(category, str) and category_gate(category, website_name) == "deny":
+                denied.append(s.sitemap_id)
+            else:
+                to_fetch.append(s)
+        return to_fetch, denied
 
     def _write_back_page_headlines(self, website_name: str, newsdetails) -> None:
         """SYS-33: persist the page title the crawler preferred over a

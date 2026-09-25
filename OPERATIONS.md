@@ -145,6 +145,8 @@ One model load in the normal case. `init_crawler()` costs ~2 min and ~4 GB RSS, 
 
 **VIVA is excluded by a standing hard rule**, not by preference: SRC-33 (#119) is open, its `_get_branches` still keeps all 53 branches, and one crawl would add ~53k rows onto a 39k backlog that is 97.8% non-finance. The exclusion list is in the script and every entry cites its ticket; remove VIVA when SRC-33 lands, not before. `--website` cannot override it.
 
+**Queue size, net of category-denied rows** (SYS-50, measured 2026-09-25 with `scripts/experiments/probe_queue_net_of_denied.py`; eligibility is `load_all_sitemaps`' own predicate). Since SYS-50 a row whose category the gate denies is settled `rejected_filter` **before** the fetch, so it no longer spends one of the 1,000 per-run fetches. Across the 28 scheduled sources: **73,292 eligible, 15,846 (22%) denied, 57,446 left to fetch.** Largest shares: MEDIAINDONESIA 12,070 → 6,276 (48% denied; it runs serially, so this is its biggest saving), DETIK 14,926 → 9,739 (35%, SRC-50's leaves), JPNN 2,649 → 1,822, TVONENEWS 934 → 424, SINDONEWS 708 → 333, GRIDID 434 → 0 (every GRIDID brand is denied, see SRC-52 #169). Per run each source still fetches at most 1,000. The first `full_text` after SYS-50 settles every denied row among its 1,000 without fetching them, so a heavily denied queue drains faster. `scripts/reject_denied_categories.py --dry-run` settles the whole backlog in one go instead.
+
 Summary line (Telegram, via the OPS-01 notifier): `N sources, +X sitemaps, +Y articles, Z with 0 saved`, then failures by name, then any source that has saved nothing for `SCHEDULE_ZERO_SAVE_RUNS` runs, then what was skipped. Exit code 0 when every source completed, 1 when any failed or timed out.
 
 ```powershell
