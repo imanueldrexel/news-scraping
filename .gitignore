@@ -153,3 +153,4 @@ package/*
 /backups/*.json
 # OPS-23: full-database dumps (scripts/backup_db.py) -- never commit data
 /backups/pg_dump/
+/backups/faiss_*/
