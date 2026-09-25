@@ -31,6 +31,9 @@
 | `SITEMAP_SOURCE_FAILURE_MIN` | `20` | OPS-16: the minimum number of failures before a run can be called source-wide. A ratio alone is undefined at small N — with 3 rows left in a source's queue and all 3 dead, "100% failed" is evidence about those 3 URLs, not about the source, and sparing them meant they were re-fetched every run forever with no cooldown |
 | `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` | — | Health-check alerts (OPS-01); unset = notifications skipped, logged only |
 | `HEALTH_ALERT_ON_NO_CHANGE` | `true` | OPS-13: `false` mutes the daily alert on a red day whose per-outlet statuses all match the previous run (exit code unaffected; NEW/CHANGED/RECOVERED always notify) |
+| `SCHEDULE_SOURCE_TIMEOUT` | `900` | OPS-19: per-source seconds before the scheduled crawl stops waiting and moves on. A timed-out source's thread cannot be killed and keeps running in the background (same trade `check_crawlers.py` makes); it is recorded as a timeout so one hung outlet cannot eat the window |
+| `SCHEDULE_FULL_TEXT_WEBSITES` | *(unset = all)* | OPS-19: limits which scheduled sources get `task=full_text`. Was the gate for "no full_text until SYS-37"; SYS-37 landed 2026-09-22, so it is now the way to stage a source in listing-only |
+| `SCHEDULE_ZERO_SAVE_RUNS` / `SCHEDULE_ZERO_SAVE_WITHIN_DAYS` | `3` / `7` | OPS-19: a source whose last N `full_text` runs **within that window** all saved 0 articles is named in the summary. The window matters — without it the check fires on history (WARTAEKONOMI's last three runs were 2026-06-01, all zero, while it holds 2,695 articles) |
 | `HEALTH_STALE_LISTING_DAYS` | `7` | OPS-17: a listing whose newest `news:publication_date`/`lastmod` is older than this is reported `STALE` — serving, but not serving anything new. Needs attention, non-fatal (does not affect the exit code) |
 
 ---
@@ -92,11 +95,37 @@ python -m newscrawler.tools.kb_query --ticker GOTO --format json --output goto.j
 |---|---|---|
 | 05:30 | Crawler health check (OPS-01) | `scripts/run_scheduled_health_check.py` — registered, see below |
 | 05:45 | Store consistency check (OPS-04) | `scripts/check_store_consistency.py --quiet --report-dir crawler_health` — not yet wired to Task Scheduler/Telegram; run manually or add alongside OPS-01 |
-| 06:00 | Morning crawl | `python __main__.py` (task=all) |
+| 07:00 | Morning crawl (OPS-19) | `scripts/run_scheduled_crawl.py` — **not yet registered; the first unattended run is an owner decision.** `python __main__.py` remains the manual equivalent |
 | 06:45 | Knowledge extraction | task=extract_knowledge |
 | 07:00 | Newsletter | task=newsletter |
-| 18:00 | Evening crawl | task=all |
+| 19:00 | Evening crawl (OPS-19) | `scripts/run_scheduled_crawl.py` — see above |
 | 18:45 | Knowledge extraction | task=extract_knowledge |
+
+### Scheduled crawl (OPS-19) — built, not yet registered
+
+`scripts/run_scheduled_crawl.py` is the scheduled entry point for the crawl itself. Two phases, in this order: `task=sitemap` for every scheduled source, then `task=full_text` for `SCHEDULE_FULL_TEXT_WEBSITES`. Listing first for everyone, so a slow source's fetch phase cannot delay another source's listing.
+
+One process, one model load — `init_crawler()` costs ~2 min and ~4 GB RSS, so the sources are looped inside a single crawler rather than one subprocess each. Each source runs in a worker thread with `SCHEDULE_SOURCE_TIMEOUT`.
+
+**VIVA is excluded by a standing hard rule**, not by preference: SRC-33 (#119) is open, its `_get_branches` still keeps all 53 branches, and one crawl would add ~53k rows onto a 39k backlog that is 97.8% non-finance. The exclusion list is in the script and every entry cites its ticket; remove VIVA when SRC-33 lands, not before. `--website` cannot override it.
+
+Summary line (Telegram, via the OPS-01 notifier): `N sources, +X sitemaps, +Y articles, Z with 0 saved`, then failures by name, then any source that has saved nothing for `SCHEDULE_ZERO_SAVE_RUNS` runs, then what was skipped. Exit code 0 when every source completed, 1 when any failed or timed out.
+
+```powershell
+venv\Scripts\python.exe scriptsun_scheduled_crawl.py --dry-run          # print the plan, crawl nothing
+venv\Scripts\python.exe scriptsun_scheduled_crawl.py --phase sitemap
+venv\Scripts\python.exe scriptsun_scheduled_crawl.py --website KOMPAS,CNBC
+```
+
+Registration (the two battery settings matter for the same reason they do for OPS-01 — this is a laptop, and Task Scheduler silently skips a battery run without marking it "missed", so `-StartWhenAvailable` never queues a catch-up):
+
+```powershell
+schtasks /Create /TN "NewsAggregator Scheduled Crawl (morning)" /SC DAILY /ST 07:00 ^
+    /TR "<repo>env\Scripts\python.exe <repo>\scriptsun_scheduled_crawl.py" /RU "<user>"
+$s = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
+        -StartWhenAvailable -WakeToRun -ExecutionTimeLimit (New-TimeSpan -Hours 4)
+Set-ScheduledTask -TaskName "NewsAggregator Scheduled Crawl (morning)" -Settings $s
+```
 
 ### Crawler health check (OPS-01)
 
