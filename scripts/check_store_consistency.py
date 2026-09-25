@@ -53,8 +53,11 @@ from newscrawler.core.constants import VECTOR_DB_NAME_L1, VECTOR_DB_NAME_L2
 # the checks that still carry known, already-ticketed historical debris. A count at or
 # below its baseline is not a new problem; anything above is.
 BASELINE = {
-    "l1_no_articles":     10680,
-    "l2_no_articles":     9497,   # all VIVA, 2026-06-02 (SYS-08's pre-fix debris)
+    # OPS-04 repair, 2026-09-26: the terminal VIVA orphans (2,918 sitemaps) were
+    # removed; what is left is VIVA June rows still queued, which link up when the
+    # crawl reaches them. Lowered from 10,680 / 9,497 so new orphans show as GROWING.
+    "l1_no_articles":     6529,
+    "l2_no_articles":     6529,
     "l1_no_chunks":       1335,
     "l2_no_chunks":       152,
     "articles_no_chunks": 152,
