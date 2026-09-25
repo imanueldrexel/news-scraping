@@ -24,6 +24,7 @@ class TestGetStatsIsolation:
     def test_all_queries_succeeding_returns_every_metric(self):
         ds = _ds_with_session_side_effect([10, 20, 3, "20260101", "20260916", 0, "2026-09-16 10:00:00"])
         stats = ds.get_stats()
+        assert stats.pop("errors") == {}   # OPS-06: present and empty when nothing failed
         assert stats == {
             "total_articles": 10, "total_chunks": 20, "total_entities": 3,
             "min_date": "20260101", "max_date": "20260916",
@@ -56,11 +57,15 @@ class TestGetStatsIsolation:
     def test_all_seven_keys_always_present_even_when_everything_fails(self):
         ds = _ds_with_session_side_effect(Exception("db down"))
         stats = ds.get_stats()
-        assert set(stats.keys()) == {
+        # OPS-06 (#54): get_stats now also reports WHICH metrics failed, so a
+        # caller can tell "0 rows" from "we do not know". Every metric key is
+        # still present -- that is what this test guards.
+        assert stats["errors"], "a total outage must name the failed metrics"
+        assert set(stats.keys()) - {"errors"} == {
             "total_articles", "total_chunks", "total_entities",
             "min_date", "max_date", "digests_generated", "last_crawl",
         }
-        assert all(v is None for v in stats.values())
+        assert all(v is None for k, v in stats.items() if k != "errors")
 
     def test_none_date_values_are_not_stringified(self):
         ds = _ds_with_session_side_effect([0, 0, 0, None, None, 0, None])

@@ -106,14 +106,27 @@ class SQLAlchemyNewsletterDataSource:
         "last_crawl":        ("SELECT MAX(started_at) FROM crawl_log WHERE status = 'completed'", True),
     }
 
+    # OPS-06 (#54): the key under which get_stats reports which metrics FAILED.
+    # A failed query and a genuine zero are different facts and used to be the
+    # same `None`, so /api/health answered {"status": "ok", "articles_indexed": 0}
+    # on a DB outage -- a monitor keyed on `status` saw green and a human had to
+    # guess whether the corpus was empty or the query broke.
+    ERRORS_KEY = "errors"
+
     def get_stats(self) -> dict:
+        """Every metric queried independently (OPS-05). `stats[ERRORS_KEY]` maps
+        each metric that failed to its error text, and is empty when all
+        succeeded -- so a caller can tell "0 rows" from "we do not know"."""
         stats = {}
+        errors = {}
         for key, (sql_text, stringify) in self._STATS_QUERIES.items():
             try:
                 with self.client.get_session() as session:
                     value = session.execute(text(sql_text)).scalar()
             except Exception as e:
                 logger.warning(f"Stats query for '{key}' failed: {e}")
+                errors[key] = f"{type(e).__name__}: {e}"
                 value = None
             stats[key] = str(value) if (stringify and value is not None) else value
+        stats[self.ERRORS_KEY] = errors
         return stats

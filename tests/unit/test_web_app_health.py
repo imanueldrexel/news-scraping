@@ -10,6 +10,7 @@ tests pin all three: no pickle.load, no re-read on a warm cache, not on the
 event-loop thread.
 """
 import asyncio
+import json
 import os
 import threading
 import time
@@ -132,7 +133,10 @@ class TestHealthRunsOffTheEventLoop:
         with patch.object(app_mod, "_health_payload", fake_payload):
             result = asyncio.run(app_mod.api_health())
 
-        assert result == {"status": "ok"}
+        # OPS-06: the handler wraps the payload in a JSONResponse so the HTTP
+        # status can carry the degraded state too; the body is unchanged.
+        assert json.loads(result.body) == {"status": "ok"}
+        assert result.status_code == 200
         assert seen["thread"] != threading.get_ident()
 
     def test_payload_degrades_instead_of_raising_when_stats_fail(self):

@@ -24,6 +24,29 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 
+def validate_website_name(website: str) -> str:
+    """DBT-12 (#47): the website name must be one the code knows.
+
+    It comes from `event["website"]` or the `CRAWL_WEBSITES` env var -- operator
+    input from a scheduler config. Before this, an unknown name reached
+    `load_all_sitemaps`, returned 0 rows, and only crashed later by accident
+    (`crawler_dict.get()` returned None and the service called
+    `batch_crawling_details` on it), so a typo in a scheduled entry looked like a
+    source with nothing to crawl. Fail here, by name, instead."""
+    from newscrawler.domain.entities.extraction.website_name import WebsiteName
+
+    name = (website or "").strip()
+    if not name:
+        raise ValueError("website name is empty")
+    known = {w.value for w in WebsiteName}
+    if name not in known:
+        raise ValueError(
+            f"unknown website name {name!r} -- not in WebsiteName. "
+            f"Known: {', '.join(sorted(known))}"
+        )
+    return name
+
+
 class SQLAlchemySitemapDataSource:
     # SYS-29: how many links go into one `link IN (...)` lookup. A source's whole
     # listing is saved in a single save_sitemaps call (VIVA lists 2,500+), so the
@@ -178,7 +201,20 @@ class SQLAlchemySitemapDataSource:
     def load_all_sitemaps(
         self, website: str, n_limit: int
     ) -> List[NewsSitemapModel]:
-        website = f"'{website}'"
+        """DBT-12 (#47): the article-crawl queue.
+
+        The website name, the cooldown window and the row limit are BOUND
+        parameters, not interpolated. They arrive from `event["website"]` /
+        `CRAWL_WEBSITES`, i.e. from a scheduler config an operator edits, and the
+        old `website = f"'{website}'"` put that straight into the predicate --
+        `load_all_sitemaps(website="KOMPAS' OR '1'='1")` returned another source's
+        rows. Column and table names still come from the ORM (`Table.column.name`),
+        which is code, not input.
+
+        The name is also validated against `WebsiteName` before any query runs, so
+        a typo in a scheduler entry fails loudly here instead of returning 0 rows
+        and crashing later on `NoneType has no batch_crawling_details`."""
+        website = validate_website_name(website)
         news_list = []
         with self.client.get_session() as session:
             query = (
@@ -189,7 +225,7 @@ class SQLAlchemySitemapDataSource:
                 f"LEFT JOIN (SELECT {NewsArticlesTable.sitemap_id.name} "
                 f"FROM {NewsArticlesTable.__tablename__}) as b "
                 f"ON a.{SitemapTable.sitemap_id.name} = b.{NewsArticlesTable.sitemap_id.name} "
-                f"WHERE {SitemapTable.sources.name} = {website} "
+                f"WHERE {SitemapTable.sources.name} = :website "
                 f"AND b.{NewsArticlesTable.sitemap_id.name} is NULL "
                 # SYS-16: a sitemap the semantic filter already rejected is a
                 # deterministic, permanent "no" (same headline/text, same probe
@@ -199,17 +235,22 @@ class SQLAlchemySitemapDataSource:
                 # since a layout fix or a first attempt can change their outcome.
                 f"AND a.{SitemapTable.crawl_status.name} != 'rejected_filter' "
                 f"AND (a.{SitemapTable.last_crawl_attempt.name} IS NULL "
-                f"     OR a.{SitemapTable.last_crawl_attempt.name} < NOW() - INTERVAL '{SITEMAP_RECRAWL_COOLDOWN_DAYS} days') "
+                f"     OR a.{SitemapTable.last_crawl_attempt.name} < NOW() - make_interval(days => :cooldown_days)) "
                 # SYS-09: a URL that has failed to fetch/extract this many times in a
                 # row is excluded permanently instead of consuming a retry slot on
                 # every future run forever. A sitemap that has never been attempted,
                 # or failed fewer times, is unaffected (fetch_failures defaults to 0).
-                f"AND a.{SitemapTable.fetch_failures.name} < {SITEMAP_MAX_FETCH_FAILURES} "
+                f"AND a.{SitemapTable.fetch_failures.name} < :max_fetch_failures "
                 f"ORDER BY a.{SitemapTable.posted_at.name} DESC "
-                f"LIMIT {n_limit}"
+                f"LIMIT :n_limit"
             )
 
-            result = session.execute(text(query))
+            result = session.execute(text(query), {
+                "website": website,
+                "cooldown_days": int(SITEMAP_RECRAWL_COOLDOWN_DAYS),
+                "max_fetch_failures": int(SITEMAP_MAX_FETCH_FAILURES),
+                "n_limit": int(n_limit),
+            })
             for row in result:
                 # Convert posted_at from int (yyyyMMdd) to datetime
                 posted_at_dt = None

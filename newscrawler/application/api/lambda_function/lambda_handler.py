@@ -31,6 +31,17 @@ def process_event(event, context):
 
     if websites:
         websites = [website.strip() for website in websites.split(",")]
+        # DBT-12 (#47): validate the list at the dispatch boundary, before any
+        # query or crawler lookup. This list comes from the event or the
+        # CRAWL_WEBSITES env var, i.e. from a scheduler config -- a typo used to
+        # reach load_all_sitemaps, return 0 rows, and only crash later on
+        # `NoneType has no batch_crawling_details`, which reads like a quiet
+        # source rather than a bad name. Raising here names the offender and, via
+        # process_event's re-raise, gives the scheduler a non-zero exit.
+        from newscrawler.infrastructure.datasource.dataflow.write.sqlalchemy.sql_alchemy_sitemap_data_source import (
+            validate_website_name,
+        )
+        websites = [validate_website_name(w) for w in websites]
     else:
         websites = []  # extract_knowledge does not need a website list
 

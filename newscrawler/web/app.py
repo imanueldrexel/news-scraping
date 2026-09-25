@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import FastAPI, Form, Request
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -188,24 +189,42 @@ async def api_health():
     # poller hitting this endpoint never stalls the event loop that serves
     # /api/query (the handler is async; sync work here would block everything).
     # DBT-15 (#50) covers the same problem for the other routes.
-    return await run_in_threadpool(_health_payload)
+    payload = await run_in_threadpool(_health_payload)
+    # OPS-06: a monitor keyed on the HTTP code has to see the failure too, not
+    # only one keyed on the body.
+    status_code = 200 if payload.get("status") == "ok" else 503
+    return JSONResponse(content=jsonable_encoder(payload), status_code=status_code)
 
 
 def _health_payload() -> dict:
+    """OPS-06 (#54): a failed stats query must not read as a healthy zero.
+
+    `get_stats` never raised -- it returned `{}` (now `None` per metric), so every
+    `.get(key, 0)` below resolved to its default and the endpoint answered
+    `{"status": "ok", "articles_indexed": 0, ...}` with HTTP 200 while the
+    database was unreachable or a table was missing. The `degraded` branch was
+    unreachable for the failure it was written for. It now reports which metrics
+    failed, and the caller turns that into a non-200."""
     try:
         stats = _get_stats_ds().get_stats()
-        return {
-            "status":           "ok",
-            "articles_indexed": stats.get("total_articles", 0),
-            "chunks_indexed":   stats.get("total_chunks", 0),
+        errors = stats.get(SQLAlchemyNewsletterDataSource.ERRORS_KEY) or {}
+        payload = {
+            "status":           "degraded" if errors else "ok",
+            "articles_indexed": stats.get("total_articles"),
+            "chunks_indexed":   stats.get("total_chunks"),
             "last_crawl":       stats.get("last_crawl"),
-            "digests_generated": stats.get("digests_generated", 0),
+            "digests_generated": stats.get("digests_generated"),
             # OPS-04: a gap between this and chunks_indexed is exactly the silent
             # divergence check_store_consistency.py exists to catch.
             "faiss_docs":       _faiss_doc_counts(),
         }
+        if errors:
+            # Named per metric: "which number is missing" is the operator's first
+            # question, and it distinguishes one absent table from a dead DB.
+            payload["errors"] = errors
+        return payload
     except Exception as e:
-        return {"status": "degraded", "error": str(e)}
+        return {"status": "degraded", "error": f"{type(e).__name__}: {e}"}
 
 
 # OPS-14: (index.faiss path) -> ((mtime_ns, size), ntotal). The pipeline rewrites
