@@ -5,6 +5,7 @@ from newscrawler.domain.entities.extraction.url_data import URL
 from newscrawler.domain.utils.date_time_reader import DateTimeReader
 from newscrawler.infrastructure.datasource.scrapers.crawler import Crawler
 from newscrawler.core.utils.utils import (
+    own_paragraph_text,
     preprocess_text,
 )
 from newscrawler.domain.entities.extraction.website_name import WebsiteName
@@ -101,10 +102,12 @@ class EmitennewsCrawler(Crawler):
     def _get_whole_text(soup) -> List[str]:
         read_content_layer = soup.find("div", attrs={"class": "news-page-item"})
         if read_content_layer:
-            sentences = read_content_layer.find_all("p")
+            # SRC-54 (#177): the site leaves <p> unclosed, so html.parser nests
+            # every paragraph inside the one before it. Each <p>'s own text only,
+            # or the body is stored once per paragraph, shorter each time.
             texts = []
-            for sentence in sentences:
-                sentence = preprocess_text(sentence.get_text(" ").strip())
+            for sentence in read_content_layer.find_all("p"):
+                sentence = preprocess_text(own_paragraph_text(sentence))
                 if sentence and "Baca juga" not in sentence:
                     texts.append(sentence)
             return texts

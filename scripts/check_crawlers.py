@@ -14,6 +14,9 @@ Status:
            trafilatura/newspaper -- the site selector is dead; needs attention but
            not fatal (OPS-02)
   PARTIAL  listing OK but 0 sample articles produced text (body extraction broken)
+  REPEATED listing OK and bodies extracted, but at least one sample body repeats its
+           own text -- each paragraph is a suffix of the one before (SRC-54's
+           nested-<p> cascade). An article count cannot show this; the bodies can.
   BROKEN   sitemap fetch/parse/listing failed
   ERROR    unexpected exception (message captured)
 
@@ -59,6 +62,7 @@ logging.getLogger("newscrawler.infrastructure.datasource.scrapers.crawler").setL
 logger = logging.getLogger("check_crawlers")
 
 from newscrawler.core.crawler_dict_list import CRAWLER_DICT
+from newscrawler.core.utils.utils import is_cascaded
 
 STATUS_OK = "OK"
 STATUS_FALLBACK = "FALLBACK"
@@ -72,15 +76,26 @@ STATUS_ERROR = "ERROR"
 # last updated 2022-10-23. Needs attention, non-fatal like FALLBACK: the source
 # is serving, it just is not serving anything new.
 STATUS_STALE = "STALE"
+# SRC-54 (#177): EMITENNEWS saved 935 articles, every body stored 3-5x over
+# (unclosed <p> nested by html.parser), while this check could only say how many
+# samples produced text. Corrupt bodies are saved bodies, so this is unhealthy.
+STATUS_REPEATED = "REPEATED"
 # Severity order: drives the table sort and the "(10 BROKEN, 1 ERROR, 6 FALLBACK)" breakdowns.
-STATUSES = (STATUS_BROKEN, STATUS_ERROR, STATUS_PARTIAL, STATUS_FALLBACK, STATUS_STALE, STATUS_OK)
+STATUSES = (STATUS_BROKEN, STATUS_ERROR, STATUS_PARTIAL, STATUS_REPEATED, STATUS_FALLBACK, STATUS_STALE,
+            STATUS_OK)
 # UNHEALTHY drives the exit code -- FALLBACK is deliberately excluded (OPS-02:
 # "needs attention but non-fatal", since articles are still being produced).
-UNHEALTHY = {STATUS_PARTIAL, STATUS_BROKEN, STATUS_ERROR}
+UNHEALTHY = {STATUS_PARTIAL, STATUS_BROKEN, STATUS_ERROR, STATUS_REPEATED}
 NEEDS_ATTENTION = UNHEALTHY | {STATUS_FALLBACK, STATUS_STALE}
 
 # OPS-17: how old the newest listed entry may be before the listing is STALE.
 HEALTH_STALE_LISTING_DAYS = int(os.getenv("HEALTH_STALE_LISTING_DAYS", "7"))
+
+# OPS-30 (#181): sample entries at least this old first. EMITENNEWS lists
+# scheduled posts (dated today and tomorrow) at the head of its sitemap and
+# redirects them to /404 until they publish, so the first N entries were never
+# a real article and the check reported PARTIAL on a source saving ~1,000 a run.
+HEALTH_SAMPLE_MIN_AGE_HOURS = int(os.getenv("HEALTH_SAMPLE_MIN_AGE_HOURS", "24"))
 
 # OPS-13: how an outlet moved relative to its previous crawl_log row.
 CHANGE_NEW = "new"                # was OK, now needs attention -- the line the operator must read
@@ -170,8 +185,29 @@ def newest_listed_age(articles, now=None):
     return newest, age
 
 
+def sample_order(articles, now=None, min_age_hours=HEALTH_SAMPLE_MIN_AGE_HOURS):
+    """OPS-30: the listing reordered for sampling -- entries published at least
+    `min_age_hours` ago first, then the rest (undated, recent, future-dated), each
+    group in listed order. A listing with nothing that old is sampled as listed,
+    so a source whose sitemap only holds the last few hours is still checked."""
+    settled, rest = [], []
+    for a in articles or []:
+        ts = (a or {}).get("timestamp") if isinstance(a, dict) else getattr(a, "timestamp", None)
+        if ts is not None:
+            reference = now or datetime.now(getattr(ts, "tzinfo", None))
+            try:
+                age_hours = (reference - ts).total_seconds() / 3600.0
+            except TypeError:  # naive vs aware
+                age_hours = (datetime.now() - ts.replace(tzinfo=None)).total_seconds() / 3600.0
+            if age_hours >= min_age_hours:
+                settled.append(a)
+                continue
+        rest.append(a)
+    return settled + rest
+
+
 def classify(sitemap_links: int, detail_ok: int, extractors: list = None, error: bool = False,
-             listing_age_days: int = None) -> str:
+             listing_age_days: int = None, cascaded: int = 0) -> str:
     """Pure classification from sample-crawl counts. `extractors` is the
     meta_data["extractor"] value (see crawler.py's _get_news_details) for each
     sample that produced text -- OPS-02: if none of them is "site", the site's own
@@ -182,6 +218,8 @@ def classify(sitemap_links: int, detail_ok: int, extractors: list = None, error:
         return STATUS_BROKEN
     if detail_ok <= 0:
         return STATUS_PARTIAL
+    if cascaded > 0:
+        return STATUS_REPEATED
     if extractors and "site" not in extractors:
         return STATUS_FALLBACK
     # OPS-17: checked last -- a broken extractor is the more urgent finding, and
@@ -202,6 +240,8 @@ def _blank_result(name: str, started_at: datetime = None) -> dict:
         # sitemap that still serves but stopped updating is visible.
         "newest_listed": None, "listing_age_days": None,
         "detail_total": 0, "detail_ok": 0, "avg_chars": 0,
+        # SRC-54: samples whose body repeats its own text (is_cascaded).
+        "cascaded": 0,
         "status": STATUS_BROKEN, "note": "", "extractors": [],
         # OPS-12: the outlet's own check window, not the logging transaction's NOW().
         "started_at": started_at or _utcnow(), "finished_at": None, "duration_sec": 0.0,
@@ -250,7 +290,7 @@ def check_one(name: str, crawler, sample_size: int) -> dict:
         result["newest_listed"] = newest
         result["listing_age_days"] = age_days
 
-        dtos = crawler.batch_crawling_sitemap(articles[:sample_size], name) or []
+        dtos = crawler.batch_crawling_sitemap(sample_order(articles)[:sample_size], name) or []
         result["dto_count"] = len(dtos)
         if not dtos:
             result["status"] = STATUS_PARTIAL
@@ -277,10 +317,15 @@ def check_one(name: str, crawler, sample_size: int) -> dict:
         # OPS-02: which extractor produced the text, for the samples that succeeded.
         extractors = [(getattr(d, "meta_data", None) or {}).get("extractor") for d, l in zip(details, lengths) if l > 0]
         result["extractors"] = extractors
+        result["cascaded"] = sum(1 for d, l in zip(details, lengths)
+                                 if l > 0 and is_cascaded(getattr(d, "extracted_text", None) or []))
         result["status"] = classify(result["sitemap_links"], result["detail_ok"], extractors,
-                                    listing_age_days=result["listing_age_days"])
+                                    listing_age_days=result["listing_age_days"], cascaded=result["cascaded"])
         if result["status"] == STATUS_PARTIAL:
             result["note"] = "listing OK but article body extraction returned empty"
+        elif result["status"] == STATUS_REPEATED:
+            result["note"] = ("%d/%d sample bodies repeat their own text (each paragraph a suffix of "
+                              "the one before; nested <p>, SRC-54)" % (result["cascaded"], result["detail_ok"]))
         elif result["status"] == STATUS_FALLBACK:
             used = sorted({e for e in extractors if e} or {"unknown"})
             result["note"] = "site selector produced nothing; rescued by " + "/".join(used)

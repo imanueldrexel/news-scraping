@@ -127,3 +127,53 @@ class TestScrape:
         assert dto.sources == "EMITENNEWS"
         assert dto.category == "news"
         assert dto.timestamp == datetime(2026, 9, 16, 0, 0, tzinfo=WIB)
+
+
+# SRC-54 (#177): EmitenNews's article markup, reduced from the live KKGI/MGLV
+# pages -- <p> is never closed, a bold dateline and an empty ad <div> sit inside
+# paragraphs, and one paragraph is a bold sub-heading only.
+ARTICLE_HTML = """<html><body><div class="news-page-item"><div id="post-content">
+<p><strong>EmitenNews.com -</strong> Fasilitas kredit PT Bank Negara Indonesia untuk emiten MGLV senilai Rp1,07 triliun.
+<p>Dalam keterbukaan informasi BEI, manajemen menyebut dana dipakai untuk ekspansi pusat data.<div class="home-ads"></div>
+<p><strong>Fasilitas Kredit dapat Diperpanjang</strong>
+<p>Fasilitas tersebut memiliki tenor maksimal lima tahun dan dapat diperpanjang atas persetujuan bank.
+<p>Baca juga: Emiten lain ikut ekspansi pusat data
+<p>Selama fasilitas berlangsung, kedua entitas dibatasi dalam sejumlah tindakan korporasi. ***
+</div></div></body></html>"""
+
+EXPECTED_PARAGRAPHS = [
+    "EmitenNews.com - Fasilitas kredit PT Bank Negara Indonesia untuk emiten MGLV senilai Rp1,07 triliun.",
+    "Dalam keterbukaan informasi BEI, manajemen menyebut dana dipakai untuk ekspansi pusat data.",
+    "Fasilitas Kredit dapat Diperpanjang",
+    "Fasilitas tersebut memiliki tenor maksimal lima tahun dan dapat diperpanjang atas persetujuan bank.",
+    "Selama fasilitas berlangsung, kedua entitas dibatasi dalam sejumlah tindakan korporasi. ***",
+]
+
+
+# Without the "Baca juga" line. With it, the old extractor happened to drop every
+# cascaded paragraph (each one contained the line), which hid the cascade.
+ARTICLE_HTML_NO_RELATED = ARTICLE_HTML.replace("<p>Baca juga: Emiten lain ikut ekspansi pusat data\n", "")
+
+
+class TestNestedParagraphs:
+    def _soup(self, html=ARTICLE_HTML):
+        # production parses article pages with html.parser (requests_page_loader)
+        return BeautifulSoup(html, "html.parser")
+
+    def test_fixture_really_nests_paragraphs_under_html_parser(self):
+        paragraphs = self._soup().find("div", attrs={"class": "news-page-item"}).find_all("p")
+        assert sum(1 for p in paragraphs if p.find("p")) == len(paragraphs) - 1
+
+    def test_each_paragraph_is_stored_once(self):
+        assert EmitennewsCrawler._get_whole_text(self._soup()) == EXPECTED_PARAGRAPHS
+
+    def test_no_paragraph_is_a_suffix_of_its_predecessor(self):
+        from newscrawler.core.utils.utils import cascaded_pairs
+        soup = self._soup(ARTICLE_HTML_NO_RELATED)
+        assert cascaded_pairs(EmitennewsCrawler._get_whole_text(soup)) == 0
+
+    def test_body_is_not_longer_than_the_page_text(self):
+        soup = self._soup(ARTICLE_HTML_NO_RELATED)
+        body = " ".join(EmitennewsCrawler._get_whole_text(soup))
+        page_words = len(soup.find(id="post-content").get_text(" ").split())
+        assert len(body.split()) == page_words

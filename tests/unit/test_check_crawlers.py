@@ -196,6 +196,54 @@ class TestCheckOne:
         r = cc.check_one("KOMPAS", c, sample_size=2)
         assert r["status"] == cc.STATUS_OK
 
+    def test_repeated_when_a_sample_body_cascades(self):
+        """SRC-54 (#177): nested <p> stores each paragraph plus everything after
+        it. The sample produced text from the site selector -- the old check
+        called that OK -- but the body repeats itself."""
+        tail = "Paragraf ketiga menutup artikel dengan jadwal RUPS."
+        mid = "Paragraf kedua tentang rencana dividen tahun depan. " + tail
+        head = "Paragraf pertama tentang laba bersih emiten naik tajam. " + mid
+        c = _mock_crawler(details=[_detail([head, mid, tail], extractor="site"),
+                                   _detail(["clean body"], extractor="site")])
+        r = cc.check_one("EMITENNEWS", c, sample_size=2)
+        assert r["status"] == cc.STATUS_REPEATED
+        assert r["cascaded"] == 1
+        assert "1/2" in r["note"]
+        assert cc.STATUS_REPEATED in cc.UNHEALTHY
+
+    def test_clean_bodies_have_zero_cascaded(self):
+        r = cc.check_one("KOMPAS", _mock_crawler(), sample_size=2)
+        assert r["cascaded"] == 0
+
+
+class TestSampleOrder:
+    """OPS-30 (#181): EMITENNEWS's first entries are scheduled posts (dated today
+    and tomorrow) that soft-404 until they publish."""
+    NOW = datetime(2026, 9, 26, 14, 40, tzinfo=timezone(timedelta(hours=7)))
+
+    def _entry(self, link, hours_ago):
+        ts = None if hours_ago is None else self.NOW - timedelta(hours=hours_ago)
+        return {"link": link, "timestamp": ts}
+
+    def test_settled_entries_are_sampled_before_recent_and_future_ones(self):
+        listing = [self._entry("tomorrow", -10), self._entry("today", 14), self._entry("yesterday", 38),
+                   self._entry("old", 300)]
+        order = [a["link"] for a in cc.sample_order(listing, now=self.NOW)]
+        assert order == ["yesterday", "old", "tomorrow", "today"]
+
+    def test_listing_with_nothing_old_enough_is_sampled_as_listed(self):
+        listing = [self._entry("a", 1), self._entry("b", None), self._entry("c", -2)]
+        assert [a["link"] for a in cc.sample_order(listing, now=self.NOW)] == ["a", "b", "c"]
+
+    def test_check_one_samples_the_settled_entries(self):
+        now = datetime.now(timezone.utc)  # check_one uses the real clock
+        listing = [{"link": "http://e.com/tomorrow", "timestamp": now + timedelta(hours=10)},
+                   {"link": "http://e.com/old", "timestamp": now - timedelta(hours=48)}]
+        c = _mock_crawler(articles=listing)
+        cc.check_one("EMITENNEWS", c, sample_size=1)
+        sampled = c.batch_crawling_sitemap.call_args[0][0]
+        assert [a["link"] for a in sampled] == ["http://e.com/old"]
+
 
 class TestReportingHelpers:
     def test_summary_line_flags_unhealthy(self):
