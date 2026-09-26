@@ -11,6 +11,8 @@ from langchain.schema import Document
 
 from newscrawler.core.constants import VECTOR_DB_NAME_L1, VECTOR_DB_NAME_L2, EMBEDDING_MODEL_HF
 from newscrawler.domain.dtos.dataflow.details.chunk_dto import ChunkDTO
+from newscrawler.infrastructure.datasource.dataflow.write.faiss import index_generation
+from newscrawler.infrastructure.datasource.dataflow.write.faiss.index_generation import StaleIndexError
 
 logger = logging.getLogger(__name__)
 
@@ -83,7 +85,7 @@ class ChunkFAISSDatasource:
             # DBT-10: persisted once, by flush() at the end of the deferred block.
             self._dirty().add(db_name)
         else:
-            self._atomic_save_local(vs, db_name)
+            self._persist(vs, db_name)
         logger.info(f"  {db_name}: embedded {len(new_chunks)} new chunks")
 
         for chunk, eid in zip(new_chunks, embedding_ids):
@@ -138,11 +140,45 @@ class ChunkFAISSDatasource:
             self.end_deferred()
 
     def flush(self) -> None:
+        """Persist every level touched in the block. A level refused as stale
+        (SYS-53) has been reloaded; the other level is still saved, and the
+        refusal is raised at the end, so the block assigns no ids."""
+        refused = None
         for db_name in sorted(self._dirty()):
-            vs = self.vs_l1 if db_name == VECTOR_DB_NAME_L1 else self.vs_l2
+            try:
+                self._persist(self._store(db_name), db_name)
+                logger.info(f"  {db_name}: index saved (deferred flush)")
+            except StaleIndexError as e:
+                refused = refused or e
+            self._dirty().discard(db_name)
+        if refused:
+            raise refused
+
+    def _store(self, db_name: str) -> FAISS:
+        return self.vs_l1 if db_name == VECTOR_DB_NAME_L1 else self.vs_l2
+
+    def _persist(self, vs: FAISS, db_name: str) -> None:
+        """Save one level. SYS-53: when another process saved it after this one
+        loaded it, this copy can never be saved again. Drop it and reload, so
+        this process's next block builds on the current index. The dropped
+        vectors' chunk rows are embedding_id NULL (deferred block) or were never
+        written (outside one); the next deferred block of their source re-embeds
+        NULL rows."""
+        try:
             self._atomic_save_local(vs, db_name)
-            logger.info(f"  {db_name}: index saved (deferred flush)")
-        self._dirty().clear()
+        except StaleIndexError:
+            logger.error(f"  {db_name}: another process saved this index after this one loaded it; "
+                         f"dropping this process's unsaved vectors and reloading the index")
+            self._reload(db_name)
+            raise
+
+    def _reload(self, db_name: str) -> None:
+        vs = self._load_or_create(db_name)
+        if db_name == VECTOR_DB_NAME_L1:
+            self.vs_l1 = vs
+        else:
+            self.vs_l2 = vs
+        self.__dict__.get("_key_caches", {}).pop(db_name, None)
 
     def _existing_ids(self, vs, db_name) -> Dict[Tuple[int, int, int], str]:
         """(sitemap_id, level, index) -> embedding_id, built once per index instead
@@ -186,19 +222,37 @@ class ChunkFAISSDatasource:
         a corrupted one. The reverse order risks index.faiss containing
         internal ids the old docstore has no entry for.
         """
-        # OPS-26 (#175): while a scheduled crawl runs, its worker holds this
-        # index in memory and its next flush would overwrite any other writer's
-        # save. Every FAISS save goes through here, so the refusal is here too.
         from newscrawler.tools.run_lock import refuse_foreign_writer
-        refuse_foreign_writer()
 
+        with index_generation.save_lock(db_name):
+            # OPS-26 (#175): while a scheduled crawl runs, its worker holds this
+            # index in memory and its next flush would overwrite any other
+            # writer's save. Every FAISS save goes through here, so the refusal
+            # is here too. It is checked under the save lock because the
+            # worker's load takes that lock as well: a save either finishes
+            # before the worker reads the index, or sees the run lock.
+            refuse_foreign_writer()
+            # SYS-53 (#182): only a copy of the generation on disk may replace
+            # it, which also covers a save made after the run lock is released.
+            # Under the lock nobody else saves between this check and the swap,
+            # and the `.tmp` directory below is ours alone.
+            index_generation.check_fresh(vs, db_name)
+            try:
+                ChunkFAISSDatasource._swap_in(vs, db_name)
+            finally:
+                # Whatever is on disk now we wrote -- a swap that failed half
+                # way included -- so it is the generation this copy supersedes.
+                index_generation.track_disk(vs, db_name)
+
+    @staticmethod
+    def _swap_in(vs: FAISS, db_name: str) -> None:
         tmp_dir = f"{db_name}.tmp"
         if os.path.exists(tmp_dir):
             shutil.rmtree(tmp_dir)
         vs.save_local(tmp_dir)
 
         os.makedirs(db_name, exist_ok=True)
-        for fname in ("index.pkl", "index.faiss"):
+        for fname in index_generation.INDEX_FILES:  # index.pkl before index.faiss
             tmp_path = os.path.join(tmp_dir, fname)
             live_path = os.path.join(db_name, fname)
             bak_path = live_path + ".bak"
@@ -230,7 +284,7 @@ class ChunkFAISSDatasource:
         index_path = os.path.join(db_name, "index.faiss")
         if os.path.exists(index_path):
             logger.info(f"Loading existing FAISS index: {db_name}")
-            return FAISS.load_local(db_name, self.embedding_model, allow_dangerous_deserialization=True)
+            return index_generation.load_index(db_name, self.embedding_model)
 
         logger.info(f"Creating new FAISS index: {db_name}")
         dummy = Document(page_content="init", metadata={})
@@ -238,6 +292,8 @@ class ChunkFAISSDatasource:
         vs.index.reset()
         vs.docstore._dict.clear()
         vs.index_to_docstore_id.clear()
+        # SYS-53: a new index may be saved only where no index has appeared since.
+        index_generation.track(vs, db_name, None)
         return vs
 
     def search_l2(self, query_text: str, k: int = 20) -> List[dict]:

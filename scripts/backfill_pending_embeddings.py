@@ -87,6 +87,11 @@ def main():
     parser.add_argument("--website", default=None, help="Limit to one source (default: all)")
     parser.add_argument("--dry-run", action="store_true", help="Report counts without writing")
     args = parser.parse_args()
+    # OPS-26/DBT-43: this writes NEWS_L1/L2 (through ChunkFAISSDatasource.save); refuse at the
+    # door while a scheduled crawl holds them, before any fetch or write.
+    from newscrawler.tools.run_lock import refused_by_run_lock
+    if not args.dry_run and refused_by_run_lock(logger):
+        return 2
 
     client = SQLAlchemyClient()
     with client.get_session() as session:
@@ -128,7 +133,8 @@ def main():
         session.commit()
 
     logger.info("Done. updated=%d skipped=%d (of %d)", len(updated), skipped, len(rows))
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

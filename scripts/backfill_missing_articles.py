@@ -78,6 +78,11 @@ def main():
     args = parser.parse_args()
 
     websites = [args.website] if args.website else DEFAULT_WEBSITES
+    # OPS-26/DBT-43: this writes NEWS_L1/L2 (through crawl_newsdetails' deferred embeddings); refuse at the
+    # door while a scheduled crawl holds them, before any fetch or write.
+    from newscrawler.tools.run_lock import refused_by_run_lock
+    if refused_by_run_lock(logger):
+        return 2
     logger.info("Backfilling %d source(s): %s", len(websites), ", ".join(websites))
 
     service, repo = build_service()
@@ -85,7 +90,8 @@ def main():
         drain_website(service, repo, website, args.max_passes)
 
     logger.info("Backfill complete.")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

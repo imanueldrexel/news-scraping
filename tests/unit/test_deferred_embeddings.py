@@ -19,6 +19,7 @@ from langchain_community.embeddings import FakeEmbeddings
 from langchain_community.vectorstores import FAISS
 
 import newscrawler.infrastructure.datasource.dataflow.write.faiss.chunk_faiss_data_source as fmod
+from newscrawler.infrastructure.datasource.dataflow.write.faiss import index_generation
 from newscrawler.domain.dtos.dataflow.details.chunk_dto import ChunkDTO
 from newscrawler.infrastructure.datasource.dataflow.write.faiss.chunk_faiss_data_source import ChunkFAISSDatasource
 from newscrawler.infrastructure.repositories.dataflow.data_flow_repository_impl import DataFlowRepositoryImpl
@@ -77,12 +78,14 @@ def _faiss(paths):
     out = []
     for p in paths:
         if os.path.exists(os.path.join(p, "index.faiss")):
-            out.append(FAISS.load_local(p, EMB, allow_dangerous_deserialization=True))
+            out.append(index_generation.load_index(p, EMB))
         else:
             vs = FAISS.from_texts(["seed"], EMB, metadatas=[{"seed": True}])
+            index_generation.track(vs, p, None)
             ChunkFAISSDatasource._atomic_save_local(vs, p)
             out.append(vs)
     ds.vs_l1, ds.vs_l2 = out
+    ds.embedding_model = EMB  # a stale-refused level is reloaded with it (SYS-53)
     return ds
 
 

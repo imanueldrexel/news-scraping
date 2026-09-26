@@ -68,11 +68,17 @@ _FETCH_SQL = text("""
 
 def main(argv=None) -> dict:
     """Returns {"selected", "repaired", "empty", "failed"} so the integration test
-    can drive this in-process (argv=None reads sys.argv as usual)."""
+    can drive this in-process (argv=None reads sys.argv as usual), or the exit
+    status 2 when a scheduled crawl holds the run lock."""
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--website", default=None, help="Limit to one source (default: all)")
     parser.add_argument("--dry-run", action="store_true", help="Report counts without writing")
     args = parser.parse_args(argv)
+    # OPS-26/DBT-43: this writes NEWS_L1/L2 (through save_chunk_data); refuse at the
+    # door while a scheduled crawl holds them, before any fetch or write.
+    from newscrawler.tools.run_lock import refused_by_run_lock
+    if not args.dry_run and refused_by_run_lock(logger):
+        return 2
 
     client = SQLAlchemyClient()
     with client.get_session() as session:
@@ -138,4 +144,4 @@ def main(argv=None) -> dict:
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(2 if main() == 2 else 0)

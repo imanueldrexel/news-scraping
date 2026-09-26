@@ -148,6 +148,9 @@ package/*
 # Generated data: FAISS indexes, health reports, newsletter digests
 /NEWS_L1/
 /NEWS_L2/
+# SYS-53: each index's save lock (index_generation.save_lock)
+/NEWS_L1.lock
+/NEWS_L2.lock
 /crawler_health/*.json
 /digests/*.md
 /backups/*.json

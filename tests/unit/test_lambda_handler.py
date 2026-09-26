@@ -65,3 +65,37 @@ class TestProcessEventValidatesBeforeTheModelLoad:
         with patch.object(lambda_handler, "init_crawler", return_value=api):
             lambda_handler.process_event({"task": "sitemap", "website": "KOMPAS, CNBC"}, None)
         api.crawl_websites_in_batch.assert_called_once_with(website_names=["KOMPAS", "CNBC"], task="sitemap")
+
+
+class TestRefusesUnderTheRunLock:
+    """DBT-43 (#183): a manual full_text/all crawl is refused before init_crawler
+    (the model and FAISS load) while a scheduled crawl holds the run lock."""
+
+    @pytest.fixture
+    def held(self):
+        """The lock held by a live process that is neither us nor our parent
+        (a parent holder would make us its worker, which may write)."""
+        import json, subprocess, sys, psutil
+        from newscrawler.tools import run_lock
+        p = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+        try:
+            with open(run_lock.LOCK_PATH, "w", encoding="utf-8") as f:
+                json.dump({"pid": p.pid, "create_time": psutil.Process(p.pid).create_time(),
+                           "started_at": "2026-09-27T00:00:00+00:00"}, f)
+            yield
+        finally:
+            p.kill()
+            p.wait()
+
+    @pytest.mark.parametrize("task", ["full_text", "all"])
+    def test_a_faiss_writing_task_is_refused_before_the_model_load(self, task, held):
+        from newscrawler.tools.run_lock import RunLockHeld
+        with patch.object(lambda_handler, "init_crawler") as init:
+            with pytest.raises(RunLockHeld):
+                lambda_handler.process_event({"task": task, "website": "CNN"}, None)
+        init.assert_not_called()
+
+    def test_a_sitemap_crawl_still_runs(self, held):
+        with _patched(None) as init:
+            lambda_handler.process_event({"task": "sitemap", "website": "CNN"}, None)
+        init.assert_called_once()

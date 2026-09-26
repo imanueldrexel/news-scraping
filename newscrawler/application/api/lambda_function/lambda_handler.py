@@ -1,6 +1,6 @@
 import logging
 
-from newscrawler.application.api.crawler_api import CrawlerAPI
+from newscrawler.application.api.crawler_api import FAISS_WRITING_TASKS, CrawlerAPI
 from newscrawler.core.chunker import HierarchicalChunker
 from newscrawler.domain.services.crawler_service_impl import CrawlerServiceImpl
 from newscrawler.infrastructure.network.clients.sqlalchemy_client import (
@@ -46,6 +46,15 @@ def process_event(event, context):
         websites = [validate_website_name(w) for w in websites]
     else:
         websites = []  # extract_knowledge does not need a website list
+
+    # DBT-43 (#183): a manual crawl that embeds must not start while the
+    # scheduled crawl holds FAISS: it would load, fetch and embed for hours and
+    # then be refused at its flush (OPS-26 while the lock is held, SYS-53's
+    # stale-index check after). Refuse before the model load instead. The
+    # scheduled run's worker calls crawl_website directly, not through here.
+    if task in FAISS_WRITING_TASKS:
+        from newscrawler.tools.run_lock import refuse_foreign_writer
+        refuse_foreign_writer()
 
     scraper_api = init_crawler()
     try:

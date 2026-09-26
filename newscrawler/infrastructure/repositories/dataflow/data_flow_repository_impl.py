@@ -115,10 +115,19 @@ class DataFlowRepositoryImpl(DataFlowRepository):
                 self._reembed_unembedded(website)
             yield self
         finally:
-            if faiss.end_deferred():
-                # end_deferred() flushed FAISS successfully (it raises if the save
-                # fails, and then no id is assigned: the rows stay NULL, which is
-                # the repairable state). Only now may SQL point at the vectors.
+            try:
+                flushed = faiss.end_deferred()
+            except BaseException:
+                # The save failed (disk full) or was refused (SYS-53: another
+                # process saved the index since this one loaded it). No id is
+                # assigned: the rows stay NULL, which is the repairable state.
+                # Forget these ids too. The worker keeps this repository across
+                # sources, and the next source's flush would otherwise write
+                # them onto rows whose vectors never reached disk.
+                self.__dict__.pop("_pending_embedding_ids", None)
+                raise
+            if flushed:
+                # Only now, with the vectors on disk, may SQL point at them.
                 self._assign_pending_embedding_ids()
 
     def _reembed_unembedded(self, website: Optional[str]) -> int:

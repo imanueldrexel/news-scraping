@@ -17,6 +17,8 @@ VALID_TASKS = ("sitemap", "full_text", "all", "extract_knowledge", "newsletter")
 # These two ignore website_name entirely (process everything pending across all
 # sources), so an empty/absent website list is expected for them, not an error.
 WEBSITE_AGNOSTIC_TASKS = ("extract_knowledge", "newsletter")
+# The tasks that embed articles into NEWS_L1/NEWS_L2 (crawl_newsdetails).
+FAISS_WRITING_TASKS = ("full_text", "all")
 
 
 class CrawlerAPI:

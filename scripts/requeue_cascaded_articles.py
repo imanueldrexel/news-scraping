@@ -112,12 +112,13 @@ def main(argv=None) -> int:
         logger.info("Nothing to re-queue.")
         return 0
 
-    from langchain_community.vectorstores import FAISS
+    from newscrawler.infrastructure.datasource.dataflow.write.faiss.index_generation import load_index
     from newscrawler.infrastructure.datasource.dataflow.write.faiss.chunk_faiss_data_source import ChunkFAISSDatasource
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     from repair_store_consistency import _NoEmbeddings
 
-    stores = {db: FAISS.load_local(db, _NoEmbeddings(), allow_dangerous_deserialization=True)
+    # SYS-53: load_index records the generation read; the save refuses if it changed.
+    stores = {db: load_index(db, _NoEmbeddings())
               for db in (VECTOR_DB_NAME_L1, VECTOR_DB_NAME_L2)}
     doomed_vectors = {db: vector_ids_for(vs.docstore._dict, targets) for db, vs in stores.items()}
     for db, ids in doomed_vectors.items():

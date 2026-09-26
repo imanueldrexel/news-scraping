@@ -18,6 +18,7 @@ from unittest.mock import patch
 from langchain_community.embeddings import FakeEmbeddings
 from langchain_community.vectorstores import FAISS
 
+from newscrawler.infrastructure.datasource.dataflow.write.faiss import index_generation
 from newscrawler.infrastructure.datasource.dataflow.write.faiss.chunk_faiss_data_source import (
     ChunkFAISSDatasource,
 )
@@ -25,6 +26,14 @@ from newscrawler.infrastructure.datasource.dataflow.write.faiss.chunk_faiss_data
 
 def _vs(texts, size=8):
     return FAISS.from_texts(texts, FakeEmbeddings(size=size))
+
+
+def _save(vs, db_name):
+    """Save a freshly built index as the next generation of db_name. SYS-53's
+    freshness check has its own tests (test_index_generation.py); these are
+    about the swap."""
+    index_generation.track_disk(vs, db_name)
+    ChunkFAISSDatasource._atomic_save_local(vs, db_name)
 
 
 def _load(db_name, size=8):
@@ -36,7 +45,7 @@ class TestAtomicSaveLocalBasics:
         db_name = str(tmp_path / "L1")
         vs = _vs(["a", "b"])
 
-        ChunkFAISSDatasource._atomic_save_local(vs, db_name)
+        _save(vs, db_name)
 
         assert os.path.exists(os.path.join(db_name, "index.faiss"))
         assert os.path.exists(os.path.join(db_name, "index.pkl"))
@@ -47,7 +56,7 @@ class TestAtomicSaveLocalBasics:
         db_name = str(tmp_path / "L1")
         vs = _vs(["a", "b", "c"])
 
-        ChunkFAISSDatasource._atomic_save_local(vs, db_name)
+        _save(vs, db_name)
         reloaded = _load(db_name)
 
         assert reloaded.index.ntotal == 3
@@ -55,12 +64,12 @@ class TestAtomicSaveLocalBasics:
     def test_second_save_creates_bak_from_the_first_generation(self, tmp_path):
         db_name = str(tmp_path / "L1")
         vs1 = _vs(["a"])
-        ChunkFAISSDatasource._atomic_save_local(vs1, db_name)
+        _save(vs1, db_name)
         with open(os.path.join(db_name, "index.faiss"), "rb") as f:
             first_faiss_bytes = f.read()
 
         vs2 = _vs(["a", "b"])
-        ChunkFAISSDatasource._atomic_save_local(vs2, db_name)
+        _save(vs2, db_name)
 
         assert os.path.exists(os.path.join(db_name, "index.faiss.bak"))
         assert os.path.exists(os.path.join(db_name, "index.pkl.bak"))
@@ -71,11 +80,11 @@ class TestAtomicSaveLocalBasics:
 
     def test_third_save_only_keeps_one_generation_of_backup(self, tmp_path):
         db_name = str(tmp_path / "L1")
-        ChunkFAISSDatasource._atomic_save_local(_vs(["a"]), db_name)
+        _save(_vs(["a"]), db_name)
         with open(os.path.join(db_name, "index.faiss"), "rb") as f:
             gen1_bytes = f.read()
-        ChunkFAISSDatasource._atomic_save_local(_vs(["a", "b"]), db_name)
-        ChunkFAISSDatasource._atomic_save_local(_vs(["a", "b", "c"]), db_name)
+        _save(_vs(["a", "b"]), db_name)
+        _save(_vs(["a", "b", "c"]), db_name)
 
         with open(os.path.join(db_name, "index.faiss.bak"), "rb") as f:
             bak_bytes = f.read()
@@ -84,7 +93,7 @@ class TestAtomicSaveLocalBasics:
 
     def test_tmp_directory_is_cleaned_up_after_a_successful_save(self, tmp_path):
         db_name = str(tmp_path / "L1")
-        ChunkFAISSDatasource._atomic_save_local(_vs(["a"]), db_name)
+        _save(_vs(["a"]), db_name)
         assert not os.path.exists(f"{db_name}.tmp")
 
     def test_stale_tmp_directory_from_a_previous_crash_is_removed_first(self, tmp_path):
@@ -94,7 +103,7 @@ class TestAtomicSaveLocalBasics:
         with open(os.path.join(stale_tmp, "garbage.txt"), "w") as f:
             f.write("leftover from an interrupted save")
 
-        ChunkFAISSDatasource._atomic_save_local(_vs(["a"]), db_name)
+        _save(_vs(["a"]), db_name)
 
         assert not os.path.exists(os.path.join(stale_tmp, "garbage.txt"))
         assert _load(db_name).index.ntotal == 1
@@ -111,7 +120,7 @@ class TestCrashBetweenTheTwoFileSwaps:
         not raise and not silently misalign vectors from text.
         """
         db_name = str(tmp_path / "L1")
-        ChunkFAISSDatasource._atomic_save_local(_vs(["a", "b"]), db_name)
+        _save(_vs(["a", "b"]), db_name)
 
         real_replace = os.replace
         calls = []
@@ -125,7 +134,7 @@ class TestCrashBetweenTheTwoFileSwaps:
         vs2 = _vs(["a", "b", "c", "d"])
         with patch("os.replace", side_effect=flaky_replace):
             try:
-                ChunkFAISSDatasource._atomic_save_local(vs2, db_name)
+                _save(vs2, db_name)
             except OSError:
                 pass
 
@@ -147,7 +156,7 @@ class TestCrashBetweenTheTwoFileSwaps:
         with the OLD (smaller) docstore, so the new vectors' internal ids
         would have no entry in index_to_docstore_id at all."""
         db_name = str(tmp_path / "L1")
-        ChunkFAISSDatasource._atomic_save_local(_vs(["a", "b"]), db_name)
+        _save(_vs(["a", "b"]), db_name)
         with open(os.path.join(db_name, "index.pkl"), "rb") as f:
             old_docstore, old_mapping = pickle.load(f)
 
