@@ -52,6 +52,29 @@ it "missed", so -StartWhenAvailable never queues a catch-up):
 
 07:00 and 19:00 WIB, chosen to stay clear of the 05:30 health check.
 
+Order (OPS-28, #179): the full_text phase starts with the source whose last
+completed full_text is oldest (never-crawled first). The budget does not fit a
+full fleet at 1,000 rows per source, and a fixed alphabetical order starved the
+same tail source (WARTAEKONOMI) every run. A source the budget skips is now first
+next time. The projected phase time, from each source's last completed run, is
+logged before the phase and put in the summary when it does not fit.
+
+Run lock (OPS-26, #175): held from before the worker starts until it is closed.
+The worker keeps FAISS in memory for the whole run, so a FAISS-writing script
+must not run in that window, including the model load and the gaps between
+sources, when no crawl_log row is 'started'. Those scripts check the lock.
+
+Log file (OPS-27, #176): logs/scheduled_crawl_<YYYY-MM-DD_HHMM>.log, written by
+this process and the worker, which also sends a native crash's Python stack there
+(faulthandler, SYS-52). Under Task Scheduler stderr is a console that closes with
+the process. The newest LOG_KEEP files are kept.
+
+Store check (OPS-29, #180): after the worker is closed, check_store_consistency
+runs and writes crawler_health/store-consistency-<date>.json. The summary names
+every source with chunk rows still waiting for vectors (a crashed or killed
+source; they are re-embedded on its next full_text) and any check that grew for
+another reason.
+
 Exit code: 0 when every scheduled source completed, 1 when any failed or timed
 out -- so Task Scheduler's own "Last Run Result" reflects it independently of the
 Telegram notification.
@@ -62,19 +85,25 @@ Telegram notification.
     python scripts/run_scheduled_crawl.py --website KOMPAS,CNBC
 """
 import argparse
+import glob
 import logging
 import os
 import sys
 import time
 from datetime import datetime, timezone
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, REPO_ROOT)
 from dotenv import load_dotenv
 
-load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env"))
+load_dotenv(os.path.join(REPO_ROOT, ".env"))
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+LOG_FORMAT = "%(asctime)s %(levelname)s %(message)s"
+logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
 logger = logging.getLogger("run_scheduled_crawl")
+# OPS-27: INFO regardless of how the root logger was configured -- the per-source
+# lines and the SUMMARY are what the run log is for.
+logger.setLevel(logging.INFO)
 
 # The sources the schedule drives, and the ones it must not.
 #
@@ -84,6 +113,24 @@ logger = logging.getLogger("run_scheduled_crawl")
 DEFAULT_EXCLUDED = {}
 
 SOURCE_TIMEOUT = int(os.getenv("SCHEDULE_SOURCE_TIMEOUT", "900"))
+
+
+def _parse_timeouts(raw):
+    """'MEDIAINDONESIA=1200,JPNN=1000' -> {'MEDIAINDONESIA': 1200, 'JPNN': 1000}."""
+    out = {}
+    for part in (raw or "").split(","):
+        if "=" in part:
+            name, secs = part.split("=", 1)
+            out[name.strip().upper()] = int(secs)
+    return out
+
+
+# OPS-28: per-source timeouts above SOURCE_TIMEOUT. MEDIAINDONESIA is crawled
+# serially and took 880 of its 900 s on the first scheduled run (queue 11,460), so
+# one slow day would turn it into a kill that strands its vectors until the next
+# run (DBT-10). A row cap instead would make its backlog permanent. The budget
+# check uses the source's own timeout.
+SOURCE_TIMEOUTS = _parse_timeouts(os.getenv("SCHEDULE_SOURCE_TIMEOUTS", "MEDIAINDONESIA=1200"))
 # OPS-19 proposal 5: a source that lists rows but saves nothing for this many
 # consecutive full_text runs is the new "needs attention".
 ZERO_SAVE_RUNS_BEFORE_ALERT = int(os.getenv("SCHEDULE_ZERO_SAVE_RUNS", "3"))
@@ -102,6 +149,18 @@ GAP_ALERT_HOURS = int(os.getenv("SCHEDULE_GAP_ALERT_HOURS", "36"))
 RUN_BUDGET = int(os.getenv("SCHEDULE_RUN_BUDGET", str(3 * 3600 + 1800)))
 # How long the child may take to build the crawler before the start counts as failed.
 INIT_TIMEOUT = int(os.getenv("SCHEDULE_INIT_TIMEOUT", "1200"))
+# OPS-27: where the run log goes, and how many run logs are kept (two runs a day).
+LOG_DIR = os.getenv("SCHEDULE_LOG_DIR", os.path.join(REPO_ROOT, "logs"))
+LOG_KEEP = int(os.getenv("SCHEDULE_LOG_KEEP", "28"))
+# OPS-29: where the store check writes its dated report (the health check's folder).
+STORE_REPORT_DIR = os.path.join(REPO_ROOT, "crawler_health")
+# OPS-26: None = run_lock.LOCK_PATH; the tests point it elsewhere.
+RUN_LOCK_PATH = None
+
+
+def timeout_for(website, default):
+    """The source's timeout: its SOURCE_TIMEOUTS entry, never below `default`."""
+    return max(default, SOURCE_TIMEOUTS.get(website, 0))
 
 
 def scheduled_sources(website_override=None, excluded=None):
@@ -228,18 +287,106 @@ def db_now(session):
 
 
 def _close_abandoned_log_rows(session, website, task, since, reason):
-    """A killed source never writes its crawl_log completion, so its row would
-    stay 'started' forever and read as "still running". Close every row the
-    killed source opened (started at or after `since`) as failed, with the reason.
-    Returns how many were closed."""
+    """A killed or crashed source never writes its crawl_log completion, so its
+    row would stay 'started' forever and read as "still running". Close every row
+    the source opened (started at or after `since`) as failed, with `reason`
+    verbatim (abandon_reason() words it). Returns how many were closed."""
     from sqlalchemy import text
     result = session.execute(text(
         "UPDATE crawl_log SET status = 'failed', finished_at = NOW(), error_msg = :msg "
         "WHERE website = :website AND task = :task AND status = 'started' AND started_at >= :since"
-    ), {"msg": ("killed by run_scheduled_crawl: " + reason)[:1000], "website": website,
-        "task": task, "since": since})
+    ), {"msg": reason[:1000], "website": website, "task": task, "since": since})
     session.commit()
     return result.rowcount
+
+
+def abandon_reason(status, detail, log_path=None):
+    """SYS-52 (#178): the crawl_log text for a source whose process is gone.
+    Only a timeout is a kill by this script. A worker that died on its own (the
+    lxml access violation) used to read "killed by run_scheduled_crawl", which
+    sent the reader after a timeout instead of the crash."""
+    if status == "timeout":
+        return "killed by run_scheduled_crawl: " + detail
+    if log_path:
+        return "%s; stack (faulthandler) in %s" % (detail, log_path)
+    return detail
+
+
+def last_full_text_runs(session):
+    """OPS-28: {website: (started_at, seconds)} of each source's newest
+    *completed* full_text run. A failed or killed run does not count as done."""
+    from sqlalchemy import text
+    rows = session.execute(text(
+        "SELECT DISTINCT ON (website) website, started_at, "
+        "       EXTRACT(EPOCH FROM (finished_at - started_at)) AS secs "
+        "FROM crawl_log WHERE task = 'full_text' AND status = 'completed' "
+        "ORDER BY website, started_at DESC")).fetchall()
+    return {r.website: (r.started_at, float(r.secs) if r.secs is not None else None) for r in rows}
+
+
+def starvation_order(sources, last_runs):
+    """OPS-28: never-completed sources first, then the oldest last completion
+    first; ties keep the given order. Pure."""
+    position = {s: i for i, s in enumerate(sources)}
+
+    def key(s):
+        run = last_runs.get(s)
+        if run is None or run[0] is None:
+            return (0, datetime.min, position[s])
+        return (1, run[0], position[s])
+    return sorted(sources, key=key)
+
+
+def projected_seconds(sources, last_runs, default_timeout):
+    """OPS-28: the phase's expected length from each source's last completed
+    run; a source with no measured run counts as its full timeout."""
+    total = 0.0
+    for s in sources:
+        run = last_runs.get(s)
+        secs = run[1] if run else None
+        total += secs if secs is not None else timeout_for(s, default_timeout)
+    return total
+
+
+def null_embedding_by_source(session):
+    """OPS-29: {source: (articles, chunk rows)} still waiting for vectors. DBT-10
+    writes rows NULL until the source's flush, so after a run this is a source
+    whose process died mid-run; its next full_text re-embeds them."""
+    from sqlalchemy import text
+    rows = session.execute(text(
+        "SELECT s.sources, COUNT(DISTINCT c.sitemap_id) AS sitemaps, COUNT(*) AS n "
+        "FROM chunks c JOIN sitemaps s USING (sitemap_id) WHERE c.embedding_id IS NULL "
+        "GROUP BY 1 ORDER BY 1")).fetchall()
+    return {r.sources: (r.sitemaps, r.n) for r in rows}
+
+
+def _store_check():
+    """OPS-29: run check_store_consistency (read-only, seconds). Returns
+    (counts, growing keys, report path). Raises on failure; the caller reports it."""
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import check_store_consistency as csc
+    counts = csc.gather_counts()
+    path = csc.write_report(counts, STORE_REPORT_DIR)
+    return counts, csc.growing_checks(counts), path
+
+
+def store_note(counts, growing, pending_by_source):
+    """OPS-29: the summary's store part, or "" when there is nothing to act on.
+
+    Vectors a crashed source left pending heal on its next run; they are named
+    with their counts. Any other growth is divergence (OPS-25's split), and so
+    is chunks_not_in_faiss beyond the pending sitemaps: a chunk row whose vector
+    is gone, not one whose vector is not written yet."""
+    parts = []
+    if pending_by_source:
+        parts.append("vectors pending (re-embedded on the source's next full_text): " + ", ".join(
+            "%s %d articles/%d chunk rows" % (src, a, n) for src, (a, n) in sorted(pending_by_source.items())))
+    pending_sitemaps = sum(a for a, _ in pending_by_source.values())
+    divergent = [k for k in growing if k != "chunks_pending_embedding"
+                 and not (k == "chunks_not_in_faiss" and counts.get(k, 0) <= pending_sitemaps)]
+    if divergent:
+        parts.append("STORE DIVERGENT: " + ", ".join("%s %d" % (k, counts.get(k, 0)) for k in divergent))
+    return " · ".join(parts)
 
 
 def over_budget(elapsed, timeout, budget=None):
@@ -247,9 +394,10 @@ def over_budget(elapsed, timeout, budget=None):
     return elapsed + timeout > (RUN_BUDGET if budget is None else budget)
 
 
-def summary_line(phase_results, deltas, zero_savers, skipped):
+def summary_line(phase_results, deltas, zero_savers, skipped, extra=()):
     """OPS-19 proposal 5: the Telegram line. Numbers first, names only when there
-    is something to act on."""
+    is something to act on. `extra`: further parts (budget, store, log path);
+    empty ones are dropped."""
     sources = sorted({s for results in phase_results.values() for s in results})
     failed = sorted(s for results in phase_results.values() for s, (st, _) in results.items() if st != "ok")
     added_sitemaps = sum(d["sitemaps"] for d in deltas.values())
@@ -263,6 +411,7 @@ def summary_line(phase_results, deltas, zero_savers, skipped):
         parts.append("0 saved for %d runs: %s" % (ZERO_SAVE_RUNS_BEFORE_ALERT, ", ".join(zero_savers)))
     if skipped:
         parts.append("skipped: " + ", ".join("%s (%s)" % (k, v.split(" -- ")[0]) for k, v in skipped.items()))
+    parts.extend(p for p in extra if p)
     return " · ".join(parts)
 
 
@@ -272,9 +421,11 @@ def main(argv=None) -> int:
     ap.add_argument("--phase", choices=("sitemap", "full_text", "both"), default="both")
     ap.add_argument("--dry-run", action="store_true", help="Print the plan and exit; crawl nothing")
     ap.add_argument("--timeout", type=int, default=SOURCE_TIMEOUT, help="Per-source timeout in seconds")
+    ap.add_argument("--log-dir", default=None, help="Where the run log goes (default: SCHEDULE_LOG_DIR or logs/)")
     args = ap.parse_args(argv)
+    log_path, handler = (None, None) if args.dry_run else open_run_log(args.log_dir or LOG_DIR)
     try:
-        return _run(args)
+        return _run(args, log_path)
     except Exception as e:  # noqa: BLE001 -- see below
         # The most likely catastrophic failure is init_crawler(): a missing probe
         # artifact, a corrupt FAISS index, or OOM loading e5-large. That happens
@@ -284,11 +435,42 @@ def main(argv=None) -> int:
         # could not start has to say so.
         logger.exception("scheduled crawl failed before it could report")
         if not args.dry_run:
-            _notify("FAILED to start or complete: %s: %s" % (type(e).__name__, str(e)[:300]))
+            _notify("FAILED to start or complete: %s: %s%s" % (type(e).__name__, str(e)[:300],
+                                                                " · log %s" % log_path if log_path else ""))
         return 1
+    finally:
+        if handler is not None:
+            logging.getLogger().removeHandler(handler)
+            handler.close()
 
 
-def _run(args) -> int:
+def open_run_log(log_dir, now=None, keep=None):
+    """OPS-27: attach a file handler for this run and prune old run logs.
+    Returns (path, handler). A log that cannot be opened must not stop the
+    crawl: the run goes on with stderr only and says so."""
+    stamp = (now or datetime.now()).strftime("%Y-%m-%d_%H%M")
+    path = os.path.join(log_dir, "scheduled_crawl_%s.log" % stamp)
+    try:
+        os.makedirs(log_dir, exist_ok=True)
+        handler = logging.FileHandler(path, encoding="utf-8")
+    except OSError as e:
+        logger.warning("run log %s could not be opened (%s); logging to stderr only", path, e)
+        return None, None
+    handler.setFormatter(logging.Formatter(LOG_FORMAT))
+    logging.getLogger().addHandler(handler)
+    keep = LOG_KEEP if keep is None else keep
+    logs = sorted(glob.glob(os.path.join(log_dir, "scheduled_crawl_*.log")))
+    for old in (logs[:-keep] if keep > 0 else []):
+        if os.path.abspath(old) != os.path.abspath(path):
+            try:
+                os.remove(old)
+            except OSError:
+                pass
+    logger.info("run log: %s", path)
+    return path, handler
+
+
+def _run(args, log_path=None) -> int:
     from newscrawler.infrastructure.network.clients.sqlalchemy_client import SQLAlchemyClient
 
     healthy = _healthy_list()
@@ -313,6 +495,9 @@ def _run(args) -> int:
     with client.get_session() as session:
         before = _counts(session)
         gap_hours = hours_since_last_crawl(session)
+        last_runs = last_full_text_runs(session)
+    # OPS-28: the least recently completed source first, so a skip does not repeat.
+    ft_sources = starvation_order(ft_sources, last_runs)
     if gap_hours is None:
         logger.warning("no previous sitemap/full_text crawl_log row -- this is the first recorded crawl")
     elif gap_hours > GAP_ALERT_HOURS:
@@ -321,37 +506,51 @@ def _run(args) -> int:
         logger.warning(msg)
         _notify("Scheduled crawl gap: " + msg)
 
-    logger.info("building the crawler in its worker process (models + FAISS; this is the slow part)...")
-    worker = _make_worker()
-    worker.start()  # a crawler that cannot start at all is main()'s "FAILED to start"
-    run_started = time.monotonic()
+    budget_note = ""
+    if ft_sources:
+        projected = projected_seconds(ft_sources, last_runs, args.timeout)
+        logger.info("full_text order (least recently completed first): %s", ", ".join(ft_sources))
+        logger.info("full_text projected %.0fs from each source's last completed run; run budget %ds",
+                    projected, RUN_BUDGET)
+        if projected > RUN_BUDGET:
+            budget_note = "full_text projected %.0fs > budget %ds" % (projected, RUN_BUDGET)
+            logger.warning("%s: the sources at the end of the order will be skipped this run", budget_note)
 
+    from newscrawler.tools.run_lock import RunLock
     phase_results = {}
-    try:
-        for phase, phase_sources in (("sitemap", sm_sources), ("full_text", ft_sources)):
-            if not phase_sources:
-                continue
-            results = {}
-            for i, website in enumerate(phase_sources, 1):
-                if over_budget(time.monotonic() - run_started, args.timeout):
-                    skipped["%s/%s" % (website, phase)] = "run budget %ds reached -- not started" % RUN_BUDGET
+    # OPS-26: held until the worker, which keeps FAISS in memory, is closed.
+    with RunLock(**({"path": RUN_LOCK_PATH} if RUN_LOCK_PATH else {})):
+        logger.info("building the crawler in its worker process (models + FAISS; this is the slow part)...")
+        worker = _make_worker(log_path)
+        try:
+            worker.start()  # a crawler that cannot start at all is main()'s "FAILED to start"
+            run_started = time.monotonic()
+            for phase, phase_sources in (("sitemap", sm_sources), ("full_text", ft_sources)):
+                if not phase_sources:
                     continue
-                with client.get_session() as session:
-                    since = db_now(session)
-                started = time.monotonic()
-                status, detail = run_one(worker, website, phase, timeout=args.timeout)
-                if status != "ok" and not worker.alive:
-                    # The source's process is gone (killed on timeout, or died), so
-                    # its crawl_log row will never be completed by the pipeline.
+                results = {}
+                for i, website in enumerate(phase_sources, 1):
+                    timeout = timeout_for(website, args.timeout)
+                    if over_budget(time.monotonic() - run_started, timeout):
+                        skipped["%s/%s" % (website, phase)] = "run budget %ds reached -- not started" % RUN_BUDGET
+                        continue
                     with client.get_session() as session:
-                        closed = _close_abandoned_log_rows(session, website, phase, since, detail)
-                    logger.warning("%s/%s: closed %d abandoned crawl_log row(s)", website, phase, closed)
-                results[website] = (status, detail)
-                logger.info("[%s %d/%d] %s -> %s%s (%.0fs)", phase, i, len(phase_sources), website, status,
-                            " (%s)" % detail if detail else "", time.monotonic() - started)
-            phase_results[phase] = results
-    finally:
-        worker.close()
+                        since = db_now(session)
+                    started = time.monotonic()
+                    status, detail = run_one(worker, website, phase, timeout=timeout)
+                    if status != "ok" and not worker.alive:
+                        # The source's process is gone (killed on timeout, or crashed),
+                        # so its crawl_log row will never be completed by the pipeline.
+                        with client.get_session() as session:
+                            closed = _close_abandoned_log_rows(session, website, phase, since,
+                                                               abandon_reason(status, detail, log_path))
+                        logger.warning("%s/%s: closed %d abandoned crawl_log row(s)", website, phase, closed)
+                    results[website] = (status, detail)
+                    logger.info("[%s %d/%d] %s -> %s%s (%.0fs)", phase, i, len(phase_sources), website, status,
+                                " (%s)" % detail if detail else "", time.monotonic() - started)
+                phase_results[phase] = results
+        finally:
+            worker.close()
     if worker.spawned > 1:
         logger.warning("the crawler was rebuilt %d time(s) after a killed or dead source", worker.spawned - 1)
 
@@ -367,7 +566,19 @@ def _run(args) -> int:
     for s in sources:
         logger.info("  %-15s +%-6d sitemaps  +%-5d articles", s, deltas[s]["sitemaps"], deltas[s]["articles"])
 
-    line = summary_line(phase_results, deltas, zero_savers, skipped)
+    # OPS-29: the stores, read after the worker has flushed and exited.
+    try:
+        counts, growing, report = _store_check()
+        with client.get_session() as session:
+            pending = null_embedding_by_source(session)
+        logger.info("store check: %s -> %s", "GROWING " + ", ".join(growing) if growing else "no growth", report)
+        store = store_note(counts, growing, pending)
+    except Exception as e:  # noqa: BLE001 -- the crawl's own result must still be reported
+        logger.exception("store check failed")
+        store = "store check FAILED: %s: %s" % (type(e).__name__, str(e)[:200])
+
+    line = summary_line(phase_results, deltas, zero_savers, skipped,
+                        extra=(budget_note, store, "log %s" % log_path if log_path else ""))
     logger.info("SUMMARY: %s", line)
     _notify(line)
 
@@ -375,17 +586,17 @@ def _run(args) -> int:
     return 1 if failed else 0
 
 
-def _make_worker():
+def _make_worker(log_path=None):
     """Seam for the tests: the production worker builds the real crawler in its child."""
     from newscrawler.tools.source_worker import SourceWorker
-    return SourceWorker(init_timeout=INIT_TIMEOUT)
+    return SourceWorker(init_timeout=INIT_TIMEOUT, log_path=log_path)
 
 
 def _healthy_list():
     """`HEALTHY` lives in __main__.py, which is not importable under its own name
     when the scheduler runs this file as __main__. Read it the same way either."""
     import importlib.util
-    path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "__main__.py")
+    path = os.path.join(REPO_ROOT, "__main__.py")
     spec = importlib.util.spec_from_file_location("newsaggregator_main", path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)

@@ -136,6 +136,10 @@ def main() -> int:
                         help="Resume: only remove FAISS vectors for these comma-separated loser sitemap_ids "
                              "(use after a run whose SQL committed but whose FAISS step failed)")
     args = parser.parse_args()
+    # OPS-26 (#175): not while a scheduled crawl holds FAISS in memory.
+    from newscrawler.tools.run_lock import refused_by_run_lock
+    if not args.dry_run and refused_by_run_lock(logger):
+        return 2
 
     if args.faiss_only:
         loser_ids = [int(x) for x in args.faiss_only.split(",") if x.strip()]

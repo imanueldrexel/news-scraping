@@ -75,6 +75,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--dry-run", action="store_true", help="Report what would be deleted, change nothing")
     args = parser.parse_args()
+    # OPS-26 (#175): not while a scheduled crawl holds FAISS in memory.
+    from newscrawler.tools.run_lock import refused_by_run_lock
+    if not args.dry_run and refused_by_run_lock(logger):
+        return 2
 
     client = SQLAlchemyClient()
     with client.get_session() as session:

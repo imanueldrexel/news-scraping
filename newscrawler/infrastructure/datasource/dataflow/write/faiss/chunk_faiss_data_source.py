@@ -186,6 +186,12 @@ class ChunkFAISSDatasource:
         a corrupted one. The reverse order risks index.faiss containing
         internal ids the old docstore has no entry for.
         """
+        # OPS-26 (#175): while a scheduled crawl runs, its worker holds this
+        # index in memory and its next flush would overwrite any other writer's
+        # save. Every FAISS save goes through here, so the refusal is here too.
+        from newscrawler.tools.run_lock import refuse_foreign_writer
+        refuse_foreign_writer()
+
         tmp_dir = f"{db_name}.tmp"
         if os.path.exists(tmp_dir):
             shutil.rmtree(tmp_dir)

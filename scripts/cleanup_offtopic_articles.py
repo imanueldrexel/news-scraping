@@ -126,6 +126,10 @@ def main(argv=None):
     parser.add_argument("--dry-run", action="store_true", help="Report what would be deleted, change nothing")
     parser.add_argument("--faiss-only", help="Comma-separated sitemap_ids: resume only the FAISS-vector step")
     args = parser.parse_args(argv)
+    # OPS-26 (#175): not while a scheduled crawl holds FAISS in memory.
+    from newscrawler.tools.run_lock import refused_by_run_lock
+    if not args.dry_run and refused_by_run_lock(logger):
+        return 2
 
     if args.faiss_only:
         ids = [int(x) for x in args.faiss_only.split(",") if x.strip()]

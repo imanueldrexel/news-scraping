@@ -13,8 +13,10 @@ stores (~30 s at the start of a run, and again after an OPS-22 kill respawns
 it) and between two sources, which is exactly when a repair could slip in.
 
 So `run_scheduled_crawl.py` holds this lock from before `worker.start()` until
-the worker is closed, and every script that rewrites FAISS calls
-`refuse_if_running()` before it writes. The lock is a file holding the owner's
+the worker is closed. Every script that rewrites FAISS calls
+`refuse_if_running()` before its first write (FAISS or SQL), and the one place
+all FAISS saves go through, `ChunkFAISSDatasource._atomic_save_local`, refuses
+too unless the caller is the lock's owner or its worker (`refuse_foreign_writer`). The lock is a file holding the owner's
 pid. A lock whose pid is no longer alive is stale (Task Scheduler's
 `ExecutionTimeLimit` kills the process without running `finally`) and is taken
 over; the worker's parent watchdog ends the child within seconds of the parent,
@@ -41,9 +43,10 @@ def _pid_alive(pid) -> bool:
         return False
 
 
-def holder(path=LOCK_PATH):
+def holder(path=None):
     """The lock's contents ({"pid", "started_at", ...}) when a live process holds
     it, else None (no lock file, unreadable, or its owner is dead)."""
+    path = path or LOCK_PATH
     try:
         with open(path, "r", encoding="utf-8") as f:
             info = json.load(f)
@@ -52,15 +55,23 @@ def holder(path=LOCK_PATH):
     return info if _pid_alive(info.get("pid")) else None
 
 
-def refuse_if_running(path=LOCK_PATH):
+def refuse_if_running(path=None, allow_pids=()):
     """Raise RunLockHeld when a scheduled crawl is running. Call it in every
-    script that rewrites NEWS_L1/NEWS_L2, before the first write."""
+    script that rewrites NEWS_L1/NEWS_L2, before the first write. A lock held by
+    one of `allow_pids` is not a refusal."""
+    path = path or LOCK_PATH
     info = holder(path)
-    if info:
+    if info and info.get("pid") not in allow_pids:
         raise RunLockHeld(
             "a scheduled crawl (pid %s, started %s) holds %s; its worker keeps FAISS in memory "
             "and its next flush would overwrite this write. Run it after the crawl ends."
             % (info.get("pid"), info.get("started_at"), path))
+
+
+def refuse_foreign_writer(path=None):
+    """The FAISS save chokepoint's check: the scheduled run itself (the lock's
+    owner) and its worker (the owner's child) may write; anyone else is refused."""
+    refuse_if_running(path, allow_pids=(os.getpid(), os.getppid()))
 
 
 class RunLock:
@@ -68,8 +79,8 @@ class RunLock:
     process already holds the lock -- two runs would both write FAISS -- and takes
     over a stale one."""
 
-    def __init__(self, path=LOCK_PATH, purpose="scheduled crawl"):
-        self.path = path
+    def __init__(self, path=None, purpose="scheduled crawl"):
+        self.path = path or LOCK_PATH
         self.purpose = purpose
         self.acquired = False
 
@@ -103,3 +114,14 @@ class RunLock:
                 os.remove(self.path)
             except OSError:
                 pass
+
+
+def refused_by_run_lock(log) -> bool:
+    """For a FAISS-writing script's write path: True (and the reason logged at
+    ERROR) when a scheduled crawl holds the lock. Callers exit 2."""
+    try:
+        refuse_if_running()
+    except RunLockHeld as e:
+        log.error("refusing to write: %s", e)
+        return True
+    return False

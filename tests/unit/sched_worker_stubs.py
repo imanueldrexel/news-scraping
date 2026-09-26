@@ -9,8 +9,12 @@ Website names drive the behaviour:
                still writing: the thing that must not overlap the next source)
   RAISE        raise RuntimeError("boom")
   DIE          hard-exit the child (OOM, segfault)
+  SEGV         a real native access violation (SYS-52's lxml crash, reproduced
+               with a NULL read): no Python exception, no `except`, only faulthandler
+  LOG          log one INFO line the way the pipeline's funnel does (OPS-27)
   anything else  return at once
 """
+import logging
 import os
 import time
 
@@ -27,6 +31,14 @@ class _StubApi:
             raise RuntimeError("boom")
         if website == "DIE":
             os._exit(7)
+        if website == "SEGV":
+            # A NULL read in C: 0xC0000005 on Windows, SIGSEGV elsewhere. Not
+            # ctypes.string_at(0) -- on Windows ctypes turns that into OSError.
+            import faulthandler
+            faulthandler._read_null()
+        if website == "LOG":
+            logging.getLogger("newscrawler.domain.services.crawler_service_impl").info(
+                "Full-text crawl finished for LOG: attempted=3 extracted=3 saved=2")
         return None
 
 

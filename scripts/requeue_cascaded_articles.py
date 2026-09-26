@@ -85,10 +85,13 @@ def main(argv=None) -> int:
     ap.add_argument("--website", required=True, help="Source to scan, e.g. EMITENNEWS")
     ap.add_argument("--apply", action="store_true", help="Write (default: dry run)")
     args = ap.parse_args(argv)
+    # OPS-26 (#175): not while a scheduled crawl holds FAISS in memory.
+    from newscrawler.tools.run_lock import refused_by_run_lock
+    if args.apply and refused_by_run_lock(logger):
+        return 2
     website = args.website.strip().upper()
 
     from newscrawler.infrastructure.network.clients.sqlalchemy_client import SQLAlchemyClient
-    from newscrawler.tools.run_lock import RunLockHeld, refuse_if_running
 
     client = SQLAlchemyClient()
     with client.get_session() as session:
@@ -125,11 +128,6 @@ def main(argv=None) -> int:
         return 0
     if mentions:
         logger.error("%d entity mention(s) would be lost; this script only handles unextracted articles", mentions)
-        return 2
-    try:
-        refuse_if_running()
-    except RunLockHeld as e:
-        logger.error("%s", e)
         return 2
     if running:
         logger.error("%d crawl(s) still 'started' in the last 4 h; refusing to rewrite FAISS under a running crawl",

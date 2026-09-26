@@ -122,14 +122,19 @@ class _ScriptedWorker:
     """Plays back per-source outcomes. `alive` goes False after a timeout or a
     death, the way SourceWorker's does once it has killed or reaped the child."""
 
-    def __init__(self, outcomes):
+    def __init__(self, outcomes, on_run=None):
         self.outcomes = outcomes
+        self.on_run = on_run
         self.calls = []
+        self.timeouts = {}
         self.alive = False
         self.spawned = 0
         self.closed = False
+        self.lock_holder_at_start = "not started"
 
     def start(self):
+        from newscrawler.tools import run_lock
+        self.lock_holder_at_start = run_lock.holder()
         self.alive = True
         self.spawned += 1
 
@@ -137,8 +142,11 @@ class _ScriptedWorker:
         if not self.alive:
             self.start()
         self.calls.append((website, task))
+        self.timeouts[website] = timeout
+        if self.on_run:
+            self.on_run(website, task)
         status, detail = self.outcomes.get((website, task), ("ok", ""))
-        if status == "timeout" or "died" in detail:
+        if status == "timeout" or "worker process" in detail:
             self.alive = False
         return status, detail
 
@@ -147,11 +155,17 @@ class _ScriptedWorker:
         self.alive = False
 
 
+CLEAN_COUNTS = {"chunks_pending_embedding": 0, "chunks_not_in_faiss": 0}
+
+
 @pytest.fixture
-def harness(monkeypatch):
-    """_run with every DB, model and Telegram touch replaced; returns what it saw."""
+def harness(monkeypatch, tmp_path):
+    """_run with every DB, model and Telegram touch replaced; returns what it saw.
+    `seen["last_runs"]`, `seen["store"]` and `seen["pending"]` script the
+    crawl_log history, the store check and the NULL-embedding query."""
     import newscrawler.infrastructure.network.clients.sqlalchemy_client as sac
-    seen = {"closed_rows": [], "notified": []}
+    seen = {"closed_rows": [], "notified": [], "last_runs": {}, "store": (CLEAN_COUNTS, [], "r.json"),
+            "pending": {}, "store_checks": 0}
     monkeypatch.setattr(sac, "SQLAlchemyClient", _FakeClient)
     monkeypatch.setattr(rc, "_healthy_list", lambda: ["KOMPAS", "TEMPO", "CNBC"])
     monkeypatch.setattr(rc, "_counts", lambda session: {})
@@ -161,13 +175,22 @@ def harness(monkeypatch):
     monkeypatch.setattr(rc, "_close_abandoned_log_rows",
                         lambda session, w, t, since, reason: seen["closed_rows"].append((w, t, since, reason)) or 1)
     monkeypatch.setattr(rc, "_notify", seen["notified"].append)
+    monkeypatch.setattr(rc, "LOG_DIR", str(tmp_path / "logs"))
+    monkeypatch.setattr(rc, "last_full_text_runs", lambda session: dict(seen["last_runs"]))
+    monkeypatch.setattr(rc, "null_embedding_by_source", lambda session: seen["pending"])
+
+    def store_check():
+        seen["store_checks"] += 1
+        return seen["store"]
+    monkeypatch.setattr(rc, "_store_check", store_check)
 
     def run(outcomes=None, argv=("--phase", "sitemap"), worker=None):
         worker = worker or _ScriptedWorker(outcomes or {})
-        monkeypatch.setattr(rc, "_make_worker", lambda: worker)
+        monkeypatch.setattr(rc, "_make_worker", lambda log_path=None: worker)
         seen["rc"] = rc.main(list(argv))
         seen["worker"] = worker
         return seen
+    run.seen = seen
     return run
 
 
@@ -175,7 +198,8 @@ class TestRunLoop:
     def test_a_timed_out_source_does_not_stop_the_next_and_its_log_row_is_closed(self, harness):
         seen = harness({("TEMPO", "sitemap"): ("timeout", "exceeded 900s; worker process killed")})
         assert seen["worker"].calls == [("KOMPAS", "sitemap"), ("TEMPO", "sitemap"), ("CNBC", "sitemap")]
-        assert seen["closed_rows"] == [("TEMPO", "sitemap", "T0", "exceeded 900s; worker process killed")]
+        assert seen["closed_rows"] == [("TEMPO", "sitemap", "T0",
+                                        "killed by run_scheduled_crawl: exceeded 900s; worker process killed")]
         assert seen["rc"] == 1
         assert "FAILED: TEMPO" in seen["notified"][-1]
         assert seen["worker"].closed
@@ -190,6 +214,15 @@ class TestRunLoop:
     def test_a_dead_child_is_closed_like_a_timeout(self, harness):
         seen = harness({("KOMPAS", "sitemap"): ("failed", "worker process died (exit code 7)")})
         assert [r[0] for r in seen["closed_rows"]] == ["KOMPAS"]
+
+    def test_a_crashed_child_is_not_said_to_be_killed_and_points_at_the_log(self, harness):
+        """SYS-52 (#178): crawl_log row 710 read "killed by run_scheduled_crawl:
+        worker process died (exit code 3221225477)". Nothing had killed it."""
+        detail = "worker process crashed (exit code 3221225477 = 0xC0000005 access violation)"
+        seen = harness({("KOMPAS", "sitemap"): ("failed", detail)})
+        (website, _, _, reason), = seen["closed_rows"]
+        assert website == "KOMPAS" and reason.startswith(detail)
+        assert "killed" not in reason and "faulthandler" in reason and "scheduled_crawl_" in reason
 
     def test_the_run_budget_skips_sources_instead_of_being_killed_silently(self, harness, monkeypatch):
         """Task Scheduler's 4 h kill sends nothing. A source is not started once it
@@ -384,3 +417,202 @@ class TestWebsiteNamesAreValidatedFirst:
         """The real HEALTHY list, as the scheduler will read it."""
         sources, _ = rc._scheduled_sources(rc._healthy_list())
         rc.validate_sources(sources)
+
+
+class TestAbandonReason:
+    def test_only_a_timeout_is_a_kill(self):
+        assert rc.abandon_reason("timeout", "exceeded 900s; worker process killed") == \
+            "killed by run_scheduled_crawl: exceeded 900s; worker process killed"
+        assert rc.abandon_reason("failed", "worker process crashed (exit code 5)") == \
+            "worker process crashed (exit code 5)"
+        assert rc.abandon_reason("failed", "x", log_path="logs/a.log") == "x; stack (faulthandler) in logs/a.log"
+
+
+class TestRunLock:
+    """OPS-26 (#175): the lock covers the whole run, the model load included."""
+
+    def test_the_lock_is_held_while_the_worker_starts_and_released_after(self, harness):
+        from newscrawler.tools import run_lock
+        seen = harness()
+        assert seen["worker"].lock_holder_at_start is not None
+        assert seen["worker"].lock_holder_at_start["pid"] == os.getpid()
+        assert run_lock.holder() is None
+
+    def test_the_lock_is_released_when_the_worker_cannot_start(self, harness):
+        from newscrawler.tools import run_lock
+
+        class _NoStart(_ScriptedWorker):
+            def start(self):
+                raise RuntimeError("probe artifact missing")
+        seen = harness(worker=_NoStart({}))
+        assert seen["rc"] == 1 and seen["worker"].closed
+        assert run_lock.holder() is None
+
+    def test_a_run_already_holding_the_lock_refuses_a_second_one(self, harness):
+        import json
+        from newscrawler.tools import run_lock
+        with open(run_lock.LOCK_PATH, "w") as f:
+            json.dump({"pid": os.getppid(), "started_at": "07:00"}, f)
+        seen = harness()
+        assert seen["rc"] == 1 and seen["worker"].calls == []
+        assert seen["worker"].lock_holder_at_start == "not started", "the worker was started under a held lock"
+        assert "RunLockHeld" in seen["notified"][-1]
+
+
+class TestRunLog:
+    """OPS-27 (#176): the run writes a log file, and says where it is."""
+
+    def _log(self, tmp_path):
+        logs = list((tmp_path / "logs").glob("scheduled_crawl_*.log"))
+        assert len(logs) == 1
+        return logs[0]
+
+    def test_the_run_log_holds_the_per_source_lines_and_the_summary(self, harness, tmp_path):
+        seen = harness({("TEMPO", "sitemap"): ("failed", "RuntimeError: boom")})
+        text = self._log(tmp_path).read_text(encoding="utf-8")
+        assert "[sitemap 2/3] TEMPO -> failed (RuntimeError: boom)" in text
+        assert "SUMMARY:" in text
+        assert "log %s" % self._log(tmp_path) in seen["notified"][-1]
+
+    def test_the_handler_is_detached_after_the_run(self, harness, tmp_path):
+        import logging
+        harness()
+        assert not [h for h in logging.getLogger().handlers
+                    if getattr(h, "baseFilename", "").startswith(str(tmp_path))]
+
+    def test_a_dry_run_writes_no_log(self, harness, tmp_path):
+        harness(argv=("--dry-run",))
+        assert not (tmp_path / "logs").exists()
+
+    def test_old_logs_are_pruned_to_the_newest_keep(self, tmp_path):
+        import logging
+        for day in range(1, 6):
+            (tmp_path / ("scheduled_crawl_2026-09-0%d_0700.log" % day)).write_text("x")
+        path, handler = rc.open_run_log(str(tmp_path), keep=3)
+        logging.getLogger().removeHandler(handler)
+        handler.close()
+        left = sorted(p.name for p in tmp_path.glob("scheduled_crawl_*.log"))
+        assert os.path.basename(path) in left and len(left) == 3
+        assert "scheduled_crawl_2026-09-05_0700.log" in left and "scheduled_crawl_2026-09-01_0700.log" not in left
+
+    def test_a_child_exceptions_traceback_lands_in_the_run_log(self, harness, monkeypatch, tmp_path):
+        """End to end through a real SourceWorker child (stub crawler): the
+        child's traceback and the parent's SUMMARY end up in the same file."""
+        from newscrawler.tools.source_worker import SourceWorker
+        from . import sched_worker_stubs as stubs
+        monkeypatch.setattr(rc, "_healthy_list", lambda: ["RAISE", "KOMPAS"])
+        monkeypatch.setattr(rc, "validate_sources", lambda sources: None)  # RAISE is a stub name
+        workers = []
+
+        def make(log_path=None):
+            workers.append(SourceWorker(factory=stubs.stub_factory, init_timeout=60, log_path=log_path))
+            return workers[-1]
+        monkeypatch.setattr(rc, "_make_worker", make)
+        assert rc.main(["--phase", "sitemap"]) == 1
+        text = self._log(tmp_path).read_text(encoding="utf-8")
+        assert "RAISE/sitemap failed" in text and "Traceback (most recent call last)" in text
+        assert "RuntimeError: boom" in text and "SUMMARY:" in text
+
+
+class TestStoreCheck:
+    """OPS-29 (#180): the store check runs after every scheduled run, and a
+    crashed source's stranded vectors reach the Telegram line."""
+
+    def test_every_run_checks_the_stores(self, harness):
+        seen = harness()
+        assert seen["store_checks"] == 1
+        assert "vectors pending" not in seen["notified"][-1] and "STORE" not in seen["notified"][-1]
+
+    def test_a_crashed_source_is_named_with_its_null_embedding_count(self, harness):
+        """The 2026-09-26 morning run: PIKIRANRAKYAT's worker crashed, 269 saved
+        articles / 666 chunk rows had no vector, and Telegram said only
+        "FAILED: PIKIRANRAKYAT"."""
+        crash = "worker process crashed (exit code 3221225477 = 0xC0000005 access violation)"
+        harness.seen["pending"] = {"TEMPO": (269, 666)}
+        harness.seen["store"] = ({"chunks_pending_embedding": 666, "chunks_not_in_faiss": 269},
+                                 ["chunks_pending_embedding", "chunks_not_in_faiss"], "r.json")
+        seen = harness(outcomes={("TEMPO", "full_text"): ("failed", crash)}, argv=("--phase", "full_text"))
+        line = seen["notified"][-1]
+        assert "FAILED: TEMPO" in line
+        assert "vectors pending (re-embedded on the source's next full_text): TEMPO 269 articles/666 chunk rows" in line
+        assert "STORE DIVERGENT" not in line
+
+    def test_store_note_pending_heals_divergence_is_named(self):
+        counts = {"chunks_pending_embedding": 666, "chunks_not_in_faiss": 269, "l1_no_articles_terminal": 4}
+        note = rc.store_note(counts, ["l1_no_articles_terminal", "chunks_pending_embedding", "chunks_not_in_faiss"],
+                             {"PIKIRANRAKYAT": (269, 666)})
+        assert "PIKIRANRAKYAT 269 articles/666 chunk rows" in note
+        assert "STORE DIVERGENT: l1_no_articles_terminal 4" in note
+        assert "chunks_not_in_faiss" not in note, "the pending sitemaps explain all 269"
+
+    def test_chunks_not_in_faiss_beyond_the_pending_ones_is_divergence(self):
+        counts = {"chunks_pending_embedding": 10, "chunks_not_in_faiss": 50}
+        note = rc.store_note(counts, ["chunks_pending_embedding", "chunks_not_in_faiss"], {"TEMPO": (5, 10)})
+        assert "STORE DIVERGENT: chunks_not_in_faiss 50" in note
+
+    def test_nothing_to_act_on_is_silent(self):
+        assert rc.store_note(CLEAN_COUNTS, [], {}) == ""
+
+    def test_a_failing_store_check_is_reported_not_fatal(self, harness, monkeypatch):
+        def boom():
+            raise OSError("NEWS_L1/index.pkl missing")
+        monkeypatch.setattr(rc, "_store_check", boom)
+        seen = harness()
+        assert seen["rc"] == 0
+        assert "store check FAILED: OSError: NEWS_L1/index.pkl missing" in seen["notified"][-1]
+
+
+class TestStarvationOrder:
+    """OPS-28 (#179): the first scheduled run skipped WARTAEKONOMI, last in a
+    fixed alphabetical order, and the next run would have skipped it again."""
+
+    T = __import__("datetime").datetime
+
+    def test_never_completed_first_then_oldest_completion_first(self):
+        last = {"ANTARANEWS": (self.T(2026, 9, 26, 7), 55.0), "CNBC": (self.T(2026, 9, 26, 8), 519.0),
+                "WARTAEKONOMI": (self.T(2026, 6, 2, 0), 12.0)}
+        order = rc.starvation_order(["ANTARANEWS", "CNBC", "EMITENNEWS", "WARTAEKONOMI"], last)
+        assert order == ["EMITENNEWS", "WARTAEKONOMI", "ANTARANEWS", "CNBC"]
+
+    def test_ties_keep_the_given_order(self):
+        assert rc.starvation_order(["B", "A", "C"], {}) == ["B", "A", "C"]
+
+    def test_projected_uses_last_durations_and_the_timeout_when_unmeasured(self):
+        last = {"A": (self.T(2026, 9, 26), 100.0), "B": (self.T(2026, 9, 26), None)}
+        assert rc.projected_seconds(["A", "B", "C"], last, 900) == 100 + 900 + 900
+
+    def test_mediaindonesia_gets_its_own_timeout_and_the_budget_uses_it(self):
+        assert rc.timeout_for("MEDIAINDONESIA", 900) == 1200
+        assert rc.timeout_for("KOMPAS", 900) == 900
+        assert rc.timeout_for("MEDIAINDONESIA", 1500) == 1500, "never below the run's --timeout"
+
+    def test_the_source_skipped_by_the_budget_goes_first_next_run(self, harness, monkeypatch):
+        """Budget fits two of three sources. Run 1 skips the third. Run 2 starts
+        with it -- and whichever source it then skips ran most recently."""
+        clock = {"t": 0.0}
+        monkeypatch.setattr(rc.time, "monotonic", lambda: clock["t"])
+        monkeypatch.setattr(rc, "RUN_BUDGET", 2800)
+        stamp = {"n": 0}
+        runs_done = {}
+
+        def on_run(website, task):
+            clock["t"] += 1000  # each source takes 1,000 s
+            stamp["n"] += 1
+            runs_done[website] = (self.T(2026, 9, 26, 7, stamp["n"]), 1000.0)
+
+        def one_run():
+            clock["t"] = 0.0
+            w = _ScriptedWorker({}, on_run=on_run)
+            harness(argv=("--phase", "full_text", "--timeout", "900"), worker=w)
+            return [c[0] for c in w.calls]
+
+        assert one_run() == ["KOMPAS", "TEMPO"]            # CNBC skipped
+        assert "CNBC/full_text (run budget" in harness.seen["notified"][-1]
+        # crawl_log now says KOMPAS and TEMPO completed; CNBC never did.
+        harness.seen["last_runs"] = dict(runs_done)
+        assert one_run() == ["CNBC", "KOMPAS"]             # TEMPO, the most recent, waits
+
+    def test_the_projection_is_in_the_summary_when_it_does_not_fit(self, harness, monkeypatch):
+        monkeypatch.setattr(rc, "RUN_BUDGET", 1000)
+        seen = harness(argv=("--phase", "full_text"))
+        assert "full_text projected 2700s > budget 1000s" in seen["notified"][-1]

@@ -145,6 +145,10 @@ def main(argv=None) -> int:
                              "(rejected_filter / empty_extraction / fetch failed); no fetching")
     parser.add_argument("--dry-run", action="store_true", help="List the population; fetch nothing, write nothing")
     args = parser.parse_args(argv)
+    # OPS-26 (#175): not while a scheduled crawl holds FAISS in memory.
+    from newscrawler.tools.run_lock import refused_by_run_lock
+    if not args.dry_run and refused_by_run_lock(logger):
+        return 2
 
     l1_ids = load_l1_sitemap_ids()
     client = SQLAlchemyClient()

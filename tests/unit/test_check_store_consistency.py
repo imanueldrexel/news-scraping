@@ -40,13 +40,31 @@ class TestComputeDivergence:
         assert all(counts[k] == 0 for k in csc.CHECK_KEYS)
         assert counts["l1_total"] == 2 and counts["l2_total"] == 2
 
-    def test_l1_vector_with_no_articles_row(self):
+    def test_a_queued_sitemap_without_an_article_is_information_not_a_check(self):
         counts = csc.compute_divergence(
             l1_ids=[1, 2], l2_ids=[1, 2], articles_ids={1},
             chunks_l1_ids=[1, 2], chunks_l2_ids=[1, 2], pending_embedding_count=0,
         )
-        assert counts["l1_no_articles"] == 1
-        assert counts["l2_no_articles"] == 1
+        assert counts["l1_no_articles_queued"] == 1 and counts["l2_no_articles_queued"] == 1
+        assert counts["l1_no_articles_terminal"] == 0 and counts["l2_no_articles_terminal"] == 0
+        assert "l1_no_articles_queued" not in csc.CHECK_KEYS
+        assert csc.growing_checks(counts) == []
+
+    def test_a_queued_sitemap_turning_terminal_is_growing_the_day_it_happens(self):
+        """OPS-25 (#174): SRC-33's retirement flipped 1,237 queued VIVA sitemaps
+        with vectors to rejected_filter, and the old combined count did not move
+        (6529 6529 KNOWN). The same ids, now terminal, must turn the check red."""
+        args = dict(l1_ids=[1, 2, 3], l2_ids=[1, 2, 3], articles_ids={1},
+                    chunks_l1_ids=[1, 2, 3], chunks_l2_ids=[1, 2, 3], pending_embedding_count=0)
+        before = csc.compute_divergence(**args)
+        after = csc.compute_divergence(terminal_ids={3}, **args)
+        assert csc.growing_checks(before) == []
+        assert after["l1_no_articles_terminal"] == 1 and after["l1_no_articles_queued"] == 1
+        assert csc.growing_checks(after) == ["l1_no_articles_terminal", "l2_no_articles_terminal"]
+
+    def test_every_check_has_baseline_zero(self):
+        """A baseline above the real count hides that much new damage (OPS-25)."""
+        assert all(csc.BASELINE.get(k, 0) == 0 for k in csc.CHECK_KEYS)
 
     def test_l1_not_in_l2(self):
         counts = csc.compute_divergence(
@@ -111,8 +129,7 @@ class TestLoadDocstoreSitemapIds:
 
 class TestReportingHelpers:
     def _counts(self, **overrides):
-        base = {k: 0 for k in csc.CHECK_KEYS}
-        base.update(l1_total=0, l2_total=0)
+        base = {k: 0 for k in csc.CHECK_KEYS + csc.INFO_KEYS}
         base.update(overrides)
         return base
 
@@ -120,14 +137,19 @@ class TestReportingHelpers:
         line = csc.summary_line(self._counts())
         assert line.startswith("Store consistency: OK")
 
-    def test_summary_known_debris_within_baseline_is_not_flagged_as_growing(self):
-        line = csc.summary_line(self._counts(l1_no_articles=csc.BASELINE["l1_no_articles"]))
+    def test_summary_known_debris_within_baseline_is_not_flagged_as_growing(self, monkeypatch):
+        monkeypatch.setitem(csc.BASELINE, "l1_no_chunks", 5)
+        line = csc.summary_line(self._counts(l1_no_chunks=5))
         assert "nonzero" in line
         assert "GROWING" not in line
 
     def test_summary_exceeding_baseline_is_flagged_growing(self):
-        line = csc.summary_line(self._counts(l1_no_articles=csc.BASELINE["l1_no_articles"] + 1))
-        assert "GROWING" in line and "l1_no_articles" in line
+        line = csc.summary_line(self._counts(l1_no_articles_terminal=1))
+        assert "GROWING" in line and "l1_no_articles_terminal" in line
+
+    def test_queued_sitemaps_alone_are_ok(self):
+        line = csc.summary_line(self._counts(l1_no_articles_queued=5292, l2_no_articles_queued=5292))
+        assert line.startswith("Store consistency: OK")
 
     def test_render_table_has_header_and_status_column(self):
         table = csc.render_table(self._counts(chunks_not_in_faiss=3))

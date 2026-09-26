@@ -2,6 +2,7 @@ import collections
 import logging
 import os
 import re
+import threading
 from newspaper import Article
 from abc import abstractmethod
 from concurrent.futures.thread import ThreadPoolExecutor
@@ -21,6 +22,15 @@ from newscrawler.domain.utils.date_time_reader import DateTimeReader
 logging.basicConfig()
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
+
+# SYS-52 (#178): the scheduled worker died natively in lxml (etree.pyd,
+# 0xC0000005) while PIKIRANRAKYAT -- whose own selector finds nothing, so every
+# page goes through trafilatura -- ran the fallback on up to 32 fetch threads at
+# once. lxml documents its compiled XPath evaluators as not thread-safe, and
+# trafilatura keeps them at module level. The fallbacks' parse runs under this
+# lock; the network fetch stays parallel. Measured on 480 extractions: locked
+# 33 s vs threaded 32 s (EXPERIMENTS.md 2026-09-26 QA entry), so it costs nothing.
+LXML_PARSE_LOCK = threading.Lock()
 
 
 class NewsDetailsBatch(list):
@@ -746,7 +756,9 @@ class Crawler:
     def _trafilatura_fallback(soup) -> Union[List[str], None]:
         try:
             import trafilatura
-            text = trafilatura.extract(str(soup))
+            html = str(soup)
+            with LXML_PARSE_LOCK:
+                text = trafilatura.extract(html)
         except Exception as t_err:
             logger.warning(f"Trafilatura fallback failed: {t_err}")
             return None
@@ -761,7 +773,8 @@ class Crawler:
         try:
             article = Article(url)
             article.download()
-            article.parse()
+            with LXML_PARSE_LOCK:  # SYS-52: newspaper parses with lxml
+                article.parse()
         except Exception as n_err:
             logger.warning(f"Newspaper fallback failed: {n_err}")
             return None

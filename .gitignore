@@ -154,3 +154,8 @@ package/*
 # OPS-23: full-database dumps (scripts/backup_db.py) -- never commit data
 /backups/pg_dump/
 /backups/faiss_*/
+# every other backup directory too (SRC-54's src54_<stamp>/ holds article rows)
+/backups/*/
+# OPS-27: scheduled-crawl run logs; OPS-26: the scheduled crawl's run lock
+/logs/
+/.scheduled_crawl.lock

@@ -113,3 +113,67 @@ def test_the_production_factory_is_the_default():
     from newscrawler.tools import source_worker
     assert SourceWorker.__init__.__defaults__[0] is source_worker.build_crawler_api
     assert os.path.basename(source_worker.__file__) == "source_worker.py"
+
+
+class TestLogFileAndCrashes:
+    """OPS-27 (#176) and SYS-52 (#178): under Task Scheduler the child's stderr is a
+    console that closes with the process. Its log records, a failing source's
+    traceback and a native crash's Python stack must be in the run's log file."""
+
+    @pytest.fixture
+    def logged(self, tmp_path):
+        path = tmp_path / "scheduled_crawl.log"
+        w = SourceWorker(factory=stubs.stub_factory, init_timeout=60, log_path=str(path))
+        yield w, path
+        w.close()
+
+    def test_the_pipelines_log_lines_reach_the_file(self, logged):
+        worker, path = logged
+        assert worker.run("LOG", "full_text", timeout=30) == ("ok", "")
+        worker.close()
+        text = path.read_text(encoding="utf-8")
+        assert "Full-text crawl finished for LOG: attempted=3 extracted=3 saved=2" in text
+
+    def test_a_failing_sources_traceback_is_in_the_file(self, logged):
+        worker, path = logged
+        status, detail = worker.run("RAISE", "sitemap", timeout=30)
+        assert status == "failed" and "RuntimeError: boom" in detail
+        worker.close()
+        text = path.read_text(encoding="utf-8")
+        assert "RAISE/sitemap failed" in text
+        assert "Traceback (most recent call last)" in text and "RuntimeError: boom" in text
+        assert "crawl_website" in text, "the stack, not just the message"
+
+    def test_a_native_crash_is_labelled_a_crash_and_leaves_a_python_stack(self, logged):
+        worker, path = logged
+        status, detail = worker.run("SEGV", "full_text", timeout=60)
+        assert status == "failed"
+        assert "crashed" in detail and "died" not in detail
+        if os.name == "nt":
+            assert "0xC0000005 access violation" in detail
+        text = path.read_text(encoding="utf-8")
+        assert "Fatal Python error" in text or "fatal exception" in text.lower()
+        assert "crawl_website" in text, "faulthandler must name the frame that crashed"
+        # the run goes on in a fresh child
+        assert worker.run("KOMPAS", "sitemap", timeout=30) == ("ok", "")
+
+    def test_a_plain_exit_is_not_called_a_crash(self, worker):
+        worker.start()
+        status, detail = worker.run("DIE", "sitemap", timeout=30)
+        assert status == "failed" and "died (exit code 7)" in detail
+
+
+class TestDescribeExitCode:
+    def test_windows_access_violation(self):
+        from newscrawler.tools.source_worker import describe_exit_code, is_native_crash
+        assert describe_exit_code(3221225477) == "3221225477 = 0xC0000005 access violation"
+        assert is_native_crash(3221225477)
+
+    def test_posix_segfault(self):
+        from newscrawler.tools.source_worker import describe_exit_code, is_native_crash
+        assert describe_exit_code(-11) == "-11 = SIGSEGV" and is_native_crash(-11)
+
+    def test_ordinary_codes(self):
+        from newscrawler.tools.source_worker import describe_exit_code, is_native_crash
+        assert describe_exit_code(7) == "7" and not is_native_crash(7)
+        assert describe_exit_code(None) == "None" and not is_native_crash(None)

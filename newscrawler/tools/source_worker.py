@@ -25,17 +25,36 @@ A process can be killed. The contract:
   `started`. The caller closes it (`run_scheduled_crawl._close_abandoned_log_rows`).
 * **An orphan cannot outlive the scheduler.** If the parent is killed (Task
   Scheduler's `ExecutionTimeLimit`), a watchdog thread in the child exits it.
+* **What the child says reaches a file** (OPS-27, #176). Given `log_path`, the
+  child appends its log records (per-source funnel, filter telemetry, SYS-34
+  warnings, tracebacks) to the same file as the parent. Under Task Scheduler
+  its stderr is a console window that closes with the process.
+* **A native crash leaves a Python stack** (SYS-52, #178). `faulthandler` is
+  enabled in the child, writing to that file: an access violation inside lxml
+  kills the process before any `except` runs, and Windows kept no dump.
 
 Nothing here imports the pipeline. The child builds it through `factory`, a
 module-level callable, so tests can drive the real process machinery with a stub.
 """
+import faulthandler
+import logging
 import multiprocessing
 import os
 import threading
 import time
-import traceback
 
 PARENT_POLL_SECONDS = 5
+LOG_FORMAT = "%(asctime)s %(levelname)s [%(processName)s] %(name)s: %(message)s"
+
+logger = logging.getLogger(__name__)
+
+# Windows NTSTATUS names for the exit codes a natively crashed child reports.
+_NATIVE_EXIT_CODES = {
+    0xC0000005: "access violation",
+    0xC00000FD: "stack overflow",
+    0xC0000409: "stack buffer overrun",
+    0xC0000374: "heap corruption",
+}
 
 
 class WorkerInitError(RuntimeError):
@@ -56,12 +75,52 @@ def _watch_parent():
             os._exit(3)
 
 
-def _worker_loop(conn, factory):
+# POSIX: multiprocessing reports death by signal as -signum.
+_NATIVE_SIGNALS = {-11: "SIGSEGV", -6: "SIGABRT", -7: "SIGBUS"}
+
+
+def describe_exit_code(code):
+    """E.g. `3221225477 = 0xC0000005 access violation` for a native crash, else str(code)."""
+    if code is None:
+        return "None"
+    if code in _NATIVE_SIGNALS:
+        return "%s = %s" % (code, _NATIVE_SIGNALS[code])
+    unsigned = code & 0xFFFFFFFF
+    name = _NATIVE_EXIT_CODES.get(unsigned)
+    return "%s = 0x%08X %s" % (code, unsigned, name) if name else str(code)
+
+
+def is_native_crash(code):
+    return code is not None and (code in _NATIVE_SIGNALS or (code & 0xFFFFFFFF) in _NATIVE_EXIT_CODES)
+
+
+def _configure_child_output(log_path):
+    """OPS-27 + SYS-52, child side. Log records go to `log_path` as well as
+    stderr; faulthandler writes a crash's Python stack there. Returns the open
+    file, which must stay open for faulthandler for the life of the process."""
+    if not log_path:
+        faulthandler.enable(all_threads=True)
+        return None
+    fh = open(log_path, "a", encoding="utf-8", buffering=1)
+    handler = logging.StreamHandler(fh)
+    handler.setFormatter(logging.Formatter(LOG_FORMAT))
+    root = logging.getLogger()
+    root.addHandler(handler)
+    if root.level > logging.INFO or root.level == logging.NOTSET:
+        root.setLevel(logging.INFO)
+    logging.captureWarnings(True)
+    faulthandler.enable(file=fh, all_threads=True)
+    return fh
+
+
+def _worker_loop(conn, factory, log_path=None):
     """Child side: build once, then serve (website, task) jobs until told to stop."""
+    _log_file = _configure_child_output(log_path)  # noqa: F841 -- kept open for faulthandler
     threading.Thread(target=_watch_parent, daemon=True, name="parent-watchdog").start()
     try:
         api = factory()
     except BaseException as e:  # noqa: BLE001 -- reported to the parent, which decides
+        logger.exception("crawler build failed")
         conn.send(("init_failed", "%s: %s" % (type(e).__name__, str(e)[:300])))
         return
     conn.send(("ready", os.getpid()))
@@ -73,11 +132,13 @@ def _worker_loop(conn, factory):
         if job is None:
             return
         website, task = job
+        logger.info("%s/%s: started in worker pid %d", website, task, os.getpid())
         try:
             api.crawl_website(website, task)
             conn.send(("ok", ""))
         except BaseException as e:  # noqa: BLE001 -- the next source must still run
-            traceback.print_exc()
+            # The stack goes to the log file; crawl_log keeps 200 chars of message.
+            logger.exception("%s/%s failed", website, task)
             conn.send(("failed", "%s: %s" % (type(e).__name__, str(e)[:200])))
 
 
@@ -85,9 +146,10 @@ class SourceWorker:
     """Parent side. `run()` returns (status, detail); status is ok / failed / timeout.
     Never raises for a source's own failure. Raises WorkerInitError only from `start()`."""
 
-    def __init__(self, factory=build_crawler_api, init_timeout=1200):
+    def __init__(self, factory=build_crawler_api, init_timeout=1200, log_path=None):
         self._factory = factory
         self._init_timeout = init_timeout
+        self._log_path = log_path
         self._ctx = multiprocessing.get_context("spawn")
         self._proc = None
         self._conn = None
@@ -103,7 +165,7 @@ class SourceWorker:
         if self.alive:
             return
         parent_conn, child_conn = self._ctx.Pipe()
-        proc = self._ctx.Process(target=_worker_loop, args=(child_conn, self._factory),
+        proc = self._ctx.Process(target=_worker_loop, args=(child_conn, self._factory, self._log_path),
                                  name="source-worker", daemon=True)
         proc.start()
         child_conn.close()
@@ -116,7 +178,7 @@ class SourceWorker:
             kind, payload = parent_conn.recv()
         except EOFError:
             code = self._reap()
-            raise WorkerInitError("crawler process exited during start-up (exit code %s)" % code)
+            raise WorkerInitError("crawler process exited during start-up (exit code %s)" % describe_exit_code(code))
         if kind != "ready":
             self._reap()
             raise WorkerInitError(payload)
@@ -137,7 +199,10 @@ class SourceWorker:
             return self._conn.recv()
         except EOFError:
             code = self._reap()
-            return "failed", "worker process died (exit code %s)" % code
+            # SYS-52: "crashed" is a native crash (the stack is in the log file,
+            # from faulthandler); anything else is an exit we did not ask for.
+            what = "crashed" if is_native_crash(code) else "died"
+            return "failed", "worker process %s (exit code %s)" % (what, describe_exit_code(code))
 
     def close(self):
         if self.alive:

@@ -25,8 +25,11 @@ actions over NEWS_L1/NEWS_L2 (FAISS), `chunks` and `articles`:
 Dry run by default: prints what each action would do. `--apply` writes. It first
 copies NEWS_L1/NEWS_L2 to backups/faiss_<stamp>/, deletes through FAISS and saves
 with the crawler's atomic save, then inserts chunk rows. It refuses to write
-while a crawl is running (a `crawl_log` row still `started` in the last 4 h):
-the crawl holds the index in memory, and its flush would undo the repair (DBT-10).
+while a crawl is running: the crawl holds the index in memory, and its flush
+would undo the repair (DBT-10). Two signals, because either alone has gaps: the
+scheduled run's lock (OPS-26, held for the whole run, including the model load
+and the gaps between sources) and a `crawl_log` row still `started` in the last
+4 h (a manual crawl, which takes no lock).
 
     python scripts/repair_store_consistency.py                 # dry run
     python scripts/repair_store_consistency.py --apply
@@ -144,6 +147,10 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--apply", action="store_true", help="Write the repair (default: dry run)")
     args = ap.parse_args(argv)
+    # OPS-26 (#175): not while a scheduled crawl holds FAISS in memory.
+    from newscrawler.tools.run_lock import refused_by_run_lock
+    if args.apply and refused_by_run_lock(logger):
+        return 2
 
     from langchain_community.vectorstores import FAISS
     from newscrawler.infrastructure.datasource.dataflow.write.faiss.chunk_faiss_data_source import ChunkFAISSDatasource
