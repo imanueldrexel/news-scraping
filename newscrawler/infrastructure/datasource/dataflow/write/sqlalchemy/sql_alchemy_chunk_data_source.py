@@ -92,6 +92,18 @@ class SQLAlchemyChunkDataSource:
             session.commit()
         return n
 
+    def delete_for_sitemaps(self, sitemap_ids) -> int:
+        """SYS-54: every chunk row of these sitemaps. Returns rows deleted."""
+        if not sitemap_ids:
+            return 0
+        with self.sql_alchemy_client.get_session() as session:
+            n = session.execute(
+                text(f"DELETE FROM {ChunksTable.__tablename__} WHERE {ChunksTable.sitemap_id.name} = ANY(:ids)"),
+                {"ids": list(sitemap_ids)},
+            ).rowcount
+            session.commit()
+        return n
+
     def save_chunks(self, chunks: List[ChunkModel]) -> None:
         """Insert, or -- DBT-23 (#74) -- on the DBT-09 unique key
         (sitemap_id, chunk_level, chunk_index) update the row in place with the

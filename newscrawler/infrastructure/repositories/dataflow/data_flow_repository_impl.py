@@ -125,10 +125,40 @@ class DataFlowRepositoryImpl(DataFlowRepository):
                 # sources, and the next source's flush would otherwise write
                 # them onto rows whose vectors never reached disk.
                 self.__dict__.pop("_pending_embedding_ids", None)
+                self.__dict__.pop("_discarded_sitemaps", None)
                 raise
             if flushed:
-                # Only now, with the vectors on disk, may SQL point at them.
+                # Only now, with the vectors on disk, may SQL point at them...
                 self._assign_pending_embedding_ids()
+                # ...and, the discarded vectors being gone from disk, may the
+                # chunk rows that pointed at them go (SYS-54).
+                self._delete_discarded_chunk_rows()
+
+    def discard_terminal_embeddings(self, sitemap_ids) -> int:
+        """SYS-54 (#185): remove the vectors and chunk rows of every sitemap in
+        `sitemap_ids` that is now terminal (no article, and rejected_filter or at
+        the fetch cap). The crawl settles such sitemaps itself, and one that
+        already had vectors (the June article-gap VIVA rows) would otherwise
+        become an orphan that the store check reports as STORE DIVERGENT.
+
+        The repair's order: vectors first, then rows. In a deferred block the
+        vectors leave the in-memory stores now, and the rows are deleted only
+        after the flush has put that on disk. A kill in between leaves vectors
+        and rows together, which is still the repair's state, never rows gone
+        with their vectors still on disk. Returns the number of vectors deleted."""
+        terminal = self.news_data_source.terminal_without_article(sitemap_ids) if sitemap_ids else set()
+        if not terminal:
+            return 0
+        deleted = self.chunk_faiss_datasource.discard(terminal)
+        if self.chunk_faiss_datasource.is_deferred:
+            self.__dict__.setdefault("_discarded_sitemaps", set()).update(terminal)
+        else:
+            self.sql_alchemy_chunk_datasource.delete_for_sitemaps(terminal)
+        return deleted
+
+    def _delete_discarded_chunk_rows(self) -> int:
+        discarded = self.__dict__.pop("_discarded_sitemaps", set())
+        return self.sql_alchemy_chunk_datasource.delete_for_sitemaps(discarded) if discarded else 0
 
     def _reembed_unembedded(self, website: Optional[str]) -> int:
         rows = self.sql_alchemy_chunk_datasource.load_unembedded_chunks(website)

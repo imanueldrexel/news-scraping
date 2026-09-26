@@ -356,6 +356,26 @@ class SQLAlchemySitemapDataSource:
             ).fetchall()
         return {(r[0], r[1] or "") for r in rows}
 
+    def terminal_without_article(self, sitemap_ids) -> Set[int]:
+        """SYS-54: which of these sitemaps can never get an article: no articles
+        row, and settled rejected_filter or at the SITEMAP_MAX_FETCH_FAILURES cap.
+        The same rule as repair_store_consistency._load_state (OPS-25)."""
+        if not sitemap_ids:
+            return set()
+        with self.client.get_session() as session:
+            rows = session.execute(
+                text(
+                    f"SELECT s.{SitemapTable.sitemap_id.name} FROM {SitemapTable.__tablename__} s "
+                    f"WHERE s.{SitemapTable.sitemap_id.name} = ANY(:ids) "
+                    f"  AND (s.{SitemapTable.crawl_status.name} = 'rejected_filter' "
+                    f"       OR s.{SitemapTable.fetch_failures.name} >= :max_fetch_failures) "
+                    f"  AND NOT EXISTS (SELECT 1 FROM articles a "
+                    f"                  WHERE a.sitemap_id = s.{SitemapTable.sitemap_id.name})"
+                ),
+                {"ids": list(sitemap_ids), "max_fetch_failures": int(SITEMAP_MAX_FETCH_FAILURES)},
+            ).fetchall()
+        return {r[0] for r in rows}
+
     def mark_sitemaps_status(self, sitemap_ids, status: str):
         """SYS-16: set crawl_status for the given sitemap_ids, distinguishing a
         permanent semantic-filter rejection from a transient empty-extraction

@@ -131,6 +131,8 @@ class CrawlerServiceImpl(CrawlerService):
         # for. Recorded to the DB only at the end of the run (see below), because
         # "did the whole source fail?" cannot be answered per batch.
         run_failures = {}
+        # SYS-54: every sitemap the filter settled as rejected_filter this run.
+        settled_rejected = set()
         # SYS-35 (#118, fix 4) / SYS-45 (#140): per-run filter telemetry.
         # `gate_counts` says how each decision was made; `allow_total`/
         # `allow_score_passed` count, per news category, how many articles the
@@ -251,6 +253,7 @@ class CrawlerServiceImpl(CrawlerService):
 
             if rejected_filter_ids:
                 self.data_flow_repo.mark_sitemaps_status(rejected_filter_ids, "rejected_filter")
+                settled_rejected.update(rejected_filter_ids)
             if empty_extraction_ids:
                 self.data_flow_repo.mark_sitemaps_status(empty_extraction_ids, "empty_extraction")
 
@@ -287,6 +290,7 @@ class CrawlerServiceImpl(CrawlerService):
                     continue
 
         self._source_failure_verdict = self._record_fetch_failures(website_name, attempted, run_failures)
+        self._discard_terminal_embeddings(website_name, set(pre_denied_ids) | settled_rejected | set(run_failures))
         self._log_filter_stats(website_name, gate_counts, allow_total, allow_score_passed, uncertain)
 
         logger.info(
@@ -295,6 +299,24 @@ class CrawlerServiceImpl(CrawlerService):
             f"passed_filter={passed_filter_total} saved={saved_total}"
         )
         return saved_total
+
+    def _discard_terminal_embeddings(self, website_name: str, candidates) -> None:
+        """SYS-54 (#185): the sitemaps this run settled for good (rejected, or a
+        fetch failure that reached the cap) lose any vectors and chunk rows they
+        already had. Runs inside the source's deferred block, so the deletions
+        are flushed with its adds. A failure here costs nothing the store check
+        does not report, so it is logged, not raised: the source's articles were
+        saved."""
+        if not candidates:
+            return
+        try:
+            deleted = self.data_flow_repo.discard_terminal_embeddings(candidates)
+        except Exception as e:  # noqa: BLE001
+            logger.error(f"{website_name}: could not remove the vectors of settled sitemaps (SYS-54): {e!r}; "
+                         f"check_store_consistency will report them and repair_store_consistency removes them")
+            return
+        if deleted:
+            logger.info(f"{website_name}: removed {deleted} vector(s) of sitemaps settled terminal this run (SYS-54)")
 
     @staticmethod
     def _split_denied_by_category(website_name: str, sitemaps):

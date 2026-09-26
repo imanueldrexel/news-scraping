@@ -92,6 +92,29 @@ class ChunkFAISSDatasource:
             result.append(replace(chunk, embedding_id=eid, chunk_status='embedded'))
         return result
 
+    def discard(self, sitemap_ids) -> int:
+        """SYS-54: delete every vector of these sitemaps from both indexes. Inside
+        a deferred block the deletions reach disk with the block's flush;
+        outside one, each touched level is saved now. Scans the docstores rather
+        than the key cache, so duplicate vectors of one key go too. Returns the
+        number of vectors deleted."""
+        sids = {int(s) for s in sitemap_ids}
+        deleted = 0
+        for db_name in (VECTOR_DB_NAME_L1, VECTOR_DB_NAME_L2):
+            vs = self._store(db_name)
+            ids = [doc_id for doc_id, doc in vs.docstore._dict.items()
+                   if doc.metadata.get("sitemap_id") is not None and int(doc.metadata["sitemap_id"]) in sids]
+            if not ids:
+                continue
+            vs.delete(ids)
+            self.__dict__.get("_key_caches", {}).pop(db_name, None)
+            if self.is_deferred:
+                self._dirty().add(db_name)
+            else:
+                self._persist(vs, db_name)
+            deleted += len(ids)
+        return deleted
+
     # ── DBT-10 (#45): write frequency ────────────────────────────────────────
     # Every batch used to rewrite the whole index pair (L1 ~68 MB + L2 ~204 MB,
     # plus the same again for the .bak copy): about 10 saves per level per source,
