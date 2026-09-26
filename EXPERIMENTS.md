@@ -1308,3 +1308,16 @@ SINDONEWS   old 12 new 12 | lost [] | gained []   links identical: True
   - SYS-52 item 5 (flush FAISS every N batches) not done: a crashed source's NULL rows are re-embedded on its next `full_text` (DBT-10's re-embed on entry), OPS-29 now reports them per source, and a mid-source checkpoint doubles the per-source index writes DBT-10 cut.
 - **Conclusion / do not repeat:** Use `faulthandler._read_null()` to test native-crash handling on Windows, not ctypes. A per-source signal is not a run-level lock. In a stub-driven test of a script that writes real paths, monkeypatch the paths first.
 - **Links:** SYS-52 (#178) · OPS-25 (#174) · OPS-26 (#175) · OPS-27 (#176) · OPS-28 (#179) · OPS-29 (#180) · DBT-41 (#171) · DBT-42 (#172)
+
+### 2026-09-26 — SRC-53: iNews TV's four URL-keyed sections, named and sampled
+- **Question / hypothesis:** What are INEWS's 657 URL-keyed rows, which of their sections are soft, and can they be renamed with crawler code rather than a one-off mapping?
+- **Method:** stored titles per section (`row_number() … ORDER BY random()`, 6 pending + every saved) with `category_gate(<url>, "INEWS")` and `category_gate(<name>, "INEWS")`; `scripts/fix_url_shaped_categories.py --dry-run --website INEWS` after adding `INewsCrawler.branch_name_from_url`.
+- **Result:**
+  - `inews-tv` (200: 188 saved, 12 rejected): hard news ("Prabowo Pastikan Kecelakaan KM Virgo Transport 8 Diusut", "NTT Diguncang 3.752 Gempa Susulan"). Rename only.
+  - `inews-tv/talkshow` (200: 193 pending, 5 saved): programme promos ("Jangan Lewatkan Rakyat Bersuara Malam Ini: … Live di iNews", "Saksikan Malam Ini di Interupsi: …") and debate-show clips ("Panas! Firdaus Oiwobo Ribut hingga Nyaris Baku Hantam …"). The 5 saved went through the probe as politics/law. **Soft: denied for INEWS** (`SOURCE_SOFT_LEAVES["INEWS"]`).
+  - `inews-tv/eksklusif` (140: 119 pending, 11 saved): mixed. Promos and "Food Diary" alongside the Pati PBB protest, a malpractice victim's account, and the Mbah Priok eviction (saved bodies 1.2–2.1k chars). **Left to the probe**, which also passed one promo ("Jangan Lewatkan Interupsi Malam Ini …"): promo titles are a gap the probe does not close.
+  - `inews-tv/religi` (117): already `deny` by the substring rule, URL or name.
+  - Rename (owner-approved, 15:28): 657 rows in one transaction, backup `backups/src36_url_shaped_categories_20260926T082823Z.json`; `SELECT count(*) FROM sitemaps WHERE category LIKE 'http%'` = **0** fleet-wide.
+  - A side effect a test caught: once INEWS names its branches, `test_no_url_category_on_a_source_whose_crawler_names_its_branches` sees the gold set's 8 INEWS URL rows. Refreshing them changes the gold sha, so they join VIVA's 289 in SYS-51 (#170).
+- **Conclusion / do not repeat:** Name stored rows with the crawler's own `branch_name_from_url`, even for sections the crawler no longer lists, so SRC-34's widening inherits the same keys. TV-programme sections carry promos under news-shaped titles; sample them before trusting the probe. A rename that touches a source in the gold set is a SYS-51 item, not a quick fix.
+- **Links:** SRC-53 (#173) · SYS-51 (#170) · SRC-34 (#124) · SRC-45 (#155) · SYS-49 (#147)

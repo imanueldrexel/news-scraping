@@ -1,6 +1,8 @@
 import logging
-from typing import List, Dict
+import re
+from typing import List, Dict, Optional
 
+from newscrawler.core.importance_filter import SOURCE_SOFT_LEAVES
 from newscrawler.domain.entities.extraction.url_data import URL
 from newscrawler.infrastructure.datasource.scrapers.crawler import Crawler
 from newscrawler.core.utils.utils import (
@@ -13,7 +15,29 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 
+# SRC-53 (#173): a www.inews.id section sitemap -- /<section>[/<leaf>...]/sitemap.xml.
+# Regional subdomains (<city>.inews.id) do not match: SRC-29 retired them.
+_WWW_SECTION = re.compile(r"^https?://www\.inews\.id/([a-z0-9-]+(?:/[a-z0-9-]+)*)/sitemap\.xml$")
+
+
 class INewsCrawler(Crawler):
+    # Soft leaves no vocabulary word reaches, decided from sampled titles (SRC-53).
+    SOFT_BRANCH_DENY = SOURCE_SOFT_LEAVES["INEWS"]
+
+    @staticmethod
+    def branch_name_from_url(link: str) -> Optional[str]:
+        """The section name of a www.inews.id section sitemap -- its path without
+        `/sitemap.xml` (`inews-tv/talkshow`) -- or None when this crawler cannot
+        name it. Never the URL itself (SRC-39).
+
+        `scripts/fix_url_shaped_categories.py` uses it to rename the rows stored
+        under a URL before SRC-27 (#109). `_get_branches` still keys its one
+        finance leaf `finance`, the name its rows are stored under. When SRC-34
+        (#124) widens INEWS it should key every section with this function, so
+        stored categories cannot drift from the live keys."""
+        match = _WWW_SECTION.match((link or "").strip())
+        return match.group(1) if match else None
+
     def __init__(self):
         super(INewsCrawler, self).__init__()
         self.website_name = WebsiteName.INEWS.value

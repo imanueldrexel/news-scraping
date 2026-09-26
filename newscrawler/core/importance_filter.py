@@ -261,6 +261,19 @@ SOURCE_SOFT_LEAVES = {
         # IDXCHANNEL `video`, which SRC-45 keeps on purpose)
         "gadget",
     }),
+    # SRC-53 (#173): iNews TV's sections, stored before SRC-27 narrowed INEWS to
+    # finance and renamed from their sitemap URLs. `inews-tv/talkshow` is TV
+    # programme promos and debate-show clips, soft on every title sampled
+    # 2026-09-26 ("Jangan Lewatkan Rakyat Bersuara Malam Ini: ... Live di iNews",
+    # "Saksikan Malam Ini di Interupsi: ...", "Panas! Firdaus Oiwobo Ribut hingga
+    # Nyaris Baku Hantam ..."): SRC-45's promo/video class and SYS-49's
+    # argue-about-an-event class. Not denied: `inews-tv` (188 saved, hard news)
+    # and `inews-tv/eksklusif`, which is mixed (promos and "Food Diary" next to
+    # the Pati PBB protest and a malpractice victim's account), so the probe
+    # decides. `inews-tv/religi` is already denied by the substring rule.
+    "INEWS": frozenset({
+        "inews-tv/talkshow",
+    }),
 }
 
 # SYS-35 (#118): the category gate was asymmetric by accident -- a category

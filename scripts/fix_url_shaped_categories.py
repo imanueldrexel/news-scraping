@@ -24,6 +24,9 @@ Not touched: FAISS docstore `metadata.category` for the rows that already have
 an article (display-only in RAG hits; the UI's category filter is a substring
 match, so `ekonomi` still matches the old URL string there).
 
+SRC-53 (#173) ran it for INEWS on 2026-09-26: 657 iNews TV rows stored before
+SRC-27, named by `INewsCrawler.branch_name_from_url` (`inews-tv/talkshow`, ...).
+
 Usage:
     python scripts/fix_url_shaped_categories.py --dry-run [--website CNN,JPNN]
     python scripts/fix_url_shaped_categories.py [--website CNN,JPNN]

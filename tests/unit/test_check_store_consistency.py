@@ -62,6 +62,14 @@ class TestComputeDivergence:
         assert after["l1_no_articles_terminal"] == 1 and after["l1_no_articles_queued"] == 1
         assert csc.growing_checks(after) == ["l1_no_articles_terminal", "l2_no_articles_terminal"]
 
+    def test_stored_url_categories_are_a_check(self):
+        """SRC-53 (#173): 657 INEWS rows kept a sitemap URL as their category
+        after the fleet's live branch keys were all names."""
+        counts = csc.compute_divergence([], [], set(), [], [], 0, url_category_rows=657)
+        assert counts["sitemaps_url_category"] == 657
+        assert csc.growing_checks(counts) == ["sitemaps_url_category"]
+        assert csc.compute_divergence([], [], set(), [], [], 0)["sitemaps_url_category"] == 0
+
     def test_every_check_has_baseline_zero(self):
         """A baseline above the real count hides that much new damage (OPS-25)."""
         assert all(csc.BASELINE.get(k, 0) == 0 for k in csc.CHECK_KEYS)

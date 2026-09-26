@@ -44,3 +44,31 @@ class TestInewsGetBranches:
             "html.parser",
         )
         assert INewsCrawler._get_branches(soup) == {}
+
+
+class TestBranchNameFromUrl:
+    """SRC-53 (#173): names for the iNews TV rows stored under their sitemap URL."""
+
+    def test_a_www_section_is_named_by_its_path(self):
+        from newscrawler.infrastructure.datasource.scrapers.inews.inews_crawler import INewsCrawler
+        name = INewsCrawler.branch_name_from_url
+        assert name("https://www.inews.id/inews-tv/talkshow/sitemap.xml") == "inews-tv/talkshow"
+        assert name("https://www.inews.id/inews-tv/sitemap.xml") == "inews-tv"
+        assert name(" https://www.inews.id/finance/bisnis/sitemap.xml ") == "finance/bisnis"
+
+    def test_what_it_cannot_name_is_none_never_the_url(self):
+        from newscrawler.infrastructure.datasource.scrapers.inews.inews_crawler import INewsCrawler
+        name = INewsCrawler.branch_name_from_url
+        assert name("https://ambon.inews.id/sitemap.xml") is None      # retired regional mirror (SRC-29)
+        assert name("https://www.inews.id/sitemap.xml") is None        # the index itself
+        assert name("https://www.inews.id/inews-tv/talkshow/feed.xml") is None
+        assert name("") is None and name(None) is None
+
+    def test_talkshow_is_denied_for_inews_only_and_eksklusif_is_left_to_the_probe(self):
+        from newscrawler.core.importance_filter import category_gate
+        from newscrawler.core.crawler_dict_list import CRAWLER_DICT
+        assert category_gate("inews-tv/talkshow", "INEWS") == "deny"
+        assert category_gate("inews-tv/talkshow", "DETIK") is None
+        assert category_gate("inews-tv/eksklusif", "INEWS") is None
+        assert category_gate("inews-tv", "INEWS") is None
+        assert CRAWLER_DICT["INEWS"].is_soft_branch("inews-tv/talkshow")

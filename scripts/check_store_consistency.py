@@ -83,10 +83,11 @@ def _load_docstore_sitemap_ids(db_name: str):
 
 
 def compute_divergence(l1_ids, l2_ids, articles_ids, chunks_l1_ids, chunks_l2_ids,
-                        pending_embedding_count, terminal_ids=frozenset()) -> dict:
+                        pending_embedding_count, terminal_ids=frozenset(), url_category_rows=0) -> dict:
     """Pure: every count from plain Python sets/ints, no I/O. Kept separate from
     gather_counts() so the arithmetic itself has a fast, DB-free unit test.
-    `terminal_ids`: sitemap_ids that can never get an article (OPS-25)."""
+    `terminal_ids`: sitemap_ids that can never get an article (OPS-25).
+    `url_category_rows`: sitemaps rows whose category is a URL (SRC-53)."""
     l1_set, l2_set = set(l1_ids), set(l2_ids)
     chunks_any = set(chunks_l1_ids) | set(chunks_l2_ids)
     dup_l1 = {sid for sid, n in Counter(l1_ids).items() if n > 1}
@@ -103,6 +104,7 @@ def compute_divergence(l1_ids, l2_ids, articles_ids, chunks_l1_ids, chunks_l2_id
         "l1_duplicate_sitemaps":    len(dup_l1),
         "chunks_pending_embedding": pending_embedding_count,
         "chunks_not_in_faiss":      len(chunks_any - (l1_set | l2_set)),
+        "sitemaps_url_category":    url_category_rows,
         # Informational (INFO_KEYS): queued sitemaps' vectors link up when crawled.
         "l1_no_articles_queued":    len(l1_orphan - terminal),
         "l2_no_articles_queued":    len(l2_orphan - terminal),
@@ -123,6 +125,11 @@ LABELS = {
     "l1_duplicate_sitemaps":    "sitemap_ids with 2+ L1 vectors",
     "chunks_pending_embedding": "chunks rows with status pending_embedding",
     "chunks_not_in_faiss":      "chunks sitemap_ids not in FAISS (L1 or L2)",
+    # SRC-53 (#173): a URL where a section name belongs blinds the category
+    # gate, SYS-34's first-save warning and every per-category count. The live
+    # checks (probe_branch_scope.py --fail-on-url-keys, the offline fleet test)
+    # see only what crawlers list today, never rows already stored.
+    "sitemaps_url_category":    "sitemaps rows with a URL as category",
 }
 # Order matters for display. INFO_KEYS are context, not pass/fail checks.
 CHECK_KEYS = list(LABELS.keys())
@@ -161,12 +168,15 @@ def gather_counts() -> dict:
             text("SELECT DISTINCT sitemap_id FROM chunks WHERE chunk_level = 2"))}
         pending = session.execute(
             text("SELECT COUNT(*) FROM chunks WHERE chunk_status = 'pending_embedding'")).scalar()
+        url_categories = session.execute(
+            text("SELECT COUNT(*) FROM sitemaps WHERE category LIKE 'http%'")).scalar()
         no_article = (set(l1_ids) | set(l2_ids)) - articles_ids
         state = _load_state(session, no_article) if no_article else {}
     # A sitemap row that is gone is terminal too (the repair's own rule).
     terminal = {sid for sid in no_article if state.get(sid, "terminal") == "terminal"}
 
-    return compute_divergence(l1_ids, l2_ids, articles_ids, chunks_l1_ids, chunks_l2_ids, pending, terminal)
+    return compute_divergence(l1_ids, l2_ids, articles_ids, chunks_l1_ids, chunks_l2_ids, pending, terminal,
+                              url_category_rows=url_categories)
 
 
 def render_table(counts: dict) -> str:
