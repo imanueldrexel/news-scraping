@@ -53,7 +53,11 @@ def disk_generation(db_name: str) -> Generation:
 def save_lock(db_name: str) -> FileLock:
     """The per-index lock held while an index is read for writing or saved.
     Waiting past the timeout raises filelock.Timeout."""
-    return FileLock(os.path.abspath(db_name) + ".lock", timeout=SAVE_LOCK_TIMEOUT_S)
+    path = os.path.abspath(db_name)
+    # SYS-55 (#189): the lock sits next to the index directory, and filelock
+    # does not create parents; a first save under a new nested path needs it.
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    return FileLock(path + ".lock", timeout=SAVE_LOCK_TIMEOUT_S)
 
 
 def track(vs, db_name: str, generation: Generation) -> None:

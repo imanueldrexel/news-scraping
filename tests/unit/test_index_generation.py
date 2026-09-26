@@ -100,6 +100,14 @@ class TestTheSaveRefusesAStaleCopy:
             ChunkFAISSDatasource._atomic_save_local(vs, index)
         assert _texts_on_disk(index) == ["seed"]
 
+    def test_a_new_index_can_be_saved_under_a_parent_that_does_not_exist_yet(self, tmp_path):
+        """SYS-55 (#189): the save lock lives next to the index directory."""
+        db = str(tmp_path / "data" / "vectors" / "L1")
+        vs = FAISS.from_texts(["x"], EMB)
+        index_generation.track(vs, db, None)
+        ChunkFAISSDatasource._atomic_save_local(vs, db)
+        assert _texts_on_disk(db) == ["x"]
+
     def test_the_check_and_the_swap_run_under_the_save_lock(self, index, monkeypatch):
         """Without the lock, two writers can both pass the check and then swap
         in turn, and they share `<index>.tmp`."""

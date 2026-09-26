@@ -133,6 +133,7 @@ def main(argv=None):
         (role_sched if args.role == "sched" else role_manual)(args.dir)
         return 0
     d = args.dir or tempfile.mkdtemp(prefix="sys53_repro_")
+    os.makedirs(d, exist_ok=True)
     out = orchestrate(d)
     print(json.dumps(out))
     return 0 if "run" in out["final_disk"] and not any(out["child_rcs"]) else 1
