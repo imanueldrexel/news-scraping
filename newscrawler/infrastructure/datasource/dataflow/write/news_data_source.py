@@ -29,7 +29,8 @@ class NewsDataSource:
     def __init__(self, sql_alchemy_client: SQLAlchemyClient):
         self.s3_repository = S3RepositoryNewsDataSource()
         self.sql_alchemy_sitemap = SQLAlchemySitemapDataSource(sql_alchemy_client)
-        self.sql_alchemy_article = SQLAlchemyArticleDataSource(SQLAlchemyClient())
+        # DBT-03 (#22): the injected client, not a second engine and pool.
+        self.sql_alchemy_article = SQLAlchemyArticleDataSource(sql_alchemy_client)
 
     def save_sitemap(self, sitemaps: List[NewsSitemapModel]) -> List[NewsSitemapModel]:
         # No pre-filter here (SYS-07): the old "newer than the last stored posted_at"

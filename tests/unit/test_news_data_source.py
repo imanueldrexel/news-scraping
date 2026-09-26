@@ -56,3 +56,20 @@ class TestSaveSitemapNoDateGate:
         del ds.sql_alchemy_sitemap.last_time_crawling  # attribute access would raise
         rows = [_row("a", datetime(2026, 9, 16, tzinfo=WIB))]
         assert len(ds.save_sitemap(rows)) == 1
+
+
+class TestOneClient:
+    def test_article_writes_use_the_injected_client(self, monkeypatch):
+        """DBT-03 (#22): the article datasource built its own SQLAlchemyClient, so
+        a process had two engines and pools, and crawl_log/article writes ignored
+        the client the caller configured."""
+        import newscrawler.infrastructure.datasource.dataflow.write.news_data_source as mod
+
+        def second_client(*a, **k):
+            raise AssertionError("NewsDataSource built a second SQLAlchemyClient")
+        monkeypatch.setattr(mod, "SQLAlchemyClient", second_client)
+        monkeypatch.setattr(mod, "S3RepositoryNewsDataSource", MagicMock)
+        client = MagicMock()
+        ds = NewsDataSource(client)
+        assert ds.sql_alchemy_article.client is client
+        assert ds.sql_alchemy_sitemap.client is client
