@@ -30,6 +30,16 @@ class TestCascadeDetector:
         assert cascaded_pairs(cascade) == 2
         assert is_cascaded(cascade)
 
+    def test_one_long_echo_is_one_pair_but_not_a_cascade(self):
+        """DBT-46 (#188): the threshold is two pairs. A single pair (a closing
+        sentence repeated as its own paragraph, as in the one WARTAEKONOMI
+        article of 33,859 that has one) must not turn a healthy source's
+        check_crawlers line REPEATED."""
+        body = [A, B + " " + C, C]
+        assert len(C) >= 20
+        assert cascaded_pairs(body) == 1
+        assert not is_cascaded(body)
+
     def test_clean_body_is_zero(self):
         assert cascaded_pairs([A, B, C]) == 0
         assert not is_cascaded([A, B, C])

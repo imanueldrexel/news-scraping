@@ -581,10 +581,33 @@ class TestStarvationOrder:
         last = {"A": (self.T(2026, 9, 26), 100.0), "B": (self.T(2026, 9, 26), None)}
         assert rc.projected_seconds(["A", "B", "C"], last, 900) == 100 + 900 + 900
 
-    def test_mediaindonesia_gets_its_own_timeout_and_the_budget_uses_it(self):
+    def test_timeout_for_gives_mediaindonesia_its_own_timeout(self):
         assert rc.timeout_for("MEDIAINDONESIA", 900) == 1200
         assert rc.timeout_for("KOMPAS", 900) == 900
         assert rc.timeout_for("MEDIAINDONESIA", 1500) == 1500, "never below the run's --timeout"
+
+    # DBT-44 (#186): the test above covers only the pure helper. Replacing its one
+    # call in the run loop with `timeout = args.timeout` passed every test, and
+    # MEDIAINDONESIA (947 s on 2026-09-26 19:00) would have been killed at 900 s.
+
+    def _fleet(self, monkeypatch):
+        monkeypatch.setattr(rc, "_healthy_list", lambda: ["KOMPAS", "MEDIAINDONESIA", "CNBC"])
+        monkeypatch.setattr(rc, "SOURCE_TIMEOUTS", {"MEDIAINDONESIA": 1200})
+
+    def test_the_run_loop_gives_each_source_its_own_timeout(self, harness, monkeypatch):
+        self._fleet(monkeypatch)
+        seen = harness(argv=("--phase", "full_text", "--timeout", "900"))
+        assert seen["worker"].timeouts == {"KOMPAS": 900, "MEDIAINDONESIA": 1200, "CNBC": 900}
+
+    def test_the_budget_counts_a_sources_own_timeout(self, harness, monkeypatch):
+        """With 1,000 s left, a 900 s source may start and a 1,200 s one may not.
+        Only MEDIAINDONESIA's own timeout makes that difference."""
+        self._fleet(monkeypatch)
+        monkeypatch.setattr(rc, "RUN_BUDGET", 1000)
+        monkeypatch.setattr(rc.time, "monotonic", lambda: 0.0)
+        seen = harness(argv=("--phase", "full_text", "--timeout", "900"))
+        assert [w for w, _ in seen["worker"].calls] == ["KOMPAS", "CNBC"]
+        assert any("MEDIAINDONESIA" in note for note in seen["notified"]), seen["notified"]
 
     def test_the_source_skipped_by_the_budget_goes_first_next_run(self, harness, monkeypatch):
         """Budget fits two of three sources. Run 1 skips the third. Run 2 starts

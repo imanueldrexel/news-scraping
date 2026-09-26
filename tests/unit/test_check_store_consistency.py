@@ -172,3 +172,49 @@ class TestReportingHelpers:
             payload = json.load(f)
         assert payload["counts"]["l1_total"] == 0
         assert payload["summary"].startswith("Store consistency: OK")
+
+
+class _Stores:
+    """A stand-in for the four queries gather_counts() makes, over a model of
+    the tables. Any other SQL fails the test, so a changed query (SRC-53's check
+    turned into `WHERE false`, say) cannot quietly return a default."""
+
+    def __init__(self, sitemap_categories):
+        self.categories = sitemap_categories
+
+    def get_session(self):
+        return self
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+    def execute(self, sql, params=None):
+        q = " ".join(str(sql).split())
+        if q == "SELECT DISTINCT sitemap_id FROM articles":
+            return []
+        if q.startswith("SELECT DISTINCT sitemap_id FROM chunks WHERE chunk_level = "):
+            return []
+        if q == "SELECT COUNT(*) FROM chunks WHERE chunk_status = 'pending_embedding'":
+            return SimpleNamespace(scalar=lambda: 0)
+        if q == "SELECT COUNT(*) FROM sitemaps WHERE category LIKE 'http%'":
+            n = sum(1 for c in self.categories if c.startswith("http"))
+            return SimpleNamespace(scalar=lambda: n)
+        raise AssertionError("gather_counts sent SQL this model does not know: %s" % q)
+
+
+class TestGatherCounts:
+    """DBT-45 (#187): the I/O half. The integration twin
+    (test_check_store_consistency_live.py) runs the same SQL on Postgres."""
+
+    def test_a_stored_url_category_reaches_the_report(self, tmp_path, monkeypatch):
+        import newscrawler.infrastructure.network.clients.sqlalchemy_client as sac
+        monkeypatch.setattr(csc, "VECTOR_DB_NAME_L1", str(tmp_path / "NEWS_L1"))
+        monkeypatch.setattr(csc, "VECTOR_DB_NAME_L2", str(tmp_path / "NEWS_L2"))
+        stores = _Stores(["ekonomi", "https://www.inews.id/sitemap/news.xml", "nasional"])
+        monkeypatch.setattr(sac, "SQLAlchemyClient", lambda: stores)
+        counts = csc.gather_counts()
+        assert counts["sitemaps_url_category"] == 1
+        assert csc.growing_checks(counts) == ["sitemaps_url_category"]
