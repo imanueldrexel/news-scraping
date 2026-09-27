@@ -7,6 +7,7 @@ from sentence_transformers import SentenceTransformer
 
 from newscrawler.core import importance_probe
 from newscrawler.core.importance_probe import PROBE_DIR, ImportanceProbe, ProbeArtifactError, embed_for_probe
+from newscrawler.core.utils.hf_cache import resolve_model
 
 # Configure logging
 logging.basicConfig()
@@ -458,7 +459,9 @@ class SemanticImportanceFilter:
         if not self.model_name:
             raise ProbeArtifactError("probe sidecar names no encoder")
         logger.info(f"Loading Semantic Filter encoder: {self.model_name}...")
-        self.model = model if model is not None else SentenceTransformer(self.model_name)
+        # OPS-32 (#193): the cached snapshot, never a Hub round trip. model_name
+        # stays the Hub id: the E5 prefix and the log are keyed on it.
+        self.model = model if model is not None else SentenceTransformer(resolve_model(self.model_name))
         dim = self.model.get_sentence_embedding_dimension()
         if dim != self.probe.dim:
             raise ProbeArtifactError(f"{self.model_name} embeds to {dim} dims, the probe expects {self.probe.dim}")

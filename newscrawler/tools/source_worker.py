@@ -143,7 +143,9 @@ def _worker_loop(conn, factory, log_path=None):
 
 
 class SourceWorker:
-    """Parent side. `run()` returns (status, detail); status is ok / failed / timeout.
+    """Parent side. `run()` returns (status, detail); status is ok / failed / timeout,
+    or init_failed when no crawler could be built to run the source in (OPS-32:
+    not the source's fault, and the caller stops after a few in a row).
     Never raises for a source's own failure. Raises WorkerInitError only from `start()`."""
 
     def __init__(self, factory=build_crawler_api, init_timeout=1200, log_path=None):
@@ -188,7 +190,7 @@ class SourceWorker:
         try:
             self.start()
         except WorkerInitError as e:
-            return "failed", "crawler could not start: %s" % e
+            return "init_failed", "crawler could not start: %s" % e
         self._conn.send((website, task))
         if not self._conn.poll(timeout):
             # The kill is the point: nothing of this source may still be running

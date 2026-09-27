@@ -10,6 +10,7 @@ from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain.schema import Document
 
 from newscrawler.core.constants import VECTOR_DB_NAME_L1, VECTOR_DB_NAME_L2, EMBEDDING_MODEL_HF
+from newscrawler.core.utils.hf_cache import resolve_model
 from newscrawler.domain.dtos.dataflow.details.chunk_dto import ChunkDTO
 from newscrawler.infrastructure.datasource.dataflow.write.faiss import index_generation
 from newscrawler.infrastructure.datasource.dataflow.write.faiss.index_generation import StaleIndexError
@@ -21,7 +22,9 @@ class ChunkFAISSDatasource:
     def __init__(self):
         logger.info(f"Loading embedding model: {EMBEDDING_MODEL_HF}")
         self.embedding_model = HuggingFaceEmbeddings(
-            model_name=EMBEDDING_MODEL_HF,
+            # OPS-32: from the local cache when it is there, so a worker respawn
+            # during a network outage does not wait on huggingface.co.
+            model_name=resolve_model(EMBEDDING_MODEL_HF),
             encode_kwargs={'batch_size': 64, 'normalize_embeddings': True},
         )
         self.vs_l1 = self._load_or_create(VECTOR_DB_NAME_L1)

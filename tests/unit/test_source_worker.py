@@ -103,10 +103,12 @@ class TestStart:
             w.start()
         assert not w.alive
 
-    def test_run_reports_an_unbuildable_crawler_as_a_failed_source(self):
+    def test_run_reports_an_unbuildable_crawler_as_init_failed_not_as_the_source(self):
+        """OPS-32 (#193): the caller stops the run after a few of these in a row,
+        so they must be told apart from a source that failed on its own."""
         w = SourceWorker(factory=stubs.failing_factory, init_timeout=60)
         status, detail = w.run("KOMPAS", "sitemap", timeout=30)
-        assert status == "failed" and "could not start" in detail
+        assert status == "init_failed" and "could not start" in detail
 
 
 def test_the_production_factory_is_the_default():

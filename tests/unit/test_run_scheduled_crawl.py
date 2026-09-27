@@ -146,7 +146,7 @@ class _ScriptedWorker:
         if self.on_run:
             self.on_run(website, task)
         status, detail = self.outcomes.get((website, task), ("ok", ""))
-        if status == "timeout" or "worker process" in detail:
+        if status in ("timeout", "init_failed") or "worker process" in detail:
             self.alive = False
         return status, detail
 
@@ -241,6 +241,34 @@ class TestRunLoop:
         seen = harness()
         assert seen["rc"] == 1 and seen["worker"].closed
         assert "FAILED to start or complete" in seen["notified"][-1] and "db gone" in seen["notified"][-1]
+
+
+class TestFailedStartsStopTheRun:
+    """OPS-32 (#193): on 2026-09-27 the crawler could not be rebuilt after one
+    timeout kill, and each of 27 sources then spent ~3.5 min failing to start."""
+
+    CANNOT = ("init_failed", "crawler could not start: ConnectionError: huggingface.co getaddrinfo failed")
+
+    def test_two_failed_starts_in_a_row_stop_the_run_with_one_clear_failure(self, harness):
+        seen = harness({("KOMPAS", "sitemap"): self.CANNOT, ("TEMPO", "sitemap"): self.CANNOT},
+                       argv=("--phase", "both"))
+        assert seen["worker"].calls == [("KOMPAS", "sitemap"), ("TEMPO", "sitemap")]
+        line = seen["notified"][-1]
+        assert "STOPPED: the crawler could not start 2 times in a row (ConnectionError: huggingface.co" in line
+        assert "4 source run(s) not started" in line      # CNBC/sitemap + the three full_text runs
+        assert seen["rc"] == 1
+        assert seen["closed_rows"] == [], "a source that never started opened no crawl_log row"
+
+    def test_a_successful_start_in_between_resets_the_count(self, harness):
+        seen = harness({("KOMPAS", "sitemap"): self.CANNOT, ("CNBC", "sitemap"): self.CANNOT})
+        assert [c[0] for c in seen["worker"].calls] == ["KOMPAS", "TEMPO", "CNBC"]
+        assert "STOPPED" not in seen["notified"][-1]
+        assert "FAILED: CNBC, KOMPAS" in seen["notified"][-1]
+
+    def test_a_source_failing_on_its_own_does_not_count(self, harness):
+        seen = harness({("KOMPAS", "sitemap"): ("failed", "RuntimeError: boom"),
+                        ("TEMPO", "sitemap"): ("failed", "RuntimeError: boom")})
+        assert len(seen["worker"].calls) == 3 and "STOPPED" not in seen["notified"][-1]
 
 
 class TestOverBudget:

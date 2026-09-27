@@ -173,7 +173,8 @@ class NewsletterGenerator:
         from sentence_transformers import SentenceTransformer
         if self._embedding_model is None:
             logger.info(f"Loading embedding model for newsletter: {EMBEDDING_MODEL_HF}")
-            self._embedding_model = SentenceTransformer(EMBEDDING_MODEL_HF)
+            from newscrawler.core.utils.hf_cache import resolve_model
+            self._embedding_model = SentenceTransformer(resolve_model(EMBEDDING_MODEL_HF))
         return self._embedding_model.encode(
             texts, batch_size=64, normalize_embeddings=True, show_progress_bar=False
         )

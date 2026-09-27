@@ -3,8 +3,12 @@ OPS-01: notify_telegram.send() must never raise -- a missing config or a network
 failure while sending an alert must not crash the health check it's attached to.
 """
 import importlib.util
+import json
 import os
+import time
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 _SCRIPT = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
@@ -17,6 +21,17 @@ def _load():
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod
+
+
+@pytest.fixture(autouse=True)
+def _outbox(tmp_path, monkeypatch):
+    """OPS-32: no test may queue into the real logs/telegram_outbox.jsonl, or
+    wait out the real retry delays."""
+    path = str(tmp_path / "outbox.jsonl")
+    monkeypatch.setenv("TELEGRAM_OUTBOX", path)
+    slept = []
+    monkeypatch.setattr(time, "sleep", slept.append)
+    return {"path": path, "slept": slept}
 
 
 class TestSend:
@@ -98,3 +113,94 @@ class TestTheTokenNeverReachesTheLog:
         assert mod.redact("bare not-shaped-like-a-token here") == "bare <redacted> here"
         assert mod.redact("an old one /bot999:Zz_-9/getMe") == "an old one /bot<redacted>/getMe"
         assert mod.redact("nothing secret") == "nothing secret"
+
+
+class _Resp:
+    def __init__(self, status, text=""):
+        self.status_code, self.text = status, text
+
+
+class TestAFailedAlertIsDeliveredLater:
+    """OPS-32 (#193): the 2026-09-27 07:00 summary, the one message that said 27
+    sources had failed, hit the same outage and was only logged."""
+
+    def _mod(self):
+        mod = _load()
+        mod.TELEGRAM_BOT_TOKEN, mod.TELEGRAM_CHAT_ID = "123:abc", "42"
+        return mod
+
+    def _queued(self, outbox):
+        if not os.path.exists(outbox["path"]):
+            return []
+        with open(outbox["path"], encoding="utf-8") as f:
+            return [json.loads(line)["text"] for line in f]
+
+    def test_a_network_failure_is_retried_then_queued(self, _outbox):
+        mod = self._mod()
+        with patch.object(mod, "requests") as rq:
+            rq.post.side_effect = ConnectionError("getaddrinfo failed")
+            assert mod.send("27 sources FAILED") is False
+        assert rq.post.call_count == 1 + len(mod.RETRY_DELAYS)
+        assert _outbox["slept"] == list(mod.RETRY_DELAYS)
+        assert self._queued(_outbox) == ["27 sources FAILED"]
+
+    def test_a_retry_that_succeeds_queues_nothing(self, _outbox):
+        mod = self._mod()
+        with patch.object(mod, "requests") as rq:
+            rq.post.side_effect = [ConnectionError("blip"), _Resp(200)]
+            assert mod.send("hello") is True
+        assert self._queued(_outbox) == []
+
+    def test_the_next_send_delivers_the_queued_alert_first_marked_delayed(self, _outbox):
+        mod = self._mod()
+        with patch.object(mod, "requests") as rq:
+            rq.post.side_effect = ConnectionError("down")
+            mod.send("07:00 summary")
+        with patch.object(mod, "requests") as rq:
+            rq.post.return_value = _Resp(200)
+            assert mod.send("19:00 summary") is True
+        texts = [c[1]["json"]["text"] for c in rq.post.call_args_list]
+        assert len(texts) == 2 and texts[0].startswith("[delayed; queued ") and texts[0].endswith("07:00 summary")
+        assert texts[1] == "19:00 summary"
+        assert not os.path.exists(_outbox["path"])
+
+    def test_while_the_queue_cannot_drain_the_new_message_waits_behind_it(self, _outbox):
+        mod = self._mod()
+        with patch.object(mod, "requests") as rq:
+            rq.post.side_effect = ConnectionError("down")
+            mod.send("first")
+            mod.send("second")
+        assert self._queued(_outbox) == ["first", "second"]
+
+    def test_a_message_the_api_refuses_for_good_is_not_queued(self, _outbox):
+        mod = self._mod()
+        with patch.object(mod, "requests") as rq:
+            rq.post.return_value = _Resp(400, "Bad Request: message is too long")
+            assert mod.send("x" * 5000) is False
+        assert rq.post.call_count == 1 and self._queued(_outbox) == []
+
+    def test_a_queued_alert_the_api_now_refuses_is_dropped_not_stuck(self, _outbox):
+        mod = self._mod()
+        with patch.object(mod, "requests") as rq:
+            rq.post.side_effect = ConnectionError("down")
+            mod.send("old")
+        with patch.object(mod, "requests") as rq:
+            rq.post.side_effect = [_Resp(400, "Bad Request"), _Resp(200)]
+            assert mod.send("new") is True
+        assert self._queued(_outbox) == []
+
+    def test_the_queue_keeps_the_newest(self, _outbox):
+        mod = self._mod()
+        mod.OUTBOX_MAX = 3
+        with patch.object(mod, "requests") as rq:
+            rq.post.side_effect = ConnectionError("down")
+            for i in range(5):
+                mod.send("m%d" % i)
+        assert self._queued(_outbox) == ["m2", "m3", "m4"]
+
+    def test_the_command_line_test_message_is_never_queued(self, _outbox):
+        mod = self._mod()
+        with patch.object(mod, "requests") as rq:
+            rq.post.side_effect = ConnectionError("down")
+            assert mod.send("test", queue_on_failure=False) is False
+        assert self._queued(_outbox) == []

@@ -149,6 +149,11 @@ GAP_ALERT_HOURS = int(os.getenv("SCHEDULE_GAP_ALERT_HOURS", "36"))
 RUN_BUDGET = int(os.getenv("SCHEDULE_RUN_BUDGET", str(3 * 3600 + 1800)))
 # How long the child may take to build the crawler before the start counts as failed.
 INIT_TIMEOUT = int(os.getenv("SCHEDULE_INIT_TIMEOUT", "1200"))
+# OPS-32 (#193): a crawler that cannot be built is not one source's problem. On
+# 2026-09-27 every respawn after one timeout kill failed on the network, ~3.5 min
+# each, and 27 sources failed one by one. After this many failed starts in a row
+# the run stops and says why once.
+FAILED_STARTS_BEFORE_STOP = int(os.getenv("SCHEDULE_FAILED_STARTS_BEFORE_STOP", "2"))
 # OPS-27: where the run log goes, and how many run logs are kept (two runs a day).
 LOG_DIR = os.getenv("SCHEDULE_LOG_DIR", os.path.join(REPO_ROOT, "logs"))
 LOG_KEEP = int(os.getenv("SCHEDULE_LOG_KEEP", "28"))
@@ -518,6 +523,7 @@ def _run(args, log_path=None) -> int:
 
     from newscrawler.tools.run_lock import RunLock
     phase_results = {}
+    stopped, not_run = "", []
     # OPS-26: held until the worker, which keeps FAISS in memory, is closed.
     with RunLock(**({"path": RUN_LOCK_PATH} if RUN_LOCK_PATH else {})):
         logger.info("building the crawler in its worker process (models + FAISS; this is the slow part)...")
@@ -525,11 +531,15 @@ def _run(args, log_path=None) -> int:
         try:
             worker.start()  # a crawler that cannot start at all is main()'s "FAILED to start"
             run_started = time.monotonic()
+            failed_starts = 0
             for phase, phase_sources in (("sitemap", sm_sources), ("full_text", ft_sources)):
                 if not phase_sources:
                     continue
                 results = {}
                 for i, website in enumerate(phase_sources, 1):
+                    if stopped:
+                        not_run.append("%s/%s" % (website, phase))
+                        continue
                     timeout = timeout_for(website, args.timeout)
                     if over_budget(time.monotonic() - run_started, timeout):
                         skipped["%s/%s" % (website, phase)] = "run budget %ds reached -- not started" % RUN_BUDGET
@@ -538,7 +548,8 @@ def _run(args, log_path=None) -> int:
                         since = db_now(session)
                     started = time.monotonic()
                     status, detail = run_one(worker, website, phase, timeout=timeout)
-                    if status != "ok" and not worker.alive:
+                    # A source that never started opened no crawl_log row to close.
+                    if status not in ("ok", "init_failed") and not worker.alive:
                         # The source's process is gone (killed on timeout, or crashed),
                         # so its crawl_log row will never be completed by the pipeline.
                         with client.get_session() as session:
@@ -548,11 +559,19 @@ def _run(args, log_path=None) -> int:
                     results[website] = (status, detail)
                     logger.info("[%s %d/%d] %s -> %s%s (%.0fs)", phase, i, len(phase_sources), website, status,
                                 " (%s)" % detail if detail else "", time.monotonic() - started)
+                    failed_starts = failed_starts + 1 if status == "init_failed" else 0
+                    if failed_starts >= FAILED_STARTS_BEFORE_STOP:
+                        stopped = ("STOPPED: the crawler could not start %d times in a row (%s)"
+                                   % (failed_starts, detail[len("crawler could not start: "):][:200]))
+                        logger.error("%s; the remaining sources are not run", stopped)
                 phase_results[phase] = results
         finally:
             worker.close()
     if worker.spawned > 1:
         logger.warning("the crawler was rebuilt %d time(s) after a killed or dead source", worker.spawned - 1)
+    if not_run:
+        stopped += "; %d source run(s) not started" % len(not_run)
+        logger.error("not started after the stop: %s", ", ".join(not_run))
 
     with client.get_session() as session:
         after = _counts(session)
@@ -578,12 +597,12 @@ def _run(args, log_path=None) -> int:
         store = "store check FAILED: %s: %s" % (type(e).__name__, str(e)[:200])
 
     line = summary_line(phase_results, deltas, zero_savers, skipped,
-                        extra=(budget_note, store, "log %s" % log_path if log_path else ""))
+                        extra=(stopped, budget_note, store, "log %s" % log_path if log_path else ""))
     logger.info("SUMMARY: %s", line)
     _notify(line)
 
     failed = [s for results in phase_results.values() for s, (st, _) in results.items() if st != "ok"]
-    return 1 if failed else 0
+    return 1 if failed or stopped else 0
 
 
 def _make_worker(log_path=None):
