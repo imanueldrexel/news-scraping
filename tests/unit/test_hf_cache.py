@@ -34,12 +34,14 @@ class TestResolveModel:
         assert hf_cache.resolve_model("all-MiniLM-L6-v2", str(tmp_path)) == snap
 
     def test_the_snapshot_main_points_at_is_the_one_used(self, tmp_path):
-        """MiniLM's cache holds two snapshots; the Hub's `main` picks one."""
-        _cache(tmp_path, "org/m", revision="new")
-        old = tmp_path / "models--org--m" / "snapshots" / "old"
-        old.mkdir()
-        (old / "modules.json").write_text("{}")
-        assert hf_cache.resolve_model("org/m", str(tmp_path)).endswith(os.path.join("snapshots", "new"))
+        """MiniLM's cache holds two snapshots; the Hub's `main` picks one. The
+        one main names sorts last and is not the newest directory, so neither
+        a sort nor a directory listing finds it by accident."""
+        _cache(tmp_path, "org/m", revision="zz-main")
+        other = tmp_path / "models--org--m" / "snapshots" / "aa-other"
+        other.mkdir()
+        (other / "modules.json").write_text("{}")
+        assert hf_cache.resolve_model("org/m", str(tmp_path)).endswith(os.path.join("snapshots", "zz-main"))
 
     @pytest.mark.parametrize("how", ["no refs/main", "empty snapshot", "not there"])
     def test_an_incomplete_or_missing_model_stays_a_hub_id(self, tmp_path, how, caplog):
