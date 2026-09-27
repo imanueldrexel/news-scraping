@@ -225,6 +225,47 @@ class TestKilledMidSave:
         assert sorted(d.page_content for d in on_disk.docstore._dict.values()) == ["a", "theirs"]
 
 
+class TestOwnInterruptedCommit:
+    """SYS-59 (#196): a roll-forward that fails after the commit (a scanner
+    holding index.faiss open) leaves this writer's own journal. Its next save
+    must finish it as its own, not refuse itself as stale."""
+
+    def _fail_roll_forward_once(self, vs, db_name):
+        real_replace = os.replace
+
+        def held_open(src, dst):
+            if str(dst).endswith(os.path.join(os.path.basename(db_name), "index.faiss")):
+                raise PermissionError(13, "being used by another process")
+            return real_replace(src, dst)
+
+        with patch("os.replace", side_effect=held_open):
+            with pytest.raises(PermissionError):
+                ChunkFAISSDatasource._atomic_save_local(vs, db_name)
+        assert os.path.isdir(index_generation.journal_dir(db_name))
+
+    def test_the_same_writer_saves_again_after_its_roll_forward_failed(self, tmp_path):
+        db_name = str(tmp_path / "L1")
+        _save(_vs(["a"]), db_name)
+        vs = index_generation.load_index(db_name, FakeEmbeddings(size=8))
+        vs.add_texts(["b"])
+        self._fail_roll_forward_once(vs, db_name)
+        vs.add_texts(["c"])
+        ChunkFAISSDatasource._atomic_save_local(vs, db_name)
+        on_disk = index_generation.load_index(db_name, FakeEmbeddings(size=8))
+        assert sorted(d.page_content for d in on_disk.docstore._dict.values()) == ["a", "b", "c"]
+
+    def test_another_writer_still_finds_it_foreign(self, tmp_path):
+        db_name = str(tmp_path / "L1")
+        _save(_vs(["a"]), db_name)
+        theirs = index_generation.load_index(db_name, FakeEmbeddings(size=8))
+        mine = index_generation.load_index(db_name, FakeEmbeddings(size=8))
+        theirs.add_texts(["theirs"])
+        self._fail_roll_forward_once(theirs, db_name)
+        mine.add_texts(["mine"])
+        with pytest.raises(StaleIndexError):
+            ChunkFAISSDatasource._atomic_save_local(mine, db_name)
+
+
 class TestLoadRefusesAMismatchedPair:
     def test_an_old_index_faiss_with_a_new_index_pkl_after_a_delete_is_refused(self, tmp_path):
         """The pre-SYS-56 torn pair, made by hand: load_index fails loudly."""

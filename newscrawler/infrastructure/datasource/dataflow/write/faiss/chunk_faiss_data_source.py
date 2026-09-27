@@ -255,7 +255,10 @@ class ChunkFAISSDatasource:
             refuse_foreign_writer()
             # SYS-56: a save a kill interrupted after its commit point is the
             # newest generation; finish it before judging freshness against it.
-            index_generation.recover(db_name)
+            # SYS-59: unless this copy committed it itself (its roll-forward
+            # failed, a file held open by a scanner): then it is this copy.
+            if index_generation.recover(db_name) == index_generation.owner_id(vs):
+                index_generation.track_disk(vs, db_name)
             # SYS-53 (#182): only a copy of the generation on disk may replace
             # it, which also covers a save made after the run lock is released.
             # Under the lock nobody else saves between this check and the swap,
@@ -280,7 +283,7 @@ class ChunkFAISSDatasource:
                 # Copy, not move: the live pair must stay whole until the
                 # commit, so a failure before it changes nothing.
                 shutil.copy2(live_path, os.path.join(staged, fname + index_generation.BACKUP_SUFFIX))
-        index_generation.commit_staged(db_name)
+        index_generation.commit_staged(db_name, index_generation.owner_id(vs))
 
     def _to_document(self, chunk: ChunkDTO) -> Document:
         return Document(
