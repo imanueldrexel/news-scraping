@@ -150,6 +150,21 @@ class TestReusedPid:
         assert psutil.Process(fresh_process).name() in msg and str(fresh_process) in msg
         assert "stale: delete %s by hand" % run_lock.LOCK_PATH in msg
 
+    def test_a_pid_this_account_may_not_inspect_is_not_the_owner(self, fresh_process, monkeypatch):
+        """DBT-47 (#195), OPS-31's AccessDenied branch: the scheduled crawl runs
+        as this account, so a process we may not read cannot hold its lock.
+        Without the branch AccessDenied escapes holder(), and every FAISS
+        writer's refuse_if_running raises it instead of treating the lock as
+        stale."""
+        import psutil
+        _hold(fresh_process)
+
+        def denied(self):
+            raise psutil.AccessDenied(self.pid)
+        monkeypatch.setattr(psutil.Process, "create_time", denied)
+        assert run_lock.holder() is None
+        run_lock.refuse_if_running()        # no RunLockHeld, no AccessDenied
+
 
 class TestFaissSaveChokepoint:
     def _save(self, tmp_path):
@@ -182,6 +197,30 @@ class TestFaissSaveChokepoint:
 
     def test_no_lock_no_refusal(self, tmp_path):
         assert self._save(tmp_path)
+
+    def test_the_run_lock_is_checked_while_the_save_lock_is_held(self, tmp_path, monkeypatch):
+        """DBT-47 (#195), SYS-53's ordering: the worker's load takes the save
+        lock, so checking the run lock outside it races. A manual save passes
+        the check just before a run takes the run lock, then swaps in after the
+        worker loaded. The race needs precise timing; the invariant does not.
+        At the moment of the check, another handle must not get the save lock."""
+        from filelock import FileLock, Timeout
+        from newscrawler.infrastructure.datasource.dataflow.write.faiss import index_generation
+        lock_file = index_generation.save_lock(str(tmp_path / "NEWS_L1")).lock_file
+        held_at_check = []
+
+        def spy(path=None):
+            probe = FileLock(lock_file, timeout=0)
+            try:
+                probe.acquire()
+            except Timeout:
+                held_at_check.append(True)
+            else:
+                probe.release()
+                held_at_check.append(False)
+        monkeypatch.setattr(run_lock, "refuse_foreign_writer", spy)
+        assert self._save(tmp_path)
+        assert held_at_check == [True], "the run lock must be checked inside the save lock, exactly once"
 
 
 # Every FAISS-writing script's write path (not its dry run).

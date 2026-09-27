@@ -84,8 +84,15 @@ M = [
   "            self._reload(db_name)\n            raise", "            raise"),
  ("sys53_refused_ids_kept", "newscrawler/infrastructure/repositories/dataflow/data_flow_repository_impl.py",
   "                self.__dict__.pop(\"_pending_embedding_ids\", None)\n", "                pass\n"),
- ("sys53_run_lock_outside_save_lock", "newscrawler/infrastructure/datasource/dataflow/write/faiss/chunk_faiss_data_source.py",
-  "            refuse_foreign_writer()\n            # SYS-53", "            # SYS-53"),
+ # Renamed 2026-09-27 from sys53_run_lock_outside_save_lock: it deletes the call (DBT-47).
+ ("sys53_run_lock_check_deleted", "newscrawler/infrastructure/datasource/dataflow/write/faiss/chunk_faiss_data_source.py",
+  "            refuse_foreign_writer()\n            # SYS-56", "            # SYS-56"),
+ # DBT-47 (#195): QA's runlock_truly_moved -- the check above the save lock, not inside it.
+ ("sys53_run_lock_moved_outside_save_lock", "newscrawler/infrastructure/datasource/dataflow/write/faiss/chunk_faiss_data_source.py",
+  "        with index_generation.save_lock(db_name):\n            # OPS-26",
+  "        refuse_foreign_writer()\n        with index_generation.save_lock(db_name):\n            # OPS-26"),
+ ("ops31_access_denied_escapes", "newscrawler/tools/run_lock.py",
+  "    except psutil.AccessDenied:\n", "    except ZeroDivisionError:\n"),
  ("ops31_link_is_replace", "newscrawler/tools/run_lock.py",
   "                os.link(tmp, self.path)", "                os.replace(tmp, self.path)"),
  ("ops31_no_create_time_recorded", "newscrawler/tools/run_lock.py",
