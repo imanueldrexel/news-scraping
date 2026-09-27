@@ -77,7 +77,10 @@ M = [
   "        with index_generation.save_lock(db_name):\n            # OPS-26",
   "        import contextlib\n        with contextlib.nullcontext():\n            # OPS-26"),
  ("sys53_own_save_not_tracked", "newscrawler/infrastructure/datasource/dataflow/write/faiss/chunk_faiss_data_source.py",
-  "                index_generation.track_disk(vs, db_name)\n", "                pass\n"),
+  "                # way included -- so it is the generation this copy supersedes.\n"
+  "                index_generation.track_disk(vs, db_name)\n",
+  "                # way included -- so it is the generation this copy supersedes.\n"
+  "                pass\n"),
  ("sys53_load_records_disk_at_save_time", "newscrawler/infrastructure/datasource/dataflow/write/faiss/index_generation.py",
   "    if disk_generation(db_name) != recorded[1]:", "    if False:"),
  ("sys53_no_reload_after_refusal", "newscrawler/infrastructure/datasource/dataflow/write/faiss/chunk_faiss_data_source.py",
@@ -119,9 +122,11 @@ M = [
  ("sys54_rows_before_flush", "newscrawler/infrastructure/repositories/dataflow/data_flow_repository_impl.py",
   "        if self.chunk_faiss_datasource.is_deferred:\n            self.__dict__.setdefault",
   "        if False:\n            self.__dict__.setdefault"),
+ # Re-targeted after SYS-58: a failed flush deletes the rows of its discards instead of keeping them.
  ("sys54_refused_flush_still_deletes_rows", "newscrawler/infrastructure/repositories/dataflow/data_flow_repository_impl.py",
-  "                    self.__dict__.pop(\"_discarded_sitemaps\", set()))\n                raise",
-  "                    self.__dict__.pop(\"_discarded_sitemaps\", set()))\n                self._delete_discarded_chunk_rows()\n                raise"),
+  "                self.__dict__.setdefault(\"_unsaved_discards\", set()).update(\n"
+  "                    self.__dict__.pop(\"_discarded_sitemaps\", set()))\n",
+  "                self._delete_discarded_chunk_rows()\n"),
  ("sys54_discard_not_flushed", "newscrawler/infrastructure/datasource/dataflow/write/faiss/chunk_faiss_data_source.py",
   "            if self.is_deferred:\n                self._dirty().add(db_name)\n            else:\n                self._persist(vs, db_name)\n            deleted",
   "            deleted"),
@@ -134,7 +139,8 @@ M = [
   "    os.rename(staged, journal_dir(db_name))\n    roll_forward(db_name)",
   "    for name in INDEX_FILES:\n        os.replace(os.path.join(staged, name), os.path.join(db_name, name))"),
  ("sys56_save_does_not_roll_forward", "newscrawler/infrastructure/datasource/dataflow/write/faiss/chunk_faiss_data_source.py",
-  "            index_generation.recover(db_name)\n", ""),
+  "            if index_generation.recover(db_name) == index_generation.owner_id(vs):\n"
+  "                index_generation.track_disk(vs, db_name)\n", ""),
  ("sys56_has_index_ignores_journal", "newscrawler/infrastructure/datasource/dataflow/write/faiss/index_generation.py",
   " or os.path.isdir(journal_dir(db_name))", ""),
  ("sys56_bak_not_in_the_commit", "newscrawler/infrastructure/datasource/dataflow/write/faiss/index_generation.py",
