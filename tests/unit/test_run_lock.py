@@ -281,6 +281,9 @@ class TestRepairCrawlLogGuard:
 
         class _VS:
             docstore = SimpleNamespace(_dict={"v7": doc})
+            # One whole pair, as load_index checks since SYS-56.
+            index = SimpleNamespace(ntotal=1)
+            index_to_docstore_id = {0: "v7"}
 
             def delete(self, ids):
                 deleted.append(ids)

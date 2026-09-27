@@ -26,6 +26,12 @@ A vector with no article is split by what can still happen to its sitemap
                           when the crawl reaches it. Informational, like the
                           vector totals: it is not a pass/fail check.
 
+faiss_pair_mismatch (SYS-56) counts the levels whose index.faiss and index.pkl
+are not one pair (position count differs, a position maps to no document) or
+that carry an interrupted save's journal. Every search of such a level returns
+the wrong documents. Only the index.faiss header is read, under the level's
+save lock, so a save in progress is never mistaken for one.
+
 Usage:
     python scripts/check_store_consistency.py
     python scripts/check_store_consistency.py --json
@@ -74,6 +80,24 @@ def _load_docstore_sitemap_ids(db_name: str):
         return []
     with open(path, "rb") as f:
         docstore, _ = pickle.load(f)
+    return _sitemap_ids(docstore)
+
+
+def _read_level(db_name: str):
+    """(sitemap_ids, pair problem or None) of one FAISS level. Read under the
+    level's save lock, so the two files are one pair unless a save really was
+    torn (SYS-56); read-only, so a journal is reported, not rolled forward."""
+    from newscrawler.infrastructure.datasource.dataflow.write.faiss import index_generation
+
+    if not index_generation.has_index(db_name):
+        return [], None
+    with index_generation.save_lock(db_name):
+        pair = index_generation.read_disk_pair(db_name)
+        problem = index_generation.disk_pair_problem(db_name, pair)
+    return (_sitemap_ids(pair[1]) if pair else []), problem
+
+
+def _sitemap_ids(docstore):
     ids = []
     for doc in docstore._dict.values():
         sid = doc.metadata.get("sitemap_id")
@@ -83,11 +107,13 @@ def _load_docstore_sitemap_ids(db_name: str):
 
 
 def compute_divergence(l1_ids, l2_ids, articles_ids, chunks_l1_ids, chunks_l2_ids,
-                        pending_embedding_count, terminal_ids=frozenset(), url_category_rows=0) -> dict:
+                        pending_embedding_count, terminal_ids=frozenset(), url_category_rows=0,
+                        pair_mismatch_levels=0) -> dict:
     """Pure: every count from plain Python sets/ints, no I/O. Kept separate from
     gather_counts() so the arithmetic itself has a fast, DB-free unit test.
     `terminal_ids`: sitemap_ids that can never get an article (OPS-25).
-    `url_category_rows`: sitemaps rows whose category is a URL (SRC-53)."""
+    `url_category_rows`: sitemaps rows whose category is a URL (SRC-53).
+    `pair_mismatch_levels`: FAISS levels that are not one pair (SYS-56)."""
     l1_set, l2_set = set(l1_ids), set(l2_ids)
     chunks_any = set(chunks_l1_ids) | set(chunks_l2_ids)
     dup_l1 = {sid for sid, n in Counter(l1_ids).items() if n > 1}
@@ -95,6 +121,7 @@ def compute_divergence(l1_ids, l2_ids, articles_ids, chunks_l1_ids, chunks_l2_id
     l1_orphan, l2_orphan = l1_set - articles_ids, l2_set - articles_ids
 
     return {
+        "faiss_pair_mismatch":      pair_mismatch_levels,
         "l1_no_articles_terminal":  len(l1_orphan & terminal),
         "l2_no_articles_terminal":  len(l2_orphan & terminal),
         "l1_no_chunks":             len(l1_set - set(chunks_l1_ids)),
@@ -116,6 +143,7 @@ def compute_divergence(l1_ids, l2_ids, articles_ids, chunks_l1_ids, chunks_l2_id
 
 
 LABELS = {
+    "faiss_pair_mismatch":      "FAISS levels whose .faiss and .pkl disagree",
     "l1_no_articles_terminal":  "terminal sitemap_ids in L1 FAISS (no article)",
     "l2_no_articles_terminal":  "terminal sitemap_ids in L2 FAISS (no article)",
     "l1_no_chunks":             "sitemap_ids in L1 FAISS with no chunks row",
@@ -146,7 +174,8 @@ def growing_checks(counts: dict) -> list:
 
 
 def gather_counts() -> dict:
-    """The only I/O in this module: two pickle reads + four cheap SQL COUNTs.
+    """The only I/O in this module: two pickle reads, two index.faiss headers
+    and four cheap SQL COUNTs.
     Raises on a real infrastructure failure (missing FAISS dir, DB down) --
     main() decides how to report that; this function does not swallow it, the
     same rule check_crawlers.py's own DB calls follow."""
@@ -156,8 +185,11 @@ def gather_counts() -> dict:
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     from repair_store_consistency import _load_state  # one definition of "terminal" (OPS-25)
 
-    l1_ids = _load_docstore_sitemap_ids(VECTOR_DB_NAME_L1)
-    l2_ids = _load_docstore_sitemap_ids(VECTOR_DB_NAME_L2)
+    l1_ids, l1_problem = _read_level(VECTOR_DB_NAME_L1)
+    l2_ids, l2_problem = _read_level(VECTOR_DB_NAME_L2)
+    for db_name, problem in ((VECTOR_DB_NAME_L1, l1_problem), (VECTOR_DB_NAME_L2, l2_problem)):
+        if problem:
+            logger.error("%s is not one index pair: %s (SYS-56)", db_name, problem)
 
     client = SQLAlchemyClient()
     with client.get_session() as session:
@@ -176,7 +208,8 @@ def gather_counts() -> dict:
     terminal = {sid for sid in no_article if state.get(sid, "terminal") == "terminal"}
 
     return compute_divergence(l1_ids, l2_ids, articles_ids, chunks_l1_ids, chunks_l2_ids, pending, terminal,
-                              url_category_rows=url_categories)
+                              url_category_rows=url_categories,
+                              pair_mismatch_levels=sum(1 for p in (l1_problem, l2_problem) if p))
 
 
 def render_table(counts: dict) -> str:

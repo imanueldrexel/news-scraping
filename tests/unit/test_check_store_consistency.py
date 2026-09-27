@@ -135,6 +135,45 @@ class TestLoadDocstoreSitemapIds:
         assert sorted(ids) == [5, 9]
 
 
+class TestFaissPairMismatch:
+    """SYS-56 (#190): a level whose index.faiss and index.pkl are not one pair
+    is a check, not something only load_index notices."""
+
+    def _level(self, tmp_path, texts):
+        from langchain_community.embeddings import FakeEmbeddings
+        from langchain_community.vectorstores import FAISS
+        from newscrawler.infrastructure.datasource.dataflow.write.faiss import index_generation
+        from newscrawler.infrastructure.datasource.dataflow.write.faiss.chunk_faiss_data_source import (
+            ChunkFAISSDatasource)
+        db = str(tmp_path / "NEWS_L2")
+        vs = FAISS.from_texts(texts, FakeEmbeddings(size=8), metadatas=[{"sitemap_id": i} for i in range(len(texts))])
+        index_generation.track_disk(vs, db)
+        ChunkFAISSDatasource._atomic_save_local(vs, db)
+        return db
+
+    def test_a_whole_pair_has_no_problem(self, tmp_path):
+        ids, problem = csc._read_level(self._level(tmp_path, ["a", "b"]))
+        assert sorted(ids) == [0, 1] and problem is None
+
+    def test_a_torn_pair_is_reported(self, tmp_path):
+        import shutil
+        other = self._level(tmp_path / "other", ["a", "b", "c"])
+        db = self._level(tmp_path, ["a", "b"])
+        shutil.copy2(os.path.join(other, "index.faiss"), os.path.join(db, "index.faiss"))
+        ids, problem = csc._read_level(db)
+        assert sorted(ids) == [0, 1]
+        assert "3 vectors but index.pkl maps 2" in problem
+
+    def test_a_missing_level_is_empty_and_fine(self, tmp_path):
+        assert csc._read_level(str(tmp_path / "nope")) == ([], None)
+
+    def test_the_count_is_a_check(self):
+        counts = csc.compute_divergence(
+            l1_ids=[1], l2_ids=[1], articles_ids={1}, chunks_l1_ids=[1], chunks_l2_ids=[1],
+            pending_embedding_count=0, pair_mismatch_levels=1)
+        assert csc.growing_checks(counts) == ["faiss_pair_mismatch"]
+
+
 class TestReportingHelpers:
     def _counts(self, **overrides):
         base = {k: 0 for k in csc.CHECK_KEYS + csc.INFO_KEYS}
@@ -218,3 +257,16 @@ class TestGatherCounts:
         counts = csc.gather_counts()
         assert counts["sitemaps_url_category"] == 1
         assert csc.growing_checks(counts) == ["sitemaps_url_category"]
+
+    def test_a_torn_level_reaches_the_report(self, tmp_path, monkeypatch):
+        """SYS-56 (#190): the pair check is part of the run's store check."""
+        import newscrawler.infrastructure.network.clients.sqlalchemy_client as sac
+        from newscrawler.infrastructure.datasource.dataflow.write.faiss import index_generation
+        l2 = str(tmp_path / "NEWS_L2")
+        monkeypatch.setattr(csc, "VECTOR_DB_NAME_L1", str(tmp_path / "NEWS_L1"))
+        monkeypatch.setattr(csc, "VECTOR_DB_NAME_L2", l2)
+        os.makedirs(index_generation.journal_dir(l2))  # a save killed after its commit point
+        monkeypatch.setattr(sac, "SQLAlchemyClient", lambda: _Stores([]))
+        counts = csc.gather_counts()
+        assert counts["faiss_pair_mismatch"] == 1
+        assert csc.growing_checks(counts) == ["faiss_pair_mismatch"]

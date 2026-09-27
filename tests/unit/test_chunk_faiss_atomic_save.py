@@ -5,20 +5,27 @@ vector store truncated, or the two files mismatched (index.faiss with more
 vectors than index.pkl's docstore has entries for, or vice versa).
 
 ChunkFAISSDatasource._atomic_save_local writes the full pair into a sibling
-temp directory (never touching the live files while save_local runs), then
-swaps each file in with os.replace, pkl before faiss, keeping the previous
-pair as *.bak for one generation. These tests use real FAISS indexes (via
+staging directory (never touching the live files while save_local runs),
+stages the previous pair beside it as *.bak, commits the lot with one
+directory rename and rolls it into place (SYS-56: a kill anywhere leaves one
+whole pair, as load_index sees it). These tests use real FAISS indexes (via
 FakeEmbeddings -- no HF model download needed) and real filesystem
 operations, not mocks, since the whole point is real crash-window behavior.
 """
 import os
-import pickle
+import shutil
 from unittest.mock import patch
+
+import pytest
 
 from langchain_community.embeddings import FakeEmbeddings
 from langchain_community.vectorstores import FAISS
 
 from newscrawler.infrastructure.datasource.dataflow.write.faiss import index_generation
+from newscrawler.infrastructure.datasource.dataflow.write.faiss.index_generation import (
+    CorruptIndexError,
+    StaleIndexError,
+)
 from newscrawler.infrastructure.datasource.dataflow.write.faiss.chunk_faiss_data_source import (
     ChunkFAISSDatasource,
 )
@@ -109,61 +116,141 @@ class TestAtomicSaveLocalBasics:
         assert _load(db_name).index.ntotal == 1
 
 
-class TestCrashBetweenTheTwoFileSwaps:
-    def test_crash_after_pkl_swap_before_faiss_swap_leaves_a_loadable_stale_pair(self, tmp_path):
-        """The dangerous window: os.replace succeeds for index.pkl, then the
-        process dies before index.faiss is swapped. Live pair becomes
-        (OLD index.faiss, NEW index.pkl). Because FAISS.add_documents only
-        appends, the new docstore/index_to_docstore_id still correctly maps
-        every internal id the smaller, old index.faiss actually contains --
-        this must load without error and return the OLD (stale) vector count,
-        not raise and not silently misalign vectors from text.
-        """
+def _repro():
+    """scripts/experiments/repro_torn_pair_after_delete.py: QA's repro and this
+    test are one piece of code."""
+    import importlib.util
+    path = os.path.join(os.path.dirname(__file__), "..", "..", "scripts", "experiments",
+                        "repro_torn_pair_after_delete.py")
+    spec = importlib.util.spec_from_file_location("repro_torn_pair_after_delete", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+class TestKilledMidSave:
+    """SYS-56 (#190): FAISS.delete renumbers index_to_docstore_id, so DBT-10's
+    'a torn pair is stale but consistent' argument failed once a save could
+    delete (SYS-54). A kill anywhere in a save must leave the old pair or the
+    new pair, as load_index sees it, never a mix."""
+
+    def test_qa_kill_point_after_the_index_pkl_replace(self, tmp_path):
+        repro = _repro()
+        point = repro.qa_kill_point(str(tmp_path / "count"))
+        out = repro.run(str(tmp_path / "run"), point)
+        assert out["ok"], out
+        assert out["ntotal"] == out["mapped"] == 5 and out["generation"] == "new"
+
+    def test_every_kill_point_leaves_one_whole_pair(self, tmp_path):
+        repro = _repro()
+        n = repro.count_steps(str(tmp_path / "count"))
+        assert n == 7, "the save's filesystem steps changed; re-read SYS-56 before updating this"
+        generations = []
+        for point in range(n):
+            out = repro.run(str(tmp_path / ("k%d" % point)), point)
+            assert out["ok"], out
+            assert out["ntotal"] == out["mapped"], out
+            generations.append(out["generation"])
+        # The two backup copies come before the commit rename; everything after
+        # it is finished by the next load.
+        assert generations == ["old", "old"] + ["new"] * 5
+
+    def test_a_kill_before_the_commit_changes_nothing_on_disk(self, tmp_path):
         db_name = str(tmp_path / "L1")
         _save(_vs(["a", "b"]), db_name)
+        before = index_generation.disk_generation(db_name)
+        real_rename = os.rename
 
+        def killed(src, dst):
+            if str(dst).endswith(".commit"):
+                raise SystemExit("killed before the commit")
+            return real_rename(src, dst)
+
+        with patch("os.rename", side_effect=killed):
+            with pytest.raises(SystemExit):
+                _save(_vs(["a", "b", "c"]), db_name)
+        assert index_generation.disk_generation(db_name) == before
+        assert not os.path.exists(index_generation.journal_dir(db_name))
+        assert index_generation.load_index(db_name, FakeEmbeddings(size=8)).index.ntotal == 2
+        assert not os.path.exists(index_generation.staging_dir(db_name)), "the uncommitted stage is dropped"
+
+    def test_the_backup_is_one_pair_even_when_the_roll_forward_is_killed(self, tmp_path):
+        db_name = str(tmp_path / "L1")
+        _save(_vs(["a", "b"]), db_name)
         real_replace = os.replace
-        calls = []
 
-        def flaky_replace(src, dst):
-            calls.append(dst)
-            if str(dst).endswith("index.faiss") and not str(dst).endswith(".bak"):
-                raise OSError("simulated crash between the two swaps")
-            return real_replace(src, dst)
+        def killed(src, dst):
+            real_replace(src, dst)
+            if str(dst).endswith("index.pkl.bak"):
+                raise SystemExit("killed between the two backup moves")
 
-        vs2 = _vs(["a", "b", "c", "d"])
-        with patch("os.replace", side_effect=flaky_replace):
-            try:
-                _save(vs2, db_name)
-            except OSError:
-                pass
+        with patch("os.replace", side_effect=killed):
+            with pytest.raises(SystemExit):
+                _save(_vs(["a", "b", "c"]), db_name)
+        index_generation.load_index(db_name, FakeEmbeddings(size=8))  # rolls forward
 
-        # index.pkl was swapped (new, 4 docs); index.faiss was not (old, 2 vectors).
-        reloaded = _load(db_name)
-        assert reloaded.index.ntotal == 2, "index.faiss must still be the OLD, smaller index"
-        with open(os.path.join(db_name, "index.pkl"), "rb") as f:
-            docstore, index_to_docstore_id = pickle.load(f)
-        assert len(docstore._dict) == 4, "index.pkl was already swapped to the NEW docstore"
-        # The old index's internal ids (0, 1) must still resolve in the new
-        # mapping -- proving a search against the stale index would not KeyError.
-        for internal_id in range(reloaded.index.ntotal):
-            assert index_to_docstore_id[internal_id] in docstore._dict
+        restored = tmp_path / "restored"
+        restored.mkdir()
+        for name in index_generation.INDEX_FILES:
+            shutil.copy2(os.path.join(db_name, name + ".bak"), str(restored / name))
+        vs = index_generation.load_index(str(restored), FakeEmbeddings(size=8))
+        assert vs.index.ntotal == 2 and len(vs.docstore._dict) == 2
 
-    def test_reverse_swap_order_would_have_left_unresolvable_internal_ids(self, tmp_path):
-        """Documents the reasoning, not the shipped code: swapping index.faiss
-        BEFORE index.pkl is the unsafe order this fix deliberately avoids --
-        a crash between the two would leave a NEW (larger) index.faiss paired
-        with the OLD (smaller) docstore, so the new vectors' internal ids
-        would have no entry in index_to_docstore_id at all."""
+    def test_a_first_save_killed_after_its_commit_is_loaded_not_recreated(self, tmp_path):
         db_name = str(tmp_path / "L1")
-        _save(_vs(["a", "b"]), db_name)
-        with open(os.path.join(db_name, "index.pkl"), "rb") as f:
-            old_docstore, old_mapping = pickle.load(f)
+        with patch("os.replace", side_effect=SystemExit("killed right after the commit")):
+            with pytest.raises(SystemExit):
+                _save(_vs(["a", "b", "c"]), db_name)
+        assert not os.path.exists(os.path.join(db_name, "index.faiss"))
+        assert index_generation.has_index(db_name), "_load_or_create must load it, not start an empty index"
+        assert index_generation.load_index(db_name, FakeEmbeddings(size=8)).index.ntotal == 3
 
-        vs2 = _vs(["a", "b", "c", "d"])
-        new_index_ntotal = vs2.index.ntotal  # 4
+    def test_a_save_finishes_a_committed_save_before_its_freshness_check(self, tmp_path):
+        """A save committed and then killed is the newest generation, although
+        the live files still show the older one. A writer that loaded before it
+        must be refused, not allowed to overwrite it."""
+        db_name = str(tmp_path / "L1")
+        _save(_vs(["a"]), db_name)
+        mine = index_generation.load_index(db_name, FakeEmbeddings(size=8))
+        theirs = index_generation.load_index(db_name, FakeEmbeddings(size=8))
+        theirs.add_texts(["theirs"])
+        with patch("os.replace", side_effect=SystemExit("killed after the commit")):
+            with pytest.raises(SystemExit):
+                ChunkFAISSDatasource._atomic_save_local(theirs, db_name)
 
-        # The unsafe order would leave: new index.faiss (4 vectors) + old
-        # index.pkl (2 entries) -- internal ids 2 and 3 have no mapping.
-        assert new_index_ntotal > len(old_mapping)
-        assert 2 not in old_mapping and 3 not in old_mapping
+        mine.add_texts(["mine"])
+        with pytest.raises(StaleIndexError):
+            ChunkFAISSDatasource._atomic_save_local(mine, db_name)
+        on_disk = index_generation.load_index(db_name, FakeEmbeddings(size=8))
+        assert sorted(d.page_content for d in on_disk.docstore._dict.values()) == ["a", "theirs"]
+
+
+class TestLoadRefusesAMismatchedPair:
+    def test_an_old_index_faiss_with_a_new_index_pkl_after_a_delete_is_refused(self, tmp_path):
+        """The pre-SYS-56 torn pair, made by hand: load_index fails loudly."""
+        db_name = str(tmp_path / "L1")
+        _save(_vs(["a", "b", "c"]), db_name)
+        old_faiss = str(tmp_path / "old.faiss")
+        shutil.copy2(os.path.join(db_name, "index.faiss"), old_faiss)
+        vs = index_generation.load_index(db_name, FakeEmbeddings(size=8))
+        vs.delete([vs.index_to_docstore_id[0]])
+        ChunkFAISSDatasource._atomic_save_local(vs, db_name)
+        shutil.copy2(old_faiss, os.path.join(db_name, "index.faiss"))
+
+        with pytest.raises(CorruptIndexError, match="3 vectors but index.pkl maps 2"):
+            index_generation.load_index(db_name, FakeEmbeddings(size=8))
+        assert "3 vectors" in index_generation.disk_pair_problem(db_name)
+
+    def test_pair_problem_checks_every_position_and_every_mapped_document(self):
+        assert index_generation.pair_problem(2, {0: "x", 1: "y"}, {"x": 1, "y": 2}) is None
+        assert index_generation.pair_problem(2, {0: "x", 1: "y"}, {"x": 1}) == \
+            "1 mapped positions point at no stored document"
+        assert index_generation.pair_problem(2, {0: "x", 2: "y"}, {"x": 1, "y": 2}) is not None
+
+    def test_a_journal_left_behind_is_a_disk_problem_until_rolled_forward(self, tmp_path):
+        db_name = str(tmp_path / "L1")
+        _save(_vs(["a"]), db_name)
+        os.makedirs(index_generation.journal_dir(db_name))
+        assert "not rolled forward" in index_generation.disk_pair_problem(db_name)
+        index_generation.load_index(db_name, FakeEmbeddings(size=8))
+        assert index_generation.disk_pair_problem(db_name) is None

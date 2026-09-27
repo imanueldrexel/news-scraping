@@ -225,25 +225,20 @@ class ChunkFAISSDatasource:
     def _atomic_save_local(vs: FAISS, db_name: str) -> None:
         """DBT-10 (#45): FAISS.save_local writes index.faiss then index.pkl
         directly into db_name, with no temp-file + rename -- a crash, OOM, or
-        disk-full mid-write (or between the two files) leaves the only copy
-        truncated, or the two files mismatched (index.faiss with more vectors
-        than index.pkl's docstore has entries for). Writes the full pair into
-        a sibling temp directory first -- the live files are never touched
-        while save_local runs, however long that takes for the corpus's
-        current size -- then, per file, copies the current live file to
-        *.bak (one generation kept) and swaps the new one in with os.replace
-        (atomic on both POSIX and Windows). The backup step is a copy, not a
-        move: live_path must keep its old content until the instant
-        os.replace swaps it out, so a failed swap-in never leaves it empty.
+        disk-full mid-write leaves the only copy truncated. So the new pair is
+        written to a sibling staging directory first; the live files are never
+        touched while save_local runs.
 
-        Swap order matters: index.pkl before index.faiss. If a crash lands
-        between the two swaps, the live pair becomes (old index.faiss, new
-        index.pkl). LangChain's FAISS.add_documents only appends, so the new
-        docstore/index_to_docstore_id still correctly maps every internal id
-        the *old*, smaller index actually contains -- the reader gets a
-        stale-but-consistent view (as if this save hadn't happened yet), not
-        a corrupted one. The reverse order risks index.faiss containing
-        internal ids the old docstore has no entry for.
+        SYS-56 (#190): replacing the live pair file by file is not enough. A
+        kill between the two replaces used to leave (old index.faiss, new
+        index.pkl), which DBT-10 called stale-but-consistent because the crawl
+        only appended. FAISS.delete (SYS-54's discard, the repair and dedupe
+        scripts) renumbers index_to_docstore_id, so that pair maps positions to
+        the wrong documents, silently. The staged pair is now committed as a
+        whole by one directory rename (index_generation.commit_staged) and
+        rolled forward from that journal; a kill at any point leaves the old
+        pair or a journal that the next load finishes. The previous pair is
+        staged as *.bak in the same commit, so the backup is one pair too.
         """
         from newscrawler.tools.run_lock import refuse_foreign_writer
 
@@ -255,10 +250,13 @@ class ChunkFAISSDatasource:
             # worker's load takes that lock as well: a save either finishes
             # before the worker reads the index, or sees the run lock.
             refuse_foreign_writer()
+            # SYS-56: a save a kill interrupted after its commit point is the
+            # newest generation; finish it before judging freshness against it.
+            index_generation.recover(db_name)
             # SYS-53 (#182): only a copy of the generation on disk may replace
             # it, which also covers a save made after the run lock is released.
             # Under the lock nobody else saves between this check and the swap,
-            # and the `.tmp` directory below is ours alone.
+            # and the staging directory below is ours alone.
             index_generation.check_fresh(vs, db_name)
             try:
                 ChunkFAISSDatasource._swap_in(vs, db_name)
@@ -269,25 +267,17 @@ class ChunkFAISSDatasource:
 
     @staticmethod
     def _swap_in(vs: FAISS, db_name: str) -> None:
-        tmp_dir = f"{db_name}.tmp"
-        if os.path.exists(tmp_dir):
-            shutil.rmtree(tmp_dir)
-        vs.save_local(tmp_dir)
-
-        os.makedirs(db_name, exist_ok=True)
-        for fname in index_generation.INDEX_FILES:  # index.pkl before index.faiss
-            tmp_path = os.path.join(tmp_dir, fname)
+        staged = index_generation.staging_dir(db_name)
+        if os.path.exists(staged):
+            shutil.rmtree(staged)
+        vs.save_local(staged)
+        for fname in index_generation.INDEX_FILES:
             live_path = os.path.join(db_name, fname)
-            bak_path = live_path + ".bak"
             if os.path.exists(live_path):
-                # Copy, not move/replace: live_path must keep its current
-                # content until the instant os.replace below swaps it out --
-                # if that swap-in then fails, live_path must still have
-                # *something* valid, not be left empty because the backup
-                # step already vacated it.
-                shutil.copy2(live_path, bak_path)
-            os.replace(tmp_path, live_path)
-        shutil.rmtree(tmp_dir, ignore_errors=True)
+                # Copy, not move: the live pair must stay whole until the
+                # commit, so a failure before it changes nothing.
+                shutil.copy2(live_path, os.path.join(staged, fname + index_generation.BACKUP_SUFFIX))
+        index_generation.commit_staged(db_name)
 
     def _to_document(self, chunk: ChunkDTO) -> Document:
         return Document(
@@ -304,8 +294,7 @@ class ChunkFAISSDatasource:
         )
 
     def _load_or_create(self, db_name: str) -> FAISS:
-        index_path = os.path.join(db_name, "index.faiss")
-        if os.path.exists(index_path):
+        if index_generation.has_index(db_name):
             logger.info(f"Loading existing FAISS index: {db_name}")
             return index_generation.load_index(db_name, self.embedding_model)
 

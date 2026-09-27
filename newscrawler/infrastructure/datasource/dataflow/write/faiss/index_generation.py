@@ -17,13 +17,29 @@ The generation is the identity of the two files (inode/file id, mtime_ns,
 size). Every save swaps in new files with os.replace, so it always changes,
 and so does any other change to the files (a restore from backup, a hand
 copy), which a counter file written only by this code would miss.
+
+SYS-56 (#190): the two files of a pair are replaced one at a time, and no
+filesystem replaces two files atomically. A save therefore commits through a
+journal: the new pair, and the backup of the old one, are staged in
+`<index>.tmp`, and one directory rename to `<index>.commit` is the commit
+point. Only then are the files moved into place. A kill before the rename
+leaves the old pair; a kill after it leaves a journal that the next reader or
+writer rolls forward (`roll_forward`, under the save lock) before it looks at
+the files. No reader that takes the save lock ever sees a mixed pair. That
+matters since FAISS.delete renumbers index_to_docstore_id: an old index.faiss
+with a new index.pkl maps positions to the wrong documents, silently.
 """
+import logging
 import os
+import shutil
 from typing import Optional, Tuple
 
 from filelock import FileLock
 
+logger = logging.getLogger(__name__)
+
 INDEX_FILES = ("index.pkl", "index.faiss")
+BACKUP_SUFFIX = ".bak"
 # A save of the full L2 index takes tens of seconds; waiting longer than this
 # for another writer means something is wrong with it, not that it is slow.
 SAVE_LOCK_TIMEOUT_S = 600
@@ -35,6 +51,120 @@ Generation = Optional[Tuple]
 class StaleIndexError(RuntimeError):
     """The index on disk is not the one this process loaded or last saved:
     saving would overwrite someone else's vectors."""
+
+
+class CorruptIndexError(RuntimeError):
+    """The index.faiss and index.pkl on disk are not one pair: searching it
+    would return the wrong documents."""
+
+
+def staging_dir(db_name: str) -> str:
+    """Where a save writes its files before the commit point. Anything found
+    here was not committed and is thrown away."""
+    return f"{db_name}.tmp"
+
+
+def journal_dir(db_name: str) -> str:
+    """A committed save whose files are not all in place yet."""
+    return f"{db_name}.commit"
+
+
+def has_index(db_name: str) -> bool:
+    """An index exists: live files, or a committed save not rolled forward yet
+    (a first save killed after its commit point has no live files)."""
+    return os.path.exists(os.path.join(db_name, "index.faiss")) or os.path.isdir(journal_dir(db_name))
+
+
+def _journal_order():
+    # The old pair's backup goes in before the new pair replaces it. Any order
+    # would do, since an interrupted roll-forward is finished by the next one.
+    return tuple(name + BACKUP_SUFFIX for name in INDEX_FILES) + INDEX_FILES
+
+
+def _fsync_files(directory: str) -> None:
+    """Put the staged files on disk before the rename that commits them, so a
+    power loss cannot leave a committed journal of empty or partial files."""
+    for name in os.listdir(directory):
+        with open(os.path.join(directory, name), "rb+") as f:
+            os.fsync(f.fileno())
+
+
+def commit_staged(db_name: str) -> None:
+    """Commit the pair staged in staging_dir(db_name) and move it into place.
+    The directory rename is the commit point. Call it with the save lock held."""
+    staged = staging_dir(db_name)
+    _fsync_files(staged)
+    os.rename(staged, journal_dir(db_name))
+    roll_forward(db_name)
+
+
+def roll_forward(db_name: str) -> bool:
+    """Finish a committed save: move every file left in the journal into
+    db_name, then drop the journal. Idempotent, so a kill during it is finished
+    by the next call. Returns True when there was a journal. Call it with the
+    save lock held, before reading or replacing the files."""
+    journal = journal_dir(db_name)
+    if not os.path.isdir(journal):
+        return False
+    os.makedirs(db_name, exist_ok=True)
+    for name in _journal_order():
+        src = os.path.join(journal, name)
+        if os.path.exists(src):
+            os.replace(src, os.path.join(db_name, name))
+    shutil.rmtree(journal, ignore_errors=True)
+    return True
+
+
+def recover(db_name: str) -> None:
+    """Make the files at db_name one whole pair: roll a committed save forward
+    and drop an uncommitted one. Call it with the save lock held."""
+    if roll_forward(db_name):
+        logger.warning(f"{db_name}: finished a save that was interrupted after its commit point (SYS-56)")
+    shutil.rmtree(staging_dir(db_name), ignore_errors=True)
+
+
+def pair_problem(ntotal: int, index_to_docstore_id, stored_ids) -> Optional[str]:
+    """Why (index.faiss, index.pkl) is not one pair, or None. Pure. Position i
+    of index.faiss must map to a stored document for every i < ntotal, and no
+    other position may be mapped."""
+    if set(index_to_docstore_id) != set(range(ntotal)):
+        return ("index.faiss holds %d vectors but index.pkl maps %d positions"
+                % (ntotal, len(index_to_docstore_id)))
+    missing = sum(1 for doc_id in index_to_docstore_id.values() if doc_id not in stored_ids)
+    if missing:
+        return "%d mapped positions point at no stored document" % missing
+    return None
+
+
+def read_disk_pair(db_name: str):
+    """(ntotal, docstore, index_to_docstore_id) of the files on disk, read
+    without an embedding model: only the header of index.faiss is mapped, and
+    index.pkl is unpickled. None when there is no index. Read-only. Call it
+    with the save lock held, or a save in progress can be read half done."""
+    import pickle
+
+    import faiss
+
+    faiss_path = os.path.join(db_name, "index.faiss")
+    if not os.path.exists(faiss_path):
+        return None
+    ntotal = faiss.read_index(faiss_path, faiss.IO_FLAG_MMAP | faiss.IO_FLAG_READ_ONLY).ntotal
+    with open(os.path.join(db_name, "index.pkl"), "rb") as f:
+        docstore, index_to_docstore_id = pickle.load(f)
+    return ntotal, docstore, index_to_docstore_id
+
+
+def disk_pair_problem(db_name: str, pair=None) -> Optional[str]:
+    """pair_problem for the files on disk (`pair` from read_disk_pair, read
+    here when not given), plus a journal an interrupted save left behind.
+    Read-only: it never rolls anything forward."""
+    if os.path.isdir(journal_dir(db_name)):
+        return "a save interrupted after its commit point was not rolled forward (%s)" % journal_dir(db_name)
+    pair = pair if pair is not None else read_disk_pair(db_name)
+    if pair is None:
+        return None
+    ntotal, docstore, index_to_docstore_id = pair
+    return pair_problem(ntotal, index_to_docstore_id, docstore._dict)
 
 
 def disk_generation(db_name: str) -> Generation:
@@ -76,11 +206,21 @@ def track_disk(vs, db_name: str) -> None:
 
 def load_index(db_name: str, embeddings):
     """FAISS.load_local, recording the generation read. Taken under the save
-    lock, so the two files are read as one consistent pair."""
+    lock, so the two files are read as one consistent pair: a save a kill
+    interrupted after its commit point is finished first (SYS-56). A pair that
+    still does not line up (a hand copy of one file, a pre-SYS-56 torn save) is
+    refused with CorruptIndexError instead of being searched."""
     from langchain_community.vectorstores import FAISS
     with save_lock(db_name):
+        recover(db_name)
         generation = disk_generation(db_name)
         vs = FAISS.load_local(db_name, embeddings, allow_dangerous_deserialization=True)
+    problem = pair_problem(vs.index.ntotal, vs.index_to_docstore_id, vs.docstore._dict)
+    if problem:
+        raise CorruptIndexError(
+            "refusing to use %s: %s. Searches would return the wrong documents. Restore the "
+            "index.faiss.bak/index.pkl.bak pair (OPERATIONS.md) and run check_store_consistency.py"
+            % (db_name, problem))
     track(vs, db_name, generation)
     return vs
 

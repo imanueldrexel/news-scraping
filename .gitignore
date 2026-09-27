@@ -151,6 +151,11 @@ package/*
 # SYS-53: each index's save lock (index_generation.save_lock)
 /NEWS_L1.lock
 /NEWS_L2.lock
+# SYS-56: a save stages its pair in .tmp and commits it by renaming that to .commit
+/NEWS_L1.tmp/
+/NEWS_L2.tmp/
+/NEWS_L1.commit/
+/NEWS_L2.commit/
 /crawler_health/*.json
 /digests/*.md
 /backups/*.json

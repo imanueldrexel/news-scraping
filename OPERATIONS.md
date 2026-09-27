@@ -500,8 +500,10 @@ lambda_handler.process_event({'task': 'newsletter'}, None)
 
 ## Troubleshooting
 
-**FAISS index corrupt or won't load** (DBT-10 #45)
-- Every save is atomic: written to `NEWS_L*.tmp`, then swapped in with `os.replace`, pkl before faiss. The previous generation is kept as `index.faiss.bak`/`index.pkl.bak`. A crash can leave a stale-but-consistent pair, not a mismatched one.
+**FAISS index corrupt or won't load** (DBT-10 #45, SYS-56 #190)
+- Every save commits the pair as a whole. The new pair and a copy of the old one (`*.bak`) are written to `NEWS_L*.tmp`. One directory rename to `NEWS_L*.commit` is the commit point, and then the files are moved into `NEWS_L*`. A kill before the rename leaves the old pair (the `.tmp` is dropped by the next load or save). A kill after it leaves `NEWS_L*.commit`, and the next load or save finishes the move, logging `finished a save that was interrupted after its commit point (SYS-56)`. The previous generation is kept as `index.faiss.bak`/`index.pkl.bak`, and it is always one pair too.
+- **Do not delete a `NEWS_L*.commit` directory by hand.** It is the newest committed generation. Starting the web app or any crawl finishes it.
+- A pair that does not line up is refused at load with `CorruptIndexError: refusing to use NEWS_L2: index.faiss holds N vectors but index.pkl maps M positions`. Serving it would return the wrong documents, which is why it is refused. This can happen after a hand copy of one file or a torn save from before SYS-56. The store check reports it as `faiss_pair_mismatch`. Restore the `.bak` pair (below).
 - To roll back one generation, with no crawl running: `cd NEWS_L1; copy index.faiss.bak index.faiss; copy index.pkl.bak index.pkl` (same for `NEWS_L2`). Then `venv\Scripts\python.exe scripts\check_store_consistency.py`.
 - Older copies: `backups/faiss_*/` (taken before risky operations, e.g. the OPS-23 migration). A full rebuild from SQL is `scripts/backfill_orphan_chunks.py` (re-chunks from `articles.extracted_text`), which is slow.
 - Since DBT-10 the crawl saves each index **once per source** (in `deferred_embeddings`), not once per batch. Chunk rows are written with `embedding_id` NULL / `pending_embedding` until that save has succeeded. A run killed mid-source (OPS-22's timeout) therefore leaves NULL rows, never rows pointing at vectors that were not saved. The source's next article crawl re-embeds them before it starts. To check: `SELECT count(*) FROM chunks WHERE embedding_id IS NULL` is 0 between runs. To repair outside a crawl: `scripts/backfill_pending_embeddings.py`.
