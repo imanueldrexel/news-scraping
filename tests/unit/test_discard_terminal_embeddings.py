@@ -283,6 +283,66 @@ class TestTheRepositoryRemovesVectorsThenRows:
         assert csc.growing_checks(_store_check(paths, table, terminal={7})) == []
 
 
+class TestAFailedFlushKeepsItsDiscards:
+    """SYS-58 (#192): the worker keeps one repository for every source. A flush
+    that fails used to forget which rows to delete while the deletions it
+    carried were saved by the next source's flush (case 1), or half-saved
+    (case 2): rows left pointing at vectors that are gone."""
+
+    def test_a_failed_save_is_finished_by_the_next_block(self, paths):
+        table = ChunkTable()
+        _with_existing_vectors(paths, table, [7, 8])
+        repo = _repo_over(paths, table, terminal={7})
+        with patch.object(ChunkFAISSDatasource, "_atomic_save_local", side_effect=OSError("disk full")):
+            with pytest.raises(OSError):
+                with repo.deferred_embeddings("VIVA"):
+                    repo.discard_terminal_embeddings("VIVA")
+        assert 7 in _sids_on_disk(paths[0]) and len(table.rows) == 6, "nothing reached disk, nothing deleted"
+
+        repo.news_data_source = Sitemaps(set(), table)   # the next source has nothing of its own
+        with repo.deferred_embeddings("KOMPAS"):
+            repo.discard_terminal_embeddings("KOMPAS")
+        assert 7 not in _sids_on_disk(paths[0]) and 7 not in _sids_on_disk(paths[1])
+        assert sorted({k[0] for k in table.rows}) == [8]
+        assert csc.growing_checks(_store_check(paths, table, terminal={7})) == []
+
+    def test_a_level_refused_after_the_other_was_saved_is_finished_by_the_next_block(self, paths):
+        from newscrawler.infrastructure.datasource.dataflow.write.faiss.index_generation import StaleIndexError
+        table = ChunkTable()
+        _with_existing_vectors(paths, table, [7])
+        repo = _repo_over(paths, table, terminal={7})
+        real_save = ChunkFAISSDatasource._atomic_save_local
+
+        def l2_refused(vs, db_name):
+            if db_name == paths[1]:
+                raise StaleIndexError("another process saved NEWS_L2")
+            return real_save(vs, db_name)
+
+        with patch.object(ChunkFAISSDatasource, "_atomic_save_local", side_effect=l2_refused):
+            with pytest.raises(StaleIndexError):
+                with repo.deferred_embeddings("VIVA"):
+                    repo.discard_terminal_embeddings("VIVA")
+        assert 7 not in _sids_on_disk(paths[0]) and 7 in _sids_on_disk(paths[1]), "L1 saved, L2 reloaded"
+        assert len(table.rows) == 3, "rows kept while L2 still holds the vectors"
+
+        repo.news_data_source = Sitemaps(set(), table)
+        with repo.deferred_embeddings("KOMPAS"):
+            pass
+        assert 7 not in _sids_on_disk(paths[1]) and not table.rows
+        assert csc.growing_checks(_store_check(paths, table, terminal={7})) == []
+
+    def test_rows_are_not_deleted_while_the_next_flush_fails_too(self, paths):
+        table = ChunkTable()
+        _with_existing_vectors(paths, table, [7])
+        repo = _repo_over(paths, table, terminal={7})
+        with patch.object(ChunkFAISSDatasource, "_atomic_save_local", side_effect=OSError("disk full")):
+            for website in ("VIVA", "KOMPAS"):
+                with pytest.raises(OSError):
+                    with repo.deferred_embeddings(website):
+                        repo.discard_terminal_embeddings(website)
+        assert len(table.rows) == 3 and 7 in _sids_on_disk(paths[0])
+
+
 # ── SYS-57: the real service over the real repository, killed mid-source ─────
 
 class SitemapStore:

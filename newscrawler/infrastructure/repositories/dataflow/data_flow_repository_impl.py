@@ -116,6 +116,8 @@ class DataFlowRepositoryImpl(DataFlowRepository):
             yield self
         finally:
             try:
+                if outermost:
+                    self._redo_unsaved_discards()
                 flushed = faiss.end_deferred()
             except BaseException:
                 # The save failed (disk full) or was refused (SYS-53: another
@@ -125,7 +127,15 @@ class DataFlowRepositoryImpl(DataFlowRepository):
                 # sources, and the next source's flush would otherwise write
                 # them onto rows whose vectors never reached disk.
                 self.__dict__.pop("_pending_embedding_ids", None)
-                self.__dict__.pop("_discarded_sitemaps", None)
+                # SYS-58 (#192): the discards are the opposite case: nothing
+                # re-finds them within this run, and their deletions are either
+                # unsaved (a failed save leaves the level dirty) or undone (a
+                # refused level is reloaded with the vectors back, while the
+                # other level may already be saved without them). Keep them;
+                # the next block deletes the vectors again before its flush and
+                # the rows after it. None of their rows is deleted here.
+                self.__dict__.setdefault("_unsaved_discards", set()).update(
+                    self.__dict__.pop("_discarded_sitemaps", set()))
                 raise
             if flushed:
                 # Only now, with the vectors on disk, may SQL point at them...
@@ -161,6 +171,18 @@ class DataFlowRepositoryImpl(DataFlowRepository):
         else:
             self.sql_alchemy_chunk_datasource.delete_for_sitemaps(terminal)
         return deleted
+
+    def _redo_unsaved_discards(self) -> None:
+        """SYS-58: remove again, before this block's flush, the vectors of the
+        sitemaps whose deletion an earlier flush failed to save. Idempotent: a
+        vector already gone from memory is not found twice. Their rows are then
+        deleted with this block's own discards, after its flush succeeded."""
+        unsaved = self.__dict__.get("_unsaved_discards")
+        if not unsaved:
+            return
+        self.chunk_faiss_datasource.discard(unsaved)
+        self.__dict__.setdefault("_discarded_sitemaps", set()).update(unsaved)
+        del self.__dict__["_unsaved_discards"]
 
     def _delete_discarded_chunk_rows(self) -> int:
         discarded = self.__dict__.pop("_discarded_sitemaps", set())
