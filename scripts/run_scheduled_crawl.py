@@ -609,14 +609,15 @@ def _notify(message: str) -> None:
     try:
         # Same import shape OPS-01's wrapper uses (scripts/ is on sys.path there).
         sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-        from notify_telegram import send
+        from notify_telegram import redact, send
     except Exception as e:  # noqa: BLE001
         logger.warning("Telegram notifier unavailable (%s); summary logged only", e)
         return
     try:
         send("Scheduled crawl %s: %s" % (datetime.now().strftime("%Y-%m-%d %H:%M"), message))
     except Exception as e:  # noqa: BLE001
-        logger.warning("Telegram notification failed: %s", e)
+        # OPS-33: an exception from the Bot API names the token in its URL.
+        logger.warning("Telegram notification failed: %s: %s", type(e).__name__, redact(e))
 
 
 if __name__ == "__main__":
