@@ -134,19 +134,25 @@ class DataFlowRepositoryImpl(DataFlowRepository):
                 # chunk rows that pointed at them go (SYS-54).
                 self._delete_discarded_chunk_rows()
 
-    def discard_terminal_embeddings(self, sitemap_ids) -> int:
-        """SYS-54 (#185): remove the vectors and chunk rows of every sitemap in
-        `sitemap_ids` that is now terminal (no article, and rejected_filter or at
-        the fetch cap). The crawl settles such sitemaps itself, and one that
-        already had vectors (the June article-gap VIVA rows) would otherwise
-        become an orphan that the store check reports as STORE DIVERGENT.
+    def discard_terminal_embeddings(self, website: str) -> int:
+        """SYS-54 (#185): remove the vectors and chunk rows of every sitemap of
+        this source that is terminal (no article, and rejected_filter or at the
+        fetch cap) and still has chunk rows. The crawl settles such sitemaps
+        itself, and one that already had vectors (the June article-gap VIVA
+        rows) would otherwise become an orphan that the store check reports as
+        STORE DIVERGENT. SYS-57 (#191): the sitemaps come from the store, so one
+        a killed run settled is found by the next run.
 
         The repair's order: vectors first, then rows. In a deferred block the
         vectors leave the in-memory stores now, and the rows are deleted only
         after the flush has put that on disk. A kill in between leaves vectors
         and rows together, which is still the repair's state, never rows gone
-        with their vectors still on disk. Returns the number of vectors deleted."""
-        terminal = self.news_data_source.terminal_without_article(sitemap_ids) if sitemap_ids else set()
+        with their vectors still on disk. Returns the number of vectors deleted.
+
+        Vectors of a terminal sitemap that has no chunk rows are not found
+        here; the store check reports them (l1/l2_no_chunks) and
+        repair_store_consistency removes them."""
+        terminal = self.news_data_source.terminal_with_chunks(website)
         if not terminal:
             return 0
         deleted = self.chunk_faiss_datasource.discard(terminal)

@@ -4,10 +4,15 @@ already had. 5,292 queued VIVA sitemaps carry vectors from the June article-gap
 era; before this, each one the crawl rejected became a terminal orphan and the
 run's own store check said STORE DIVERGENT.
 
+SYS-57 (#191): the sitemaps to clean up come from the store (this source's
+terminal sitemaps that still have chunk rows), not from one run's settle
+events, so a source killed before its end is cleaned up by its next run.
+
 Service tests use a MagicMock repository (what is discarded, and when). The
 repository tests use real FAISS indexes (FakeEmbeddings) in tmp_path and a fake
 chunks table, and judge the end state with check_store_consistency's own
-arithmetic.
+arithmetic. TestAKilledSourceIsCleanedUpByItsNextRun runs the real service over
+the real repository.
 """
 import importlib.util
 import logging
@@ -74,7 +79,10 @@ def service():
         yield svc.data_flow_repo
         events.append("block flushed")
     svc.data_flow_repo.deferred_embeddings.side_effect = deferred
-    svc.data_flow_repo.discard_terminal_embeddings.side_effect = lambda ids: events.append(("discard", ids)) or 0
+    svc.data_flow_repo.discard_terminal_embeddings.side_effect = \
+        lambda website: events.append(("discard", website)) or 0
+    svc.data_flow_repo.increment_fetch_failures.side_effect = \
+        lambda ids, error_msg=None: events.append(("fetch failures counted", tuple(sorted(ids))))
     svc.events = events
     return svc
 
@@ -96,17 +104,20 @@ def _keep(flag):
     return FilterDecision(is_important=flag, gate="score", score_passed=flag)
 
 
-class TestTheServiceDiscardsWhatItSettled:
-    def test_rejected_pre_denied_and_failed_sitemaps_are_candidates_inside_the_block(self, service):
+class TestTheServiceSweepsTheSource:
+    def test_the_source_is_swept_when_its_block_opens_and_after_its_last_batch(self, service):
         queue = [_sitemap(1), _sitemap(2), _sitemap(3), _sitemap(4), _sitemap(5, "olahraga")]
         extracted = [_article(1, ["gosip selebriti"]), _article(2, ["berita ekonomi"]), _article(4, [])]
         with patch("newscrawler.domain.services.crawler_service_impl.build_check_text", lambda t, b: b):
             _crawl(service, queue, extracted, failures={3: "HTTP 404"},
                    verdicts={"gosip selebriti": _keep(False), "berita ekonomi": _keep(True)})
-        discards = [e for e in service.events if isinstance(e, tuple)]
-        assert discards == [("discard", {1, 3, 5})], "rejected 1, failed 3, pre-denied 5; not saved 2 or empty 4"
-        assert service.events.index(discards[0]) < service.events.index("block flushed"), \
-            "discarded after the flush: the deletions would never reach disk"
+        assert service.events == [
+            "block entered",
+            ("discard", "TEST_SITE"),                 # SYS-57: what an earlier, killed run left
+            ("fetch failures counted", (3,)),
+            ("discard", "TEST_SITE"),                 # SYS-54: what this run settled, the cap included
+            "block flushed",                          # both inside the block: the deletions reach disk
+        ]
 
     def test_a_failed_discard_is_logged_and_the_source_still_completes(self, service, caplog):
         service.data_flow_repo.discard_terminal_embeddings.side_effect = OSError("db gone")
@@ -116,6 +127,17 @@ class TestTheServiceDiscardsWhatItSettled:
                        verdicts={"gosip": _keep(False)})
         assert any("SYS-54" in r.message for r in caplog.records if r.levelno == logging.ERROR)
         service.data_flow_repo.log_crawl_complete.assert_called_once()
+
+    def test_the_log_line_names_which_sweep_removed_vectors(self, service, caplog):
+        """SYS-54 is closed on the end-of-run line; SYS-57's has its own."""
+        service.data_flow_repo.discard_terminal_embeddings.side_effect = [4, 6]
+        with patch("newscrawler.domain.services.crawler_service_impl.build_check_text", lambda t, b: b):
+            with caplog.at_level(logging.INFO):
+                _crawl(service, [_sitemap(1)], [_article(1, ["gosip"])], failures={},
+                       verdicts={"gosip": _keep(False)})
+        lines = [r.message for r in caplog.records if "removed" in r.message]
+        assert lines == ["TEST_SITE: removed 4 vector(s) of sitemaps an earlier run settled terminal (SYS-57)",
+                         "TEST_SITE: removed 6 vector(s) of sitemaps settled terminal this run (SYS-54)"]
 
 
 # ── the repository: vectors and rows, in the repair's order ──────────────────
@@ -129,13 +151,14 @@ class ChunkTable(FakeChunkTable):
 
 
 class Sitemaps:
-    """terminal_without_article over a fixed set of terminal sitemap_ids."""
+    """terminal_with_chunks over a fixed set of terminal sitemap_ids: those of
+    them that still have a row in the chunk table (the SQL's EXISTS chunks)."""
 
-    def __init__(self, terminal):
-        self.terminal = set(terminal)
+    def __init__(self, terminal, table):
+        self.terminal, self.table = set(terminal), table
 
-    def terminal_without_article(self, sitemap_ids):
-        return self.terminal & set(sitemap_ids)
+    def terminal_with_chunks(self, website):
+        return {sid for sid in self.terminal if any(k[0] == sid for k in self.table.rows)}
 
 
 def _with_existing_vectors(paths, table, sids):
@@ -159,7 +182,7 @@ def _store_check(paths, table, terminal, articles=frozenset()):
 
 def _repo_over(paths, table, terminal):
     repo = _repo(_faiss(paths), table)
-    repo.news_data_source = Sitemaps(terminal)
+    repo.news_data_source = Sitemaps(terminal, table)
     return repo
 
 
@@ -171,7 +194,7 @@ class TestTheRepositoryRemovesVectorsThenRows:
         _with_existing_vectors(paths, table, [7, 8])
         repo = _repo_over(paths, table, terminal={7})
         with repo.deferred_embeddings("VIVA"):
-            assert repo.discard_terminal_embeddings({7, 8}) == 3
+            assert repo.discard_terminal_embeddings("VIVA") == 3
         assert 7 not in _sids_on_disk(paths[0]) and 7 not in _sids_on_disk(paths[1])
         assert not [k for k in table.rows if k[0] == 7]
         assert 8 in _sids_on_disk(paths[0]) and len([k for k in table.rows if k[0] == 8]) == 3
@@ -194,7 +217,7 @@ class TestTheRepositoryRemovesVectorsThenRows:
         _with_existing_vectors(paths, table, [7])
         repo = _repo_over(paths, table, terminal={7})
         repo.chunk_faiss_datasource.begin_deferred()
-        repo.discard_terminal_embeddings({7})
+        repo.discard_terminal_embeddings("VIVA")
         # ...killed: no end_deferred
         assert 7 in _sids_on_disk(paths[0]) and len(table.rows) == 3
 
@@ -208,14 +231,14 @@ class TestTheRepositoryRemovesVectorsThenRows:
         with patch.object(ChunkFAISSDatasource, "_atomic_save_local", side_effect=StaleIndexError("x")):
             with pytest.raises(StaleIndexError):
                 with repo.deferred_embeddings("VIVA"):
-                    repo.discard_terminal_embeddings({7})
+                    repo.discard_terminal_embeddings("VIVA")
         assert len(table.rows) == 3 and 7 in _sids_on_disk(paths[0])
 
     def test_outside_a_block_it_saves_and_deletes_at_once(self, paths):
         table = ChunkTable()
         _with_existing_vectors(paths, table, [7])
         repo = _repo_over(paths, table, terminal={7})
-        repo.discard_terminal_embeddings({7})
+        repo.discard_terminal_embeddings("VIVA")
         assert 7 not in _sids_on_disk(paths[1]) and not table.rows
 
     def test_duplicate_vectors_of_one_key_all_go(self, paths):
@@ -227,7 +250,7 @@ class TestTheRepositoryRemovesVectorsThenRows:
         assert _sids_on_disk(paths[0]).count(7) == 2
         repo = _repo_over(paths, table, terminal={7})
         with repo.deferred_embeddings("VIVA"):
-            repo.discard_terminal_embeddings({7})
+            repo.discard_terminal_embeddings("VIVA")
         assert 7 not in _sids_on_disk(paths[0])
 
     def test_nothing_terminal_touches_nothing(self, paths):
@@ -236,6 +259,97 @@ class TestTheRepositoryRemovesVectorsThenRows:
         repo = _repo_over(paths, table, terminal=set())
         with patch.object(ChunkFAISSDatasource, "_atomic_save_local") as save:
             with repo.deferred_embeddings("VIVA"):
-                assert repo.discard_terminal_embeddings({7}) == 0
+                assert repo.discard_terminal_embeddings("VIVA") == 0
         save.assert_not_called()
         assert len(table.rows) == 3
+
+    def test_rows_left_after_their_vectors_went_are_deleted_by_the_next_sweep(self, paths):
+        """A kill between the flush (vectors gone from disk) and the row delete
+        leaves rows pointing at nothing. The store still lists the sitemap as
+        terminal with chunks, so the next sweep deletes the rows."""
+        table = ChunkTable()
+        _with_existing_vectors(paths, table, [7])
+        repo = _repo_over(paths, table, terminal={7})
+        with patch.object(type(repo), "_delete_discarded_chunk_rows", side_effect=SystemExit("killed")):
+            with pytest.raises(SystemExit):
+                with repo.deferred_embeddings("VIVA"):
+                    repo.discard_terminal_embeddings("VIVA")
+        assert 7 not in _sids_on_disk(paths[0]) and len(table.rows) == 3
+
+        repo = _repo_over(paths, table, terminal={7})
+        with repo.deferred_embeddings("VIVA"):
+            assert repo.discard_terminal_embeddings("VIVA") == 0
+        assert not table.rows
+        assert csc.growing_checks(_store_check(paths, table, terminal={7})) == []
+
+
+# ── SYS-57: the real service over the real repository, killed mid-source ─────
+
+class SitemapStore:
+    """The sitemaps table as the service and the repository see it: status per
+    sitemap_id, no articles (the June rows never got one)."""
+
+    def __init__(self, queue, table):
+        self.status = {s.sitemap_id: "pending" for s in queue}
+        self.queue, self.table = list(queue), table
+
+    def load(self, website, n_limit):
+        return [s for s in self.queue if self.status[s.sitemap_id] == "pending"]
+
+    def mark(self, ids, status):
+        self.status.update({i: status for i in ids})
+
+    def terminal_with_chunks(self, website):
+        return {sid for sid, st in self.status.items()
+                if st == "rejected_filter" and any(k[0] == sid for k in self.table.rows)}
+
+
+class TestAKilledSourceIsCleanedUpByItsNextRun:
+    """SYS-57's Done-when: batch 1 settles sitemap 7 (June vectors, chunk rows)
+    as rejected_filter, batch 2 kills the worker, so the end-of-source sweep
+    never runs. The next run of the source must still remove 7's vectors and
+    rows, although 7 is terminal and never offered again."""
+
+    def _service(self, repo, store):
+        with patch("newscrawler.domain.services.crawler_service_impl.SemanticImportanceFilter"):
+            svc = CrawlerServiceImpl(data_flow_repo=MagicMock())
+        mock = svc.data_flow_repo
+        mock.get_saved_category_pairs.return_value = None
+        mock.load_sitemap_data.side_effect = store.load
+        mock.mark_sitemaps_status.side_effect = store.mark
+        mock.deferred_embeddings.side_effect = repo.deferred_embeddings
+        mock.discard_terminal_embeddings.side_effect = repo.discard_terminal_embeddings
+        svc.crawler_dict = {"VIVA": MagicMock()}
+        svc.semantic_filter.classify.side_effect = lambda text, category=None, source=None: _keep(False)
+        return svc
+
+    def test_the_next_run_removes_the_vectors_and_rows_the_killed_run_settled(self, paths):
+        table = ChunkTable()
+        _with_existing_vectors(paths, table, [7])
+        store = SitemapStore([_sitemap(7), _sitemap(8)], table)
+        repo = _repo(_faiss(paths), table)
+        repo.news_data_source = store
+        svc = self._service(repo, store)
+
+        def batch(news, website_name):
+            if news[0].sitemap_id == 8:
+                raise SystemExit("OPS-22 timeout kill")
+            return NewsDetailsBatch([_article(7, ["gosip"])], failures={})
+        svc.crawler_dict["VIVA"].batch_crawling_details.side_effect = batch
+
+        with patch("newscrawler.domain.services.crawler_service_impl.build_check_text", lambda t, b: b):
+            with pytest.raises(SystemExit):
+                svc.crawl_newsdetails("VIVA")
+            assert store.status[7] == "rejected_filter", "settled in SQL by batch 1"
+            assert 7 in _sids_on_disk(paths[0]) and len(table.rows) == 3, "the killed run cleaned nothing up"
+
+            repo = _repo(_faiss(paths), table)       # the respawned worker
+            repo.news_data_source = store
+            svc = self._service(repo, store)
+            svc.crawler_dict["VIVA"].batch_crawling_details.side_effect = \
+                lambda news, website_name: NewsDetailsBatch([], failures={})
+            svc.crawl_newsdetails("VIVA")
+
+        assert 7 not in _sids_on_disk(paths[0]) and 7 not in _sids_on_disk(paths[1])
+        assert not table.rows
+        assert csc.growing_checks(_store_check(paths, table, terminal={7})) == []

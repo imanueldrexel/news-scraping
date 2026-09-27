@@ -36,9 +36,9 @@ class DataFlowRepository:
         from contextlib import nullcontext
         return nullcontext(self)
 
-    def discard_terminal_embeddings(self, sitemap_ids) -> int:
-        """SYS-54: remove the vectors and chunk rows of those of these sitemaps
-        that can never get an article. The default has no vector store."""
+    def discard_terminal_embeddings(self, website: str) -> int:
+        """SYS-54/SYS-57: remove the vectors and chunk rows of this source's
+        sitemaps that can never get an article. The default has no vector store."""
         return 0
 
     def mark_sitemaps_attempted(self, sitemap_ids: List[int]) -> None:

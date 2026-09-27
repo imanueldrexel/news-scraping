@@ -59,8 +59,8 @@ class NewsDataSource:
     def get_saved_category_pairs(self, website: str):
         return self.sql_alchemy_sitemap.get_saved_category_pairs(website)
 
-    def terminal_without_article(self, sitemap_ids):
-        return self.sql_alchemy_sitemap.terminal_without_article(sitemap_ids)
+    def terminal_with_chunks(self, website: str):
+        return self.sql_alchemy_sitemap.terminal_with_chunks(website)
 
     def update_sitemap_headlines(self, headlines_by_id) -> int:
         return self.sql_alchemy_sitemap.update_headlines(headlines_by_id)

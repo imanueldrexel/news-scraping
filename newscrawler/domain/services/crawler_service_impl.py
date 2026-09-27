@@ -88,6 +88,10 @@ class CrawlerServiceImpl(CrawlerService):
     def _crawl_newsdetails_inner(self, website_name: str, specific_sitemaps: List[SitemapDTO] = None) -> int:
         # DBT-10 (#45): one vector-store save per source run, not one per batch.
         with self.data_flow_repo.deferred_embeddings(website_name):
+            # SYS-57 (#191): a run of this source killed before its end (OPS-22's
+            # timeout, a worker crash) had settled sitemaps as terminal without
+            # removing their vectors. The store still says so; clean up first.
+            self._discard_terminal_embeddings(website_name, "an earlier run settled terminal (SYS-57)")
             return self._crawl_newsdetails_batches(website_name, specific_sitemaps)
 
     def _crawl_newsdetails_batches(self, website_name: str, specific_sitemaps: List[SitemapDTO] = None) -> int:
@@ -131,8 +135,6 @@ class CrawlerServiceImpl(CrawlerService):
         # for. Recorded to the DB only at the end of the run (see below), because
         # "did the whole source fail?" cannot be answered per batch.
         run_failures = {}
-        # SYS-54: every sitemap the filter settled as rejected_filter this run.
-        settled_rejected = set()
         # SYS-35 (#118, fix 4) / SYS-45 (#140): per-run filter telemetry.
         # `gate_counts` says how each decision was made; `allow_total`/
         # `allow_score_passed` count, per news category, how many articles the
@@ -253,7 +255,6 @@ class CrawlerServiceImpl(CrawlerService):
 
             if rejected_filter_ids:
                 self.data_flow_repo.mark_sitemaps_status(rejected_filter_ids, "rejected_filter")
-                settled_rejected.update(rejected_filter_ids)
             if empty_extraction_ids:
                 self.data_flow_repo.mark_sitemaps_status(empty_extraction_ids, "empty_extraction")
 
@@ -290,7 +291,8 @@ class CrawlerServiceImpl(CrawlerService):
                     continue
 
         self._source_failure_verdict = self._record_fetch_failures(website_name, attempted, run_failures)
-        self._discard_terminal_embeddings(website_name, set(pre_denied_ids) | settled_rejected | set(run_failures))
+        # After _record_fetch_failures, so a failure that reached the cap counts.
+        self._discard_terminal_embeddings(website_name, "settled terminal this run (SYS-54)")
         self._log_filter_stats(website_name, gate_counts, allow_total, allow_score_passed, uncertain)
 
         logger.info(
@@ -300,23 +302,24 @@ class CrawlerServiceImpl(CrawlerService):
         )
         return saved_total
 
-    def _discard_terminal_embeddings(self, website_name: str, candidates) -> None:
-        """SYS-54 (#185): the sitemaps this run settled for good (rejected, or a
-        fetch failure that reached the cap) lose any vectors and chunk rows they
-        already had. Runs inside the source's deferred block, so the deletions
-        are flushed with its adds. A failure here costs nothing the store check
-        does not report, so it is logged, not raised: the source's articles were
-        saved."""
-        if not candidates:
-            return
+    def _discard_terminal_embeddings(self, website_name: str, whose: str) -> None:
+        """SYS-54 (#185): this source's sitemaps that are settled for good
+        (rejected, or a fetch failure at the cap) lose any vectors and chunk
+        rows they still have. Runs inside the source's deferred block, so the
+        deletions are flushed with its adds. SYS-57 (#191): the sitemaps come
+        from the store, so this runs when the block opens (whatever a killed run
+        left) and at the end (what this run settled). A failure here costs
+        nothing the store check does not report, so it is logged, not raised:
+        the source's articles were saved."""
         try:
-            deleted = self.data_flow_repo.discard_terminal_embeddings(candidates)
+            deleted = self.data_flow_repo.discard_terminal_embeddings(website_name)
         except Exception as e:  # noqa: BLE001
             logger.error(f"{website_name}: could not remove the vectors of settled sitemaps (SYS-54): {e!r}; "
-                         f"check_store_consistency will report them and repair_store_consistency removes them")
+                         f"the next run of this source retries, check_store_consistency reports them and "
+                         f"repair_store_consistency removes them")
             return
         if deleted:
-            logger.info(f"{website_name}: removed {deleted} vector(s) of sitemaps settled terminal this run (SYS-54)")
+            logger.info(f"{website_name}: removed {deleted} vector(s) of sitemaps {whose}")
 
     @staticmethod
     def _split_denied_by_category(website_name: str, sitemaps):

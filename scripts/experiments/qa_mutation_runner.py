@@ -97,11 +97,18 @@ M = [
   "    if not args.dry_run and refused_by_run_lock(logger):", "    if False:"),
  ("dbt43_process_event_unguarded", "newscrawler/application/api/lambda_function/lambda_handler.py",
   "    if task in FAISS_WRITING_TASKS:", "    if False:"),
+ # SYS-57 replaced the in-memory candidates with a per-source sweep of the store; these two
+ # are the same guards over the new code (the end-of-run sweep, and its place after the
+ # fetch failures are counted, so a failure that reached the cap is terminal).
  ("sys54_service_never_discards", "newscrawler/domain/services/crawler_service_impl.py",
-  "        self._discard_terminal_embeddings(website_name, set(pre_denied_ids) | settled_rejected | set(run_failures))\n",
+  "        self._discard_terminal_embeddings(website_name, \"settled terminal this run (SYS-54)\")\n",
   ""),
  ("sys54_failed_fetches_not_candidates", "newscrawler/domain/services/crawler_service_impl.py",
-  "set(pre_denied_ids) | settled_rejected | set(run_failures))", "set(pre_denied_ids) | settled_rejected)"),
+  "        self._source_failure_verdict = self._record_fetch_failures(website_name, attempted, run_failures)\n"
+  "        # After _record_fetch_failures, so a failure that reached the cap counts.\n"
+  "        self._discard_terminal_embeddings(website_name, \"settled terminal this run (SYS-54)\")\n",
+  "        self._discard_terminal_embeddings(website_name, \"settled terminal this run (SYS-54)\")\n"
+  "        self._source_failure_verdict = self._record_fetch_failures(website_name, attempted, run_failures)\n"),
  ("sys54_rows_before_flush", "newscrawler/infrastructure/repositories/dataflow/data_flow_repository_impl.py",
   "        if self.chunk_faiss_datasource.is_deferred:\n            self.__dict__.setdefault",
   "        if False:\n            self.__dict__.setdefault"),
@@ -125,6 +132,8 @@ M = [
   " or os.path.isdir(journal_dir(db_name))", ""),
  ("sys56_bak_not_in_the_commit", "newscrawler/infrastructure/datasource/dataflow/write/faiss/index_generation.py",
   "    return tuple(name + BACKUP_SUFFIX for name in INDEX_FILES) + INDEX_FILES", "    return INDEX_FILES"),
+ ("sys57_no_sweep_when_the_block_opens", "newscrawler/domain/services/crawler_service_impl.py",
+  "            self._discard_terminal_embeddings(website_name, \"an earlier run settled terminal (SYS-57)\")\n", ""),
  ("sys56_store_check_drops_mismatch", "scripts/check_store_consistency.py",
   "pair_mismatch_levels=sum(1 for p in (l1_problem, l2_problem) if p))", "pair_mismatch_levels=0)"),
 ]
