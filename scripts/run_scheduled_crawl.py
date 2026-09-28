@@ -112,7 +112,13 @@ logger.setLevel(logging.INFO)
 # on 2026-09-26 (URL-keyed branches fixed, soft leaves denied, backlog settled).
 DEFAULT_EXCLUDED = {}
 
-SOURCE_TIMEOUT = int(os.getenv("SCHEDULE_SOURCE_TIMEOUT", "900"))
+# OPS-28 (2026-09-28): the timeout catches a hung source; it must not trim a
+# healthy one. The five sources that hit the 1,000-row cap every run
+# (MEDIAINDONESIA, DETIK, JPNN, VIVA, WARTAEKONOMI) take 580-950 s, and one
+# four-minute connection burst adds ~300 s of retries: DETIK ran 885 of 900 s on
+# 2026-09-28 07:00 against 583-624 s before. 1,200 s covers a capped source plus
+# one burst; the run's projected total (~6,200 s of 12,600) is not the limit.
+SOURCE_TIMEOUT = int(os.getenv("SCHEDULE_SOURCE_TIMEOUT", "1200"))
 
 
 def _parse_timeouts(raw):
@@ -126,11 +132,10 @@ def _parse_timeouts(raw):
 
 
 # OPS-28: per-source timeouts above SOURCE_TIMEOUT. MEDIAINDONESIA is crawled
-# serially and took 880 of its 900 s on the first scheduled run (queue 11,460), so
-# one slow day would turn it into a kill that strands its vectors until the next
-# run (DBT-10). A row cap instead would make its backlog permanent. The budget
-# check uses the source's own timeout.
-SOURCE_TIMEOUTS = _parse_timeouts(os.getenv("SCHEDULE_SOURCE_TIMEOUTS", "MEDIAINDONESIA=1200"))
+# serially and takes 880-947 s on a normal run (queue 11,460), so it keeps the
+# same burst allowance above that. A row cap instead would make its backlog
+# permanent. The budget check uses the source's own timeout.
+SOURCE_TIMEOUTS = _parse_timeouts(os.getenv("SCHEDULE_SOURCE_TIMEOUTS", "MEDIAINDONESIA=1500"))
 # OPS-19 proposal 5: a source that lists rows but saves nothing for this many
 # consecutive full_text runs is the new "needs attention".
 ZERO_SAVE_RUNS_BEFORE_ALERT = int(os.getenv("SCHEDULE_ZERO_SAVE_RUNS", "3"))

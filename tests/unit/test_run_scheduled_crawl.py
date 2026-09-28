@@ -278,6 +278,15 @@ class TestOverBudget:
 
     def test_default_budget_leaves_room_under_the_4h_task_limit(self):
         assert rc.RUN_BUDGET + rc.SOURCE_TIMEOUT < 4 * 3600
+        # A source starts only if it can finish inside the budget, so the
+        # summary goes out before Task Scheduler's 4 h kill whatever its timeout.
+        assert rc.RUN_BUDGET < 4 * 3600 - 600
+
+    def test_the_default_timeouts_cover_a_capped_source_plus_one_burst(self):
+        """OPS-28 (2026-09-28): DETIK took 583-624 s, then 885 of 900 s when a
+        four-minute ConnectionError burst hit one batch (SYS-62)."""
+        assert rc.SOURCE_TIMEOUT >= 624 + 300
+        assert rc.timeout_for("MEDIAINDONESIA", rc.SOURCE_TIMEOUT) >= 947 + 300
 
 
 class TestStartFailureIsReported:
@@ -610,9 +619,9 @@ class TestStarvationOrder:
         assert rc.projected_seconds(["A", "B", "C"], last, 900) == 100 + 900 + 900
 
     def test_timeout_for_gives_mediaindonesia_its_own_timeout(self):
-        assert rc.timeout_for("MEDIAINDONESIA", 900) == 1200
+        assert rc.timeout_for("MEDIAINDONESIA", 900) == 1500
         assert rc.timeout_for("KOMPAS", 900) == 900
-        assert rc.timeout_for("MEDIAINDONESIA", 1500) == 1500, "never below the run's --timeout"
+        assert rc.timeout_for("MEDIAINDONESIA", 1800) == 1800, "never below the run's --timeout"
 
     # DBT-44 (#186): the test above covers only the pure helper. Replacing its one
     # call in the run loop with `timeout = args.timeout` passed every test, and
@@ -665,5 +674,5 @@ class TestStarvationOrder:
 
     def test_the_projection_is_in_the_summary_when_it_does_not_fit(self, harness, monkeypatch):
         monkeypatch.setattr(rc, "RUN_BUDGET", 1000)
-        seen = harness(argv=("--phase", "full_text"))
+        seen = harness(argv=("--phase", "full_text", "--timeout", "900"))
         assert "full_text projected 2700s > budget 1000s" in seen["notified"][-1]
