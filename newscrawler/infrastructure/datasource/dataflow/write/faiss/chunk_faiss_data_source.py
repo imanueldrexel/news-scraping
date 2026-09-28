@@ -255,24 +255,28 @@ class ChunkFAISSDatasource:
             refuse_foreign_writer()
             # SYS-56: a save a kill interrupted after its commit point is the
             # newest generation; finish it before judging freshness against it.
-            # SYS-59: unless this copy committed it itself (its roll-forward
-            # failed, a file held open by a scanner): then it is this copy.
-            if index_generation.recover(db_name) == index_generation.owner_id(vs):
-                index_generation.track_disk(vs, db_name)
+            # If this copy committed it (its own roll-forward failed), it
+            # already tracks that generation (SYS-60, below).
+            index_generation.recover(db_name)
             # SYS-53 (#182): only a copy of the generation on disk may replace
             # it, which also covers a save made after the run lock is released.
             # Under the lock nobody else saves between this check and the swap,
             # and the staging directory below is ours alone.
             index_generation.check_fresh(vs, db_name)
-            try:
-                ChunkFAISSDatasource._swap_in(vs, db_name)
-            finally:
-                # Whatever is on disk now we wrote -- a swap that failed half
-                # way included -- so it is the generation this copy supersedes.
-                index_generation.track_disk(vs, db_name)
+            # A failure before the commit leaves the disk unchanged, and with
+            # it the generation this copy is based on.
+            committed = ChunkFAISSDatasource._stage_and_commit(vs, db_name)
+            # SYS-60 (#197): from the commit point on, this copy is based on
+            # the generation it committed, whoever finishes the roll-forward:
+            # this call, or another process's load when this one fails (a
+            # scanner holding index.faiss open).
+            index_generation.track(vs, db_name, committed)
+            index_generation.roll_forward(db_name)
 
     @staticmethod
-    def _swap_in(vs: FAISS, db_name: str) -> None:
+    def _stage_and_commit(vs: FAISS, db_name: str) -> index_generation.Generation:
+        """Stage the new pair and a copy of the old one, then commit them.
+        Returns the generation committed (index_generation.commit_staged)."""
         staged = index_generation.staging_dir(db_name)
         if os.path.exists(staged):
             shutil.rmtree(staged)
@@ -283,7 +287,7 @@ class ChunkFAISSDatasource:
                 # Copy, not move: the live pair must stay whole until the
                 # commit, so a failure before it changes nothing.
                 shutil.copy2(live_path, os.path.join(staged, fname + index_generation.BACKUP_SUFFIX))
-        index_generation.commit_staged(db_name, index_generation.owner_id(vs))
+        return index_generation.commit_staged(db_name)
 
     def _to_document(self, chunk: ChunkDTO) -> Document:
         return Document(

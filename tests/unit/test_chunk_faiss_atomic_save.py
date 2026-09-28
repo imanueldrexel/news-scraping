@@ -228,7 +228,13 @@ class TestKilledMidSave:
 class TestOwnInterruptedCommit:
     """SYS-59 (#196): a roll-forward that fails after the commit (a scanner
     holding index.faiss open) leaves this writer's own journal. Its next save
-    must finish it as its own, not refuse itself as stale."""
+    must finish it as its own, not refuse itself as stale.
+
+    SYS-60 (#197): the same when ANOTHER process finishes that journal first
+    (the web app's lazy load, any script's load_index). SYS-59 recognised the
+    commit by an owner file inside the journal, which is gone once someone
+    else rolls it forward. The writer now tracks the generation it committed,
+    read off the staged files, so it does not matter who moves them."""
 
     def _fail_roll_forward_once(self, vs, db_name):
         real_replace = os.replace
@@ -253,6 +259,38 @@ class TestOwnInterruptedCommit:
         ChunkFAISSDatasource._atomic_save_local(vs, db_name)
         on_disk = index_generation.load_index(db_name, FakeEmbeddings(size=8))
         assert sorted(d.page_content for d in on_disk.docstore._dict.values()) == ["a", "b", "c"]
+
+    def test_the_writer_saves_again_after_another_process_finished_its_journal(self, tmp_path):
+        """QA's repro (scripts/experiments/repro_foreign_rollforward_stale.py):
+        before the fix, save 2 raised StaleIndexError and 'c' was lost."""
+        db_name = str(tmp_path / "L1")
+        _save(_vs(["a"]), db_name)
+        vs = index_generation.load_index(db_name, FakeEmbeddings(size=8))
+        vs.add_texts(["b"])
+        self._fail_roll_forward_once(vs, db_name)
+
+        other = index_generation.load_index(db_name, FakeEmbeddings(size=8))  # rolls the journal forward
+        assert not os.path.isdir(index_generation.journal_dir(db_name))
+        assert sorted(d.page_content for d in other.docstore._dict.values()) == ["a", "b"]
+
+        vs.add_texts(["c"])
+        ChunkFAISSDatasource._atomic_save_local(vs, db_name)
+        on_disk = index_generation.load_index(db_name, FakeEmbeddings(size=8))
+        assert sorted(d.page_content for d in on_disk.docstore._dict.values()) == ["a", "b", "c"]
+
+    def test_the_committed_generation_is_the_one_on_disk_after_the_roll_forward(self, tmp_path):
+        """The premise of the fix, on this filesystem: moving the staged files
+        (a directory rename, then a file replace) keeps id, mtime_ns and size."""
+        db_name = str(tmp_path / "L1")
+        _save(_vs(["a"]), db_name)
+        vs = index_generation.load_index(db_name, FakeEmbeddings(size=8))
+        vs.add_texts(["b"])
+        with index_generation.save_lock(db_name):
+            committed = ChunkFAISSDatasource._stage_and_commit(vs, db_name)
+            assert os.path.isdir(index_generation.journal_dir(db_name))
+            index_generation.roll_forward(db_name)
+        assert committed is not None
+        assert index_generation.disk_generation(db_name) == committed
 
     def test_another_writer_still_finds_it_foreign(self, tmp_path):
         db_name = str(tmp_path / "L1")

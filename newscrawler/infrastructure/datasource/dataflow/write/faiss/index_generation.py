@@ -28,11 +28,18 @@ writer rolls forward (`roll_forward`, under the save lock) before it looks at
 the files. No reader that takes the save lock ever sees a mixed pair. That
 matters since FAISS.delete renumbers index_to_docstore_id: an old index.faiss
 with a new index.pkl maps positions to the wrong documents, silently.
+
+SYS-60 (#197): from its commit point on, a save's generation is the one it
+committed, whoever moves the files into place. A same-volume rename keeps a
+file's id, mtime_ns and size, so commit_staged reads the generation off the
+staged files before the rename, and the writer tracks that. When its own
+roll-forward fails (a scanner holding index.faiss) and another process's load
+finishes the journal, the writer's next save still finds its own generation
+on disk instead of refusing itself as stale.
 """
 import logging
 import os
 import shutil
-import uuid
 from typing import Optional, Tuple
 
 from filelock import FileLock
@@ -41,13 +48,10 @@ logger = logging.getLogger(__name__)
 
 INDEX_FILES = ("index.pkl", "index.faiss")
 BACKUP_SUFFIX = ".bak"
-# SYS-59: names the in-memory index that committed a journal.
-OWNER_FILE = "owner"
 # A save of the full L2 index takes tens of seconds; waiting longer than this
 # for another writer means something is wrong with it, not that it is slow.
 SAVE_LOCK_TIMEOUT_S = 600
 _ATTR = "_news_index_generation"
-_OWNER_ATTR = "_news_index_owner"
 
 Generation = Optional[Tuple]
 
@@ -93,59 +97,42 @@ def _fsync_files(directory: str) -> None:
             os.fsync(f.fileno())
 
 
-def owner_id(vs) -> str:
-    """SYS-59 (#196): this in-memory index's name in a journal it commits, so it
-    can tell its own interrupted commit from another process's."""
-    owner = getattr(vs, _OWNER_ATTR, None)
-    if owner is None:
-        owner = uuid.uuid4().hex
-        setattr(vs, _OWNER_ATTR, owner)
-    return owner
-
-
-def commit_staged(db_name: str, owner: str) -> None:
-    """Commit the pair staged in staging_dir(db_name) and move it into place.
-    The directory rename is the commit point. Call it with the save lock held."""
+def commit_staged(db_name: str) -> Generation:
+    """Commit the pair staged in staging_dir(db_name): the directory rename is
+    the commit point. Returns the generation the files will have in db_name
+    (SYS-60), read before the rename, since moving them keeps their identity.
+    The caller moves them into place with roll_forward. Call it with the save
+    lock held."""
     staged = staging_dir(db_name)
-    with open(os.path.join(staged, OWNER_FILE), "w", encoding="utf-8") as f:
-        f.write(owner)
     _fsync_files(staged)
+    committed = disk_generation(staged)
     os.rename(staged, journal_dir(db_name))
-    roll_forward(db_name)
+    return committed
 
 
-def roll_forward(db_name: str) -> Optional[str]:
+def roll_forward(db_name: str) -> bool:
     """Finish a committed save: move every file left in the journal into
     db_name, then drop the journal. Idempotent, so a kill during it is finished
-    by the next call. Returns the journal's owner ("" when it names none), or
-    None when there was no journal. Call it with the save lock held, before
-    reading or replacing the files."""
+    by the next call. Returns whether there was a journal. Call it with the
+    save lock held, before reading or replacing the files."""
     journal = journal_dir(db_name)
     if not os.path.isdir(journal):
-        return None
-    try:
-        with open(os.path.join(journal, OWNER_FILE), encoding="utf-8") as f:
-            owner = f.read().strip()
-    except OSError:
-        owner = ""
+        return False
     os.makedirs(db_name, exist_ok=True)
     for name in _journal_order():
         src = os.path.join(journal, name)
         if os.path.exists(src):
             os.replace(src, os.path.join(db_name, name))
     shutil.rmtree(journal, ignore_errors=True)
-    return owner
+    return True
 
 
-def recover(db_name: str) -> Optional[str]:
+def recover(db_name: str) -> None:
     """Make the files at db_name one whole pair: roll a committed save forward
-    and drop an uncommitted one. Returns the owner of the journal rolled
-    forward, or None. Call it with the save lock held."""
-    owner = roll_forward(db_name)
-    if owner is not None:
+    and drop an uncommitted one. Call it with the save lock held."""
+    if roll_forward(db_name):
         logger.warning(f"{db_name}: finished a save that was interrupted after its commit point (SYS-56)")
     shutil.rmtree(staging_dir(db_name), ignore_errors=True)
-    return owner
 
 
 def pair_problem(ntotal: int, index_to_docstore_id, stored_ids) -> Optional[str]:
@@ -193,7 +180,8 @@ def disk_pair_problem(db_name: str, pair=None) -> Optional[str]:
 
 
 def disk_generation(db_name: str) -> Generation:
-    """The identity of the index files on disk now; None when there is no index."""
+    """The identity of the index files in the directory db_name now; None when
+    there is no index."""
     parts = []
     for name in INDEX_FILES:
         try:
