@@ -53,6 +53,16 @@ class DataFlowRepository:
         permanently-dead URL instead of retrying it forever."""
         raise NotImplementedError
 
+    def record_fetch_error(self, sitemap_ids: List[int], error_msg: str) -> None:
+        """SYS-62: store a failure's reason and stamp the cooldown WITHOUT a
+        strike -- a first transient failure (a connection burst, a 5xx)."""
+        raise NotImplementedError
+
+    def get_last_fetch_errors(self, sitemap_ids: List[int]) -> Dict[int, Optional[str]]:
+        """SYS-62: sitemap_id -> the last recorded fetch failure reason (None if
+        none), so a repeated transient failure can be told from a first one."""
+        raise NotImplementedError
+
     def get_saved_category_pairs(self, website: str) -> Set[Tuple[str, str]]:
         """SYS-34: every (source, lower(category)) that has ever produced an
         articles row for this source -- the baseline for the never-seen-category

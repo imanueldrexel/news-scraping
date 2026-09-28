@@ -310,6 +310,41 @@ class SQLAlchemySitemapDataSource:
             )
             session.commit()
 
+    def record_fetch_error(self, sitemap_ids, error_msg: str):
+        """SYS-62: like increment_fetch_failures without the strike -- store the
+        reason and stamp the cooldown. For a first transient failure: the URL sits
+        out the cooldown, and the stored reason is what makes a second transient
+        failure a strike (CrawlerServiceImpl._record_transient_failures)."""
+        if not sitemap_ids:
+            return
+        with self.client.get_session() as session:
+            session.execute(
+                text(
+                    f"UPDATE {SitemapTable.__tablename__} "
+                    f"SET {SitemapTable.last_fetch_error.name} = :error_msg, "
+                    f"    {SitemapTable.last_crawl_attempt.name} = NOW() "
+                    f"WHERE {SitemapTable.sitemap_id.name} = ANY(:ids)"
+                ),
+                {"ids": list(sitemap_ids), "error_msg": error_msg},
+            )
+            session.commit()
+
+    def get_last_fetch_errors(self, sitemap_ids) -> Dict[int, str]:
+        """SYS-62: sitemap_id -> last_fetch_error for the given rows (None when
+        the row has never failed)."""
+        if not sitemap_ids:
+            return {}
+        with self.client.get_session() as session:
+            rows = session.execute(
+                text(
+                    f"SELECT {SitemapTable.sitemap_id.name}, {SitemapTable.last_fetch_error.name} "
+                    f"FROM {SitemapTable.__tablename__} "
+                    f"WHERE {SitemapTable.sitemap_id.name} = ANY(:ids)"
+                ),
+                {"ids": list(sitemap_ids)},
+            ).fetchall()
+        return {row[0]: row[1] for row in rows}
+
     VALID_CRAWL_STATUSES = {"pending", "rejected_filter", "empty_extraction", "saved"}
 
     def update_headlines(self, headlines_by_id: Dict[int, str]) -> int:

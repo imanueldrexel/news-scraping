@@ -327,6 +327,16 @@ Rows written before 2026-09-18 all carry the old constant `fetch or extraction p
 
 Between 50% and the ratio the run logs a WARNING and counts everything individually. **Residual risk, accepted 2026-09-25:** because 404s count even when *every* URL fails, a crawler-side change that makes a whole source 404 (a bad `_get_link` rewrite, say) retires up to 1,000 rows per run for `SITEMAP_MAX_FETCH_FAILURES` runs. That is exactly what OPS-15 was written to prevent. The ERROR line and the persisted verdict make it visible, and `scripts/reset_fetch_failures.py --website X` undoes it. After a crawler change, read the next run's verdict before the third run.
 
+**A transient failure is a strike only when it repeats** (SYS-62, 2026-09-28). The ratio above is decided per run, but an outage can be four minutes of one batch. On 2026-09-28 07:34, a ConnectionError burst inside a healthy DETIK run (93 of 1,000 failed) put a strike on 92 of its newest, working URLs. KUMPARAN's `HTTP 403` (572 rows) and VIVA's `HTTP 502` (253 rows) had the same shape, and 36 of 36 of those URLs sampled that day fetched fine. So `_record_fetch_failures` sorts every reason into one of three classes (`CrawlerServiceImpl._failure_class`), in every run:
+
+| class | reasons | not source-wide | source-wide |
+|---|---|---|---|
+| per-URL | `HTTP 404`, `HTTP 410`, `soft-404: …` | strike | strike |
+| transient | `<Error> after N retries` (connection, timeout, TLS), `HTTP 403`, `408`, `429`, `5xx` | **strike only if the row's previous `last_fetch_error` was transient too**; otherwise store the reason and stamp the cooldown, no strike | spared, cooldown-stamped |
+| page | everything else: an extractor exception, `empty document`, a redirect loop, another 4xx | strike | spared, cooldown-stamped |
+
+A URL that is unreachable for good still retires, one attempt (one cooldown) later than a 404: its first transient failure is recorded, and every one after that is a strike. BISNIS's 3-row, 403-blocked queue is that case (OPS-16 point 1). A run with transient failures persists a note on its `crawl_log` row (`status='completed'`), e.g. `transient fetch failures: 92/1000; 92 not counted (first transient failure, cooldown-stamped), 0 counted (transient again). Reasons: 'ConnectionError after 5 retries': 92`. So a burst can be found with SQL: `WHERE error_msg LIKE 'transient fetch failures%'`. Because a first transient failure is recorded without a strike, `last_fetch_error` can be set on a row whose `fetch_failures` is 0. The reason query above filters on `fetch_failures > 0` and so leaves those rows out. Drop that filter to see them.
+
 **Bring retired sitemaps back** with `scripts/reset_fetch_failures.py` (always `--dry-run` first), after fixing whatever caused the failures:
 ```powershell
 venv\Scripts\python.exe scripts\reset_fetch_failures.py --dry-run --website KOMPAS

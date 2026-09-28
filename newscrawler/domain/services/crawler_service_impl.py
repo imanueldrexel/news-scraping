@@ -2,6 +2,7 @@ import collections
 import dataclasses
 import logging
 import math
+import re
 from typing import List, Optional
 from newscrawler.core.chunker import HierarchicalChunker
 from newscrawler.core.crawler_dict_list import CRAWLER_DICT
@@ -424,17 +425,50 @@ class CrawlerServiceImpl(CrawlerService):
     # source. A 404 or a soft-404 means that page is gone whether 3 of 3 or 1,000
     # of 1,000 came back that way, so it must still count toward SYS-09's cap --
     # otherwise a window of dead URLs is re-fetched on every run forever and the
-    # queue behind it is never reached. Everything else (403, 5xx, connection,
-    # TLS, timeouts, an extractor regression) is a statement about the source.
+    # queue behind it is never reached.
     PER_URL_FAILURE_MARKERS = ("http 404", "http 410", "soft-404")
+
+    # SYS-62 (#200): a reason that says the TRANSPORT failed, not the page: a
+    # connection or timeout error that survived the page loader's retries
+    # ("ConnectionError after 5 retries" -- the only reasons of that shape), or a
+    # status a server uses for "not now" (403 throttling/WAF, 408, 429, 5xx). The
+    # same URL fetched later usually works: 36 of 36 URLs sampled from the
+    # 2026-09-26..28 DETIK ConnectionError, KUMPARAN 403 and VIVA 502 strikes
+    # fetched fine on 2026-09-28.
+    _TRANSPORT_AFTER_RETRIES = re.compile(r"^\w+ after \d+ retries$")
+    TRANSIENT_HTTP_STATUSES = frozenset({403, 408, 429}) | frozenset(range(500, 600))
+
+    FAILURE_PER_URL = "per_url"
+    FAILURE_TRANSIENT = "transient"
+    FAILURE_PAGE = "page"
 
     @classmethod
     def _is_per_url_failure(cls, reason: str) -> bool:
         text = (reason or "").strip().lower()
         return any(marker in text for marker in cls.PER_URL_FAILURE_MARKERS)
 
+    @classmethod
+    def _failure_class(cls, reason: Optional[str]) -> str:
+        """per_url: a fact about the URL (404/410/soft-404), always a strike.
+        transient: the transport failed (see TRANSIENT_HTTP_STATUSES), a strike
+        only when this URL's previous recorded failure was transient too.
+        page: everything else (an extractor exception, an empty document, a
+        redirect loop, another 4xx), a strike unless the run is source-wide,
+        where it may be a crawler regression."""
+        if not isinstance(reason, str):
+            return cls.FAILURE_PAGE
+        if cls._is_per_url_failure(reason):
+            return cls.FAILURE_PER_URL
+        text = reason.strip()
+        if cls._TRANSPORT_AFTER_RETRIES.match(text):
+            return cls.FAILURE_TRANSIENT
+        status = re.match(r"^HTTP (\d{3})$", text)
+        if status and int(status.group(1)) in cls.TRANSIENT_HTTP_STATUSES:
+            return cls.FAILURE_TRANSIENT
+        return cls.FAILURE_PAGE
+
     def _record_fetch_failures(self, website_name: str, attempted: int, run_failures: dict):
-        """OPS-15/OPS-16: turn this run's fetch failures into sitemaps.fetch_failures.
+        """OPS-15/OPS-16/SYS-62: turn this run's fetch failures into sitemaps.fetch_failures.
 
         SYS-09's cap exists to retire individually dead URLs. A site blocking
         article pages, a TLS/DNS problem, or a regression in _get_news_details
@@ -454,13 +488,23 @@ class CrawlerServiceImpl(CrawlerService):
              status='completed', article_count=0, error_msg=NULL -- identical to
              "1,000 pages fetched fine, all off-topic".
 
-        Now: the floor (SITEMAP_SOURCE_FAILURE_MIN) must be cleared as well as the
-        ratio; per-URL reasons are counted even in a source-wide run; the
-        source-level remainder gets its cooldown stamped so the window rotates;
-        and the verdict is returned for the caller to persist on the crawl_log row.
+        SYS-62: the ratio decides per RUN, but an outage can be four minutes of
+        one batch. A burst inside a healthy DETIK run (93 of 1,000 failed) put a
+        strike on 92 working URLs. So a transient failure (see _failure_class)
+        never strikes on its own, in any run. It records its reason and the
+        cooldown stamp, and strikes only when the URL's previous recorded
+        failure was transient too, i.e. on attempts at least a cooldown apart.
+        A URL that is unreachable for good still retires (OPS-16 point 1), one
+        attempt later than a 404; a single burst no longer counts.
 
-        Returns the verdict string to record, or None when there is nothing
-        remarkable to say.
+        Per class:
+          per_url   -- a strike, in every run.
+          transient -- source-wide: spared. Otherwise a strike only on a repeat.
+          page      -- source-wide: spared (a crawler regression). Otherwise a strike.
+        Every failed row is cooldown-stamped, struck or not, so the window rotates.
+
+        Returns the note to persist on the crawl_log row, or None when there is
+        nothing remarkable to say.
         """
         if not run_failures:
             return None
@@ -470,16 +514,18 @@ class CrawlerServiceImpl(CrawlerService):
         for sitemap_id, reason in run_failures.items():
             by_reason.setdefault(reason, []).append(sitemap_id)
         reason_summary = ", ".join(f"{r!r}: {len(ids)}" for r, ids in sorted(by_reason.items(), key=lambda kv: -len(kv[1])))
+        by_class = {self.FAILURE_PER_URL: {}, self.FAILURE_TRANSIENT: {}, self.FAILURE_PAGE: {}}
+        for reason, ids in by_reason.items():
+            by_class[self._failure_class(reason)][reason] = ids
+
+        # Per-URL facts count in every run.
+        for reason, ids in by_class[self.FAILURE_PER_URL].items():
+            self.data_flow_repo.increment_fetch_failures(ids, error_msg=reason)
 
         source_wide = ratio >= SITEMAP_SOURCE_FAILURE_RATIO and failed >= SITEMAP_SOURCE_FAILURE_MIN
-
         if source_wide:
-            # Per-URL facts still count; only the source-level reasons are spared.
-            per_url = {r: ids for r, ids in by_reason.items() if self._is_per_url_failure(r)}
-            source_level = {r: ids for r, ids in by_reason.items() if not self._is_per_url_failure(r)}
-            for reason, ids in per_url.items():
-                self.data_flow_repo.increment_fetch_failures(ids, error_msg=reason)
-            spared = [sid for ids in source_level.values() for sid in ids]
+            spared = [sid for cls in (self.FAILURE_TRANSIENT, self.FAILURE_PAGE)
+                      for ids in by_class[cls].values() for sid in ids]
             if spared:
                 # OPS-16 (b): stamp the cooldown even though nothing was counted,
                 # so a blocked source is not re-hammered 1,000 requests per run
@@ -488,9 +534,10 @@ class CrawlerServiceImpl(CrawlerService):
                     self.data_flow_repo.mark_sitemaps_attempted(spared)
                 except Exception as e:  # noqa: BLE001 -- telemetry must not fail the crawl
                     logger.warning(f"{website_name}: could not stamp cooldown on {len(spared)} spared sitemap(s): {e!r}")
+            n_per_url = sum(len(ids) for ids in by_class[self.FAILURE_PER_URL].values())
             verdict = (
                 f"source-wide fetch failure: {failed}/{attempted} ({ratio:.0%}); "
-                f"{sum(len(i) for i in per_url.values())} counted as per-URL, "
+                f"{n_per_url} counted as per-URL, "
                 f"{len(spared)} spared and cooldown-stamped. Reasons: {reason_summary}"
             )
             logger.error(f"{website_name}: {verdict}")
@@ -501,16 +548,47 @@ class CrawlerServiceImpl(CrawlerService):
             logger.warning(
                 f"{website_name}: {failed}/{attempted} sitemaps failed ({ratio:.0%}) but that is below "
                 f"SITEMAP_SOURCE_FAILURE_MIN={SITEMAP_SOURCE_FAILURE_MIN}, so this is {failed} dead URL(s), "
-                f"not a source-wide failure: counting them individually. Reasons: {reason_summary}"
+                f"not a source-wide failure: counting them individually (a transient one only on a repeat, SYS-62). "
+                f"Reasons: {reason_summary}"
             )
         elif ratio >= 0.5:
             logger.warning(
                 f"{website_name}: {failed}/{attempted} sitemaps failed to fetch/extract this run "
                 f"({ratio:.0%}, below SITEMAP_SOURCE_FAILURE_RATIO={SITEMAP_SOURCE_FAILURE_RATIO}); "
-                f"counting them individually. Reasons: {reason_summary}"
+                f"counting them individually (a transient one only on a repeat, SYS-62). Reasons: {reason_summary}"
             )
-        for reason, ids in by_reason.items():
+        for reason, ids in by_class[self.FAILURE_PAGE].items():
             self.data_flow_repo.increment_fetch_failures(ids, error_msg=reason)
+        return self._record_transient_failures(website_name, attempted, by_class[self.FAILURE_TRANSIENT])
+
+    def _record_transient_failures(self, website_name: str, attempted: int, transient: dict) -> Optional[str]:
+        """SYS-62: outside a source-wide run, a transient failure strikes only
+        when the URL's previous recorded failure was transient too. A first one
+        stores its reason and the cooldown stamp, with no strike. Returns the
+        note for the crawl_log row, so a burst inside an otherwise healthy run
+        can be found with SQL, not only in the log."""
+        if not transient:
+            return None
+        all_ids = [sid for ids in transient.values() for sid in ids]
+        prior = self.data_flow_repo.get_last_fetch_errors(all_ids)
+        repeats = 0
+        for reason, ids in transient.items():
+            repeat = [sid for sid in ids if self._failure_class(prior.get(sid)) == self.FAILURE_TRANSIENT]
+            repeat_set = set(repeat)
+            first = [sid for sid in ids if sid not in repeat_set]
+            if repeat:
+                self.data_flow_repo.increment_fetch_failures(repeat, error_msg=reason)
+            if first:
+                self.data_flow_repo.record_fetch_error(first, error_msg=reason)
+            repeats += len(repeat)
+        summary = ", ".join(f"{r!r}: {len(i)}" for r, i in sorted(transient.items(), key=lambda kv: -len(kv[1])))
+        note = (
+            f"transient fetch failures: {len(all_ids)}/{attempted}; "
+            f"{len(all_ids) - repeats} not counted (first transient failure, cooldown-stamped), "
+            f"{repeats} counted (transient again). Reasons: {summary}"
+        )
+        logger.warning(f"{website_name}: {note}")
+        return note
 
     # OPS-11 (#67): the two website-agnostic tasks get the same crawl_log
     # bracketing the crawl tasks have had since Phase 5, under website="ALL",

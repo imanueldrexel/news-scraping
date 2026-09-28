@@ -112,3 +112,36 @@ class TestIncrementFetchFailuresPersistence:
 
         eligible_ids = {r.sitemap_id for r in ds.sql_alchemy_sitemap.load_all_sitemaps(website=SOURCE, n_limit=1000)}
         assert sitemap_id not in eligible_ids, "still inside the cooldown window right after the failure"
+
+
+class TestTransientFailureRecordPersistence:
+    """SYS-62 (#200): a first transient failure stores its reason and the
+    cooldown stamp without a strike; the reason is what makes the next
+    transient failure a strike."""
+
+    def test_record_fetch_error_stores_the_reason_and_stamps_without_a_strike(self, ds_and_client):
+        ds, client = ds_and_client
+        sitemap_id = _insert_sitemap(client, "http://sys62.test/burst")
+
+        ds.record_fetch_error([sitemap_id], "ConnectionError after 5 retries")
+
+        with client.get_session() as s:
+            row = s.execute(
+                text("SELECT fetch_failures, last_fetch_error, last_crawl_attempt > NOW() - INTERVAL '1 minute' "
+                     "AS stamped FROM sitemaps WHERE sitemap_id = :id"),
+                {"id": sitemap_id},
+            ).fetchone()
+        assert row.fetch_failures == 0
+        assert row.last_fetch_error == "ConnectionError after 5 retries"
+        assert row.stamped, "a failure must stamp the cooldown like a success does"
+        eligible_ids = {r.sitemap_id for r in ds.sql_alchemy_sitemap.load_all_sitemaps(website=SOURCE, n_limit=1000)}
+        assert sitemap_id not in eligible_ids
+
+    def test_get_last_fetch_errors_maps_each_row(self, ds_and_client):
+        ds, client = ds_and_client
+        failed = _insert_sitemap(client, "http://sys62.test/failed")
+        clean = _insert_sitemap(client, "http://sys62.test/clean")
+        ds.record_fetch_error([failed], "HTTP 502")
+
+        assert ds.get_last_fetch_errors([failed, clean, -1]) == {failed: "HTTP 502", clean: None}
+        assert ds.get_last_fetch_errors([]) == {}
