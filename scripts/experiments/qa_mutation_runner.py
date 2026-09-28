@@ -194,6 +194,24 @@ M = [
   "            if index_generation.recover(db_name) is not None:\n"),
  ("sys56_store_check_drops_mismatch", "scripts/check_store_consistency.py",
   "pair_mismatch_levels=sum(1 for p in (l1_problem, l2_problem) if p))", "pair_mismatch_levels=0)"),
+ ("sys62_count_everything_below_the_ratio", "newscrawler/domain/services/crawler_service_impl.py",
+  "        return self._record_transient_failures(website_name, attempted, by_class[self.FAILURE_TRANSIENT])\n",
+  "        for reason, ids in by_class[self.FAILURE_TRANSIENT].items():\n"
+  "            self.data_flow_repo.increment_fetch_failures(ids, error_msg=reason)\n"),
+ ("sys62_repeat_never_strikes", "newscrawler/domain/services/crawler_service_impl.py",
+  "            repeat = [sid for sid in ids if self._failure_class(prior.get(sid)) == self.FAILURE_TRANSIENT]\n",
+  "            repeat = []\n"),
+ ("sys62_any_prior_error_is_a_repeat", "newscrawler/domain/services/crawler_service_impl.py",
+  "            repeat = [sid for sid in ids if self._failure_class(prior.get(sid)) == self.FAILURE_TRANSIENT]\n",
+  "            repeat = [sid for sid in ids if prior.get(sid)]\n"),
+ ("sys62_5xx_not_transient", "newscrawler/domain/services/crawler_service_impl.py",
+  "TRANSIENT_HTTP_STATUSES = frozenset({403, 408, 429}) | frozenset(range(500, 600))",
+  "TRANSIENT_HTTP_STATUSES = frozenset({403, 408, 429})"),
+ ("sys62_page_failures_not_struck", "newscrawler/domain/services/crawler_service_impl.py",
+  "        for reason, ids in by_class[self.FAILURE_PAGE].items():\n"
+  "            self.data_flow_repo.increment_fetch_failures(ids, error_msg=reason)\n", ""),
+ ("sys62_transient_not_stamped_source_wide", "newscrawler/domain/services/crawler_service_impl.py",
+  "for cls in (self.FAILURE_TRANSIENT, self.FAILURE_PAGE)", "for cls in (self.FAILURE_PAGE,)"),
 ]
 only = sys.argv[1:]
 env = dict(os.environ, VECTOR_DB_NAME_L1=os.path.join(SCRATCH, "NOPE_L1"),
