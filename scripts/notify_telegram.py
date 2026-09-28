@@ -172,8 +172,16 @@ def send(message: str, queue_on_failure: bool = True) -> bool:
     return ok
 
 
-if __name__ == "__main__":
-    text = sys.argv[1] if len(sys.argv) > 1 else "Test notification from notify_telegram.py"
+def main(argv=None) -> int:
+    """The command-line test (OPERATIONS.md, step 5). The operator is checking
+    the setup now, so a failure is reported now and never queued: delivered
+    hours later as [delayed], it would only mislead."""
+    argv = sys.argv[1:] if argv is None else argv
+    text = argv[0] if argv else "Test notification from notify_telegram.py"
     ok = send(text, queue_on_failure=False)
     print("Sent." if ok else "Failed to send -- check TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID and the log above.")
-    sys.exit(0 if ok else 1)
+    return 0 if ok else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

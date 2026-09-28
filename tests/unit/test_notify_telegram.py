@@ -172,6 +172,23 @@ class TestAFailedAlertIsDeliveredLater:
             mod.send("second")
         assert self._queued(_outbox) == ["first", "second"]
 
+    def test_a_new_message_is_not_posted_while_an_older_one_is_still_queued(self, _outbox):
+        """DBT-48 (#199): queued alerts are delivered first, so the alerts
+        arrive in order. When the flush fails, the new message must wait behind
+        the old one even if it could have been sent: only the flush attempts
+        are posted, and the new message is queued after the old one."""
+        mod = self._mod()
+        with patch.object(mod, "requests") as rq:
+            rq.post.side_effect = ConnectionError("down")
+            mod.send("07:00 summary")
+        attempts = 1 + len(mod.RETRY_DELAYS)
+        with patch.object(mod, "requests") as rq:
+            rq.post.side_effect = [ConnectionError("still down")] * attempts + [_Resp(200)]
+            assert mod.send("19:00 summary") is False
+        texts = [c[1]["json"]["text"] for c in rq.post.call_args_list]
+        assert len(texts) == attempts and all(t.endswith("07:00 summary") for t in texts), texts
+        assert self._queued(_outbox) == ["07:00 summary", "19:00 summary"]
+
     def test_a_message_the_api_refuses_for_good_is_not_queued(self, _outbox):
         mod = self._mod()
         with patch.object(mod, "requests") as rq:
@@ -204,3 +221,16 @@ class TestAFailedAlertIsDeliveredLater:
             rq.post.side_effect = ConnectionError("down")
             assert mod.send("test", queue_on_failure=False) is False
         assert self._queued(_outbox) == []
+
+    def test_the_command_line_entry_point_leaves_the_outbox_as_it_was(self, _outbox, capsys):
+        """DBT-48 (#199): the entry point itself, not send(): OPERATIONS.md's
+        step-5 test run during an outage must fail now and queue nothing."""
+        mod = self._mod()
+        with patch.object(mod, "requests") as rq:
+            rq.post.side_effect = ConnectionError("down")
+            assert mod.main(["test"]) == 1
+            assert self._queued(_outbox) == []
+            mod.send("07:00 summary")
+            assert mod.main(["test"]) == 1
+        assert self._queued(_outbox) == ["07:00 summary"]
+        assert "Failed to send" in capsys.readouterr().out
