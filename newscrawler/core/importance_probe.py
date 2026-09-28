@@ -204,6 +204,12 @@ class ImportanceProbe:
     def encoder_name(self) -> str:
         return self.sidecar.get("embedding_model", "")
 
+    @property
+    def encoder_revision(self) -> str:
+        """SYS-61 (#198): the Hub revision of the encoder the probe was trained
+        on (hf_cache.cached_revision at training time)."""
+        return self.sidecar.get("embedding_revision", "")
+
     def _check(self, embeddings: np.ndarray) -> np.ndarray:
         x = np.asarray(embeddings, dtype=np.float64)
         if x.ndim == 1:

@@ -74,6 +74,7 @@ from newscrawler.core.importance_probe import (  # noqa: E402
     DEFAULT_PROBE_ENCODER, PROBE_DIR, PROBE_SIDECAR, PROBE_WEIGHTS, UNCERTAIN_BAND,
     ImportanceProbe, build_check_text, embed_for_probe, sha256_of_file,
 )
+from newscrawler.core.utils.hf_cache import cached_revision, resolve_model  # noqa: E402
 
 logging.basicConfig(format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -122,24 +123,41 @@ def texts_of(rows: Sequence[dict]) -> List[str]:
 EMBED_CACHE_DIR = os.path.join(REPO_ROOT, "scripts", "experiments")
 
 
-def embed_split(encoder: str, gold_path: str, train: Sequence[dict], test: Sequence[dict]):
-    """Embed both splits, cached next to the experiment scripts (gitignored) by
-    (encoder, gold sha256, the exact texts) -- e5-large takes ~10 min on CPU
-    and the gold set changes far less often than the head or the gates."""
+def _embed_cache_path(encoder: str, revision: str, gold_path: str, train: Sequence[dict], test: Sequence[dict]) -> str:
     import hashlib
-    key = hashlib.sha256((encoder + sha256_of_file(gold_path) + "".join(texts_of(train) + texts_of(test))).encode()).hexdigest()[:16]
-    cache = os.path.join(EMBED_CACHE_DIR, f"probe_train_{key}.npz")
-    if os.path.exists(cache):
-        with np.load(cache) as z:
-            logger.info("embeddings from cache %s", os.path.basename(cache))
-            return z["X_train"], z["X_test"]
+    key = hashlib.sha256((encoder + revision + sha256_of_file(gold_path)
+                          + "".join(texts_of(train) + texts_of(test))).encode()).hexdigest()[:16]
+    return os.path.join(EMBED_CACHE_DIR, f"probe_train_{key}.npz")
+
+
+def embed_split(encoder: str, gold_path: str, train: Sequence[dict], test: Sequence[dict]):
+    """(X_train, X_test, revision): both splits embedded with the encoder the
+    crawl resolves (hf_cache.resolve_model), and the revision that is.
+
+    Cached next to the experiment scripts (gitignored) by (encoder, revision,
+    gold sha256, the exact texts) -- e5-large takes ~10 min on CPU and the gold
+    set changes far less often than the head or the gates. SYS-61 (#198): the
+    revision is in the key, so a cache built with another revision is never
+    read back as this one's, and the sidecar records it."""
+    revision = cached_revision(encoder)
+    if revision:
+        cache = _embed_cache_path(encoder, revision, gold_path, train, test)
+        if os.path.exists(cache):
+            with np.load(cache) as z:
+                logger.info("embeddings from cache %s (revision %s)", os.path.basename(cache), revision[:12])
+                return z["X_train"], z["X_test"], revision
     from sentence_transformers import SentenceTransformer
-    model = SentenceTransformer(encoder)
+    model = SentenceTransformer(resolve_model(encoder))
+    # After the load: a model not cached before has just been downloaded.
+    revision = cached_revision(encoder)
+    if not revision:
+        raise RuntimeError(f"{encoder} is not in the local Hugging Face cache after loading it; "
+                           "the probe must record the encoder revision it was trained on (SYS-61)")
     X_train = embed_for_probe(model, texts_of(train), model_name=encoder)
     X_test = embed_for_probe(model, texts_of(test), model_name=encoder)
     os.makedirs(EMBED_CACHE_DIR, exist_ok=True)
-    np.savez(cache, X_train=X_train, X_test=X_test)
-    return X_train, X_test
+    np.savez(_embed_cache_path(encoder, revision, gold_path, train, test), X_train=X_train, X_test=X_test)
+    return X_train, X_test, revision
 
 
 def tradeoff_curve(rows: Sequence[dict], p_soft: np.ndarray, topic_pred: np.ndarray,
@@ -399,7 +417,7 @@ def cmd_train(args) -> int:
     logger.info("gold %s: %d rows (train %d / test %d), sha256 %s; encoder %s", os.path.relpath(args.gold, REPO_ROOT),
                 len(gold), len(train), len(test), sha256_of_file(args.gold)[:12], args.encoder)
 
-    X_train, X_test = embed_split(args.encoder, args.gold, train, test)
+    X_train, X_test, revision = embed_split(args.encoder, args.gold, train, test)
     y_train = [r["topic"] for r in train]
     logger.info("embedded: train %s, test %s", X_train.shape, X_test.shape)
 
@@ -459,6 +477,7 @@ def cmd_train(args) -> int:
     sidecar = {
         "trained_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "embedding_model": args.encoder,
+        "embedding_revision": revision,
         "embedding_dim": int(topic_coef.shape[1]),
         "classes": classes,
         "soft_threshold": tau,
@@ -482,7 +501,9 @@ def cmd_train(args) -> int:
     with open(os.path.join(args.out_dir, PROBE_SIDECAR), "w", encoding="utf-8", newline="\n") as f:
         json.dump(sidecar, f, indent=1, ensure_ascii=False)
     # Load it back through the runtime path: what the service will do at start-up.
-    ImportanceProbe.load(args.out_dir, expected_model_name=args.encoder)
+    written = ImportanceProbe.load(args.out_dir, expected_model_name=args.encoder)
+    if written.encoder_revision != revision:  # SYS-61: the filter refuses a probe without it
+        raise RuntimeError(f"the written sidecar records embedding_revision {written.encoder_revision!r}, not {revision!r}")
     logger.info("wrote %s and %s (loads back cleanly)", PROBE_WEIGHTS, PROBE_SIDECAR)
     return 0
 

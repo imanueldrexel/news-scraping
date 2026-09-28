@@ -7,7 +7,7 @@ from sentence_transformers import SentenceTransformer
 
 from newscrawler.core import importance_probe
 from newscrawler.core.importance_probe import PROBE_DIR, ImportanceProbe, ProbeArtifactError, embed_for_probe
-from newscrawler.core.utils.hf_cache import resolve_model
+from newscrawler.core.utils.hf_cache import EncoderRevisionError, cached_revision, check_revision, resolve_model
 
 # Configure logging
 logging.basicConfig()
@@ -462,6 +462,8 @@ class SemanticImportanceFilter:
         # OPS-32 (#193): the cached snapshot, never a Hub round trip. model_name
         # stays the Hub id: the E5 prefix and the log are keyed on it.
         self.model = model if model is not None else SentenceTransformer(resolve_model(self.model_name))
+        if model is None:
+            self._check_encoder_revision()
         dim = self.model.get_sentence_embedding_dimension()
         if dim != self.probe.dim:
             raise ProbeArtifactError(f"{self.model_name} embeds to {dim} dims, the probe expects {self.probe.dim}")
@@ -480,6 +482,21 @@ class SemanticImportanceFilter:
     def classify(self, text: str, category: Optional[str] = None, source: Optional[str] = None) -> FilterDecision:
         """One article. Thin wrapper over classify_batch."""
         return self.classify_batch([text], [category], [source])[0]
+
+    def _check_encoder_revision(self) -> None:
+        """SYS-61 (#198): tau and the gates were measured on one revision of the
+        encoder. A load that resolves another (refs/main moved by an online load
+        by Hub id) would score in a different space, silently: refuse to start."""
+        if not self.probe.encoder_revision:
+            raise ProbeArtifactError(
+                "probe sidecar records no embedding_revision, so nothing says the cached "
+                f"{self.model_name} is the encoder it was trained on -- retrain with "
+                "scripts/train_importance_probe.py (SYS-61)")
+        try:
+            check_revision(self.model_name, self.probe.encoder_revision,
+                           cached_revision(self.model_name), "the importance probe")
+        except EncoderRevisionError as e:
+            raise ProbeArtifactError(str(e)) from e
 
     def classify_batch(self, texts: Sequence[str], categories: Sequence[Optional[str]],
                        sources: Optional[Sequence[Optional[str]]] = None) -> List[FilterDecision]:

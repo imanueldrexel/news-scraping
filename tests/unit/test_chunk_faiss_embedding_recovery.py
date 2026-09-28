@@ -81,7 +81,7 @@ class TestEmbedBatchRecoversRealEmbeddingId:
         assert len(result) == 1
         assert result[0].embedding_id == "new-uuid"
         vs.add_documents.assert_called_once()
-        mock_save.assert_called_once_with(vs, "NEWS_L1")
+        mock_save.assert_called_once_with(vs, "NEWS_L1", encoder=ds.encoder_record)
 
     def test_mixed_batch_splits_correctly(self):
         ds = _ds()

@@ -1,6 +1,7 @@
 {
  "trained_at": "2026-09-23T00:56:35+00:00",
  "embedding_model": "intfloat/multilingual-e5-large",
+ "embedding_revision": "3d7cfbdacd47fdda877c5cd8a79fbcc4f2a574f3",
  "embedding_dim": 1024,
  "classes": [
   "markets",

@@ -313,10 +313,10 @@ class TestAFailedFlushKeepsItsDiscards:
         repo = _repo_over(paths, table, terminal={7})
         real_save = ChunkFAISSDatasource._atomic_save_local
 
-        def l2_refused(vs, db_name):
+        def l2_refused(vs, db_name, **kwargs):
             if db_name == paths[1]:
                 raise StaleIndexError("another process saved NEWS_L2")
-            return real_save(vs, db_name)
+            return real_save(vs, db_name, **kwargs)
 
         with patch.object(ChunkFAISSDatasource, "_atomic_save_local", side_effect=l2_refused):
             with pytest.raises(StaleIndexError):

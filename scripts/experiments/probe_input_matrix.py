@@ -25,6 +25,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
 
 from newscrawler.core.filter_rubric import TOPICS, TOPIC_SOFT  # noqa: E402
 from newscrawler.core.importance_probe import PROBE_MODEL_NAME, embed_for_probe, sha256_of_file  # noqa: E402
+from newscrawler.core.utils.hf_cache import resolve_model  # noqa: E402
 from train_importance_probe import GATES, SEED, gate_metrics, gates_pass, read_gold, texts_of  # noqa: E402
 
 logging.basicConfig(format="%(message)s")
@@ -41,7 +42,7 @@ def embeddings(encoder, gold_path, gold):
         with np.load(cache) as z:
             return z["X"]
     from sentence_transformers import SentenceTransformer
-    X = embed_for_probe(SentenceTransformer(encoder), texts_of(gold), model_name=encoder)
+    X = embed_for_probe(SentenceTransformer(resolve_model(encoder)), texts_of(gold), model_name=encoder)
     np.savez(cache, X=X)
     return X
 

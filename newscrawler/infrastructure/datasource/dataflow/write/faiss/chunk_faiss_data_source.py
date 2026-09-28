@@ -1,16 +1,17 @@
+import json
 import logging
 import os
 import shutil
 from contextlib import contextmanager
 from dataclasses import replace
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from langchain_community.vectorstores import FAISS
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain.schema import Document
 
 from newscrawler.core.constants import VECTOR_DB_NAME_L1, VECTOR_DB_NAME_L2, EMBEDDING_MODEL_HF
-from newscrawler.core.utils.hf_cache import resolve_model
+from newscrawler.core.utils.hf_cache import EncoderRevisionError, cached_revision, check_revision, resolve_model
 from newscrawler.domain.dtos.dataflow.details.chunk_dto import ChunkDTO
 from newscrawler.infrastructure.datasource.dataflow.write.faiss import index_generation
 from newscrawler.infrastructure.datasource.dataflow.write.faiss.index_generation import StaleIndexError
@@ -19,6 +20,10 @@ logger = logging.getLogger(__name__)
 
 
 class ChunkFAISSDatasource:
+    # SYS-61 (#198): {"model", "revision"} of the encoder this process embeds
+    # with; each save commits it with the pair (index_generation.ENCODER_FILE).
+    encoder_record: Optional[dict] = None
+
     def __init__(self):
         logger.info(f"Loading embedding model: {EMBEDDING_MODEL_HF}")
         self.embedding_model = HuggingFaceEmbeddings(
@@ -27,6 +32,7 @@ class ChunkFAISSDatasource:
             model_name=resolve_model(EMBEDDING_MODEL_HF),
             encode_kwargs={'batch_size': 64, 'normalize_embeddings': True},
         )
+        self.encoder_record = {"model": EMBEDDING_MODEL_HF, "revision": cached_revision(EMBEDDING_MODEL_HF)}
         self.vs_l1 = self._load_or_create(VECTOR_DB_NAME_L1)
         self.vs_l2 = self._load_or_create(VECTOR_DB_NAME_L2)
         logger.info("ChunkFAISSDatasource ready (L1 + L2 indexes loaded)")
@@ -191,7 +197,7 @@ class ChunkFAISSDatasource:
         written (outside one); the next deferred block of their source re-embeds
         NULL rows."""
         try:
-            self._atomic_save_local(vs, db_name)
+            self._atomic_save_local(vs, db_name, encoder=self.encoder_record)
         except StaleIndexError:
             logger.error(f"  {db_name}: another process saved this index after this one loaded it; "
                          f"dropping this process's unsaved vectors and reloading the index")
@@ -225,7 +231,7 @@ class ChunkFAISSDatasource:
             cached[0] = len(vs.docstore._dict)
 
     @staticmethod
-    def _atomic_save_local(vs: FAISS, db_name: str) -> None:
+    def _atomic_save_local(vs: FAISS, db_name: str, encoder: Optional[dict] = None) -> None:
         """DBT-10 (#45): FAISS.save_local writes index.faiss then index.pkl
         directly into db_name, with no temp-file + rename -- a crash, OOM, or
         disk-full mid-write leaves the only copy truncated. So the new pair is
@@ -242,6 +248,11 @@ class ChunkFAISSDatasource:
         rolled forward from that journal; a kill at any point leaves the old
         pair or a journal that the next load finishes. The previous pair is
         staged as *.bak in the same commit, so the backup is one pair too.
+
+        SYS-61 (#198): `encoder` ({"model", "revision"}) is committed with the
+        pair as index_generation.ENCODER_FILE. A caller that embeds nothing (a
+        repair or dedupe script that only deletes) passes None, and the pair
+        keeps the record it had.
         """
         from newscrawler.tools.run_lock import refuse_foreign_writer
 
@@ -265,7 +276,7 @@ class ChunkFAISSDatasource:
             index_generation.check_fresh(vs, db_name)
             # A failure before the commit leaves the disk unchanged, and with
             # it the generation this copy is based on.
-            committed = ChunkFAISSDatasource._stage_and_commit(vs, db_name)
+            committed = ChunkFAISSDatasource._stage_and_commit(vs, db_name, encoder)
             # SYS-60 (#197): from the commit point on, this copy is based on
             # the generation it committed, whoever finishes the roll-forward:
             # this call, or another process's load when this one fails (a
@@ -274,9 +285,9 @@ class ChunkFAISSDatasource:
             index_generation.roll_forward(db_name)
 
     @staticmethod
-    def _stage_and_commit(vs: FAISS, db_name: str) -> index_generation.Generation:
-        """Stage the new pair and a copy of the old one, then commit them.
-        Returns the generation committed (index_generation.commit_staged)."""
+    def _stage_and_commit(vs: FAISS, db_name: str, encoder: Optional[dict] = None) -> index_generation.Generation:
+        """Stage the new pair, a copy of the old one and the encoder record, then
+        commit them. Returns the generation committed (index_generation.commit_staged)."""
         staged = index_generation.staging_dir(db_name)
         if os.path.exists(staged):
             shutil.rmtree(staged)
@@ -287,6 +298,12 @@ class ChunkFAISSDatasource:
                 # Copy, not move: the live pair must stay whole until the
                 # commit, so a failure before it changes nothing.
                 shutil.copy2(live_path, os.path.join(staged, fname + index_generation.BACKUP_SUFFIX))
+        record = os.path.join(staged, index_generation.ENCODER_FILE)
+        if encoder is not None:
+            with open(record, "w", encoding="utf-8") as f:
+                json.dump(encoder, f)
+        elif os.path.exists(os.path.join(db_name, index_generation.ENCODER_FILE)):
+            shutil.copy2(os.path.join(db_name, index_generation.ENCODER_FILE), record)
         return index_generation.commit_staged(db_name)
 
     def _to_document(self, chunk: ChunkDTO) -> Document:
@@ -303,10 +320,28 @@ class ChunkFAISSDatasource:
             },
         )
 
+    def _check_encoder(self, db_name: str) -> None:
+        """SYS-61 (#198): refuse an index embedded with another encoder revision
+        than the one this process loaded. New vectors would land in a different
+        space from the stored ones, and RAG, the SYS-17 key reuse and the
+        newsletter's DBSCAN all assume one space."""
+        recorded = index_generation.read_encoder(db_name)
+        loaded = self.encoder_record or {}
+        if recorded is None:
+            logger.warning(f"{db_name} records no encoder revision (saved before SYS-61); "
+                           f"its next save records {loaded.get('model')} {loaded.get('revision')}")
+            return
+        if recorded.get("model") != loaded.get("model"):
+            raise EncoderRevisionError(
+                f"{db_name} was embedded with {recorded.get('model')}, this process loads {loaded.get('model')}")
+        check_revision(loaded.get("model"), recorded.get("revision"), loaded.get("revision"), db_name)
+
     def _load_or_create(self, db_name: str) -> FAISS:
         if index_generation.has_index(db_name):
             logger.info(f"Loading existing FAISS index: {db_name}")
-            return index_generation.load_index(db_name, self.embedding_model)
+            vs = index_generation.load_index(db_name, self.embedding_model)
+            self._check_encoder(db_name)
+            return vs
 
         logger.info(f"Creating new FAISS index: {db_name}")
         dummy = Document(page_content="init", metadata={})

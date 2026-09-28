@@ -37,6 +37,7 @@ roll-forward fails (a scanner holding index.faiss) and another process's load
 finishes the journal, the writer's next save still finds its own generation
 on disk instead of refusing itself as stale.
 """
+import json
 import logging
 import os
 import shutil
@@ -48,6 +49,9 @@ logger = logging.getLogger(__name__)
 
 INDEX_FILES = ("index.pkl", "index.faiss")
 BACKUP_SUFFIX = ".bak"
+# SYS-61 (#198): the encoder (Hub id and revision) the pair's vectors were
+# embedded with. Committed with the pair, so it can never describe another one.
+ENCODER_FILE = "encoder.json"
 # A save of the full L2 index takes tens of seconds; waiting longer than this
 # for another writer means something is wrong with it, not that it is slow.
 SAVE_LOCK_TIMEOUT_S = 600
@@ -86,7 +90,17 @@ def has_index(db_name: str) -> bool:
 def _journal_order():
     # The old pair's backup goes in before the new pair replaces it. Any order
     # would do, since an interrupted roll-forward is finished by the next one.
-    return tuple(name + BACKUP_SUFFIX for name in INDEX_FILES) + INDEX_FILES
+    return tuple(name + BACKUP_SUFFIX for name in INDEX_FILES) + (ENCODER_FILE,) + INDEX_FILES
+
+
+def read_encoder(db_name: str) -> Optional[dict]:
+    """SYS-61: the encoder record committed with the pair at db_name, or None
+    when the pair has none (saved before SYS-61)."""
+    try:
+        with open(os.path.join(db_name, ENCODER_FILE), encoding="utf-8") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return None
 
 
 def _fsync_files(directory: str) -> None:
