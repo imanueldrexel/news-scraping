@@ -238,8 +238,6 @@ M = [
   "        if recorded.get(\"model\") != loaded.get(\"model\"):", "        if False:"),
  ("sys61_encoder_not_rolled_forward", "newscrawler/infrastructure/datasource/dataflow/write/faiss/index_generation.py",
   " + (ENCODER_FILE,) + INDEX_FILES", " + INDEX_FILES"),
- ("sys61_record_not_carried_forward", "newscrawler/infrastructure/datasource/dataflow/write/faiss/chunk_faiss_data_source.py",
-  "        elif os.path.exists(os.path.join(db_name, index_generation.ENCODER_FILE)):", "        elif False:"),
  ("sys61_crawl_saves_without_encoder", "newscrawler/infrastructure/datasource/dataflow/write/faiss/chunk_faiss_data_source.py",
   "self._atomic_save_local(vs, db_name, encoder=self.encoder_record)", "self._atomic_save_local(vs, db_name)"),
  ("sys61_trainer_cache_ignores_revision", "scripts/train_importance_probe.py",

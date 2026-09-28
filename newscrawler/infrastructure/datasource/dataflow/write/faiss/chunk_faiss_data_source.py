@@ -298,12 +298,11 @@ class ChunkFAISSDatasource:
                 # Copy, not move: the live pair must stay whole until the
                 # commit, so a failure before it changes nothing.
                 shutil.copy2(live_path, os.path.join(staged, fname + index_generation.BACKUP_SUFFIX))
-        record = os.path.join(staged, index_generation.ENCODER_FILE)
         if encoder is not None:
-            with open(record, "w", encoding="utf-8") as f:
+            # Without one, the roll-forward leaves the pair's record in place:
+            # it moves only what the journal holds.
+            with open(os.path.join(staged, index_generation.ENCODER_FILE), "w", encoding="utf-8") as f:
                 json.dump(encoder, f)
-        elif os.path.exists(os.path.join(db_name, index_generation.ENCODER_FILE)):
-            shutil.copy2(os.path.join(db_name, index_generation.ENCODER_FILE), record)
         return index_generation.commit_staged(db_name)
 
     def _to_document(self, chunk: ChunkDTO) -> Document:
