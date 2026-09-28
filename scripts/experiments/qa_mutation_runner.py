@@ -76,11 +76,9 @@ M = [
  ("sys53_no_save_lock", "newscrawler/infrastructure/datasource/dataflow/write/faiss/chunk_faiss_data_source.py",
   "        with index_generation.save_lock(db_name):\n            # OPS-26",
   "        import contextlib\n        with contextlib.nullcontext():\n            # OPS-26"),
+ # Re-targeted after SYS-60: a save tracks the generation it committed.
  ("sys53_own_save_not_tracked", "newscrawler/infrastructure/datasource/dataflow/write/faiss/chunk_faiss_data_source.py",
-  "                # way included -- so it is the generation this copy supersedes.\n"
-  "                index_generation.track_disk(vs, db_name)\n",
-  "                # way included -- so it is the generation this copy supersedes.\n"
-  "                pass\n"),
+  "            index_generation.track(vs, db_name, committed)\n", ""),
  ("sys53_load_records_disk_at_save_time", "newscrawler/infrastructure/datasource/dataflow/write/faiss/index_generation.py",
   "    if disk_generation(db_name) != recorded[1]:", "    if False:"),
  ("sys53_no_reload_after_refusal", "newscrawler/infrastructure/datasource/dataflow/write/faiss/chunk_faiss_data_source.py",
@@ -135,12 +133,15 @@ M = [
   "        recover(db_name)\n        generation = disk_generation(db_name)", "        generation = disk_generation(db_name)"),
  ("sys56_load_skips_pair_check", "newscrawler/infrastructure/datasource/dataflow/write/faiss/index_generation.py",
   "    if problem:\n        raise CorruptIndexError(", "    if False:\n        raise CorruptIndexError("),
+ # Re-targeted after SYS-60: commit_staged returns the generation; the caller rolls forward.
  ("sys56_swap_file_by_file", "newscrawler/infrastructure/datasource/dataflow/write/faiss/index_generation.py",
-  "    os.rename(staged, journal_dir(db_name))\n    roll_forward(db_name)",
-  "    for name in INDEX_FILES:\n        os.replace(os.path.join(staged, name), os.path.join(db_name, name))"),
+  "    os.rename(staged, journal_dir(db_name))\n    return committed",
+  "    os.makedirs(db_name, exist_ok=True)\n"
+  "    for name in INDEX_FILES:\n        os.replace(os.path.join(staged, name), os.path.join(db_name, name))\n"
+  "    return committed"),
+ # Re-targeted after SYS-60 removed SYS-59's owner comparison.
  ("sys56_save_does_not_roll_forward", "newscrawler/infrastructure/datasource/dataflow/write/faiss/chunk_faiss_data_source.py",
-  "            if index_generation.recover(db_name) == index_generation.owner_id(vs):\n"
-  "                index_generation.track_disk(vs, db_name)\n", ""),
+  "            index_generation.recover(db_name)\n            # SYS-53 (#182)", "            # SYS-53 (#182)"),
  ("sys56_has_index_ignores_journal", "newscrawler/infrastructure/datasource/dataflow/write/faiss/index_generation.py",
   " or os.path.isdir(journal_dir(db_name))", ""),
  ("sys56_bak_not_in_the_commit", "newscrawler/infrastructure/datasource/dataflow/write/faiss/index_generation.py",
@@ -185,13 +186,19 @@ M = [
   "        del self.__dict__"),
  ("sys58_redo_rows_without_vectors", "newscrawler/infrastructure/repositories/dataflow/data_flow_repository_impl.py",
   "        self.chunk_faiss_datasource.discard(unsaved)\n", ""),
- ("sys59_own_journal_foreign", "newscrawler/infrastructure/datasource/dataflow/write/faiss/chunk_faiss_data_source.py",
-  "            if index_generation.recover(db_name) == index_generation.owner_id(vs):\n"
-  "                index_generation.track_disk(vs, db_name)\n",
-  "            index_generation.recover(db_name)\n"),
- ("sys59_every_journal_is_mine", "newscrawler/infrastructure/datasource/dataflow/write/faiss/chunk_faiss_data_source.py",
-  "            if index_generation.recover(db_name) == index_generation.owner_id(vs):\n",
-  "            if index_generation.recover(db_name) is not None:\n"),
+ # SYS-60 (2026-09-28) replaced SYS-59's owner file, and these replace its two mutants.
+ ("sys60_tracks_only_after_its_own_roll_forward", "newscrawler/infrastructure/datasource/dataflow/write/faiss/chunk_faiss_data_source.py",
+  "            index_generation.track(vs, db_name, committed)\n            index_generation.roll_forward(db_name)\n",
+  "            index_generation.roll_forward(db_name)\n            index_generation.track_disk(vs, db_name)\n"),
+ ("sys60_committed_generation_unknown", "newscrawler/infrastructure/datasource/dataflow/write/faiss/index_generation.py",
+  "    committed = disk_generation(staged)\n", "    committed = None\n"),
+ ("sys60_save_leaves_its_journal", "newscrawler/infrastructure/datasource/dataflow/write/faiss/chunk_faiss_data_source.py",
+  "            index_generation.track(vs, db_name, committed)\n            index_generation.roll_forward(db_name)\n",
+  "            index_generation.track(vs, db_name, committed)\n"),
+ ("sys60_any_journal_is_mine", "newscrawler/infrastructure/datasource/dataflow/write/faiss/chunk_faiss_data_source.py",
+  "            index_generation.recover(db_name)\n            # SYS-53 (#182)",
+  "            if index_generation.roll_forward(db_name):\n                index_generation.track_disk(vs, db_name)\n"
+  "            # SYS-53 (#182)"),
  ("sys56_store_check_drops_mismatch", "scripts/check_store_consistency.py",
   "pair_mismatch_levels=sum(1 for p in (l1_problem, l2_problem) if p))", "pair_mismatch_levels=0)"),
  ("sys62_count_everything_below_the_ratio", "newscrawler/domain/services/crawler_service_impl.py",
