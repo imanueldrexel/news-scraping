@@ -219,6 +219,12 @@ M = [
   "            self.data_flow_repo.increment_fetch_failures(ids, error_msg=reason)\n", ""),
  ("sys62_transient_not_stamped_source_wide", "newscrawler/domain/services/crawler_service_impl.py",
   "for cls in (self.FAILURE_TRANSIENT, self.FAILURE_PAGE)", "for cls in (self.FAILURE_PAGE,)"),
+ # DBT-48 (#199): QA's two survivors of 2026-09-28.
+ ("dbt48_new_msg_jumps_queue", "scripts/notify_telegram.py",
+  "            if pending:\n                ok, retryable, reason = False, True,",
+  "            if False:\n                ok, retryable, reason = False, True,"),
+ ("dbt48_cli_message_queued", "scripts/notify_telegram.py",
+  "    ok = send(text, queue_on_failure=False)\n", "    ok = send(text)\n"),
 ]
 only = sys.argv[1:]
 env = dict(os.environ, VECTOR_DB_NAME_L1=os.path.join(SCRATCH, "NOPE_L1"),
