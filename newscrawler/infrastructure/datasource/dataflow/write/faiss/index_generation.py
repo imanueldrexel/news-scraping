@@ -222,6 +222,15 @@ def track(vs, db_name: str, generation: Generation) -> None:
     setattr(vs, _ATTR, (os.path.abspath(db_name), generation))
 
 
+def is_current(vs, db_name: str) -> bool:
+    """DBT-16 (#51): does the disk still hold the generation `vs` was read
+    from? Two stats and no lock: a reader's cheap "should I reload?" check. A
+    writer decides with check_fresh under the save lock instead."""
+    recorded = getattr(vs, _ATTR, None)
+    return (recorded is not None and recorded[0] == os.path.abspath(db_name)
+            and recorded[1] == disk_generation(db_name))
+
+
 def track_disk(vs, db_name: str) -> None:
     """Record that `vs` is based on whatever is on disk at `db_name` now.
 

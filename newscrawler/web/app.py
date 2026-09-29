@@ -17,6 +17,7 @@ load_dotenv(
 
 import logging
 import threading
+import time
 import uuid
 from datetime import date, datetime
 from pathlib import Path
@@ -91,12 +92,40 @@ def _get_stats_ds() -> SQLAlchemyNewsletterDataSource:
     return _stats_ds
 
 
+# DBT-16 (#51): the crawler is another process and saves NEWS_L1/L2 after
+# every source; this process loads them once. Before a query, at most every
+# FAISS_RELOAD_CHECK_S, the on-disk generation is compared with the loaded one
+# (two stats) and a changed level is reloaded. One thread reloads at a time;
+# the others keep searching the index they have.
+FAISS_RELOAD_CHECK_S = float(os.getenv("FAISS_RELOAD_CHECK_S", 30))
+_reload_lock = threading.Lock()
+_last_reload_check = 0.0
+
+
+def _refresh_faiss_if_stale() -> None:
+    global _last_reload_check
+    if _faiss_ds is None or time.monotonic() - _last_reload_check < FAISS_RELOAD_CHECK_S:
+        return
+    if not _reload_lock.acquire(blocking=False):
+        return
+    try:
+        _last_reload_check = time.monotonic()
+        _faiss_ds.refresh_stale()
+    except Exception as e:  # noqa: BLE001 -- a failed reload must not fail the query
+        logger.error(f"FAISS reload failed; still serving the index loaded at "
+                     f"{getattr(_faiss_ds, 'loaded_at', {})}: {type(e).__name__}: {e}")
+    finally:
+        _reload_lock.release()
+
+
 def _run_query(**kwargs) -> dict:
     """DBT-15 (#50): the single sync entry point handed to run_in_threadpool
     by both query routes. _get_processor() itself must run inside the
     threadpool too -- calling it before the dispatch would still block the
     event loop for the full ~10s model/index load on the first request."""
-    return _get_processor().query(**kwargs)
+    processor = _get_processor()
+    _refresh_faiss_if_stale()
+    return processor.query(**kwargs)
 
 
 # ── Request/response models ───────────────────────────────────────────────────
@@ -217,6 +246,9 @@ def _health_payload() -> dict:
             # OPS-04: a gap between this and chunks_indexed is exactly the silent
             # divergence check_store_consistency.py exists to catch.
             "faiss_docs":       _faiss_doc_counts(),
+            # DBT-16 (#51): what THIS process searches. When faiss_docs has moved
+            # on and this has not, the process is serving an older snapshot.
+            "faiss_in_memory":  _faiss_in_memory(),
         }
         if errors:
             # Named per metric: "which number is missing" is the operator's first
@@ -225,6 +257,19 @@ def _health_payload() -> dict:
         return payload
     except Exception as e:
         return {"status": "degraded", "error": f"{type(e).__name__}: {e}"}
+
+
+def _faiss_in_memory() -> Optional[dict]:
+    """{"NEWS_L1": {"loaded_at", "docs"}, ...} for the indexes this process
+    has in memory; None before the first query loads them."""
+    ds = _faiss_ds
+    if ds is None:
+        return None
+    from newscrawler.core.constants import VECTOR_DB_NAME_L1, VECTOR_DB_NAME_L2
+    loaded_at = getattr(ds, "loaded_at", {})
+    return {name: {"loaded_at": loaded_at.get(db_name), "docs": vs.index.ntotal}
+            for name, db_name, vs in (("NEWS_L1", VECTOR_DB_NAME_L1, ds.vs_l1),
+                                      ("NEWS_L2", VECTOR_DB_NAME_L2, ds.vs_l2))}
 
 
 # OPS-14: (index.faiss path) -> ((mtime_ns, size), ntotal). The pipeline rewrites

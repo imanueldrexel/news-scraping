@@ -4,6 +4,7 @@ import os
 import shutil
 from contextlib import contextmanager
 from dataclasses import replace
+from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
 
 from langchain_community.vectorstores import FAISS
@@ -212,6 +213,21 @@ class ChunkFAISSDatasource:
             self.vs_l2 = vs
         self.__dict__.get("_key_caches", {}).pop(db_name, None)
 
+    def refresh_stale(self) -> List[str]:
+        """DBT-16 (#51): for a READER (the web UI) -- reload each level whose
+        files another process saved since this one read them, and return the
+        levels reloaded. A search already running keeps the object it started
+        with. A writer must never call this: reloading discards its unsaved
+        vectors (SYS-53 raises instead, at save time)."""
+        reloaded = []
+        for db_name in (VECTOR_DB_NAME_L1, VECTOR_DB_NAME_L2):
+            if not index_generation.is_current(self._store(db_name), db_name):
+                self._reload(db_name)
+                reloaded.append(db_name)
+        if reloaded:
+            logger.info(f"Reloaded FAISS index(es) saved by another process: {', '.join(reloaded)}")
+        return reloaded
+
     def _existing_ids(self, vs, db_name) -> Dict[Tuple[int, int, int], str]:
         """(sitemap_id, level, index) -> embedding_id, built once per index instead
         of walking the whole docstore on every batch. Rebuilt whenever the
@@ -336,6 +352,8 @@ class ChunkFAISSDatasource:
         check_revision(loaded.get("model"), recorded.get("revision"), loaded.get("revision"), db_name)
 
     def _load_or_create(self, db_name: str) -> FAISS:
+        # DBT-16 (#51): when each level was last read from disk, for /api/health.
+        self.__dict__.setdefault("loaded_at", {})[db_name] = datetime.now(timezone.utc)
         if index_generation.has_index(db_name):
             logger.info(f"Loading existing FAISS index: {db_name}")
             vs = index_generation.load_index(db_name, self.embedding_model)
