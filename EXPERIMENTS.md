@@ -1566,3 +1566,22 @@ SINDONEWS   old 12 new 12 | lost [] | gained []   links identical: True
   3. The 13 dead selectors are not 13 bugs. They are one decision: trafilatura is those sources' primary extractor, declared per crawler, so the health check reports `OK`, not `FALLBACK`, and the dead selector stops running. SRC-19/20/22/23/24/26 close together on this. A selector is only worth writing for a source where trafilatura measurably loses (JPNN-shaped).
   4. Boilerplate leaks through both paths; stripping it is a separate, shared step (not a reason to prefer either order).
 - **Links:** DBT-05 (#24); SRC-19 (#99), SRC-20 (#100), SRC-22 (#102), SRC-23 (#103), SRC-24 (#104), SRC-26 (#106) · `scripts/experiments/probe_extractor_order.py`
+
+### 2026-09-29 — OPS-19: the first four days of the unattended schedule, in numbers
+- **Question / hypothesis:** Has the twice-daily `task=all` (registered 2026-09-25 23:07; first run 2026-09-26 07:00) run unattended for three consecutive days with a `crawl_log` row for every HEALTHY source, and what does a day of real volume look like?
+- **Method:** Read-only. The `SUMMARY:` line of every `logs/scheduled_crawl_*.log` (per-run log files from 2026-09-26 19:00 on). `crawl_log` per WIB day and task (distinct websites, completed/failed, `sum(article_count)`). `schtasks /Query /TN "NewsAggregator Scheduled Crawl (morning)"`. `sitemaps` for the six once-never-crawled sources and OKEZONE's June rows.
+- **Result:**
+
+  | WIB day | sitemap: sources / completed / failed / new rows | full_text: sources / completed / failed / saved |
+  |---|---|---|
+  | 09-26 | 28 / 59 / 0 / 34,136 (first listing of the widened fleet) | 28 / 58 / 1 / 22,678 |
+  | 09-27 | 28 / 56 / 0 / 3,013 | 28 / 28 / 1 / 6,578 (07:00 lost to the owner's DNS outage, OPS-32) |
+  | 09-28 | 28 / 56 / 0 / 4,652 | 28 / 56 / 0 / 9,104 |
+  | 09-29 | 28 / 56 / 0 / 5,386 | 28 / 53 / 3 / 8,142 (19:00: EMITENNEWS and MERDEKA `WinError 5` on the FAISS commit rename, VIVA the 1,200 s kill) |
+
+  Run SUMMARY lines, 09-26 19:00 to 09-29 19:00: +2,381/+9,646, +949/+811 (27 failed, outage), +2,064/+6,578, +1,036/+3,984, +3,616/+5,120, +1,797/+3,804, +3,589/+4,720 (sitemaps/articles). Task Scheduler: `Last Result 0`, next run 2026-09-30 07:00. The six sources that had no rows before 2026-09-25 now hold BERITASATU 2,387, DETIK 17,414, EMITENNEWS 2,183, ERAID 29, INVESTORID 601, KONTAN 2,771. OKEZONE's June-era rows (posted ≤ 2026-06-02): 1,141, all settled (278 `saved`, 863 `rejected_filter`, 500 of them denied by category before any fetch under SYS-50, so they carry no `last_crawl_attempt`).
+- **Conclusion / do not repeat:**
+  1. Steady state is about **4,000–5,400 new sitemap rows and 6,500–9,100 saved articles per day** across 28 sources. The 09-26 numbers are the one-off first listing, not a rate. This is the volume SYS-39 (extraction: ~8,000/day), SYS-40 and SYS-41 size against.
+  2. `crawl_log` has a row for every HEALTHY source on every day, including the outage day. A lost run shows as failures in the SUMMARY, never as silence.
+  3. OKEZONE's "June rows get `last_crawl_attempt`" is met in intent, not literally: a category-denied row is settled without a fetch (SYS-50), so it has no attempt stamp. Check settled status, not the stamp.
+- **Links:** OPS-19 (#132), OPS-32 (#193), OPS-28 (#179), SYS-50 (#165) · `logs/scheduled_crawl_2026-09-2*.log`
