@@ -109,3 +109,31 @@ class TestProbeIdentityGuard:
         legacy.write_text(json.dumps([{"articles_id": 2, "is_news": True}]), encoding="utf-8")
         verdicts, meta = verdicts_from_backup(str(legacy))
         assert verdicts == {2: True} and meta is None
+
+
+
+class TestSys48Band:
+    """SYS-48 (#144): the cosine-era scope and the P(soft) band cut."""
+
+    def test_cosine_era_is_what_was_fetched_before_the_probe(self):
+        from datetime import datetime, timezone
+        assert in_scope(_row(1, "news", datetime(2026, 9, 22, 2, 9, tzinfo=timezone.utc)), "cosine-era")
+        assert not in_scope(_row(2, "news", datetime(2026, 9, 22, 2, 10, tzinfo=timezone.utc)), "cosine-era")
+        assert not in_scope(_row(3, "news", None), "cosine-era")
+
+    def test_min_p_soft_keeps_only_the_band(self):
+        from datetime import datetime, timezone
+        early = datetime(2026, 9, 1, tzinfo=timezone.utc)
+        rows = [_row(1, "news", early), _row(2, "news", early), _row(3, "news", early)]
+        verdicts = {1: False, 2: False, 3: True}
+        p = {1: 0.95, 2: 0.85, 3: 0.1}
+        _, soft, _, _, deletable = select(rows, verdicts, "cosine-era", p, 0.9)
+        assert [r.articles_id for r in deletable] == [1]
+        _, _, _, _, all_soft = select(rows, verdicts, "cosine-era")
+        assert [r.articles_id for r in all_soft] == [1, 2]
+
+    def test_min_p_soft_without_recompute_is_refused(self):
+        import pytest
+        from scripts.cleanup_soft_by_probe import main
+        with pytest.raises(SystemExit):
+            main(["--scope", "cosine-era", "--min-p-soft", "0.9"])

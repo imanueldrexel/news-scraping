@@ -8,6 +8,10 @@ Two populations, reported separately because they are different decisions:
                         SYS-35 "never reject" gate waved through before the
                         probe existed (sitemaps.last_crawl_attempt is the
                         fetch stamp; articles has no created_at).
+  --scope cosine-era    SYS-48 (#144): articles fetched before the probe went
+                        live (2026-09-22 02:10 UTC), i.e. the old cosine
+                        filter's corpus; everything later was the probe's own
+                        decision.
   --scope all           every saved article the probe calls soft -- the old
                         cosine score's accumulated noise across the corpus
                         (24.4% on the 2026-09-22 backfill dry-run). A far
@@ -33,6 +37,11 @@ FAISS vectors. Rows referenced by entity_mentions are skipped and counted.
 
     python scripts/cleanup_soft_by_probe.py --dry-run [--scope allow-since|all] [--sample 50]
     python scripts/cleanup_soft_by_probe.py --scope allow-since          # after the owner's go
+    python scripts/cleanup_soft_by_probe.py --scope cosine-era --recompute --min-p-soft 0.9 [--dry-run]
+
+--min-p-soft X (SYS-48) keeps only the soft articles whose P(soft) is at least
+X -- the band a hand-read sample showed is safe to delete. It needs --recompute:
+only a live score carries P(soft).
 """
 import argparse
 import collections
@@ -60,6 +69,7 @@ logger.setLevel(logging.INFO)
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BACKUP_DIR = os.path.join(REPO_ROOT, "backups")
 ALLOW_SINCE = datetime(2026, 9, 20, 15, 20, tzinfo=timezone.utc)
+PROBE_LIVE_AT = datetime(2026, 9, 22, 2, 10, tzinfo=timezone.utc)
 
 _ARTICLES_SQL = text("""
     SELECT a.articles_id, a.sitemap_id, s.sources, s.category, s.headline, s.last_crawl_attempt,
@@ -112,7 +122,7 @@ def identity_mismatch(meta, current):
     return out
 
 
-def verdicts_recomputed(rows, soft_threshold=None):
+def verdicts_recomputed(rows, soft_threshold=None, p_soft_out=None):
     from newscrawler.core.importance_filter import SemanticImportanceFilter
     # DBT-37 (#153): same construction as the live service, or this scores at
     # the sidecar's tau while the pipeline runs at the env override's.
@@ -129,6 +139,8 @@ def verdicts_recomputed(rows, soft_threshold=None):
         if len(decisions) != len(chunk):
             raise RuntimeError(f"classify_batch returned {len(decisions)} decisions for {len(chunk)} article(s)")
         out.update({r.articles_id: d.is_important for r, d in zip(chunk, decisions)})
+        if p_soft_out is not None:
+            p_soft_out.update({r.articles_id: d.p_soft for r, d in zip(chunk, decisions)})
     return out
 
 
@@ -138,13 +150,20 @@ def in_scope(row, scope):
     stamp = row.last_crawl_attempt
     if stamp is not None and stamp.tzinfo is None:
         stamp = stamp.replace(tzinfo=timezone.utc)
+    if scope == "cosine-era":
+        return stamp is not None and stamp < PROBE_LIVE_AT
     return category_gate(row.category, row.sources) == "allow" and stamp is not None and stamp >= ALLOW_SINCE
 
 
-def select(rows, verdicts, scope):
-    """(scoped, soft, unknown, referenced, deletable) -- pure, for the tests."""
+def select(rows, verdicts, scope, p_soft=None, min_p_soft=None):
+    """(scoped, soft, unknown, referenced, deletable) -- pure, for the tests.
+    With `min_p_soft`, a soft article counts only when its P(soft) (from
+    `p_soft`, articles_id -> probability) is at least that."""
     scoped = [r for r in rows if in_scope(r, scope)]
     soft = [r for r in scoped if verdicts.get(r.articles_id) is False]
+    if min_p_soft is not None:
+        soft = [r for r in soft if (p_soft or {}).get(r.articles_id) is not None
+                and p_soft[r.articles_id] >= min_p_soft]
     unknown = [r for r in scoped if r.articles_id not in verdicts]
     referenced = [r for r in soft if r.referenced]
     deletable = [r for r in soft if not r.referenced]
@@ -154,11 +173,15 @@ def select(rows, verdicts, scope):
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--dry-run", action="store_true")
-    parser.add_argument("--scope", choices=("allow-since", "all"), default="allow-since")
+    parser.add_argument("--scope", choices=("allow-since", "cosine-era", "all"), default="allow-since")
+    parser.add_argument("--min-p-soft", type=float, default=None,
+                        help="SYS-48: only soft articles with P(soft) >= this (needs --recompute)")
     parser.add_argument("--sample", type=int, default=50)
     parser.add_argument("--recompute", action="store_true", help="Run the live filter instead of reading the backfill backup")
     parser.add_argument("--seed", type=int, default=20260922)
     args = parser.parse_args(argv)
+    if args.min_p_soft is not None and not args.recompute:
+        parser.error("--min-p-soft needs --recompute: cached verdicts carry no P(soft)")
 
     from newscrawler.infrastructure.network.clients.sqlalchemy_client import SQLAlchemyClient
     client = SQLAlchemyClient()
@@ -174,8 +197,11 @@ def main(argv=None) -> int:
     logger.info("committed probe: %s tau=%.2f gold=%s artifact=%s", current["embedding_model"],
                 current["soft_threshold"], (current["gold_sha256"] or "?")[:12], current["artifact_sha256"][:12])
 
+    p_soft = {}
     if args.recompute:
-        verdicts = verdicts_recomputed(rows, soft_threshold=SOFT_THRESHOLD)
+        if args.scope == "cosine-era":   # score only what can be selected (30 min -> ~1/5)
+            rows = [r for r in rows if in_scope(r, args.scope)]
+        verdicts = verdicts_recomputed(rows, soft_threshold=SOFT_THRESHOLD, p_soft_out=p_soft)
         logger.info("verdicts recomputed through the live filter for %d articles", len(verdicts))
     else:
         path = latest_backfill_backup()
@@ -200,7 +226,7 @@ def main(argv=None) -> int:
             return 1
         logger.info("verdict file matches the committed probe (%s)", ", ".join(IDENTITY_FIELDS))
 
-    scoped, soft, unknown, referenced, deletable = select(rows, verdicts, args.scope)
+    scoped, soft, unknown, referenced, deletable = select(rows, verdicts, args.scope, p_soft, args.min_p_soft)
     logger.info("scope %s: %d articles; probe says soft: %d (%.1f%%); %d referenced by entity_mentions (kept); "
                 "%d deletable; %d without a verdict (saved after the backfill -- rerun it or --recompute)",
                 args.scope, len(scoped), len(soft), 100 * len(soft) / max(1, len(scoped)), len(referenced), len(deletable), len(unknown))
@@ -216,7 +242,7 @@ def main(argv=None) -> int:
         return 0
 
     from scripts.cleanup_offtopic_articles import delete_articles  # the SYS-31/SYS-34 machinery: backup -> SQL -> FAISS
-    tag = f"sys45_soft_by_probe_{args.scope}"
+    tag = f"sys45_soft_by_probe_{args.scope}" + (f"_p{args.min_p_soft:g}" if args.min_p_soft is not None else "")
     n = delete_articles(client, [r.sitemap_id for r in deletable], backup_tag=tag)
     logger.info("deleted %d article(s); sitemaps -> rejected_filter; backup in %s", n, BACKUP_DIR)
     return 0
