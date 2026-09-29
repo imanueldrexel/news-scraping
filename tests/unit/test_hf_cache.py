@@ -109,5 +109,6 @@ class TestEveryCrawlerModelLoadGoesThroughTheCache:
         with patch.object(hf_cache, "resolve_model", lambda m: "LOCAL:" + m):
             gen = ng.NewsletterGenerator.__new__(ng.NewsletterGenerator)
             gen._embedding_model = None
+            gen._embed_documents = None  # the standalone path (DBT-02: the pipeline injects one)
             gen._encode(["x"])
         assert loaded == ["LOCAL:" + ng.EMBEDDING_MODEL_HF]

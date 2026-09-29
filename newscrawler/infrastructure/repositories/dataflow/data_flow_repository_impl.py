@@ -37,7 +37,10 @@ class DataFlowRepositoryImpl(DataFlowRepository):
         self.knowledge_datasource         = SQLAlchemyKnowledgeDataSource(sql_alchemy_client)
         self.knowledge_extractor          = KnowledgeExtractor(self.knowledge_datasource)
         self.newsletter_datasource        = SQLAlchemyNewsletterDataSource(sql_alchemy_client)
-        self.newsletter_generator         = NewsletterGenerator(self.newsletter_datasource)
+        # DBT-02 (#21): one MiniLM per process -- the newsletter embeds with the
+        # model the FAISS store already loaded (same model, normalized, batch 64).
+        self.newsletter_generator         = NewsletterGenerator(
+            self.newsletter_datasource, embed_documents=self.chunk_faiss_datasource.embedding_model.embed_documents)
 
     def load_sitemap_data(self, website: str, n_limit: int) -> List[NewsDetailsDTO]:
         news_sitemap_model =  self.news_data_source.load_sitemap(website=website, n_limit=n_limit)

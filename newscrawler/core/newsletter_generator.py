@@ -1,7 +1,7 @@
 import logging
 import os
 from datetime import date, datetime
-from typing import List, Optional
+from typing import Callable, List, Optional
 
 from newscrawler.core.constants import (
     DBSCAN_EPS,
@@ -35,8 +35,14 @@ _SUMMARIZE_PROMPT = (
 
 
 class NewsletterGenerator:
-    def __init__(self, newsletter_datasource, api_key: str = None, model_name: str = None):
+    def __init__(self, newsletter_datasource, api_key: str = None, model_name: str = None,
+                 embed_documents: Optional[Callable[[List[str]], List[List[float]]]] = None):
+        """embed_documents: DBT-02 (#21) -- the pipeline passes the FAISS
+        datasource's MiniLM (`embed_documents`, normalized, batch 64), so a
+        newsletter run does not load a second copy of the same model. Without
+        it the model is loaded here on first use (a standalone generator)."""
         self.ds         = newsletter_datasource
+        self._embed_documents = embed_documents
         self.api_key    = api_key    or GEMINI_API_KEY
         self.model_name = model_name or GEMINI_MODEL
 
@@ -170,6 +176,9 @@ class NewsletterGenerator:
     # ── Helpers ──────────────────────────────────────────────────────────────
 
     def _encode(self, texts: List[str]):
+        if self._embed_documents is not None:
+            import numpy as np
+            return np.asarray(self._embed_documents(texts))
         from sentence_transformers import SentenceTransformer
         if self._embedding_model is None:
             logger.info(f"Loading embedding model for newsletter: {EMBEDDING_MODEL_HF}")
