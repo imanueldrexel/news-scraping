@@ -99,21 +99,25 @@ class SQLAlchemyKnowledgeDataSource:
     # ── Entity persistence ───────────────────────────────────────────────────
 
     def upsert_entity(self, model: EntityModel, session=None) -> int:
-        """Insert or update entity; always returns the entity_id. Pass an existing
-        session (from atomic_extraction_session()) to make this part of a larger
-        transaction instead of committing on its own."""
+        """Insert the entity if it is new; always returns the entity_id. Pass an
+        existing session (from atomic_extraction_session()) to make this part of
+        a larger transaction instead of committing on its own.
+
+        SYS-20 (#41): this no longer touches mention_count or the seen-dates. An
+        entity is not a mention: an alias hit never reached this method, a name
+        listed twice in one article reached it twice, and a seeded entity counted
+        a mention on the day it was seeded. insert_entity_mention maintains all
+        three, from the mention rows it actually inserts. The DO UPDATE is there
+        only so RETURNING gives the id of an existing row."""
         sql = text("""
             INSERT INTO entities
                 (name, normalized_name, entity_type, subtype, ticker,
                  first_seen_at, last_seen_at, mention_count, created_at, updated_at)
             VALUES
                 (:name, :normalized_name, :entity_type, :subtype, :ticker,
-                 :first_seen_at, :last_seen_at, 1, NOW(), NOW())
+                 NULL, NULL, 0, NOW(), NOW())
             ON CONFLICT (normalized_name, entity_type)
-            DO UPDATE SET
-                last_seen_at  = EXCLUDED.last_seen_at,
-                mention_count = entities.mention_count + 1,
-                updated_at    = NOW()
+            DO UPDATE SET updated_at = NOW()
             RETURNING entity_id
         """)
         params = {
@@ -122,8 +126,6 @@ class SQLAlchemyKnowledgeDataSource:
             "entity_type":     model.entity_type,
             "subtype":         model.subtype,
             "ticker":          model.ticker,
-            "first_seen_at":   model.first_seen_at,
-            "last_seen_at":    model.last_seen_at,
         }
         if session is not None:
             return session.execute(sql, params).fetchone().entity_id
@@ -133,14 +135,30 @@ class SQLAlchemyKnowledgeDataSource:
         return row.entity_id
 
     def insert_entity_mention(self, model: EntityMentionModel, session=None) -> None:
+        """SYS-20 (#41): the mention and the entity's counters move together, in
+        one statement. The entity is updated only when a mention row was really
+        inserted, so a duplicate in one article or a retried article counts
+        once; the dates move outwards only (LEAST/GREATEST skip NULL), so an
+        older article processed after a newer one cannot move last_seen_at
+        back."""
         sql = text("""
-            INSERT INTO entity_mentions
-                (entity_id, sitemap_id, article_id, chunk_id,
-                 context_snippet, event_type, posted_at, source, created_at)
-            VALUES
-                (:entity_id, :sitemap_id, :article_id, :chunk_id,
-                 :context_snippet, :event_type, :posted_at, :source, NOW())
-            ON CONFLICT (entity_id, sitemap_id) DO NOTHING
+            WITH ins AS (
+                INSERT INTO entity_mentions
+                    (entity_id, sitemap_id, article_id, chunk_id,
+                     context_snippet, event_type, posted_at, source, created_at)
+                VALUES
+                    (:entity_id, :sitemap_id, :article_id, :chunk_id,
+                     :context_snippet, :event_type, :posted_at, :source, NOW())
+                ON CONFLICT (entity_id, sitemap_id) DO NOTHING
+                RETURNING entity_id, posted_at
+            )
+            UPDATE entities e SET
+                mention_count = e.mention_count + 1,
+                first_seen_at = LEAST(e.first_seen_at, ins.posted_at),
+                last_seen_at  = GREATEST(e.last_seen_at, ins.posted_at),
+                updated_at    = NOW()
+            FROM ins
+            WHERE e.entity_id = ins.entity_id
         """)
         params = {
             "entity_id":       model.entity_id,
@@ -362,15 +380,12 @@ class SQLAlchemyKnowledgeDataSource:
         normalizer = EntityNormalizer()
 
         for entry in seed_data:
-            today = date.today()
             model = EntityModel(
                 name=entry["canonical_name"],
                 normalized_name=normalizer.normalize(entry["canonical_name"]),
                 entity_type=entry["entity_type"],
                 subtype=entry.get("subtype"),
                 ticker=entry.get("ticker"),
-                first_seen_at=today,
-                last_seen_at=today,
             )
             entity_id = self.upsert_entity(model)
 

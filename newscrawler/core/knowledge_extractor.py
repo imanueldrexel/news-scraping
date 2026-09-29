@@ -245,7 +245,7 @@ class KnowledgeExtractor:
                 continue
             entity_id = self._resolve_or_upsert(
                 name, "PERSON", subtype=None, ticker=None,
-                posted_at=self._posted_at_to_date(article_meta["posted_at"]), session=session,
+                session=session,
             )
             self._insert_mention(entity_id, article_meta, event_type, article_text, name, session)
 
@@ -257,7 +257,7 @@ class KnowledgeExtractor:
                 name, "ORGANIZATION",
                 subtype=self._infer_subtype(org),
                 ticker=org.get("ticker") or None,
-                posted_at=self._posted_at_to_date(article_meta["posted_at"]), session=session,
+                session=session,
             )
             self._insert_mention(entity_id, article_meta, event_type, article_text, name, session)
 
@@ -267,7 +267,7 @@ class KnowledgeExtractor:
                 continue
             entity_id = self._resolve_or_upsert(
                 name, "LOCATION", subtype=None, ticker=None,
-                posted_at=self._posted_at_to_date(article_meta["posted_at"]), session=session,
+                session=session,
             )
             self._insert_mention(entity_id, article_meta, event_type, article_text, name, session)
 
@@ -286,8 +286,9 @@ class KnowledgeExtractor:
         return valid
 
     def _resolve_or_upsert(self, name: str, entity_type: str,
-                            subtype: Optional[str], ticker: Optional[str],
-                            posted_at: date, session) -> int:
+                            subtype: Optional[str], ticker: Optional[str], session) -> int:
+        """The entity's id. Counting and the seen-dates belong to the mention
+        (SYS-20): insert_entity_mention moves them when it inserts one."""
         entity_id = self.normalizer.resolve_alias(name, self.alias_map)
         if entity_id:
             return entity_id
@@ -299,8 +300,6 @@ class KnowledgeExtractor:
             entity_type=entity_type,
             subtype=subtype,
             ticker=ticker,
-            first_seen_at=posted_at,
-            last_seen_at=posted_at,
         )
         entity_id = self.ds.upsert_entity(model, session=session)
         self.alias_map[normalized] = entity_id
