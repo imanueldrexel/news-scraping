@@ -15,9 +15,22 @@ an unresolvable conflict -- abort rather than guess, same posture as
 migrate_articles_unique_sitemap.sql (DBT-07) took for `articles`.
 
 Usage:
-    python scripts/dedupe_chunks.py [--dry-run]
+    python scripts/dedupe_chunks.py [--dry-run] [--allow-divergent]
 
-A JSON backup of every deleted row is written to backups/ before any delete.
+DBT-21 (#72):
+  * The JSON backup written to backups/ before any delete holds every `chunks`
+    column of every deleted row (text_content included), so a row can be
+    re-inserted from it alone.
+  * A group whose members' text_content differs is two extractions of one
+    article, not a copy: deleting a loser loses text. --dry-run reports how
+    many such groups there are, and the real run refuses them unless
+    --allow-divergent is given.
+  * Vectors are deleted before rows, and only the ids still in each docstore.
+    A run killed between the phases (or one whose L2 delete raised after L1
+    was saved) leaves the duplicate rows in place, so re-running recomputes
+    the same losers and finishes the job: the end state is the same. The
+    reverse order would leave stray vectors that no re-run can find, because
+    the rows that point at them would be gone.
 """
 import argparse
 import json
@@ -45,7 +58,7 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BACKUP_DIR = os.path.join(REPO_ROOT, "backups")
 
 _DUP_GROUPS_SQL = text("""
-    SELECT c.chunk_id, c.sitemap_id, c.chunk_level, c.chunk_index, c.embedding_id,
+    SELECT c.*,
            EXISTS (SELECT 1 FROM entity_mentions em WHERE em.chunk_id = c.chunk_id) AS referenced
     FROM chunks c
     WHERE (c.sitemap_id, c.chunk_level, c.chunk_index) IN (
@@ -71,9 +84,37 @@ def _pick_loser_ids(rows):
     return [r for r in rows if r.chunk_id != keeper_id], False
 
 
+# Not stored data: `referenced` is computed by the SELECT, `fts_vector` is a
+# GENERATED column that Postgres refuses in an INSERT and rebuilds by itself.
+_NOT_BACKED_UP = frozenset({"referenced", "fts_vector"})
+
+
+def _backup_entry(row) -> dict:
+    """Every stored chunks column of `row` (DBT-21): the entry can be
+    INSERTed back as it is."""
+    return {k: v for k, v in row._mapping.items() if k not in _NOT_BACKED_UP}
+
+
+def _divergent_groups(groups) -> list:
+    """Keys of the groups whose members do not all carry the same text."""
+    return [key for key, rows in groups.items() if len({r.text_content for r in rows}) > 1]
+
+
+def _delete_present(vs, ids, path, faiss_datasource) -> int:
+    """Delete from `vs` the `ids` it still holds and save it. Ids already gone
+    (an earlier, interrupted run) are skipped: FAISS.delete raises on them."""
+    present = [i for i in ids if i in vs.docstore._dict]
+    if present:
+        vs.delete(present)
+        faiss_datasource._atomic_save_local(vs, path)  # DBT-10: crash-safe swap
+    return len(present)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--dry-run", action="store_true", help="Report what would be deleted, change nothing")
+    parser.add_argument("--allow-divergent", action="store_true",
+                        help="Also delete losers whose text differs from their keeper's (the backup keeps it)")
     args = parser.parse_args()
     # OPS-26 (#175): not while a scheduled crawl holds FAISS in memory.
     from newscrawler.tools.run_lock import refused_by_run_lock
@@ -107,6 +148,11 @@ def main():
         logger.info("Nothing to do.")
         return 0
 
+    divergent = _divergent_groups(groups)
+    if divergent:
+        logger.warning("%d group(s) have members with DIFFERENT text_content (two extractions, not copies): %s",
+                       len(divergent), divergent[:20])
+
     if args.dry_run:
         by_level = defaultdict(int)
         for r in losers:
@@ -114,25 +160,27 @@ def main():
         logger.info("[dry-run] Would delete: %s", dict(by_level))
         return 0
 
+    if divergent and not args.allow_divergent:
+        logger.error("Refusing: %d group(s) would lose text that exists nowhere else. Read them, then re-run "
+                     "with --allow-divergent (the backup keeps every deleted row).", len(divergent))
+        return 1
+
     os.makedirs(BACKUP_DIR, exist_ok=True)
     backup_path = os.path.join(
         BACKUP_DIR, f"dbt09_dedupe_chunks_{datetime.now(timezone.utc):%Y%m%dT%H%M%SZ}.json"
     )
     with open(backup_path, "w", encoding="utf-8") as f:
-        json.dump([dict(r._mapping) for r in losers], f, default=str, indent=2)
+        json.dump([_backup_entry(r) for r in losers], f, default=str, indent=2)
     logger.info("Backed up %d row(s) to %s", len(losers), backup_path)
 
     faiss_datasource = ChunkFAISSDatasource()
     l1_ids = [r.embedding_id for r in losers if r.chunk_level == 1 and r.embedding_id]
     l2_ids = [r.embedding_id for r in losers if r.chunk_level == 2 and r.embedding_id]
-    if l1_ids:
-        faiss_datasource.vs_l1.delete(l1_ids)
-        faiss_datasource._atomic_save_local(faiss_datasource.vs_l1, VECTOR_DB_NAME_L1)  # DBT-10: crash-safe swap
-        logger.info("Deleted %d vector(s) from %s", len(l1_ids), VECTOR_DB_NAME_L1)
-    if l2_ids:
-        faiss_datasource.vs_l2.delete(l2_ids)
-        faiss_datasource._atomic_save_local(faiss_datasource.vs_l2, VECTOR_DB_NAME_L2)  # DBT-10: crash-safe swap
-        logger.info("Deleted %d vector(s) from %s", len(l2_ids), VECTOR_DB_NAME_L2)
+    for vs, ids, path in ((faiss_datasource.vs_l1, l1_ids, VECTOR_DB_NAME_L1),
+                          (faiss_datasource.vs_l2, l2_ids, VECTOR_DB_NAME_L2)):
+        if ids:
+            n = _delete_present(vs, ids, path, faiss_datasource)
+            logger.info("Deleted %d vector(s) from %s (%d already gone)", n, path, len(ids) - n)
 
     with client.get_session() as session:
         session.execute(_DELETE_SQL, {"ids": [r.chunk_id for r in losers]})
