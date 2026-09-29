@@ -1528,3 +1528,41 @@ SINDONEWS   old 12 new 12 | lost [] | gained []   links identical: True
   3. If KUMPARAN's intake ever needs more than ~130 rows per run, pace it (a per-source minimum interval, ~1 req/s across workers) instead of raising the streak limit. Not built: SRC-55 lists it as optional, and the breaker alone ends the strikes.
   4. After the owner-approved reset (backup `backups/src55_sys62_reset_20260929T140350Z.json` + `pg_dump` `newsaggregator_20260929T140233Z.dump`), the 929 SYS-62 strikes and KUMPARAN's 96 first-transient markers are 0. SRC-55's "does not grow" query now starts from 0.
 - **Links:** SRC-55 (#201) cb94682 · SYS-62 (#200) · `scripts/experiments/probe_rate_limit.py` · `logs/scheduled_crawl_2026-09-29_1900.log`
+
+### 2026-09-29 — OPS-20 / SYS-39: extraction cost per article, measured, and priced
+- **Question / hypothesis:** What does one knowledge-extraction call cost today, and what would the paid options cost at the current volume? Is production's `gemini-2.5-flash` spending thinking tokens on an extraction prompt?
+- **Method:** `scripts/experiments/probe_extraction_cost.py` (new). The extractor's own `_PROMPT_TEMPLATE`, text cut at 3,000 chars, the newest article per SYS-37 topic. Provider token counts (`usage_metadata`: prompt, candidates, thoughts; OpenAI `usage`), latency, JSON parse, entity Jaccard vs the first config. Run 1: n=6 × {flash, flash-nothink, 3.5-flash-lite, deepseek}; `gemini-2.5-flash-lite` answered `404 ... no longer available to new users ... use models/gemini-3.5-flash-lite`. Run 2: n=4 × {flash, flash-again (self-agreement), 3.5-flash-lite, deepseek}. Every call was counted in `api_usage_log`. Volume from `crawl_log` (full_text `article_count` per day) and `articles.knowledge_extracted`. Prices fetched 2026-09-29 from ai.google.dev/gemini-api/docs/pricing and api-docs.deepseek.com/quick_start/pricing; SumoPod publishes none.
+- **Result:**
+
+  | config | in tok | out tok | thinking tok | s/call | parsed | Jaccard vs flash |
+  |---|---|---|---|---|---|---|
+  | gemini-2.5-flash (production: thinking on) | 751 | 722 | **1,932** | 12.1 | 6/6 | 1.00 (ref) |
+  | same, second run (noise floor) | 756 | 701 | 1,427 | 10.3 | 3/3 | **0.53** |
+  | gemini-2.5-flash, thinking_budget=0 | 751 | 669 | 0 | 4.0 | 6/6 | 0.67 |
+  | gemini-3.5-flash-lite | 756 | 447 | 0 | 14.7 (503s under load) | 3/3 | 0.76 |
+  | deepseek-v4-flash (SumoPod, thinking off) | 874 | 414 | 0 | 3.3 | 10/10 | 0.64–0.75 |
+
+  Prices per 1M tokens (in / out, thinking billed as out): 2.5-flash $0.30/$2.50, Batch $0.15/$1.25; 3.5-flash-lite $0.30/$2.50, Batch $0.15/$1.25; 3.1-flash-lite $0.25/$1.50, Batch $0.125/$0.75; DeepSeek flash $0.15/$0.60 off-peak (cache miss), double in peak (01-04, 06-10 UTC weekdays).
+  Cost per 1,000 articles: 2.5-flash as production calls it **$6.86** (Batch $3.43); thinking off $1.90 (Batch $0.95); 3.5-flash-lite $1.34 (Batch $0.67); DeepSeek $0.38 off-peak / $0.76 peak.
+  Volume: full_text saved 6,578 / 9,104 / 8,142 on 09-27/28/29 (~8,000/day). `knowledge_extracted`: **0 of 58,876** articles ever extracted, and extraction is not scheduled. At ~240k articles/month: 2.5-flash as-is ≈ **$1,650/mo**; thinking off ≈ $456 (Batch $228); 3.5-flash-lite ≈ $322 (Batch $161); DeepSeek ≈ $91–182. The 58,876 backlog, one-off: $404 / $56 (flash nothink Batch) / $39 (lite Batch) / $22–45 (DeepSeek). The free tier (20 requests/day/model) covers 0.25% of one day's saves.
+- **Conclusion / do not repeat:**
+  1. Never run extraction on `gemini-2.5-flash` with default thinking: 73% of its output tokens are thinking, and it costs 5× the same model with `thinking_budget=0` for no measurable gain. Production's own run-to-run agreement (0.53) is below every cheaper option's agreement with it.
+  2. At n ≤ 6 the quality question is not answered: the Jaccard spread is inside the noise floor. SYS-39's 200-article fixture bake-off decides quality. This entry decides cost.
+  3. The cheapest option is DeepSeek via the key the owner already uses for the labeller (SumoPod's own rate is unknown; DeepSeek's list price is the bound). The cheapest option on the existing Gemini client is `gemini-3.5-flash-lite` (or 3.1-flash-lite) through the Batch API.
+  4. `gemini-2.5-flash-lite` is closed to new users; do not plan on it.
+- **Links:** OPS-20 (#136), SYS-39 (#125) · `scripts/experiments/probe_extraction_cost.py`
+
+### 2026-09-29 — DBT-05: extractor order, measured across the fleet
+- **Question / hypothesis:** DBT-05 proposes layout-independent extraction first (JSON-LD `articleBody`, then trafilatura), with site selectors only as an override. Is that better than today's selector-first order?
+- **Method:** (1) Read-only SQL: `articles.meta_data->>'extractor'` per source over sitemaps attempted in the last 7 days (OPS-02). (2) `scripts/experiments/probe_extractor_order.py` (new, read-only): the 4 newest saved articles per source, one fetch each, three extractors on the same soup (the crawler's `_get_whole_text`, JSON-LD `articleBody`, the crawler's trafilatura fallback). The reference is site text where usable (≥ `MIN_ARTICLE_CHARS`), else trafilatura. Per method: usable, word recall and precision vs the reference, and "Baca juga"-style boilerplate hits.
+- **Result:**
+  - Extractor mix (7 days): **13 of 28 sources are ~0–2% site** (ANTARANEWS, CNBC, CNN, IDNTIMES, INEWS, KONTAN, KUMPARAN, MERDEKA, OKEZONE, PIKIRANRAKYAT, SUARA, TEMPO, TIRTO: every article comes from trafilatura). The other 15 are 94–100% site.
+  - JSON-LD `articleBody`: present on **2 of 28** (IDNTIMES recall 0.93; TEMPO 0.78, truncated).
+  - Trafilatura where the site selector works (15): usable 60/60. Recall ≥0.96 on 14 sources, but **JPNN 0.65 recall / 0.73 precision**. Precision below 0.9 (text added) on **MEDIAINDONESIA 0.56, EMITENNEWS 0.75, TRIBUN 0.85, SINDONEWS 0.86, WARTAEKONOMI 0.89, BERITASATU 0.84**.
+  - Boilerplate hits ("baca juga" etc.): site output BERITASATU 9, TVONENEWS 8, MEDIAINDONESIA 5; trafilatura output KONTAN 11, TRIBUN 10, ANTARANEWS 9, LIPUTAN6 9, PIKIRANRAKYAT 8, WARTAEKONOMI 8.
+- **Conclusion / do not repeat:**
+  1. JSON-LD-first is not viable here (2/28 publish a body). Do not build it.
+  2. Trafilatura-first everywhere would cost precision on 6 of the 15 sources whose selectors work, and a third of JPNN's body. Keep a working selector.
+  3. The 13 dead selectors are not 13 bugs. They are one decision: trafilatura is those sources' primary extractor, declared per crawler, so the health check reports `OK`, not `FALLBACK`, and the dead selector stops running. SRC-19/20/22/23/24/26 close together on this. A selector is only worth writing for a source where trafilatura measurably loses (JPNN-shaped).
+  4. Boilerplate leaks through both paths; stripping it is a separate, shared step (not a reason to prefer either order).
+- **Links:** DBT-05 (#24); SRC-19 (#99), SRC-20 (#100), SRC-22 (#102), SRC-23 (#103), SRC-24 (#104), SRC-26 (#106) · `scripts/experiments/probe_extractor_order.py`
