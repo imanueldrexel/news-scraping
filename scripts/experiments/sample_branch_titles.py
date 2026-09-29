@@ -76,6 +76,12 @@ def from_live(crawler, branch, n, branches=None):
         leaf = crawler.page_loader.get_soup(link)
         if not leaf:
             return ["(branch sitemap did not fetch)"]
+        if not leaf.find("url") and leaf.find("sitemap"):
+            # A branch that is itself an index (TIRTO's section sub-index,
+            # SRC-32): let the crawler's own _scrape pick the leaves.
+            rows = crawler._scrape(branch_link=link, branch_name=branch)[:n]
+            return [r.get("headline") or crawler._derive_headline_from_url(r.get("link")) or "(no title)"
+                    for r in rows] or ["(empty sitemap)"]
         out = []
         for url in leaf.find_all("url")[:n]:
             title = crawler._get_title(url)

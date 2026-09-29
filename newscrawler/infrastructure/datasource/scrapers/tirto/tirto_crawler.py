@@ -1,5 +1,6 @@
 import logging
-from typing import List, Dict, Optional
+from datetime import datetime, timedelta, timezone
+from typing import List, Dict
 
 from newscrawler.domain.entities.extraction.url_data import URL
 from newscrawler.domain.entities.extraction.website_name import WebsiteName
@@ -28,14 +29,24 @@ class TirtoCrawler(Crawler):
         self.website_name = WebsiteName.TIRTO.value
         self.website_url = URL.TIRTO.value
 
+    # SRC-32 (#117): a monthly leaf is still read while its <lastmod> is this
+    # recent. The sub-index is one leaf per calendar month, so a newest-leaf-only
+    # rule stopped reading August on the first September article and silently
+    # never listed what August published after the last crawl of the month
+    # (its leaf's lastmod was 08-31 19:10). Two weeks covers the month boundary
+    # with a wide margin over the twice-daily schedule; re-listing a leaf costs
+    # one fetch, since sitemaps dedup on the link (SYS-29).
+    RECENT_LEAF_DAYS = 14
+
     def _get_branches(self, soup) -> Dict[str, str]:
         """tirto.id is a two-level, lastmod-only structure: `soup` (from
-        URL.TIRTO) lists per-section monthly sub-indexes; each of those lists
-        one <sitemap> per month (also lastmod-only -- SYS-32, #94, handles
-        that in the base crawler). Fetch ekonomi's and bisnis's sub-index and
-        return each one's newest monthly leaf as the branch.
+        URL.TIRTO) lists per-section sub-indexes, and each of those lists one
+        <sitemap> leaf per month (also lastmod-only -- SYS-32, #94, handles
+        that in the base crawler). A branch is the SECTION: its key is the
+        section name (stored as the category) and its link the section's
+        sub-index. `_scrape` expands it to the leaves worth reading.
         """
-        section_index_urls = {}
+        branches = {}
         for sitemap in soup.find_all("sitemap"):
             loc = sitemap.find("loc")
             if not loc:
@@ -43,29 +54,43 @@ class TirtoCrawler(Crawler):
             url = loc.get_text(" ").strip()
             for section, suffix in _SECTION_URL_SUFFIXES.items():
                 if url.endswith(suffix):
-                    section_index_urls[section] = url
-
-        branches = {}
-        for section, section_index_url in section_index_urls.items():
-            newest_leaf = self._newest_monthly_leaf(section_index_url)
-            if newest_leaf:
-                branches[section] = newest_leaf
+                    branches[section] = url
         return branches
 
-    def _newest_monthly_leaf(self, section_index_url: str) -> Optional[str]:
+    def _scrape(self, branch_link, branch_name) -> List:
+        """SRC-32: every recent monthly leaf of the section, under the one
+        section name."""
+        articles = []
+        for leaf in self._recent_monthly_leaves(branch_link):
+            articles.extend(super()._scrape(branch_link=leaf, branch_name=branch_name))
+        return articles
+
+    @staticmethod
+    def _now() -> datetime:
+        return datetime.now(timezone.utc)
+
+    def _recent_monthly_leaves(self, section_index_url: str) -> List[str]:
+        """The newest leaf, plus every other leaf modified within
+        RECENT_LEAF_DAYS, newest first. A section index that does not load is
+        logged and yields nothing -- the other sections still stand."""
         section_soup = self.page_loader.get_soup(section_index_url)
         if not section_soup:
-            return None
-        newest_url, newest_dt = None, None
+            logger.warning(f"{self.website_name}: could not load section index {section_index_url}")
+            return []
+        dated = []
         for leaf in section_soup.find_all("sitemap"):
             leaf_loc = leaf.find("loc")
             leaf_lastmod = leaf.find("lastmod")
             if not leaf_loc or not leaf_lastmod:
                 continue
             leaf_dt = self.date_time_reader.convert_date(leaf_lastmod.get_text(" ").strip())
-            if leaf_dt and (newest_dt is None or leaf_dt > newest_dt):
-                newest_url, newest_dt = leaf_loc.get_text(" ").strip(), leaf_dt
-        return newest_url
+            if leaf_dt:
+                dated.append((leaf_dt, leaf_loc.get_text(" ").strip()))
+        if not dated:
+            return []
+        dated.sort(reverse=True)
+        cutoff = self._now() - timedelta(days=self.RECENT_LEAF_DAYS)
+        return [dated[0][1]] + [url for dt, url in dated[1:] if dt >= cutoff]
 
     @staticmethod
     def _get_whole_text(soup) -> List[str]:
