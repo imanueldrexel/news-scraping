@@ -101,7 +101,7 @@ class TestSourceWideVerdictEndToEnd:
         with patch("newscrawler.domain.services.crawler_service_impl.SemanticImportanceFilter"):
             service = CrawlerServiceImpl(data_flow_repo=repo)
         crawler = MagicMock()
-        crawler.batch_crawling_details.side_effect = lambda news, website_name: NewsDetailsBatch(
+        crawler.batch_crawling_details.side_effect = lambda news, website_name, throttle=None: NewsDetailsBatch(
             [], failures={s.sitemap_id: "HTTP 403" for s in news})
         service.crawler_dict = {SOURCE: crawler}
 

@@ -187,7 +187,7 @@ class TestTaskAllDoesNotReCrawlAlreadyArticledSitemaps:
             for i in range(3)
         ]
 
-        def fake_batch_crawling_details(news, website_name):
+        def fake_batch_crawling_details(news, website_name, throttle=None):
             for n in news:
                 service.chunker.chunk.return_value = [MagicMock(sitemap_id=n.sitemap_id)]
             return [

@@ -12,6 +12,7 @@ from urllib.parse import urlparse
 import pydantic
 
 from newscrawler.core.constants import VERBOSE, PARALLELIZE, MAX_WORKER, MIN_ARTICLE_CHARS
+from newscrawler.core.page_loader.throttle import NOT_FETCHED_REASON, ThrottleGuard
 from newscrawler.core.page_loader.page_loader import PageLoader
 from newscrawler.core.page_loader.requests_page_loader import RequestsPageLoader
 from newscrawler.domain.dtos.dataflow.details.news_details_dto import NewsDetailsDTO
@@ -544,15 +545,26 @@ class Crawler:
             return keywords
 
     def batch_crawling_details(
-        self, news: List[SitemapDTO], website_name: str
+        self, news: List[SitemapDTO], website_name: str, throttle: Optional[ThrottleGuard] = None
     ) -> "NewsDetailsBatch":
+        """SRC-55: with a `throttle` guard (one per source run, shared by its
+        batches), every finished fetch is recorded on it, and once it trips the
+        fetches not yet started are skipped with NOT_FETCHED_REASON."""
         news_data = NewsDetailsBatch()
         if news:
+            fetch = self._fetch_news_details
+            if throttle is not None:
+                def fetch(sitemap):
+                    if not throttle.should_fetch():
+                        return None, NOT_FETCHED_REASON
+                    result, reason = self._fetch_news_details(sitemap)
+                    throttle.record(sitemap.sitemap_id, None if result else reason)
+                    return result, reason
             if self.parallelize and website_name != WebsiteName.MEDIAINDONESIA.value:
                 with ThreadPoolExecutor(max_workers=self.max_worker) as executor:
-                    results = list(executor.map(self._fetch_news_details, news))
+                    results = list(executor.map(fetch, news))
             else:
-                results = [self._fetch_news_details(n) for n in news]
+                results = [fetch(n) for n in news]
 
             for sitemap, (result, reason) in zip(news, results):
                 if result:

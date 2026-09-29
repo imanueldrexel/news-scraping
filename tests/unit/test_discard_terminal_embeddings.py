@@ -91,7 +91,7 @@ def _crawl(service, queue, extracted, failures, verdicts):
     service.data_flow_repo.load_sitemap_data.return_value = queue
     by_id = {a.sitemap_id: a for a in extracted}
 
-    def batch(news, website_name):
+    def batch(news, website_name, throttle=None):
         mine = [by_id[s.sitemap_id] for s in news if s.sitemap_id in by_id]
         return NewsDetailsBatch(mine, failures={s.sitemap_id: failures[s.sitemap_id]
                                                 for s in news if s.sitemap_id in failures})
@@ -391,7 +391,7 @@ class TestAKilledSourceIsCleanedUpByItsNextRun:
         repo.news_data_source = store
         svc = self._service(repo, store)
 
-        def batch(news, website_name):
+        def batch(news, website_name, throttle=None):
             if news[0].sitemap_id == 8:
                 raise SystemExit("OPS-22 timeout kill")
             return NewsDetailsBatch([_article(7, ["gosip"])], failures={})
@@ -407,7 +407,7 @@ class TestAKilledSourceIsCleanedUpByItsNextRun:
             repo.news_data_source = store
             svc = self._service(repo, store)
             svc.crawler_dict["VIVA"].batch_crawling_details.side_effect = \
-                lambda news, website_name: NewsDetailsBatch([], failures={})
+                lambda news, website_name, throttle=None: NewsDetailsBatch([], failures={})
             svc.crawl_newsdetails("VIVA")
 
         assert 7 not in _sids_on_disk(paths[0]) and 7 not in _sids_on_disk(paths[1])

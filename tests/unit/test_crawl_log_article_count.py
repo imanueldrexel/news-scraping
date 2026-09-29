@@ -78,7 +78,7 @@ class TestCrawlLogArticleCount:
         sitemaps = [MagicMock(sitemap_id=i) for i in range(25)]
         service.data_flow_repo.load_sitemap_data.return_value = sitemaps
 
-        def fake_batch_crawling_details(news, website_name):
+        def fake_batch_crawling_details(news, website_name, throttle=None):
             return [make_article(n.sitemap_id) for n in news]
 
         service.crawler_dict["TEST_SITE"].batch_crawling_details.side_effect = fake_batch_crawling_details
@@ -115,7 +115,7 @@ class TestCrawlLogArticleCount:
             MagicMock(sitemap_id=1), MagicMock(sitemap_id=2)
         ]
 
-        def fake_batch_crawling_details(news, website_name):
+        def fake_batch_crawling_details(news, website_name, throttle=None):
             return [make_article(n.sitemap_id) for n in news]
 
         service.crawler_dict["TEST_SITE"].batch_crawling_details.side_effect = fake_batch_crawling_details
@@ -145,7 +145,7 @@ class TestCrawlLogArticleCount:
             MagicMock(sitemap_id=1), MagicMock(sitemap_id=2)
         ]
 
-        def fake_batch_crawling_details(news, website_name):
+        def fake_batch_crawling_details(news, website_name, throttle=None):
             return [make_article(n.sitemap_id) for n in news]
 
         service.crawler_dict["TEST_SITE"].batch_crawling_details.side_effect = fake_batch_crawling_details

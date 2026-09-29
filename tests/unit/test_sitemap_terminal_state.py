@@ -57,7 +57,7 @@ def per_batch(articles):
     articles -- the service splits the queue into up to 10 batches, and a
     constant return_value would hand every article to every batch."""
     by_id = {a.sitemap_id: a for a in articles}
-    return lambda news, website_name: [by_id[s.sitemap_id] for s in news if s.sitemap_id in by_id]
+    return lambda news, website_name, throttle=None: [by_id[s.sitemap_id] for s in news if s.sitemap_id in by_id]
 
 
 class TestTerminalStateClassification:
@@ -274,7 +274,7 @@ class TestCategoryDenyBeforeFetch:
         self._load(service, [sitemap(1, "hiburan"), sitemap(2, "news"), sitemap(3, "ekonomi"), sitemap(4, "bola")])
         fetched = []
 
-        def crawl(news, website_name):
+        def crawl(news, website_name, throttle=None):
             fetched.extend(s.sitemap_id for s in news)
             return [article(s.sitemap_id, ["body"]) for s in news]
         service.crawler_dict["TEST_SITE"].batch_crawling_details.side_effect = crawl
@@ -315,7 +315,7 @@ class TestCategoryDenyBeforeFetch:
         blocked = [sitemap(i, "news") for i in range(31, 56)]
         self._load(service, denied + blocked)
         service.crawler_dict["TEST_SITE"].batch_crawling_details.side_effect = (
-            lambda news, website_name: NewsDetailsBatch([], failures={s.sitemap_id: "HTTP 403" for s in news}))
+            lambda news, website_name, throttle=None: NewsDetailsBatch([], failures={s.sitemap_id: "HTTP 403" for s in news}))
 
         service.crawl_newsdetails("TEST_SITE")
 

@@ -27,6 +27,12 @@ SITEMAP_SOURCE_FAILURE_RATIO = float(os.getenv("SITEMAP_SOURCE_FAILURE_RATIO", 1
 # run is never called source-wide, so genuinely dead tails still retire under
 # SYS-09's cap instead of being re-fetched on every run forever.
 SITEMAP_SOURCE_FAILURE_MIN = int(os.getenv("SITEMAP_SOURCE_FAILURE_MIN", 20))
+# SRC-55 (#201): this many HTTP 403/429 answers in a row from one source stop
+# its full-text run (newscrawler/core/page_loader/throttle.py). The streak and
+# the rows not yet fetched are left untouched -- no strike, no cooldown -- so a
+# rate limit costs the rest of this run, not the URLs. KUMPARAN walls off after
+# ~100-120 fetches; a single dead article answering 403 never makes a streak.
+SOURCE_THROTTLE_STREAK = int(os.getenv("SOURCE_THROTTLE_STREAK", 10))
 # Article text shorter than this (total chars) is treated as an extraction failure and
 # handed to the next extractor (site selector -> trafilatura -> newspaper). 0 disables.
 MIN_ARTICLE_CHARS = int(os.getenv("MIN_ARTICLE_CHARS", 200))

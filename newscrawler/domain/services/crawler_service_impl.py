@@ -7,9 +7,12 @@ from typing import List, Optional
 from newscrawler.core.chunker import HierarchicalChunker
 from newscrawler.core.crawler_dict_list import CRAWLER_DICT
 from newscrawler.core.crawler_url_list import WEB_URL_DICT
-from newscrawler.core.constants import SITEMAP_SOURCE_FAILURE_MIN, SITEMAP_SOURCE_FAILURE_RATIO, SOFT_THRESHOLD
+from newscrawler.core.constants import (
+    SITEMAP_SOURCE_FAILURE_MIN, SITEMAP_SOURCE_FAILURE_RATIO, SOFT_THRESHOLD, SOURCE_THROTTLE_STREAK,
+)
 from newscrawler.core.importance_filter import SemanticImportanceFilter, category_gate
 from newscrawler.core.importance_probe import build_check_text
+from newscrawler.core.page_loader.throttle import NOT_FETCHED_REASON, ThrottleGuard
 from newscrawler.domain.dtos.dataflow.details.news_details_dto import NewsDetailsDTO
 from newscrawler.domain.dtos.dataflow.details.site_map_dto import SitemapDTO
 from newscrawler.domain.repositories.data_flow_repository.data_flow_repository import (
@@ -153,12 +156,23 @@ class CrawlerServiceImpl(CrawlerService):
         # -- a new source's vocabulary (IDNTIMES `hype`/`korea`/`fiction`)
         # becomes visible the day it first leaks, not at the next audit.
         known_saved_pairs = self._load_known_saved_pairs(website_name)
+        # SRC-55 (#201): one guard for the whole run, so a 403 wall that starts
+        # in one batch and continues in the next is one streak. Once it trips,
+        # nothing more is fetched from this source this run.
+        throttle = ThrottleGuard(SOURCE_THROTTLE_STREAK)
+        not_fetched = set()
+        rows_offered = 0
 
         for i in range(0, min(len(target_news), batch_size * 10), batch_size):
+            if throttle.tripped:
+                break
             logger.info(f"Processing batch {i//batch_size+1} for {website_name}")
             batch = target_news[i:i+batch_size]
+            rows_offered += len(batch)
             # Extract Articles from the batch
-            newsdetails: List[NewsDetailsDTO] = web_crawler.batch_crawling_details(news=batch, website_name=website_name)
+            newsdetails: List[NewsDetailsDTO] = web_crawler.batch_crawling_details(
+                news=batch, website_name=website_name, throttle=throttle
+            )
 
             # SYS-09: a sitemap in `batch` with no matching NewsDetailsDTO is exactly
             # the sitemaps whose fetch/extraction failed this run (soup was None, or
@@ -170,8 +184,13 @@ class CrawlerServiceImpl(CrawlerService):
             extracted_ids = {n.sitemap_id for n in newsdetails} if newsdetails else set()
             reasons = getattr(newsdetails, "failures", None) or {}
             for s in batch:
-                if s.sitemap_id not in extracted_ids:
-                    run_failures[s.sitemap_id] = reasons.get(s.sitemap_id, "fetch or extraction produced no result")
+                if s.sitemap_id in extracted_ids:
+                    continue
+                reason = reasons.get(s.sitemap_id, "fetch or extraction produced no result")
+                if reason == NOT_FETCHED_REASON:
+                    not_fetched.add(s.sitemap_id)
+                else:
+                    run_failures[s.sitemap_id] = reason
 
             if not newsdetails:
                 continue
@@ -291,7 +310,17 @@ class CrawlerServiceImpl(CrawlerService):
                     logger.error(f"Error saving batch {i//batch_size+1} for {website_name}: {e}")
                     continue
 
-        self._source_failure_verdict = self._record_fetch_failures(website_name, attempted, run_failures)
+        throttle_note = None
+        if throttle.tripped:
+            # The streak's rows (possibly spread over two batches) and the rows
+            # never fetched are not evidence about their URLs: drop them from
+            # the failures and from the denominator of OPS-16's ratio.
+            released = {sid for sid in throttle.throttled_ids if run_failures.pop(sid, None) is not None}
+            unreached = len(target_news) - rows_offered + len(not_fetched)
+            attempted -= len(released) + unreached
+            throttle_note = self._log_throttle_stop(website_name, throttle, released, unreached)
+        failure_note = self._record_fetch_failures(website_name, attempted, run_failures)
+        self._source_failure_verdict = "; ".join(n for n in (throttle_note, failure_note) if n) or None
         # After _record_fetch_failures, so a failure that reached the cap counts.
         self._discard_terminal_embeddings(website_name, "settled terminal this run (SYS-54)")
         self._log_filter_stats(website_name, gate_counts, allow_total, allow_score_passed, uncertain)
@@ -299,9 +328,27 @@ class CrawlerServiceImpl(CrawlerService):
         logger.info(
             f"Full-text crawl finished for {website_name}: "
             f"pre_denied={len(pre_denied_ids)} attempted={attempted} extracted={extracted_total} "
+            f"throttled_stop={'yes' if throttle.tripped else 'no'} "
             f"passed_filter={passed_filter_total} saved={saved_total}"
         )
         return saved_total
+
+    @staticmethod
+    def _log_throttle_stop(website_name: str, throttle: ThrottleGuard, released, unreached: int) -> str:
+        """SRC-55: the note for the crawl_log row and the log line. ERROR when
+        the source throttled us before serving a single page: that is a block
+        (BISNIS-like), not a rate limit, and someone should look."""
+        served = throttle.fetches_before_trip - throttle.streak_limit
+        note = (
+            f"throttled (SRC-55): {throttle.streak_limit} x {throttle.trip_reason} in a row after "
+            f"{throttle.fetches_before_trip} fetches; stopped this run. {len(released)} throttled and "
+            f"{unreached} not fetched left untouched (no strike, no cooldown)"
+        )
+        if served <= 0:
+            logger.error(f"{website_name}: {note} -- no page was served before the streak, the source may be blocking us")
+        else:
+            logger.warning(f"{website_name}: {note}")
+        return note
 
     def _discard_terminal_embeddings(self, website_name: str, whose: str) -> None:
         """SYS-54 (#185): this source's sitemaps that are settled for good
