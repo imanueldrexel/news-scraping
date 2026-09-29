@@ -20,7 +20,7 @@ def _gen(monkeypatch, cap=2):
     ds = MagicMock()
     gen = ng.NewsletterGenerator(ds, api_key="", embed_documents=lambda texts: [[0.0, 1.0]] * len(texts))
     monkeypatch.setattr(ng, "NEWSLETTER_MAX_CLUSTERS_PER_TOPIC", cap)
-    monkeypatch.setattr(ng, "DBSCAN_MIN_SAMPLES", 2)
+    monkeypatch.setattr(ng, "NEWSLETTER_MIN_CLUSTER_SIZE", 2)
     return gen, ds
 
 
@@ -92,3 +92,24 @@ class TestGenerate:
         assert not hasattr(ng.NewsletterGenerator, "assign_category")
         import newscrawler.core.constants as c
         assert not hasattr(c, "NEWSLETTER_CATEGORY_KEYWORDS")
+
+
+class TestClustering:
+    def test_a_chain_of_near_neighbours_is_not_one_story(self):
+        """DBSCAN joined a chain in which each neighbour is close to the next;
+        average linkage keeps two tight groups apart even with a bridge."""
+        import numpy as np
+        gen = ng.NewsletterGenerator(MagicMock(), api_key="", embed_documents=lambda t: [])
+        a = [np.array([1.0, 0.0, 0.0])] * 4
+        b = [np.array([0.0, 1.0, 0.0])] * 4
+        bridge = [np.array([0.7, 0.7, 0.0])]
+        labels = gen._cluster(np.vstack(a + bridge + b))
+        assert labels[0] == labels[3] and labels[5] == labels[8]
+        assert labels[0] != labels[5]
+
+    def test_a_group_below_the_minimum_size_is_unclustered(self, monkeypatch):
+        import numpy as np
+        monkeypatch.setattr(ng, "NEWSLETTER_MIN_CLUSTER_SIZE", 2)
+        gen = ng.NewsletterGenerator(MagicMock(), api_key="", embed_documents=lambda t: [])
+        labels = gen._cluster(np.array([[1.0, 0.0], [1.0, 0.01], [0.0, 1.0]]))
+        assert labels[0] == labels[1] != -1 and labels[2] == -1

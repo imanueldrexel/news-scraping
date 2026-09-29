@@ -1611,3 +1611,16 @@ SINDONEWS   old 12 new 12 | lost [] | gained []   links identical: True
   1. A category-only gold refresh does not change the probe's weights; it changes what the gates measure. Expect a sidecar-only diff.
   2. Never run the trainer without checking the encoder it resolves to. Since DBT-49 the default is the committed sidecar's, and another one needs an explicit flag plus a WARNING.
 - **Links:** SYS-51 (#170), DBT-49 (#203) e19bc28 · `tests/fixtures/filter_gold.jsonl`
+
+### 2026-09-29 — SYS-40: DBSCAN chains a busy topic into one "story"; average linkage does not
+- **Question / hypothesis:** Once the digest is sectioned by topic, does DBSCAN (eps 0.25, min_samples 2, cosine) still give one cluster per news event on a general-news day?
+- **Method:** the 2026-09-28 digest (3,637 articles) rendered with the SYS-40 code. Then an inline script over that day's L1 embeddings (MiniLM, the digest's own `_encode`): cluster sizes per topic for DBSCAN eps ∈ {0.25, 0.20, 0.15, 0.12}, and for `AgglomerativeClustering(metric="cosine", linkage="average")` at distance ∈ {0.35, 0.30, 0.25}, with sample headlines from the biggest clusters.
+- **Result:**
+  - DBSCAN eps 0.25: markets n=372 → top cluster **221**; law_crime n=838 → **245**; politics n=472 → 117. The rendered top "Pasar" cluster had 22 portals and mixed a minimum-price rule, an IHSG call and a PER table: chaining.
+  - Tightening eps trades chaining for noise: at 0.12 law_crime is 68 clusters with **625 of 838** unclustered, and markets still has a 40-article cluster.
+  - Average linkage at 0.30: markets 46 clusters (top 51/42/42/38), law_crime 150 (top 30/20/19), politics 77. The top two markets clusters are one story each: the weekly IHSG slide, and the Rp1 minimum share price.
+  - Re-rendered 09-28 with average linkage at 0.30: 614 clusters in 12 sections. The shown Pasar clusters are distinct events (rupiah near Rp18,000, the Rp1 floor, Antam gold, IHSG outlook, GOTO, the BEI watchlist, short selling from 1 Oct).
+- **Conclusion / do not repeat:**
+  1. Don't tune DBSCAN's eps for the digest. On a busy topic it either chains or drops most articles into noise. Average linkage cuts at a whole-cluster distance, so it can't chain.
+  2. `NEWSLETTER_CLUSTER_DISTANCE=0.30` and `NEWSLETTER_MIN_CLUSTER_SIZE=2` replace `DBSCAN_EPS`/`DBSCAN_MIN_SAMPLES`. Agglomerative is O(n²) in memory per topic; the largest topic-day here is 838 articles, which is trivial. Recheck if one topic ever passes ~10k articles a day.
+- **Links:** SYS-40 (#126) · `digests/2026-09-28.md`

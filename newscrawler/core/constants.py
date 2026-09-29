@@ -98,8 +98,13 @@ KNOWLEDGE_BATCH_SIZE  = int(os.getenv("KNOWLEDGE_BATCH_SIZE", 50))
 KNOWLEDGE_EXTRACT_MAX_ATTEMPTS = int(os.getenv("KNOWLEDGE_EXTRACT_MAX_ATTEMPTS", 3))
 
 # ── Newsletter (Phase 3) ─────────────────────────────────────────────────────
-DBSCAN_EPS         = float(os.getenv("DBSCAN_EPS", 0.25))
-DBSCAN_MIN_SAMPLES = int(os.getenv("DBSCAN_MIN_SAMPLES", 2))
+# SYS-40 (#126): the digest groups each topic's articles with average-linkage
+# agglomerative clustering (cosine). DBSCAN at eps 0.25 chained a busy topic
+# into one cluster (2026-09-28: 221 of 372 markets articles, 245 of 838
+# law_crime); average linkage does not chain. Measured in EXPERIMENTS.md
+# "SYS-40: DBSCAN chains a busy topic".
+NEWSLETTER_CLUSTER_DISTANCE = float(os.getenv("NEWSLETTER_CLUSTER_DISTANCE", 0.30))
+NEWSLETTER_MIN_CLUSTER_SIZE = int(os.getenv("NEWSLETTER_MIN_CLUSTER_SIZE", 2))
 DIGESTS_DIR        = os.getenv("DIGESTS_DIR", "digests")
 
 SOURCE_AUTHORITY = {

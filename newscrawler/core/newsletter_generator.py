@@ -4,13 +4,13 @@ from datetime import date, datetime
 from typing import Callable, List, Optional
 
 from newscrawler.core.constants import (
-    DBSCAN_EPS,
-    DBSCAN_MIN_SAMPLES,
     DIGESTS_DIR,
     EMBEDDING_MODEL_HF,
     GEMINI_API_KEY,
     GEMINI_MODEL,
+    NEWSLETTER_CLUSTER_DISTANCE,
     NEWSLETTER_MAX_CLUSTERS_PER_TOPIC,
+    NEWSLETTER_MIN_CLUSTER_SIZE,
     SOURCE_AUTHORITY,
 )
 from newscrawler.core.filter_rubric import TOPICS_FINANCE, TOPICS_NEWS
@@ -86,7 +86,7 @@ class NewsletterGenerator:
 
         logger.info(f"Loaded {len(articles)} articles for clustering.")
 
-        # SYS-40: one encode for the day, then DBSCAN within each topic, so a big
+        # SYS-40: one encode for the day, then clustering within each topic, so a big
         # political story cannot absorb the economy items next to it.
         vectors = self._encode([a["l1_text"] for a in articles])
         sections = self.build_sections(articles, vectors)
@@ -148,7 +148,7 @@ class NewsletterGenerator:
             if not idx:
                 continue
             members = [articles[i] for i in idx]
-            if len(idx) >= DBSCAN_MIN_SAMPLES:
+            if len(idx) >= NEWSLETTER_MIN_CLUSTER_SIZE:
                 labels = self._cluster([vectors[i] for i in idx])
             else:
                 labels = [-1] * len(idx)
@@ -216,13 +216,18 @@ class NewsletterGenerator:
         )
 
     def _cluster(self, vectors) -> list:
-        from sklearn.cluster import DBSCAN
-        labels = DBSCAN(
-            eps=DBSCAN_EPS,
-            min_samples=DBSCAN_MIN_SAMPLES,
-            metric="cosine",
-        ).fit(vectors).labels_
-        return labels.tolist()
+        """Cluster labels, -1 for an article in no cluster of at least
+        NEWSLETTER_MIN_CLUSTER_SIZE. Average linkage on cosine distance, cut
+        at NEWSLETTER_CLUSTER_DISTANCE: a cluster's members are close to the
+        cluster as a whole, not merely chained to one neighbour (SYS-40)."""
+        import collections
+        from sklearn.cluster import AgglomerativeClustering
+        labels = AgglomerativeClustering(
+            n_clusters=None, metric="cosine", linkage="average",
+            distance_threshold=NEWSLETTER_CLUSTER_DISTANCE,
+        ).fit(vectors).labels_.tolist()
+        sizes = collections.Counter(labels)
+        return [label if sizes[label] >= NEWSLETTER_MIN_CLUSTER_SIZE else -1 for label in labels]
 
     @staticmethod
     def _group_by_label(articles: list, labels: list) -> dict:

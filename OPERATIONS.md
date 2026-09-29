@@ -22,8 +22,8 @@
 | `VECTOR_DB_NAME_L1` | `NEWS_L1` | FAISS L1 index directory |
 | `VECTOR_DB_NAME_L2` | `NEWS_L2` | FAISS L2 index directory |
 | `DIGESTS_DIR` | `digests` | Newsletter output directory |
-| `DBSCAN_EPS` | `0.25` | Cluster similarity threshold |
-| `DBSCAN_MIN_SAMPLES` | `2` | Min articles per cluster |
+| `NEWSLETTER_CLUSTER_DISTANCE` | `0.30` | SYS-40: cosine distance at which the digest's average-linkage clustering stops merging (replaced DBSCAN_EPS: DBSCAN chained busy topics into one cluster) |
+| `NEWSLETTER_MIN_CLUSTER_SIZE` | `2` | Min articles per digest cluster; smaller groups are counted in the section's "and N more" |
 | `NEWSLETTER_MAX_CLUSTERS_PER_TOPIC` | `8` | SYS-40: clusters shown per topic section of the digest (ranked by size × distinct sources); the rest are one "…dan N berita lainnya" line |
 | `FILTER_AUDIT_WEEKDAY` | `0` | OPS-18: the day (0 = Monday, -1 = off) the 05:30 health-check job also runs `scripts/audit_filter_drift.py` |
 | `FILTER_AUDIT_PER_SIDE` / `FILTER_AUDIT_BATCH` / `FILTER_AUDIT_MAX_CALLS` | `100` / `20` / `15` | OPS-18: saved + rejected rows judged per week, rows per LLM call, call cap |
@@ -571,13 +571,13 @@ pip install google-generativeai
 pip install fastapi uvicorn jinja2 python-multipart
 ```
 
-**`scikit-learn` not installed (needed for DBSCAN)**
+**`scikit-learn` not installed (needed for the digest's clustering)**
 ```bash
 pip install scikit-learn
 ```
 
 **Newsletter: 0 clusters produced**
-- Check `DBSCAN_EPS` — try raising to 0.35 if articles are too dissimilar.
+- Check `NEWSLETTER_CLUSTER_DISTANCE` -- raise it (0.35) if related articles stay apart, lower it (0.25) if clusters mix stories.
 - Check that today's articles exist: `SELECT COUNT(*) FROM sitemaps WHERE posted_at = YYYYMMDD;`
 
 **RAG: FTS returns no results**
