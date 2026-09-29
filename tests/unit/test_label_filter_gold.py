@@ -351,18 +351,13 @@ class TestCommittedGoldFixture:
         assert conflicting_label_headlines(gold) == []
 
     def test_no_url_category_on_a_source_whose_crawler_names_its_branches(self, files):
-        # SYS-44: CNN and JPNN name every branch (branch_name_from_url); a URL
-        # there is a stale value from before fix_url_shaped_categories.py.
-        # VIVA/INEWS still carry URL categories in the DB (SRC-33 / SRC-29) and
-        # are not asserted here -- they go stale the same way when those land.
-        # VIVA gained branch_name_from_url with SRC-33 (2026-09-26); its 289 gold
-        # rows are refreshed together with a probe retrain in SYS-51 (#170),
-        # because the refresh changes the gold hash the sidecar records.
-        # INEWS gained it with SRC-53 the same day (8 gold rows, inews-tv/*):
-        # same reason, same ticket. Remove each name when SYS-51 lands.
+        # SYS-44: a source whose crawler names every branch (branch_name_from_url)
+        # must have no URL category in the gold set -- a URL there is a stale
+        # value from before fix_url_shaped_categories.py. SYS-51 (#170) refreshed
+        # VIVA's 289 and INEWS's 8 rows with the probe retrain, so none is exempt.
         from newscrawler.core.crawler_dict_list import CRAWLER_DICT
-        named = {n for n, c in CRAWLER_DICT.items() if hasattr(c, "branch_name_from_url")} - {"VIVA", "INEWS"}
-        assert {"CNN", "JPNN"} <= named
+        named = {n for n, c in CRAWLER_DICT.items() if hasattr(c, "branch_name_from_url")}
+        assert {"CNN", "JPNN", "VIVA", "INEWS"} <= named
         _, gold = files
         stale = [(r["source"], r["category"]) for r in gold if r["source"] in named and (r["category"] or "").startswith("http")]
         assert stale == [], f"{len(stale)} stale URL categories, e.g. {stale[:3]}"

@@ -1,5 +1,5 @@
 {
- "trained_at": "2026-09-23T00:56:35+00:00",
+ "trained_at": "2026-09-29T15:33:03+00:00",
  "embedding_model": "intfloat/multilingual-e5-large",
  "embedding_revision": "3d7cfbdacd47fdda877c5cd8a79fbcc4f2a574f3",
  "embedding_dim": 1024,
@@ -20,7 +20,7 @@
  ],
  "soft_threshold": 0.39,
  "gold_path": "tests/fixtures/filter_gold.jsonl",
- "gold_sha256": "01c038e61ffb79d59689c0b73c933ee19faad29ed492ef0c1ed87b05af8261a9",
+ "gold_sha256": "d821b970a09e414fb31f9615fee74da88e56c72b047fdae6e6d9cf8b44a28541",
  "n_train": 3081,
  "n_test": 763,
  "sklearn_version": "1.6.1",
@@ -42,12 +42,12 @@
  "gates_met_exactly": false,
  "metrics_test": {
   "recall_finance": 0.9405405405405406,
-  "recall_general": 0.9096385542168675,
-  "precision_mixed": 0.9206349206349206,
+  "recall_general": 0.8975903614457831,
+  "precision_mixed": 0.92,
   "precision_allow": 0.944078947368421,
   "topic_accuracy": 0.822,
-  "recall_all": 0.882,
-  "precision_all": 0.9402985074626866,
+  "recall_all": 0.876,
+  "precision_all": 0.9399141630901288,
   "uncertain_band_share": 0.20445609436435125,
   "n": 763,
   "topic_macro_f1": 0.8075726871251446
@@ -55,9 +55,9 @@
  "metrics_test_per_stratum": {
   "econ_politics_boundary": {
    "n": 64,
-   "recall": 0.9464285714285714,
+   "recall": 0.9107142857142857,
    "precision": 1.0,
-   "kept": 53,
+   "kept": 51,
    "news": 56
   },
   "finance_pending": {
@@ -118,20 +118,20 @@
   },
   "viva_general": {
    "n": 100,
-   "recall": 0.7446808510638298,
-   "precision": 0.8974358974358975,
-   "kept": 39,
+   "recall": 0.723404255319149,
+   "precision": 0.8947368421052632,
+   "kept": 38,
    "news": 47
   }
  },
  "metrics_train_cv": {
   "recall_finance": 0.9407894736842105,
-  "recall_general": 0.9114658925979681,
-  "precision_mixed": 0.8904428904428905,
+  "recall_general": 0.9071117561683599,
+  "precision_mixed": 0.8926014319809069,
   "precision_allow": 0.9543269230769231,
   "topic_accuracy": 0.7942073170731707,
-  "recall_all": 0.8765243902439024,
-  "precision_all": 0.9354663774403471,
+  "recall_all": 0.8709349593495935,
+  "precision_all": 0.9361004915346806,
   "uncertain_band_share": 0.24862057773450177,
   "n": 3081
  },
