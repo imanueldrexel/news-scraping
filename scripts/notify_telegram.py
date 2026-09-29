@@ -8,8 +8,11 @@ standalone for a quick test:
 
 Requires TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in .env (see OPERATIONS.md for how
 to create a bot via @BotFather and find your chat id). If either is unset, send()
-logs a warning and returns False instead of raising -- a missing notification
-config must never crash the health check it's attached to.
+returns False instead of raising -- a missing notification config must never
+crash the health check it's attached to. OPS-34 (#202): it logs an ERROR and
+queues the message in the outbox, so the first send after the config is
+restored delivers the gap; alerts are this deployment's only failure signal,
+and "not configured" must not look like "all quiet".
 
 OPS-33 (#194): the Bot API carries the token in the URL path (/bot<token>/...),
 and requests/urllib3 exception messages include that path. Everything this
@@ -137,6 +140,30 @@ def _flush_outbox() -> list:
     return pending
 
 
+def _queue_unconfigured(message: str, queue_on_failure: bool) -> bool:
+    """OPS-34 (#202): the token or chat id is missing. Nothing can be sent,
+    but the alert is kept (bounded by OUTBOX_MAX) for the first send after the
+    config is back, and the gap is an ERROR. The command-line test
+    (queue_on_failure=False) is told now and queues nothing."""
+    missing = " and ".join(name for name, value in (("TELEGRAM_BOT_TOKEN", TELEGRAM_BOT_TOKEN),
+                                                   ("TELEGRAM_CHAT_ID", TELEGRAM_CHAT_ID)) if not value)
+    if not queue_on_failure:
+        logger.error(f"{missing} not set -- notification not sent")
+        return False
+    try:
+        with FileLock(OUTBOX_PATH + ".lock", timeout=OUTBOX_LOCK_TIMEOUT_S):
+            pending = _read_outbox()
+            pending.append({"queued_at": datetime.now().strftime("%Y-%m-%d %H:%M"), "text": message})
+            _write_outbox(pending)
+    except Exception as e:  # noqa: BLE001 -- must never raise into the caller
+        logger.error(f"{missing} not set and the Telegram outbox {OUTBOX_PATH} is unusable "
+                     f"({type(e).__name__}: {redact(e)}); alert LOST: {redact(message[:300])}")
+        return False
+    logger.error(f"{missing} not set -- alert NOT sent, queued for the first send after it is set "
+                 f"({min(len(pending), OUTBOX_MAX)} waiting): {redact(message[:300])}")
+    return False
+
+
 def send(message: str, queue_on_failure: bool = True) -> bool:
     """Sends message to TELEGRAM_CHAT_ID. Returns True on success, False on any
     failure (missing config, network error, non-200 response) -- never raises.
@@ -148,8 +175,7 @@ def send(message: str, queue_on_failure: bool = True) -> bool:
     delivers what is queued, oldest first, so the next run's send (or the
     health check's) brings the missed alert in."""
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
-        logger.warning("TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID not set -- skipping notification")
-        return False
+        return _queue_unconfigured(message, queue_on_failure)
     try:
         with FileLock(OUTBOX_PATH + ".lock", timeout=OUTBOX_LOCK_TIMEOUT_S):
             pending = _flush_outbox()

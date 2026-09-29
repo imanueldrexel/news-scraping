@@ -234,3 +234,63 @@ class TestAFailedAlertIsDeliveredLater:
             assert mod.main(["test"]) == 1
         assert self._queued(_outbox) == ["07:00 summary"]
         assert "Failed to send" in capsys.readouterr().out
+
+
+class TestAMissingConfigIsQueuedNotDropped:
+    """OPS-34 (#202): with the token revoked (OPS-33) and `.env` holding
+    `TELEGRAM_BOT_TOKEN=`, every alert used to be dropped with one WARNING --
+    a config gap that read exactly like "all quiet"."""
+
+    def _queued(self, outbox):
+        return TestAFailedAlertIsDeliveredLater._queued(None, outbox)
+
+    @pytest.mark.parametrize("token,chat", [("", "42"), (None, "42"), ("123:abc", ""), (None, None)])
+    def test_the_alert_is_queued_and_the_gap_is_an_error(self, _outbox, caplog, token, chat):
+        mod = _load()
+        mod.TELEGRAM_BOT_TOKEN, mod.TELEGRAM_CHAT_ID = token, chat
+        with patch.object(mod, "requests") as rq, caplog.at_level("WARNING"):
+            assert mod.send("19:00 summary: 3 sources FAILED") is False
+        rq.post.assert_not_called()
+        assert self._queued(_outbox) == ["19:00 summary: 3 sources FAILED"]
+        errors = [r.getMessage() for r in caplog.records if r.levelname == "ERROR"]
+        assert errors and "not set" in errors[0] and "queued" in errors[0], errors
+        assert not [r for r in caplog.records if r.levelname == "WARNING"]
+
+    def test_restoring_the_token_delivers_the_gap_first(self, _outbox):
+        mod = _load()
+        mod.TELEGRAM_BOT_TOKEN, mod.TELEGRAM_CHAT_ID = "", "42"
+        mod.send("07:00 summary")
+        mod.send("19:00 summary")
+        mod.TELEGRAM_BOT_TOKEN = "123:abc"
+        with patch.object(mod, "requests") as rq:
+            rq.post.return_value = _Resp(200)
+            assert mod.send("next day 07:00 summary") is True
+        texts = [c[1]["json"]["text"] for c in rq.post.call_args_list]
+        assert [t.startswith("[delayed; queued ") for t in texts] == [True, True, False], texts
+        assert texts[0].endswith("07:00 summary") and texts[1].endswith("19:00 summary")
+        assert texts[2] == "next day 07:00 summary"
+        assert self._queued(_outbox) == []
+
+    def test_the_queue_stays_bounded(self, _outbox):
+        mod = _load()
+        mod.TELEGRAM_BOT_TOKEN, mod.TELEGRAM_CHAT_ID = "", "42"
+        mod.OUTBOX_MAX = 3
+        for i in range(5):
+            mod.send("m%d" % i)
+        assert self._queued(_outbox) == ["m2", "m3", "m4"]
+
+    def test_the_command_line_test_is_told_now_and_queues_nothing(self, _outbox, caplog, capsys):
+        mod = _load()
+        mod.TELEGRAM_BOT_TOKEN, mod.TELEGRAM_CHAT_ID = "", "42"
+        with caplog.at_level("ERROR"):
+            assert mod.main(["test"]) == 1
+        assert self._queued(_outbox) == []
+        assert any("TELEGRAM_BOT_TOKEN not set" in r.getMessage() for r in caplog.records)
+
+    def test_an_unusable_outbox_never_raises(self, _outbox, monkeypatch, caplog):
+        mod = _load()
+        mod.TELEGRAM_BOT_TOKEN, mod.TELEGRAM_CHAT_ID = "", "42"
+        monkeypatch.setattr(mod, "_write_outbox", MagicMock(side_effect=OSError("disk full")))
+        with caplog.at_level("ERROR"):
+            assert mod.send("alert") is False
+        assert any("alert LOST" in r.getMessage() for r in caplog.records)
