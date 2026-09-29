@@ -5,13 +5,10 @@ from newscrawler.infrastructure.datasource.scrapers.antara_news.antaranews_branc
     AntaraNewsNetwork,
 )
 from newscrawler.infrastructure.datasource.scrapers.crawler import Crawler
-from typing import List, Dict, Union
+from typing import List, Dict
 import re
 import logging
 
-from newscrawler.core.utils.utils import (
-    preprocess_text,
-)
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)
@@ -19,6 +16,10 @@ logger.setLevel(logging.INFO)
 
 
 class AntaraNewsCrawler(Crawler):
+    # DBT-05 (#24): this source's site selector had been dead for months (trafilatura
+    # produced every saved article); trafilatura is its extractor by design.
+    PRIMARY_EXTRACTOR = "trafilatura"
+
     def __init__(self):
         super(AntaraNewsCrawler, self).__init__()
         self.website_name = WebsiteName.ANTARANEWS.value
@@ -84,36 +85,6 @@ class AntaraNewsCrawler(Crawler):
             timestamp_string = timestamp.get_text(" ").strip()
             timestamp_datetime = date_time_reader.convert_date(timestamp_string)
             return timestamp_datetime
-
-    @staticmethod
-    def _get_whole_text(soup) -> Union[None, List[str]]:
-        def _remove_trailing_space(text) -> str:
-            text = text.replace("\n", " ")
-            text = text.replace("\r", " ")
-            text = text.replace("\t", " ")
-            text = re.sub(r"(\s+)", r" ", text)
-            return text.strip()
-
-        layer = soup.find("div", attrs={"class": ["post-content clearfix"]})
-        if layer:
-            while layer.br:
-                layer.br.decompose()
-            while layer.script:
-                layer.script.decompose()
-            while layer.span:
-                layer.span.decompose()
-            editor = soup.find("p", {"class": ["text-muted small mt10"]})
-            if editor:
-                layer.p.decompose()
-            quote = soup.find("div", {"class": ["quote_old"]})
-            if quote:
-                layer.div.decompose()
-            texts = []
-            for sentence in _remove_trailing_space(layer.get_text(" ")).split("."):
-                sentence = preprocess_text(sentence.strip())
-                if sentence:
-                    texts.append(sentence)
-            return texts
 
     def _get_reporter_from_text(self, soup) -> List[str]:
         # SRC-21 (#101): every path used to fall off the end and implicitly

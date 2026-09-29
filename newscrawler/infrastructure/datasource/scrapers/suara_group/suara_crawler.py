@@ -14,6 +14,10 @@ logger.setLevel(logging.INFO)
 
 
 class SuaraCrawler(Crawler):
+    # DBT-05 (#24): this source's site selector had been dead for months (trafilatura
+    # produced every saved article); trafilatura is its extractor by design.
+    PRIMARY_EXTRACTOR = "trafilatura"
+
     def __init__(self):
         super(SuaraCrawler, self).__init__()
         self.website_name = WebsiteName.SUARA.value
@@ -35,22 +39,6 @@ class SuaraCrawler(Crawler):
             if loc and "/bisnis/sitemap-news.xml" in loc.get_text(" ").strip():
                 branches["bisnis"] = loc.get_text(" ").strip()
         return branches
-
-    def _get_whole_text(self, soup):
-        multiple_pages = soup.find("div", attrs={"class": ["paging__wrap clearfix"]})
-        full_text = []
-        if multiple_pages:
-            pages = list(sorted(set([x["href"] for x in multiple_pages.find_all("a")])))
-            for page in pages:
-                if page != "#":
-                    soup = self.page_loader.get_soup(page)
-                texts = self._get_text(soup)
-                if texts:
-                    full_text.extend(texts)
-        else:
-            full_text = self._get_text(soup)
-
-        return full_text
 
     @staticmethod
     def _get_text(soup):

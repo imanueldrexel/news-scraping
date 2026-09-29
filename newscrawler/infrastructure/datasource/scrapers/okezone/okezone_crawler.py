@@ -17,6 +17,10 @@ logger.setLevel(logging.INFO)
 
 
 class OkezoneCrawler(Crawler):
+    # DBT-05 (#24): this source's site selector had been dead for months (trafilatura
+    # produced every saved article); trafilatura is its extractor by design.
+    PRIMARY_EXTRACTOR = "trafilatura"
+
     def __init__(self):
         super(OkezoneCrawler, self).__init__()
         self.website_name = WebsiteName.OKEZONE.value
@@ -91,33 +95,6 @@ class OkezoneCrawler(Crawler):
             branches["%s/%s" % (host, section) if section else host] = link
 
         return branches
-
-    def _get_whole_text(self, soup) -> List[str]:
-        texts = []
-        while soup:
-            text_first_page = self._get_text(soup)
-            if text_first_page:
-                texts.extend(text_first_page)
-            next_button_soup = soup.find("div", attrs={"class": "next"})
-            if next_button_soup:
-                next_page_link = next_button_soup.find("a")
-
-                current_page = soup.find("div", attrs={"class": "first-paging"})
-                current_page = (
-                    int(current_page.get_text(" "))
-                    if current_page and int(current_page.get_text(" "))
-                    else 1
-                )
-                max_page = soup.find("div", attrs={"class": "second-paging"})
-                max_page = (
-                    int(max_page.get_text(" ")) if int(max_page.get_text(" ")) else 1
-                )
-                if next_page_link and (max_page / current_page) != 1:
-                    next_page_link = next_page_link["href"]
-                    soup = self.page_loader.get_soup(next_page_link)
-                else:
-                    break
-        return texts
 
     @staticmethod
     def _get_text(soup) -> List[str]:

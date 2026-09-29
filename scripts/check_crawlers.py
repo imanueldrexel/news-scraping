@@ -207,11 +207,13 @@ def sample_order(articles, now=None, min_age_hours=HEALTH_SAMPLE_MIN_AGE_HOURS):
 
 
 def classify(sitemap_links: int, detail_ok: int, extractors: list = None, error: bool = False,
-             listing_age_days: int = None, cascaded: int = 0) -> str:
+             listing_age_days: int = None, cascaded: int = 0, primary: str = "site") -> str:
     """Pure classification from sample-crawl counts. `extractors` is the
     meta_data["extractor"] value (see crawler.py's _get_news_details) for each
-    sample that produced text -- OPS-02: if none of them is "site", the site's own
-    selector is dead and trafilatura/newspaper are quietly doing all the work."""
+    sample that produced text -- OPS-02: if none of them is the crawler's
+    declared `primary` extractor (DBT-05: `Crawler.PRIMARY_EXTRACTOR`, "site"
+    unless the source is trafilatura-first by design), the primary is dead and a
+    fallback is quietly doing all the work."""
     if error:
         return STATUS_ERROR
     if sitemap_links <= 0:
@@ -220,7 +222,7 @@ def classify(sitemap_links: int, detail_ok: int, extractors: list = None, error:
         return STATUS_PARTIAL
     if cascaded > 0:
         return STATUS_REPEATED
-    if extractors and "site" not in extractors:
+    if extractors and primary not in extractors:
         return STATUS_FALLBACK
     # OPS-17: checked last -- a broken extractor is the more urgent finding, and
     # `None` (no dated entries at all) is not staleness.
@@ -319,8 +321,10 @@ def check_one(name: str, crawler, sample_size: int) -> dict:
         result["extractors"] = extractors
         result["cascaded"] = sum(1 for d, l in zip(details, lengths)
                                  if l > 0 and is_cascaded(getattr(d, "extracted_text", None) or []))
+        primary = getattr(crawler, "PRIMARY_EXTRACTOR", "site")
         result["status"] = classify(result["sitemap_links"], result["detail_ok"], extractors,
-                                    listing_age_days=result["listing_age_days"], cascaded=result["cascaded"])
+                                    listing_age_days=result["listing_age_days"], cascaded=result["cascaded"],
+                                    primary=primary)
         if result["status"] == STATUS_PARTIAL:
             result["note"] = "listing OK but article body extraction returned empty"
         elif result["status"] == STATUS_REPEATED:
@@ -328,7 +332,8 @@ def check_one(name: str, crawler, sample_size: int) -> dict:
                               "the one before; nested <p>, SRC-54)" % (result["cascaded"], result["detail_ok"]))
         elif result["status"] == STATUS_FALLBACK:
             used = sorted({e for e in extractors if e} or {"unknown"})
-            result["note"] = "site selector produced nothing; rescued by " + "/".join(used)
+            result["note"] = "%s extractor produced nothing; rescued by %s" % (
+                "site selector" if primary == "site" else primary, "/".join(used))
         elif result["status"] == STATUS_STALE:
             result["note"] = ("listing serves fine but its newest entry is %d days old "
                               "(> HEALTH_STALE_LISTING_DAYS=%d)"

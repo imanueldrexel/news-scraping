@@ -4,9 +4,6 @@ from typing import List, Dict
 
 from newscrawler.domain.entities.extraction.url_data import URL
 from newscrawler.infrastructure.datasource.scrapers.crawler import Crawler
-from newscrawler.core.utils.utils import (
-    preprocess_text,
-)
 from newscrawler.domain.entities.extraction.website_name import WebsiteName
 
 logging.basicConfig()
@@ -15,6 +12,10 @@ logger.setLevel(logging.INFO)
 
 
 class IDNTimesCrawler(Crawler):
+    # DBT-05 (#24): this source's site selector had been dead for months (trafilatura
+    # produced every saved article); trafilatura is its extractor by design.
+    PRIMARY_EXTRACTOR = "trafilatura"
+
     def __init__(self):
         super(IDNTimesCrawler, self).__init__()
         self.website_name = WebsiteName.IDNTIMES.value
@@ -44,18 +45,6 @@ class IDNTimesCrawler(Crawler):
             if match and match.group(1) == "business":
                 branches[match.group(1)] = link
         return branches
-
-    @staticmethod
-    def _get_whole_text(soup) -> List[str]:
-        article_content = soup.find("div", attrs={"class": "article-content"})
-        if article_content:
-            sentences = article_content.find_all("p")
-            texts = []
-            for sentence in sentences:
-                sentence = preprocess_text(sentence.get_text(" ").strip())
-                if sentence and "Baca Juga: " not in sentence:
-                    texts.append(sentence)
-            return texts
 
     def _get_reporter_from_text(self, soup) -> List[str]:
         reporters = []

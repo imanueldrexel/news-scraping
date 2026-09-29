@@ -5,9 +5,6 @@ from typing import List, Dict
 from newscrawler.domain.entities.extraction.url_data import URL
 from newscrawler.domain.entities.extraction.website_name import WebsiteName
 from newscrawler.infrastructure.datasource.scrapers.crawler import Crawler
-from newscrawler.core.utils.utils import (
-    preprocess_text,
-)
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)
@@ -15,6 +12,10 @@ logger.setLevel(logging.INFO)
 
 
 class MerdekaCrawler(Crawler):
+    # DBT-05 (#24): this source's site selector had been dead for months (trafilatura
+    # produced every saved article); trafilatura is its extractor by design.
+    PRIMARY_EXTRACTOR = "trafilatura"
+
     def __init__(self):
         super(MerdekaCrawler, self).__init__()
         self.website_name = WebsiteName.MERDEKA.value
@@ -33,20 +34,6 @@ class MerdekaCrawler(Crawler):
             if loc and "/uang/sitemap.xml" in loc.get_text(" ").strip():
                 branches["uang"] = loc.get_text(" ").strip()
         return branches
-
-    @staticmethod
-    def _get_whole_text(soup) -> List[str]:
-        paragraphs = soup.find_all("div", attrs={"class": "mdk-body-paragraph"})
-        texts = []
-        for paragraph in paragraphs:
-            sentences = paragraph.find_all("p")
-            for sentence in sentences:
-                sentence = preprocess_text(sentence.get_text(" ").strip())
-                if sentence:
-                    if sentence in ["Advertisement"]:
-                        continue
-                    texts.append(sentence)
-        return texts
 
     def _get_reporter_from_text(self, soup) -> List[str]:
         reporters = []

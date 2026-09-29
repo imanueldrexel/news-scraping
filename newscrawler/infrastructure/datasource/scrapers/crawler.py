@@ -214,6 +214,16 @@ class Crawler:
     # branches are merged into the primary index's by `list_branches`, the primary
     # winning a key collision.
     EXTRA_INDEX_URLS = ()
+    # DBT-05 (#24): which extractor produces this source's article text.
+    # "site" -- the subclass's `_get_whole_text` selectors, trafilatura and
+    # newspaper only as fallbacks. "trafilatura" -- no site selector exists or
+    # runs; trafilatura is the extractor by design, newspaper its fallback.
+    # Measured 2026-09-29 (EXPERIMENTS.md "DBT-05: extractor order"): where a
+    # selector works it is as good or more precise than trafilatura (JPNN,
+    # MEDIAINDONESIA, EMITENNEWS, TRIBUN, SINDONEWS), so it stays; where it had
+    # been dead for months, trafilatura was already producing every article.
+    # check_crawlers.py reports FALLBACK only when the declared one did not win.
+    PRIMARY_EXTRACTOR = "site"
 
     def __init__(self):
         self.verbose = VERBOSE
@@ -619,27 +629,33 @@ class Crawler:
                 except Exception as r_err:
                     logger.warning(f"Reporter extraction raised for {url}: {r_err!r}")
                     reporter = []
-                try:
-                    extracted_text = self._get_whole_text(soup)
-                except Exception as x_err:
-                    logger.warning(f"Site extractor raised for {url}: {x_err!r}")
-                    extracted_text = None
-
-                # Site extractors return None when their container is missing and [] when
-                # it exists but no paragraph matched (layout drift). Both, and anything
-                # shorter than MIN_ARTICLE_CHARS, must fall through to the next extractor.
                 # OPS-02: track which extractor's output actually won, so "OK" in
                 # check_crawlers.py can be told apart from "the site selector is dead
                 # and a fallback is quietly doing all the work".
-                extractor_used = "site"
+                if self.PRIMARY_EXTRACTOR == "trafilatura":
+                    # DBT-05 (#24): no site selector for this source; trafilatura is
+                    # its extractor by design, newspaper below its fallback.
+                    extracted_text = self._trafilatura_fallback(soup)
+                    extractor_used = "trafilatura"
+                else:
+                    try:
+                        extracted_text = self._get_whole_text(soup)
+                    except Exception as x_err:
+                        logger.warning(f"Site extractor raised for {url}: {x_err!r}")
+                        extracted_text = None
+                    extractor_used = "site"
 
-                if not self._has_usable_text(extracted_text):
-                    logger.info(f"Standard extraction failed for {url}. Attempting Trafilatura fallback...")
-                    trafilatura_text = self._trafilatura_fallback(soup)
-                    combined = self._best_of(extracted_text, trafilatura_text)
-                    if trafilatura_text is not None and combined is trafilatura_text:
-                        extractor_used = "trafilatura"
-                    extracted_text = combined
+                    # Site extractors return None when their container is missing and []
+                    # when it exists but no paragraph matched (layout drift). Both, and
+                    # anything shorter than MIN_ARTICLE_CHARS, fall through to the next
+                    # extractor.
+                    if not self._has_usable_text(extracted_text):
+                        logger.info(f"Standard extraction failed for {url}. Attempting Trafilatura fallback...")
+                        trafilatura_text = self._trafilatura_fallback(soup)
+                        combined = self._best_of(extracted_text, trafilatura_text)
+                        if trafilatura_text is not None and combined is trafilatura_text:
+                            extractor_used = "trafilatura"
+                        extracted_text = combined
 
                 if not self._has_usable_text(extracted_text):
                     newspaper_text = self._newspaper_fallback(url)

@@ -5,9 +5,6 @@ from typing import List, Dict
 from newscrawler.domain.entities.extraction.url_data import URL
 from newscrawler.domain.entities.extraction.website_name import WebsiteName
 from newscrawler.infrastructure.datasource.scrapers.crawler import Crawler
-from newscrawler.core.utils.utils import (
-    preprocess_text,
-)
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)
@@ -24,6 +21,10 @@ _SECTION_URL_SUFFIXES = {
 
 
 class TirtoCrawler(Crawler):
+    # DBT-05 (#24): this source's site selector had been dead for months (trafilatura
+    # produced every saved article); trafilatura is its extractor by design.
+    PRIMARY_EXTRACTOR = "trafilatura"
+
     def __init__(self):
         super(TirtoCrawler, self).__init__()
         self.website_name = WebsiteName.TIRTO.value
@@ -91,20 +92,6 @@ class TirtoCrawler(Crawler):
         dated.sort(reverse=True)
         cutoff = self._now() - timedelta(days=self.RECENT_LEAF_DAYS)
         return [dated[0][1]] + [url for dt, url in dated[1:] if dt >= cutoff]
-
-    @staticmethod
-    def _get_whole_text(soup) -> List[str]:
-        article_layer = soup.find_all("div", {"class": "content-text-editor"})
-        if article_layer:
-            texts = []
-            for sentence in article_layer[1:]:
-                while sentence.find_all("script"):
-                    sentence.script.decompose()
-                while sentence.find_all("div"):
-                    sentence.div.decompose()
-                sentence = preprocess_text(sentence.get_text(" ")).split(". ")
-                texts.extend(sentence)
-            return texts
 
     def _get_reporter_from_text(self, soup) -> List[str]:
         reporters = []

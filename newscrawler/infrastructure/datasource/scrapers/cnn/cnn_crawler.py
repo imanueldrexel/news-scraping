@@ -5,9 +5,6 @@ from typing import List, Dict, Optional
 from newscrawler.domain.entities.extraction.url_data import URL
 from newscrawler.domain.entities.extraction.website_name import WebsiteName
 from newscrawler.infrastructure.datasource.scrapers.crawler import Crawler
-from newscrawler.core.utils.utils import (
-    preprocess_text,
-)
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)
@@ -26,6 +23,10 @@ _SKIP_SECTIONS = {"longform"}
 
 
 class CNNCrawler(Crawler):
+    # DBT-05 (#24): this source's site selector had been dead for months (trafilatura
+    # produced every saved article); trafilatura is its extractor by design.
+    PRIMARY_EXTRACTOR = "trafilatura"
+
     def __init__(self):
         super(CNNCrawler, self).__init__()
         self.website_name = WebsiteName.CNN.value
@@ -62,17 +63,6 @@ class CNNCrawler(Crawler):
                 continue
             branches[name] = link
         return branches
-
-    @staticmethod
-    def _get_whole_text(soup) -> List[str]:
-        layer = soup.find("div", attrs={"class": "detail_text"})
-        if layer:
-            sentences = layer.find_all("p")
-            texts = []
-            for sentence in sentences:
-                sentence = preprocess_text(sentence.get_text(" ").strip())
-                texts.append(sentence)
-            return texts
 
     def _get_reporter_from_text(self, soup) -> List[str]:
         return []

@@ -5,9 +5,6 @@ from typing import List, Dict, Optional
 from newscrawler.core.importance_filter import SOURCE_SOFT_LEAVES
 from newscrawler.domain.entities.extraction.url_data import URL
 from newscrawler.infrastructure.datasource.scrapers.crawler import Crawler
-from newscrawler.core.utils.utils import (
-    preprocess_text,
-)
 from newscrawler.domain.entities.extraction.website_name import WebsiteName
 
 logging.basicConfig()
@@ -21,6 +18,10 @@ _WWW_SECTION = re.compile(r"^https?://www\.inews\.id/([a-z0-9-]+(?:/[a-z0-9-]+)*
 
 
 class INewsCrawler(Crawler):
+    # DBT-05 (#24): this source's site selector had been dead for months (trafilatura
+    # produced every saved article); trafilatura is its extractor by design.
+    PRIMARY_EXTRACTOR = "trafilatura"
+
     # Soft leaves no vocabulary word reaches, decided from sampled titles (SRC-53).
     SOFT_BRANCH_DENY = SOURCE_SOFT_LEAVES["INEWS"]
 
@@ -57,40 +58,6 @@ class INewsCrawler(Crawler):
             if link and link.get_text(" ").strip().endswith("/finance/bisnis/sitemap.xml"):
                 branches["finance"] = link.get_text(" ").strip()
         return branches
-
-    @staticmethod
-    def _get_whole_text(soup) -> List[str]:
-        read_content_layer = soup.find("div", attrs={"itemprop": "articleBody"})
-        if read_content_layer:
-            sentences = read_content_layer.find_all("p")
-            texts = []
-            for sentence in sentences:
-                if sentence.attrs == {}:
-                    sentence = preprocess_text(sentence.get_text(" ").strip())
-                    if (
-                        sentence
-                        and "Baca juga" not in sentence
-                        and "Editor :" not in sentence
-                        and "Bagikan Artikel:" not in sentence
-                    ):
-                        texts.append(sentence)
-            return texts
-        else:
-            read_content_layer = soup.find("div", attrs={"class": "caption"})
-            if read_content_layer:
-                sentences = read_content_layer.find_all("p")
-                texts = []
-                for sentence in sentences:
-                    if sentence.attrs == {}:
-                        sentence = preprocess_text(sentence.get_text(" ").strip())
-                        if (
-                            sentence
-                            and "Baca juga" not in sentence
-                            and "Editor :" not in sentence
-                            and "Bagikan Artikel:" not in sentence
-                        ):
-                            texts.append(sentence)
-                return texts
 
     def _get_reporter_from_text(self, soup) -> List[str]:
         reporters = []

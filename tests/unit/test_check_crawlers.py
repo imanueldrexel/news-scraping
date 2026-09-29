@@ -122,6 +122,8 @@ def _mock_crawler(soup="SOUP", branches=None, articles=None, dtos=None, details=
     # speak it -- otherwise every test here exercises the compatibility path.
     c.page_loader.get_soup_with_reason.return_value = (soup, None if soup else "HTTP 404")
     c._get_branches.return_value = branches if branches is not None else {"news": "http://e.com/news.xml"}
+    # DBT-05: FALLBACK is judged against the crawler's declared extractor.
+    c.PRIMARY_EXTRACTOR = "site"
     # SRC-35: check_one drops soft branches before sampling one -- apply the
     # real vocabulary here so the mock behaves like a crawler, not a MagicMock.
     from newscrawler.infrastructure.datasource.scrapers.crawler import Crawler as _RealCrawler
@@ -133,6 +135,13 @@ def _mock_crawler(soup="SOUP", branches=None, articles=None, dtos=None, details=
 
 
 class TestCheckOne:
+    def test_a_trafilatura_first_source_is_judged_by_its_declaration(self):
+        """DBT-05: CNBC is trafilatura by design -- its samples coming from
+        trafilatura is OK, not FALLBACK."""
+        c = _mock_crawler(details=[_detail(["body text here"], extractor="trafilatura")])
+        c.PRIMARY_EXTRACTOR = "trafilatura"
+        assert cc.check_one("CNBC", c, sample_size=2)["status"] == cc.STATUS_OK
+
     def test_happy_path_ok(self):
         r = cc.check_one("KOMPAS", _mock_crawler(), sample_size=2)
         assert r["status"] == cc.STATUS_OK

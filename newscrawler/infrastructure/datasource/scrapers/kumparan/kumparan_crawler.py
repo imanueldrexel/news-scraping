@@ -13,6 +13,10 @@ logger.setLevel(logging.INFO)
 
 
 class KumparanCrawler(Crawler):
+    # DBT-05 (#24): this source's site selector had been dead for months (trafilatura
+    # produced every saved article); trafilatura is its extractor by design.
+    PRIMARY_EXTRACTOR = "trafilatura"
+
     def __init__(self):
         super(KumparanCrawler, self).__init__()
         self.website_name = WebsiteName.KUMPARAN.value
@@ -34,21 +38,6 @@ class KumparanCrawler(Crawler):
                     branch_name = branch_name.strip()
                     branches[branch_name] = link.strip()
         return branches
-
-    @staticmethod
-    def _get_whole_text(soup):
-        sentences = soup.find_all(
-            "span",
-            attrs={
-                "data-qa-id": "story-paragraph",
-            },
-        )
-        texts = []
-        for sentence in sentences:
-            sentence = sentence.get_text(" ").strip()
-            if sentence:
-                texts.append(sentence)
-        return texts
 
     def _get_reporter_from_text(self, soup) -> List[str]:
         # SRC-11 (#68): the page's JSON-LD is third-party content; parse it as
