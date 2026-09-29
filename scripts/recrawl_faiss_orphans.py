@@ -18,14 +18,16 @@ SYS-26 -- and embeds the L2 chunks fresh), then the articles row. A sitemap whos
 page now fails the filter is marked rejected_filter (its L1 vector stays an
 orphan; see --report), one whose fetch fails is counted by SYS-09/OPS-15.
 
-Step 3, --write-off-remaining: after the re-crawl, an orphan whose page the filter
-now rejects (crawl_status=rejected_filter), whose fetch failed (fetch_failures>0)
-or whose extraction was empty (empty_extraction) still has its L1 vector and
-nothing else -- and that vector is now evidence that contradicts the row's
-status, which fix_rejected_filter_with_faiss_evidence.py would flip back to
-pending, re-crawl, reject again, forever. Those vectors are deleted from NEWS_L1
-(docstore entries backed up to backups/ first). Orphans still `pending` (never
-attempted by the re-crawl, e.g. --limit) are left alone.
+Step 3, --write-off-remaining: after the re-crawl, an orphan that can never get
+an article -- its page the filter now rejects (crawl_status=rejected_filter), or
+its URL retired at the fetch cap (fetch_failures >= SITEMAP_MAX_FETCH_FAILURES)
+-- still has its L1 vector and nothing else, and that vector is evidence that
+contradicts the row's status, which fix_rejected_filter_with_faiss_evidence.py
+would flip back to pending, re-crawl, reject again, forever. Those vectors are
+deleted from NEWS_L1 (docstore entries backed up to backups/ first). This is the
+fleet's one terminal rule (SYS-54's terminal_with_chunks, OPS-25). DBT-27 (#88):
+a row below the cap or `empty_extraction` is retried by the pipeline itself and
+is left alone, as is any orphan still `pending`.
 
 Usage:
     python scripts/recrawl_faiss_orphans.py --website MEDIAINDONESIA --dry-run
@@ -48,7 +50,7 @@ load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file_
 
 from sqlalchemy import text
 
-from newscrawler.core.constants import VECTOR_DB_NAME_L1
+from newscrawler.core.constants import SITEMAP_MAX_FETCH_FAILURES, VECTOR_DB_NAME_L1
 from newscrawler.infrastructure.network.clients.sqlalchemy_client import SQLAlchemyClient
 
 logging.basicConfig(format="%(asctime)s %(levelname)s %(message)s")
@@ -80,25 +82,28 @@ BACKUP_DIR = os.path.join(REPO_ROOT, "backups")
 
 
 def unrecoverable(rows):
-    """The orphans the re-crawl has already given up on: rejected by today's
-    filter, fetch failed, or extracted empty. A row still `pending` has simply not
-    been attempted and is not written off."""
-    return [r for r in rows if r.crawl_status in ("rejected_filter", "empty_extraction") or r.fetch_failures > 0]
+    """The orphans that can never get an article: rejected by today's filter, or
+    retired at the fetch cap. DBT-27: one transient failure (fetch_failures=1) or
+    an empty extraction is retried after the cooldown, so its vector stays."""
+    return [r for r in rows
+            if r.crawl_status == "rejected_filter" or (r.fetch_failures or 0) >= SITEMAP_MAX_FETCH_FAILURES]
 
 
-def write_off(client, rows, dry_run: bool) -> int:
+def write_off(client, rows, dry_run: bool, ds=None) -> int:
     """Delete the L1 vectors of `rows` (already known to have no chunks/articles
     row). Backs up each docstore entry (page_content + metadata) first, so the
     two-paragraph text is recoverable if anyone ever wants it. Returns the number
-    of vectors removed (or that would be)."""
+    of vectors removed (or that would be). `ds` is a ChunkFAISSDatasource; built
+    here when not given (the tests pass their own)."""
     ids = {r.sitemap_id for r in rows}
     if not ids:
         logger.info("Nothing to write off.")
         return 0
-    from newscrawler.infrastructure.datasource.dataflow.write.faiss.chunk_faiss_data_source import (
-        ChunkFAISSDatasource,
-    )
-    ds = ChunkFAISSDatasource()
+    if ds is None:
+        from newscrawler.infrastructure.datasource.dataflow.write.faiss.chunk_faiss_data_source import (
+            ChunkFAISSDatasource,
+        )
+        ds = ChunkFAISSDatasource()
     doomed = {doc_id: doc for doc_id, doc in ds.vs_l1.docstore._dict.items()
               if doc.metadata.get("sitemap_id") is not None and int(doc.metadata["sitemap_id"]) in ids}
     logger.info("%d L1 vector(s) belong to the %d unrecoverable orphan(s)", len(doomed), len(ids))
@@ -141,8 +146,8 @@ def main(argv=None) -> int:
     parser.add_argument("--website", required=True, help="Source to re-crawl (one crawler per run)")
     parser.add_argument("--limit", type=int, default=None, help="Only the first N orphans (newest first)")
     parser.add_argument("--write-off-remaining", action="store_true",
-                        help="Step 3: delete the L1 vectors of orphans the re-crawl could not recover "
-                             "(rejected_filter / empty_extraction / fetch failed); no fetching")
+                        help="Step 3: delete the L1 vectors of orphans that can never get an article "
+                             "(rejected_filter / at the fetch cap); no fetching")
     parser.add_argument("--dry-run", action="store_true", help="List the population; fetch nothing, write nothing")
     args = parser.parse_args(argv)
     # OPS-26 (#175): not while a scheduled crawl holds FAISS in memory.
@@ -162,7 +167,7 @@ def main(argv=None) -> int:
 
     if args.write_off_remaining:
         doomed_rows = unrecoverable(rows)
-        logger.info("%d of them are unrecoverable (rejected_filter / empty_extraction / fetch failed); "
+        logger.info("%d of them are unrecoverable (rejected_filter / at the fetch cap); "
                     "%d still pending are left alone", len(doomed_rows), len(rows) - len(doomed_rows))
         n = write_off(client, doomed_rows, args.dry_run)
         if args.dry_run:
