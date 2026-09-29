@@ -24,6 +24,7 @@
 | `DIGESTS_DIR` | `digests` | Newsletter output directory |
 | `DBSCAN_EPS` | `0.25` | Cluster similarity threshold |
 | `DBSCAN_MIN_SAMPLES` | `2` | Min articles per cluster |
+| `NEWSLETTER_MAX_CLUSTERS_PER_TOPIC` | `8` | SYS-40: clusters shown per topic section of the digest (ranked by size × distinct sources); the rest are one "…dan N berita lainnya" line |
 | `RAG_TOP_K` | `5` | Chunks used for RAG answer |
 | `SITEMAP_RECRAWL_COOLDOWN_DAYS` | `7` | Days before a sitemap with no `articles` row is offered to the article crawl again |
 | `SITEMAP_MAX_FETCH_FAILURES` | `3` | SYS-09: runs that produced no article for a sitemap before `load_all_sitemaps` stops offering it; undo with `scripts/reset_fetch_failures.py` |

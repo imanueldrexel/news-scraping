@@ -405,9 +405,11 @@ Input:
 
 Processing:
     1. Load L1 FAISS vectors for today's articles
-    2. Cluster using DBSCAN (eps=0.25, min_samples=2)
-       ├── Each cluster = one news event/topic
-       └── Noise points (singleton articles) → "Other News" section
+    2. Section by articles.topic (SYS-40, finance topics first), then cluster
+       with DBSCAN (eps=0.25, min_samples=2) within each topic
+       ├── Each cluster = one news event
+       ├── At most NEWSLETTER_MAX_CLUSTERS_PER_TOPIC clusters shown per section
+       └── Clusters past the cap + singletons → one "and N more" line per section
     3. Per cluster:
        ├── Rank articles by source authority score
        │   (Bisnis Indonesia > Kontan > Kompas > others — configurable)
@@ -740,19 +742,25 @@ clustering = DBSCAN(
 - Higher eps = fewer, broader clusters
 - Start with 0.25, adjust based on real data quality
 
-### 10.4 Category Assignment
+### 10.4 Sections by topic (SYS-40, 2026-09-29)
 
-After clustering, assign each cluster to a category using keyword matching on the cluster's article titles:
+The keyword category assignment that used to sit here is retired. Every saved
+article carries `articles.topic` from the SYS-37 classifier, and the digest is
+sectioned by it, in `filter_rubric.TOPICS_FINANCE + TOPICS_NEWS` order. The
+five finance topics come first (`markets`, `macro_policy`, `corporate`,
+`commodities_energy`, `consumer`), then `politics_government`, `law_crime`,
+`disaster_accident`, `international`, `tech_science`, `health_education` and
+`other_news`. An article without a topic goes to `other_news`.
 
-```python
-CATEGORY_KEYWORDS = {
-    "macroeconomics": ["inflasi", "suku bunga", "BI rate", "GDP", "PDB", "APBN", "neraca"],
-    "capital_market": ["IHSG", "saham", "IDX", "IPO", "rights issue", "emiten", "bursa"],
-    "banking":        ["bank", "OJK", "NPL", "CAR", "kredit", "deposito", "fintech"],
-    "corporate":      ["akuisisi", "merger", "direksi", "komisaris", "laba", "rugi", "dividen"],
-    "commodities":    ["CPO", "sawit", "batu bara", "nikel", "minyak", "gas", "LNG"],
-}
-```
+- The day's L1 texts are embedded once; DBSCAN runs **within** each topic, so
+  a large political story cannot absorb the economy items next to it.
+- A section shows at most `NEWSLETTER_MAX_CLUSTERS_PER_TOPIC` (default 8)
+  clusters, ranked by cluster size × distinct sources. Clusters past the cap
+  and unclustered articles are counted in one "…dan N berita lainnya" line
+  per section. At ~8,000 saved articles a day, singletons are not listed.
+- Only shown clusters are summarised.
+- `newsletter_digests.categories` holds the composition:
+  `{topic: {"articles", "clusters", "shown"}}`.
 
 ### 10.5 openclaw Bot Integration
 
@@ -775,7 +783,7 @@ The digest includes article links (where available) so openclaw can cite sources
 |---|---|
 | No articles today (holiday, crawl failed) | Generate digest with "Tidak ada artikel hari ini" notice |
 | Gemini API rate limit hit | Use article headlines only (no LLM summary), mark as `summarization_skipped=true` |
-| DBSCAN produces 0 clusters | Fall back to category-keyword grouping without clustering |
+| DBSCAN produces 0 clusters | Each topic section still renders, with its stories counted in the "…dan N berita lainnya" line (SYS-40) |
 | Digest generation fails | Log error, retry once, send alert log to `digests/errors.log` |
 
 ---
@@ -971,7 +979,7 @@ Hard stop guard: implement a daily counter in PostgreSQL; halt Gemini calls if `
 
 - [ ] Create `newsletter_digests` table
 - [ ] Implement DBSCAN clustering on L1 embeddings
-- [ ] Implement category assignment from cluster keywords
+- [ ] Section the digest by articles.topic (SYS-40; the keyword category assignment is retired)
 - [ ] Implement per-cluster LLM summarization
 - [ ] Implement markdown digest generator
 - [ ] Set up scheduler (twice daily crawl + 07:00 digest generation)
@@ -1035,7 +1043,7 @@ Hard stop guard: implement a daily counter in PostgreSQL; halt Gemini calls if `
 | News portals change HTML structure (scraper breaks) | High | Medium | Site-specific crawlers already isolated; add monitoring for zero-article crawls |
 | FAISS index corruption | Low | High | Snapshot FAISS index after each successful embedding run |
 | Entity extraction quality low for uncommon emiten | Medium | Medium | Seed entity_aliases table with IDX master list; manual review queue |
-| DBSCAN clustering produces poor clusters | Medium | Medium | Tune eps parameter; fallback to category-keyword grouping |
+| DBSCAN clustering produces poor clusters | Medium | Medium | Tune eps parameter; sectioning by articles.topic bounds the damage to one topic (SYS-40) |
 | PostgreSQL disk full | Low | High | Monitor disk usage; add VACUUM schedule; archive old chunks to cold storage |
 | SentenceTransformer produces different vectors than Ollama (index compatibility) | High (first run) | Medium | One-time re-embedding of existing articles in migration Phase 1 |
 

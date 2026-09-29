@@ -132,7 +132,7 @@ The article-crawl queue (`load_all_sitemaps`) = sitemaps with no `articles` row 
 ### Downstream phases
 
 - **Knowledge extraction** (`core/knowledge_extractor.py`): Gemini (`google.genai` client, `GEMINI_MODEL`) extracts persons/orgs/locations/event_type per article, `EntityNormalizer` + `entity_aliases` map names to canonical entities, results go to `entities` / `entity_mentions`, and `articles.knowledge_extracted` is flipped. Daily call count is tracked in `api_usage_log` and hard-stopped at `DAILY_API_CALL_LIMIT`. Silently no-ops if `GEMINI_API_KEY` is unset.
-- **Newsletter** (`core/newsletter_generator.py`): DBSCAN over L1 embeddings for a date → clusters → summaries → `digests/YYYY-MM-DD.md` + `newsletter_digests` row.
+- **Newsletter** (`core/newsletter_generator.py`): the date's articles sectioned by `articles.topic` in `filter_rubric` order (finance topics first), DBSCAN over L1 embeddings **within** each topic, at most `NEWSLETTER_MAX_CLUSTERS_PER_TOPIC` clusters shown per section (ranked by size × sources, the rest counted) → summaries → `digests/YYYY-MM-DD.md` + `newsletter_digests` row whose `categories` is the per-topic composition (SYS-40). It embeds with the FAISS store's MiniLM (DBT-02).
 - **RAG web UI** (`web/`): FastAPI + Jinja templates. `QueryProcessor` does hybrid retrieval — FAISS L2 semantic (L2 distance converted to cosine in `search_l2`), Postgres FTS on `chunks.fts_vector`, and recency, weighted by `RAG_*_WEIGHT` constants — then answers with Gemini.
 
 ### Site crawlers

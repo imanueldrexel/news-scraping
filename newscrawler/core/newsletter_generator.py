@@ -10,20 +10,31 @@ from newscrawler.core.constants import (
     EMBEDDING_MODEL_HF,
     GEMINI_API_KEY,
     GEMINI_MODEL,
-    NEWSLETTER_CATEGORY_KEYWORDS,
+    NEWSLETTER_MAX_CLUSTERS_PER_TOPIC,
     SOURCE_AUTHORITY,
 )
+from newscrawler.core.filter_rubric import TOPICS_FINANCE, TOPICS_NEWS
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
-_CATEGORY_EMOJIS = {
-    "macroeconomics": "📊 Makroekonomi",
-    "capital_market": "📈 Pasar Modal",
-    "banking":        "🏦 Perbankan",
-    "corporate":      "🏭 Korporasi",
-    "commodities":    "🛢️ Komoditas",
-    "other":          "📰 Berita Lainnya",
+# SYS-40 (#126): the digest is sectioned by articles.topic (SYS-37), in
+# filter_rubric's order -- the five finance topics first, then the rest.
+SECTION_ORDER: List[str] = TOPICS_FINANCE + TOPICS_NEWS
+FALLBACK_TOPIC = "other_news"   # an article with no (or an unknown) topic
+SECTION_TITLES = {
+    "markets":             "📈 Pasar",
+    "macro_policy":        "📊 Kebijakan & Makroekonomi",
+    "corporate":           "🏭 Korporasi",
+    "commodities_energy":  "🛢️ Komoditas & Energi",
+    "consumer":            "🛒 Konsumen & Bisnis",
+    "politics_government": "🏛️ Politik & Pemerintahan",
+    "law_crime":           "⚖️ Hukum & Kriminal",
+    "disaster_accident":   "🚨 Bencana & Kecelakaan",
+    "international":       "🌏 Internasional",
+    "tech_science":        "🔬 Teknologi & Sains",
+    "health_education":    "🏥 Kesehatan & Pendidikan",
+    "other_news":          "📰 Berita Lainnya",
 }
 
 _SUMMARIZE_PROMPT = (
@@ -75,37 +86,18 @@ class NewsletterGenerator:
 
         logger.info(f"Loaded {len(articles)} articles for clustering.")
 
-        # ── Cluster ──────────────────────────────────────────────────────────
-        vectors        = self._encode([a["l1_text"] for a in articles])
-        labels         = self._cluster(vectors)
-        cluster_groups = self._group_by_label(articles, labels)
+        # SYS-40: one encode for the day, then DBSCAN within each topic, so a big
+        # political story cannot absorb the economy items next to it.
+        vectors = self._encode([a["l1_text"] for a in articles])
+        sections = self.build_sections(articles, vectors)
 
-        # ── Build cluster summaries ───────────────────────────────────────────
-        clusters = []
-        for label, cluster_articles in sorted(cluster_groups.items()):
-            if label == -1:
-                continue  # noise → "Berita Lainnya"
-            category  = self.assign_category(cluster_articles)
-            headline  = self._pick_cluster_headline(cluster_articles)
-            summary   = self.summarize_cluster(cluster_articles)
-            sources   = self._unique_sources(cluster_articles)
-            links     = self._top_links(cluster_articles)
-            clusters.append({
-                "label":    label,
-                "category": category,
-                "headline": headline,
-                "summary":  summary,
-                "sources":  sources,
-                "links":    links,
-                "articles": cluster_articles,
-            })
+        # Summaries only for the clusters that are shown.
+        for section in sections:
+            for cluster in section["clusters"]:
+                cluster["summary"] = self.summarize_cluster(cluster["articles"])
 
-        noise_articles = cluster_groups.get(-1, [])
+        md_content = self._render_markdown(target_date, sections, articles)
 
-        # ── Render markdown ───────────────────────────────────────────────────
-        md_content = self._render_markdown(target_date, clusters, noise_articles, articles)
-
-        # ── Write file ────────────────────────────────────────────────────────
         os.makedirs(DIGESTS_DIR, exist_ok=True)
         file_name = target_date.strftime("%Y-%m-%d.md")
         file_path = os.path.join(DIGESTS_DIR, file_name)
@@ -113,38 +105,73 @@ class NewsletterGenerator:
             f.write(md_content)
         logger.info(f"Digest written to {file_path}")
 
-        # ── Save to DB ────────────────────────────────────────────────────────
-        category_counts = {}
-        for c in clusters:
-            category_counts[c["category"]] = category_counts.get(c["category"], 0) + 1
-
+        # SYS-40: the digest's composition per topic, queryable from the row.
+        composition = {
+            sec["topic"]: {"articles": sec["article_count"], "clusters": sec["cluster_count"],
+                           "shown": len(sec["clusters"])}
+            for sec in sections
+        }
+        cluster_count = sum(sec["cluster_count"] for sec in sections)
         generation_ms = _now_ms() - start_ms
         self.ds.save_digest(
             digest_date=target_date,
             file_path=file_path,
-            cluster_count=len(clusters),
+            cluster_count=cluster_count,
             article_count=len(articles),
-            categories=category_counts,
+            categories=composition,
             source_ids=[a["sitemap_id"] for a in articles],
             generation_ms=generation_ms,
         )
         logger.info(f"Newsletter generated in {generation_ms}ms: "
-                    f"{len(clusters)} clusters, {len(articles)} articles.")
+                    f"{cluster_count} clusters in {len(sections)} sections, {len(articles)} articles.")
         return file_path
 
-    # ── Category assignment ──────────────────────────────────────────────────
+    # ── Sections ──
 
-    def assign_category(self, articles: list) -> str:
-        combined = " ".join(
-            (a.get("headline", "") + " " + a.get("l1_text", "")).lower()
-            for a in articles
-        )
-        scores = {
-            cat: sum(1 for kw in kws if kw in combined)
-            for cat, kws in NEWSLETTER_CATEGORY_KEYWORDS.items()
+    @staticmethod
+    def topic_of(article: dict) -> str:
+        topic = article.get("topic")
+        return topic if topic in SECTION_TITLES else FALLBACK_TOPIC
+
+    def build_sections(self, articles: list, vectors) -> List[dict]:
+        """SYS-40: [{topic, article_count, cluster_count, clusters, more}] in
+        SECTION_ORDER, empty topics omitted. `clusters` are the shown ones,
+        ranked by size x distinct sources, at most
+        NEWSLETTER_MAX_CLUSTERS_PER_TOPIC; `more` counts the stories not shown
+        (the clusters past the cap plus the unclustered articles)."""
+        by_topic: dict = {}
+        for i, a in enumerate(articles):
+            by_topic.setdefault(self.topic_of(a), []).append(i)
+        sections = []
+        for topic in SECTION_ORDER:
+            idx = by_topic.get(topic)
+            if not idx:
+                continue
+            members = [articles[i] for i in idx]
+            if len(idx) >= DBSCAN_MIN_SAMPLES:
+                labels = self._cluster([vectors[i] for i in idx])
+            else:
+                labels = [-1] * len(idx)
+            groups = self._group_by_label(members, labels)
+            clusters = [self._describe_cluster(group) for label, group in groups.items() if label != -1]
+            clusters.sort(key=lambda c: (len(c["articles"]) * len(c["sources"]), len(c["articles"])), reverse=True)
+            shown = clusters[:NEWSLETTER_MAX_CLUSTERS_PER_TOPIC]
+            sections.append({
+                "topic": topic,
+                "article_count": len(members),
+                "cluster_count": len(clusters),
+                "clusters": shown,
+                "more": len(clusters) - len(shown) + len(groups.get(-1, [])),
+            })
+        return sections
+
+    def _describe_cluster(self, cluster_articles: list) -> dict:
+        return {
+            "headline": self._pick_cluster_headline(cluster_articles),
+            "sources":  self._unique_sources(cluster_articles),
+            "links":    self._top_links(cluster_articles),
+            "articles": cluster_articles,
         }
-        best = max(scores, key=scores.get)
-        return best if scores[best] > 0 else "other"
 
     # ── Cluster summarization ────────────────────────────────────────────────
 
@@ -232,30 +259,20 @@ class NewsletterGenerator:
         return [{"source": a["source"], "link": a["link"], "headline": a["headline"]}
                 for a in sorted_arts if a.get("link")]
 
-    def _render_markdown(self, target_date: date, clusters: list,
-                          noise: list, all_articles: list) -> str:
+    def _render_markdown(self, target_date: date, sections: list, all_articles: list) -> str:
         lines = []
         date_str = target_date.strftime("%-d %B %Y") if os.name != "nt" else \
                    target_date.strftime("%d %B %Y").lstrip("0")
         lines.append(f"# Rangkuman Berita — {date_str}")
-        lines.append(f"\n> Dibuat otomatis dari 33 portal berita Indonesia | "
+        lines.append(f"\n> Dibuat otomatis dari portal berita Indonesia | "
                      f"{datetime.now().strftime('%H:%M')} WIB\n")
         lines.append("---\n")
 
-        # Group clusters by category
-        by_category: dict = {}
-        for c in clusters:
-            by_category.setdefault(c["category"], []).append(c)
-
-        for cat_key in ["macroeconomics", "capital_market", "banking",
-                        "corporate", "commodities", "other"]:
-            cat_clusters = by_category.get(cat_key, [])
-            if not cat_clusters:
-                continue
-            lines.append(f"## {_CATEGORY_EMOJIS[cat_key]}\n")
-            for cluster in cat_clusters:
+        for section in sections:
+            lines.append(f"## {SECTION_TITLES[section['topic']]}\n")
+            for cluster in section["clusters"]:
                 lines.append(f"### {cluster['headline']}\n")
-                lines.append(cluster["summary"])
+                lines.append(cluster.get("summary") or "")
                 lines.append("")
                 sources_str = " · ".join(cluster["sources"])
                 lines.append(f"**Sumber ({len(cluster['sources'])} portal):** {sources_str}")
@@ -263,18 +280,12 @@ class NewsletterGenerator:
                               for l in cluster["links"]]
                 if link_parts:
                     lines.append(f"**Artikel terkait:** {' · '.join(link_parts)}")
-                lines.append("\n---\n")
-
-        # Noise / singletons
-        if noise:
-            lines.append(f"## {_CATEGORY_EMOJIS['other']}\n")
-            for a in noise:
-                link = f"[{a['source']}, {date_str}]({a['link']})" if a.get("link") \
-                       else a["source"]
-                lines.append(f"- {a['headline']} — {link}")
+                lines.append("")
+            if section["more"]:
+                lines.append(f"*…dan {section['more']} berita lainnya di bagian ini.*")
             lines.append("\n---\n")
 
-        cluster_count = len(clusters)
+        cluster_count = sum(sec["cluster_count"] for sec in sections)
         lines.append(
             f"*Total artikel hari ini: {len(all_articles)} | "
             f"Cluster teridentifikasi: {cluster_count} | "

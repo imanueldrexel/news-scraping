@@ -21,7 +21,7 @@ class SQLAlchemyNewsletterDataSource:
         """
         sql = text("""
             SELECT s.sitemap_id, s.headline, s.sources, s.category,
-                   s.link, s.posted_at,
+                   s.link, s.posted_at, a.topic,
                    c.text_content AS l1_text
             FROM sitemaps s
             JOIN articles a ON a.sitemap_id = s.sitemap_id
@@ -40,6 +40,7 @@ class SQLAlchemyNewsletterDataSource:
                 "category":   row.category or "",
                 "link":       row.link     or "",
                 "posted_at":  row.posted_at,
+                "topic":      row.topic,
                 "l1_text":    row.l1_text  or "",
             }
             for row in rows

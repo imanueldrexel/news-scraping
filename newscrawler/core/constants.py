@@ -114,18 +114,9 @@ SOURCE_AUTHORITY = {
     "ANTARA":       0.70,
 }
 
-NEWSLETTER_CATEGORY_KEYWORDS = {
-    "macroeconomics": ["inflasi", "suku bunga", "bi rate", "gdp", "pdb", "apbn",
-                       "neraca", "makroekonomi", "kebijakan moneter", "rupiah", "forex"],
-    "capital_market": ["ihsg", "saham", "idx", "ipo", "rights issue", "emiten",
-                       "bursa", "pasar modal", "obligasi", "sbr", "sukuk"],
-    "banking":        ["bank", "ojk", "npl", "car", "kredit", "deposito",
-                       "fintech", "perbankan", "lps", "pinjaman"],
-    "corporate":      ["akuisisi", "merger", "direksi", "komisaris", "laba",
-                       "rugi", "dividen", "korporasi", "anak perusahaan"],
-    "commodities":    ["cpo", "sawit", "batu bara", "nikel", "minyak", "gas",
-                       "lng", "komoditas", "tambang", "minerba"],
-}
+# SYS-40 (#126): the digest shows at most this many clusters per topic
+# section (ranked by size x distinct sources); the rest is one "and N more" line.
+NEWSLETTER_MAX_CLUSTERS_PER_TOPIC = int(os.getenv("NEWSLETTER_MAX_CLUSTERS_PER_TOPIC", 8))
 
 # ── RAG Search (Phase 4) ─────────────────────────────────────────────────────
 RAG_SEMANTIC_WEIGHT = float(os.getenv("RAG_SEMANTIC_WEIGHT", 0.6))
