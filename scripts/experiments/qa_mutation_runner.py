@@ -243,6 +243,48 @@ M = [
  ("sys61_trainer_cache_ignores_revision", "scripts/train_importance_probe.py",
   "    key = hashlib.sha256((encoder + revision + sha256_of_file(gold_path)",
   "    key = hashlib.sha256((encoder + sha256_of_file(gold_path)"),
+ # 2026-09-29 dev session (HANDOFF_2026-09-29.md). Unit-killable ones only; the
+ # integration-only mutants (DBT-27 SQL, SYS-20, SRC-10, SYS-38) are listed there.
+ # SRC-55 (#201): the 403-streak breaker.
+ ("src55_no_release", 'newscrawler/domain/services/crawler_service_impl.py', "{sid for sid in throttle.throttled_ids if run_failures.pop(sid, None) is not None}", "set()"),
+ ("src55_no_attempted_adjust", 'newscrawler/domain/services/crawler_service_impl.py', "attempted -= len(released) + unreached", "pass"),
+ ("src55_no_skip", 'newscrawler/infrastructure/datasource/scrapers/crawler.py', "if not throttle.should_fetch():", "if False:"),
+ ("src55_no_record", 'newscrawler/infrastructure/datasource/scrapers/crawler.py', "throttle.record(sitemap.sitemap_id, None if result else reason)", "pass"),
+ ("src55_streak_not_reset", 'newscrawler/core/page_loader/throttle.py', "                self._streak.clear()\n                return", "                return"),
+ ("src55_not_fetched_counted", 'newscrawler/domain/services/crawler_service_impl.py', "                    not_fetched.add(s.sitemap_id)", "                    run_failures[s.sitemap_id] = reason"),
+ ("src55_no_break", 'newscrawler/domain/services/crawler_service_impl.py', "            if throttle.tripped:\n                break", "            pass"),
+ ("src55_never_error", 'newscrawler/domain/services/crawler_service_impl.py', "if served <= 0:", "if False:"),
+ ("src55_inflight_not_throttled", 'newscrawler/core/page_loader/throttle.py', "                if is_throttle:\n                    self._throttled.add(sitemap_id)", "                pass"),
+ ("src55_429_not_throttle", 'newscrawler/core/page_loader/throttle.py', 'frozenset({"HTTP 403", "HTTP 429"})', 'frozenset({"HTTP 403"})'),
+ # OPS-34 (#202)
+ ("ops34_no_queue", "scripts/notify_telegram.py", "        return _queue_unconfigured(message, queue_on_failure)", "        logger.error('x'); return False"),
+ ("ops34_warning", "scripts/notify_telegram.py", 'logger.error(f"{missing} not set -- alert NOT sent', 'logger.warning(f"{missing} not set -- alert NOT sent'),
+ # SRC-32 (#117)
+ ("src32_no_window", "newscrawler/infrastructure/datasource/scrapers/tirto/tirto_crawler.py", "if dt >= cutoff]", "if False]"),
+ ("src32_oldest_first", "newscrawler/infrastructure/datasource/scrapers/tirto/tirto_crawler.py", "dated.sort(reverse=True)", "dated.sort()"),
+ # DBT-21 (#72)
+ ("dbt21_no_refusal", "scripts/dedupe_chunks.py", "if divergent and not args.allow_divergent:", "if False:"),
+ ("dbt21_no_present_filter", "scripts/dedupe_chunks.py", "present = [i for i in ids if i in vs.docstore._dict]", "present = list(ids)"),
+ # DBT-16 (#51)
+ ("dbt16_never_reload", "newscrawler/infrastructure/datasource/dataflow/write/faiss/chunk_faiss_data_source.py",
+  "            if not index_generation.is_current(self._store(db_name), db_name):", "            if False:"),
+ ("dbt16_no_web_refresh", "newscrawler/web/app.py", "    _refresh_faiss_if_stale()\n    return processor.query", "    return processor.query"),
+ # DBT-02 (#21)
+ ("dbt02_not_wired", "newscrawler/infrastructure/repositories/dataflow/data_flow_repository_impl.py",
+  "self.newsletter_datasource, embed_documents=self.chunk_faiss_datasource.embedding_model.embed_documents)", "self.newsletter_datasource)"),
+ # DBT-05 (#24)
+ ("dbt05_primary_ignored", 'newscrawler/infrastructure/datasource/scrapers/crawler.py', 'if self.PRIMARY_EXTRACTOR == "trafilatura":\n                    # DBT-05 (#24)', 'if False:\n                    # DBT-05 (#24)'),
+ ("dbt05_classify_ignores_primary", "scripts/check_crawlers.py", "if extractors and primary not in extractors:", 'if extractors and "site" not in extractors:'),
+ ("dbt05_check_one_no_primary", "scripts/check_crawlers.py", 'primary = getattr(crawler, "PRIMARY_EXTRACTOR", "site")', 'primary = "site"'),
+ # DBT-49 (#203)
+ ("dbt49_default_design_encoder", "scripts/train_importance_probe.py", "        return committed or DEFAULT_PROBE_ENCODER", "        return DEFAULT_PROBE_ENCODER"),
+ # SYS-40 (#126)
+ ("sys40_no_cap", "newscrawler/core/newsletter_generator.py", "shown = clusters[:NEWSLETTER_MAX_CLUSTERS_PER_TOPIC]", "shown = clusters"),
+ ("sys40_min_size_ignored", "newscrawler/core/newsletter_generator.py",
+  "return [label if sizes[label] >= NEWSLETTER_MIN_CLUSTER_SIZE else -1 for label in labels]", "return labels"),
+ # OPS-18 (#123)
+ ("ops18_deny_rejects_kept", "scripts/audit_filter_drift.py", '                and category_gate(r["category"], r["source"]) != "deny"]', "]"),
+ ("ops18_cell_min_ignored", "scripts/audit_filter_drift.py", 'if c["n"] >= CELL_MIN_N and', "if"),
 ]
 only = sys.argv[1:]
 env = dict(os.environ, VECTOR_DB_NAME_L1=os.path.join(SCRATCH, "NOPE_L1"),
