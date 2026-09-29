@@ -1585,3 +1585,16 @@ SINDONEWS   old 12 new 12 | lost [] | gained []   links identical: True
   2. `crawl_log` has a row for every HEALTHY source on every day, including the outage day. A lost run shows as failures in the SUMMARY, never as silence.
   3. OKEZONE's "June rows get `last_crawl_attempt`" is met in intent, not literally: a category-denied row is settled without a fetch (SYS-50), so it has no attempt stamp. Check settled status, not the stamp.
 - **Links:** OPS-19 (#132), OPS-32 (#193), OPS-28 (#179), SYS-50 (#165) · `logs/scheduled_crawl_2026-09-2*.log`
+
+### 2026-09-29 — OPS-18: the first filter drift audit, and why 90% is the wrong alert floor
+- **Question / hypothesis:** How often does an independent judge (the SYS-36 labeller, DeepSeek V4 Flash, same rubric and prompt) agree with a week of the live probe's decisions? Is the ticket's 90% alert floor right?
+- **Method:** `scripts/audit_filter_drift.py` (new), first real run 2026-09-29 22:25. Last 7 days: 47,029 saved and 18,317 probe rejects (category-denied rejects excluded). Samples of 100 + 100, round-robin across sources, seeded by ISO week. 10 calls of 20 rows. Saves were judged on headline + body[:500], rejects on the headline alone. Report: `crawler_health/filter_drift_2026-09-29.json`.
+- **Result:** agreement on saves **0.87**, on rejects **0.78**, topic agreement on saves **0.83**; 35 disagreements. With the flat 0.90 floor both sides alerted (sent once on Telegram). The disagreements are the probe's known boundary:
+  - saved but judged soft: price tables (`Tabel Harga Emas Antam`), bansos/KPR how-to guides, corporate CSR PR, short opinion titles (`Idaman Swasembada`, `Sesko-War`);
+  - rejected but judged news: science news (`Eksoplanet`, `Bintang Zombie Sinar-X`), a child-ISPA outbreak from haze, a `santri disetrika` assault, product and fintech launches.
+  That matches the probe's measured test precision/recall (0.94 / 0.87) seen through a second labeller (labels' noise floor ~5%), plus the headline-only handicap on rejects.
+- **Conclusion / do not repeat:**
+  1. A healthy week agrees ~0.87 / ~0.78. The ticket's flat 0.90 would alert every week. The floors are now per side and calibrated: saved 0.80, rejected 0.70, about 2 SE (n=100: ±0.04) under this baseline (`AUDIT_MIN_AGREEMENT_SAVED` / `_REJECTED`). Re-calibrate after a few weeks of reports.
+  2. Science and technology discovery stories are the probe's most visible recall gap in this sample. Pull them into the next SYS-36 re-label.
+  3. At n=100 per side no source x category cell reaches 20 decisions, so the per-cell alert is dormant at this sample size. Raise `FILTER_AUDIT_PER_SIDE` if per-source signal is wanted; it costs ~1 call per 20 rows.
+- **Links:** OPS-18 (#123) · `scripts/audit_filter_drift.py` · `crawler_health/filter_drift_2026-09-29.json`

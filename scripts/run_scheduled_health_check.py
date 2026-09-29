@@ -82,6 +82,24 @@ HEALTH_ALERT_ON_NO_CHANGE = os.getenv("HEALTH_ALERT_ON_NO_CHANGE", "true").strip
 # firing at all.
 MISSED_RUN_GAP_HOURS = 36
 
+# OPS-18 (#123): the weekly filter-drift audit rides on this daily job, on this
+# weekday (0 = Monday; -1 disables it). It alerts on its own; its failure never
+# changes this job's exit code, which is about the crawlers.
+FILTER_AUDIT_WEEKDAY = int(os.getenv("FILTER_AUDIT_WEEKDAY", 0))
+
+
+def filter_audit_due(today) -> bool:
+    return FILTER_AUDIT_WEEKDAY >= 0 and today.weekday() == FILTER_AUDIT_WEEKDAY
+
+
+def run_filter_audit() -> int:
+    result = subprocess.run([sys.executable, os.path.join(SCRIPTS_DIR, "audit_filter_drift.py")],
+                            cwd=REPO_ROOT, capture_output=True, encoding="utf-8", errors="replace")
+    tail = " | ".join(((result.stdout or "") + (result.stderr or "")).strip().splitlines()[-5:])
+    log = logger.info if result.returncode == 0 else logger.error
+    log(f"filter drift audit exit {result.returncode}: {tail}")
+    return result.returncode
+
 
 def _hours_since_last_health_check():
     """Hours since the most recent task='health_check' crawl_log row, or None if
@@ -171,6 +189,10 @@ def main() -> int:
         send(f"{decision['headline']}\n\n{body}")
     else:
         logger.info(f"No notification sent: {decision['reason']}")
+
+    from datetime import date
+    if filter_audit_due(date.today()):
+        run_filter_audit()
 
     return result.returncode
 

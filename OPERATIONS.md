@@ -25,6 +25,10 @@
 | `DBSCAN_EPS` | `0.25` | Cluster similarity threshold |
 | `DBSCAN_MIN_SAMPLES` | `2` | Min articles per cluster |
 | `NEWSLETTER_MAX_CLUSTERS_PER_TOPIC` | `8` | SYS-40: clusters shown per topic section of the digest (ranked by size × distinct sources); the rest are one "…dan N berita lainnya" line |
+| `FILTER_AUDIT_WEEKDAY` | `0` | OPS-18: the day (0 = Monday, -1 = off) the 05:30 health-check job also runs `scripts/audit_filter_drift.py` |
+| `FILTER_AUDIT_PER_SIDE` / `FILTER_AUDIT_BATCH` / `FILTER_AUDIT_MAX_CALLS` | `100` / `20` / `15` | OPS-18: saved + rejected rows judged per week, rows per LLM call, call cap |
+| `AUDIT_MIN_AGREEMENT_SAVED` / `_REJECTED` | `0.80` / `0.70` | OPS-18: judge agreement floors that alert; calibrated on the first run (healthy week: 0.87 / 0.78) |
+| `AUDIT_CELL_MIN_N` / `AUDIT_CELL_MIN_AGREEMENT` | `20` / `0.80` | OPS-18: a source x category with this many decisions alerts under this agreement |
 | `RAG_TOP_K` | `5` | Chunks used for RAG answer |
 | `SITEMAP_RECRAWL_COOLDOWN_DAYS` | `7` | Days before a sitemap with no `articles` row is offered to the article crawl again |
 | `SITEMAP_MAX_FETCH_FAILURES` | `3` | SYS-09: runs that produced no article for a sitemap before `load_all_sitemaps` stops offering it; undo with `scripts/reset_fetch_failures.py` |
@@ -499,6 +503,12 @@ LEFT JOIN (SELECT entity_id, COUNT(*) n, MIN(posted_at) lo, MAX(posted_at) hi FR
 WHERE e.mention_count <> COALESCE(m.n, 0) OR e.first_seen_at IS DISTINCT FROM m.lo OR e.last_seen_at IS DISTINCT FROM m.hi;
 ```
 If it is not, `scripts/recount_entity_mentions.py --dry-run` lists the drift, and without `--dry-run` it backs the rows up to `backups/sys20_entity_counts_<UTC>.json` and recomputes them from `entity_mentions`. A seeded entity nobody has mentioned has `mention_count = 0` and no seen-dates.
+
+### Weekly filter drift audit (OPS-18)
+`scripts/audit_filter_drift.py` runs once a week inside the health-check job (`FILTER_AUDIT_WEEKDAY`). It samples up to 100 saved and 100 probe-rejected decisions from the last 7 days, spread across sources; category-denied rejects are left out because they're a publisher's signal. It asks the SYS-36 labeller (DeepSeek via `OPENAI_*`; `--provider gemini` also works) to judge them with the gold-set rubric. It writes a `crawl_log` row (`website='ALL'`, `task='filter_drift_audit'`, agreement in `error_msg`) and `crawler_health/filter_drift_<date>.json` with every disagreement. It alerts on Telegram when a side falls under its floor or a source x category cell under 0.80, marking what is NEW since the previous report. `--dry-run` shows the sample without a key. The disagreements are candidates for a SYS-36 re-label, not automatic actions.
+```sql
+SELECT started_at, article_count, error_msg FROM crawl_log WHERE task = 'filter_drift_audit' ORDER BY log_id DESC LIMIT 5;
+```
 
 ### API stats endpoint
 ```
