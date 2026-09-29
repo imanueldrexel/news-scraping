@@ -9,8 +9,10 @@ passes) write the artifact the live filter loads.
 The probe has been live since 2026-09-22; running this script rewrites what the
 pipeline uses to decide every article, so a retrain is a deliberate act with a
 re-measure and a re-verified artifact behind it (DBT-35 #151), not a routine
-step. Note --encoder defaults to e5-base: pass the encoder the committed
-sidecar names, or the filter will refuse to load what you wrote.
+step. --encoder defaults to the encoder the committed sidecar names (DBT-49
+#203): the sidecar is authoritative, so a retrain on another encoder changes
+the encoder production embeds with. Pass --encoder only to do that on purpose;
+the run then says so in a WARNING.
 
 What it does, in order:
   1. Load tests/fixtures/filter_gold.jsonl. Build each row's text exactly as the
@@ -605,14 +607,38 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--gold", default=GOLD_PATH)
     parser.add_argument("--out-dir", default=PROBE_DIR)
-    parser.add_argument("--encoder", default=DEFAULT_PROBE_ENCODER,
-                        help="sentence-transformers model for the probe (SYS-47: e.g. intfloat/multilingual-e5-base); recorded in the sidecar")
+    parser.add_argument("--encoder", default=None,
+                        help="sentence-transformers model for the probe; default: the committed sidecar's "
+                             "(DBT-49), recorded in the sidecar. Another one changes production's encoder.")
     parser.add_argument("--no-write", action="store_true", help="Evaluate only; never write the artifact")
     parser.add_argument("--backfill", action="store_true", help="Tag existing articles with a topic (needs the artifact)")
     parser.add_argument("--all", action="store_true", help="--backfill: re-tag every article, not only topic IS NULL")
     parser.add_argument("--dry-run", action="store_true", help="--backfill: counts and a sample, no write")
     args = parser.parse_args(argv)
+    args.encoder = resolve_encoder(args.encoder, args.out_dir)
     return cmd_backfill(args) if args.backfill else cmd_train(args)
+
+
+def committed_encoder(out_dir: str):
+    """The encoder the committed sidecar in `out_dir` names, or None."""
+    path = os.path.join(out_dir, PROBE_SIDECAR)
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f).get("embedding_model")
+    except (OSError, ValueError):
+        return None
+
+
+def resolve_encoder(requested, out_dir: str) -> str:
+    """DBT-49 (#203): no flag = retrain on the encoder production runs; a
+    different one is allowed, loudly."""
+    committed = committed_encoder(out_dir)
+    if requested is None:
+        return committed or DEFAULT_PROBE_ENCODER
+    if committed and requested != committed:
+        logger.warning("--encoder %s differs from the committed sidecar's %s: a written artifact CHANGES the "
+                       "encoder production embeds with (the sidecar is authoritative)", requested, committed)
+    return requested
 
 
 if __name__ == "__main__":
