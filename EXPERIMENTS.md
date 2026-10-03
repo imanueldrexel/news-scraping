@@ -1624,3 +1624,21 @@ SINDONEWS   old 12 new 12 | lost [] | gained []   links identical: True
   1. Don't tune DBSCAN's eps for the digest. On a busy topic it either chains or drops most articles into noise. Average linkage cuts at a whole-cluster distance, so it can't chain.
   2. `NEWSLETTER_CLUSTER_DISTANCE=0.30` and `NEWSLETTER_MIN_CLUSTER_SIZE=2` replace `DBSCAN_EPS`/`DBSCAN_MIN_SAMPLES`. Agglomerative is O(n²) in memory per topic; the largest topic-day here is 838 articles, which is trivial. Recheck if one topic ever passes ~10k articles a day.
 - **Links:** SYS-40 (#126) · `digests/2026-09-28.md`
+
+### 2026-10-03 — SYS-41: the FAISS store at 1×/2×/5× today's size, and the real growth rate
+- **Question / hypothesis:** At general-news volume, when does the in-RAM flat FAISS store stop being acceptable, and on which axis first: disk, save time, load time, search latency, or RAM?
+- **Method:** `scripts/experiments/probe_vector_store_scale.py` (new). It copies NEWS_L2 to a scratch dir (taken at 18:07 with no writer running) and grows the copy to 2× and 5× with unit-norm random vectors whose docstore entries reuse real chunk texts. It measures `save_local`/`load_local` wall time, file sizes, brute-force search p50/p95 (k=20, 50 queries) and process RSS. Real growth comes from `chunks.created_at` per WIB day.
+- **Result:**
+
+  | factor | L2 vectors | index.faiss | save | load | search p50 / p95 | RSS |
+  |---|---|---|---|---|---|---|
+  | 1× (today) | 311,557 | 479 MB (+322 MB pkl) | 2.9 s | 2.7 s | 17.9 / 20.7 ms | 1.40 GB |
+  | 2× | 623,114 | 957 MB | 4.8 s | 4.8 s | 35.4 / 40.2 ms | 2.32 GB |
+  | 5× | 1,557,785 | 2,393 MB | 12.0 s | 10.5 s | 101 / 112 ms | 5.13 GB |
+
+  The grown pickle under-counts, because repeated texts are pickled once; the real pkl costs ~1.03 KB per vector, plus 1.54 KB per vector of index.
+  Growth, 2026-09-27..10-02: L2 **22.7k–34.9k vectors a day** (~28k), L1 ~6–9k a day. That is ~72 MB/day of L2 index + pkl, about **2.2 GB a month**.
+- **Conclusion / do not repeat:**
+  1. Everything scales linearly, and none of it hurts at 2×. 5× (~1.56M L2 vectors) arrives in **~45 days** at today's intake (mid-November 2026). There, the binding constraint is **RAM**: ~5 GB for L2 in every process that loads it (the crawl worker, which also holds e5-large; the web UI holds a second copy) on a 31.4 GB machine that also runs Docker/Postgres. Next is save time: DBT-10 flushes once per source, so 28 sources × ~15 s ≈ 7 min of every run at 5×, inside the per-source timeouts. Search at ~100 ms is fine for the UI.
+  2. Recommendation (owner decision on SYS-41): **a retention window for L2** (the ticket's option (a)), e.g. the last 60 days live in FAISS. Older chunks stay in Postgres, where FTS still finds them, and can be re-embedded on demand. That caps L2 near 1.7M vectors (~5.5 GB RSS, ~110 ms search) with no change to the index type or the SYS-53/56/60 save machinery. Quantisation (SQ8, 4× smaller) or HNSW only if the window is not enough. Decide before ~2026-11-15.
+- **Links:** SYS-41 (#127) · `scripts/experiments/probe_vector_store_scale.py`
