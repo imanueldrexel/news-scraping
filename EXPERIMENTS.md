@@ -131,6 +131,8 @@ One line each; read this before starting on a scraper or pipeline problem.
 - **A fetch failure's strike is decided by its reason, not by the run's ratio (SYS-62, fixed 2026-09-28).** A burst inside a healthy run put 929 strikes on good URLs (DETIK ConnectionError, KUMPARAN 403, VIVA 502; 36 of 36 sampled fetched fine the same day). Transient reasons (`<Error> after N retries`, 403/408/429/5xx) strike only when the URL's previous `last_fetch_error` was transient too. → [2026-09-28 fix entry](#2026-09-28--the-qa-list-of-f4b899e-sys-606162-dbt-48-fixed-and-ops-28s-timeout-sized-from-crawl_log)
 - **`train_importance_probe.py` used to default `--encoder` to e5-base while production runs e5-large (fixed 2026-09-29, DBT-49 #203).** A flagless retrain wrote an e5-base artifact that the sidecar-authoritative filter would have loaded. Only the unit tests noticed. The default is now the committed sidecar's encoder. → [2026-09-29 SYS-51 entry](#2026-09-29--sys-51-gold-set-refreshed-297-url-categories-and-the-probe-retrained-the-e5-base-near-miss)
 - **The encoder revision is recorded, not assumed (SYS-61, 2026-09-28).** `refs/main` moves on any online load by Hub id. The probe sidecar's `embedding_revision` and each FAISS pair's `encoder.json` are compared at start-up. To learn what a legacy artifact was built with, re-embed a sample and compare it with the stored vectors (`scripts/experiments/probe_encoder_revision.py`). → same entry
+- **A mutant runner that restores files by copy can keep running a mutant.** A same-length edit restored within the same second leaves the mutant's `.pyc` valid (mtime and size match), so later runs import the mutant. Restore with `git checkout`, or set `PYTHONDONTWRITEBYTECODE=1` and clear `__pycache__`. Tell-tale: one unrelated test "kills" every mutant after a certain point. → entry 2026-10-03 "QA audit of HANDOFF_2026-09-29"
+- **`requests_page_loader` retries without backoff (SYS-66 #213, open):** "ConnectionError after 5 retries" can be six attempts in milliseconds, and each one parks a good article for the 7-day cooldown. Don't read that reason as "the host is down". → same entry
 ---
 
 ## Log
@@ -1654,3 +1656,32 @@ SINDONEWS   old 12 new 12 | lost [] | gained []   links identical: True
   1. The cosine era's soft residue is concentrated (PIKIRANRAKYAT's regional brands) and confidently scored. At ≥0.8 the probe made no clear mistake in 100 rows, so a wider delete is safe if the owner wants one later.
   2. A headline-only lenient re-score is a good recall net for desks whose news was wholesale-rejected (IDNTIMES `news`, 75% kept), and a poor one for finance desks with promo-heavy bodies (LIPUTAN6 `bisnis`, 0/18). Let the live filter decide with the body; never act on the headline score alone.
 - **Links:** SYS-48 (#144) 3d3c997, SYS-38 (#122) ffddacd · `backups/sys45_soft_by_probe_cosine-era_p0.9_20260930T060625Z.json`, `backups/sys38_requeue_20260930T023819Z.json`
+
+### 2026-10-03 — QA audit of HANDOFF_2026-09-29 (24 ready-for-qa tickets): 21 closed, 1 sent back, 2 held; 11 new tickets
+- **Question / hypothesis:** Do the dev list's 24 closures hold on production and under mutation, and what did the dev's 9 run-watching findings turn into?
+- **Method:**
+  - **Suites:** in a clean `git -c core.autocrlf=false archive de824d3` copy (the 19:00 crawl was running, so the live tree was never mutated): `tests/unit` 1,580 passed / 5 skipped (3 repo-hygiene tests fail in a non-git copy only), `tests/integration` 156 passed.
+  - **31 QA mutants**, none in the dev's runner list, with the same textual-replace runner as `qa_mutation_runner.py`. The unit side ran with `POSTGRES_DB_PORT=1`, scratch `VECTOR_DB_NAME_L*`, blank Telegram token and **`PYTHONDONTWRITEBYTECODE=1`** (see the trap below).
+  - **Read-only production SQL**, a live `check_crawlers.py` of the 13 trafilatura-first sources, and the DBT-16 live check: uvicorn on :8765, query before and after the crawler's FAISS save.
+  - **Offline SYS-40 re-run:** `NewsletterGenerator(ds, api_key=None).build_sections(arts, g._encode([a["l1_text"] for a in arts]))` on `get_articles_for_date(20260928)`, plus the average cosine distance between every pair of shown clusters.
+  - **OPS-18 silent paths:** `audit_filter_drift.main([])` with `load_decisions` and `SQLAlchemyArticleDataSource` stubbed, and `make_labeller` returning a labeller whose `call` returns `""`, or raising `SystemExit("OPENAI_API_KEY is not set")`.
+- **Result:**
+  - **Mutants: 26 of 31 killed.** Survivors:
+    - OPS-18 `if found:` → `if False:` (the alert is never sent from `main`);
+    - OPS-18's 7-day SQL window ignored;
+    - OPS-18's per-source shuffle removed;
+    - SYS-20 recount `DRIFT_SQL` without its `first_seen_at` clause (the test uses its own copy of the query) → DBT-50 #214;
+    - DBT-16 `is_current` true when untracked: equivalent, since every index the datasource builds is tracked.
+  - **DBT-05:** all 13 sources were already 100% trafilatura before (e.g. CNBC 1,891/1,891, KONTAN 1,130/1,130). Char averages move 1–11% in both directions, like the site-first sources. Live check: OK = 11, FALLBACK = 0, TEMPO BROKEN (Cloudflare 403).
+  - **DBT-16 live:** the crawler saved L1 86,452 → 86,474. The next query (> 30 s later) logged `Reloaded FAISS index(es) saved by another process: NEWS_L1, NEWS_L2` and `faiss_in_memory` equalled disk.
+  - **SYS-40 (2026-09-28):** 3,643 articles, 12 sections, 96 shown clusters, 1,051 articles shown. The big clusters are single stories (rupiah 42/19 sources, Rp 1 stock floor 42/18, Antam 38/19, BI rate 18/15). **2 shown cross-section pairs are at or under 0.30 average distance** (0.263 BPJS, 0.272 Kopdes), 0 within one section → SYS-65 #211.
+  - **OPS-18:** the largest source × category cell over 12 weekly seeds on production was **8**, against `AUDIT_CELL_MIN_N` = 20, so the per-cell alert can't fire. Stub runs: the empty labeller gives `rc 0`, `completed`, n = 0, no send; the missing key gives `SystemExit` escaping, no `log_crawl_failed`, no send → OPS-37 #210.
+  - **Boilerplate:** in 7,708 of the 15,963 articles saved since 2026-10-01, e.g. BERITASATU 97% "Baca juga", KONTAN 95%, DETIK 98% promo tail → SYS-63 #204.
+  - **Retries:** TIRTO failed 3 fetches "after 5 retries" in 0.1 s. 1,047 rows are parked for 7 days by a first transient failure, PIKIRANRAKYAT 989 of them from a 727/896 refusal burst on 09-29 → SYS-66 #213.
+  - **Dev findings → tickets:** WinError 5 → SYS-64 #208; TEMPO → SRC-56 #205; Docker stall → OPS-36 #209; sitemap `ok` on a dead index → OPS-35 #207; KUMPARAN backlog (51 → 391 not fetched per run, 563 never attempted) → SRC-57 #206; the newsletter was never scheduled → OPS-38 #212.
+  - **Dev findings, no ticket:** VIVA's 1,200 s kill has not recurred. INEWS 98 × 404 are SRC-29 mirror residue at `fetch_failures = 2`.
+- **Conclusion / do not repeat:**
+  1. **Restore a mutated file with `git checkout` (new mtime), or run with `PYTHONDONTWRITEBYTECODE=1`.** `shutil.copy` + `shutil.move` restored a same-length mutant (`TOPICS_FINANCE + TOPICS_NEWS` ↔ `TOPICS_NEWS + TOPICS_FINANCE`) with an mtime in the same second as the mutant's `.pyc`. Python kept the mutant's bytecode, and 7 later mutants were "killed" by an unrelated SYS-40 test. Tell-tale: many mutants killed by the same unrelated test.
+  2. A Done-when bar that a sampling design can't reach (OPS-18's per-cell n ≥ 20 with ~7 rows per source) is dead code. Measure the reachable n on production before accepting the threshold.
+  3. Dev's SYS-38 70% gate: QA accepted on evidence. LIPUTAN6's 18 re-rejects were 16 clear soft and 2 arguable, all caught by the body pass.
+- **Links:** closed SRC-55 #201, OPS-34 #202, SRC-32 #117, DBT-27 #88, DBT-21 #72, SRC-10 #65, DBT-16 #51, DBT-02 #21, DBT-05 #24, SRC-19/20/22/23/24/26 #99–#106, DBT-49 #203, OPS-19 #132, SYS-51 #170, SYS-48 #144, SYS-38 #122, SYS-54 #185. Sent back: OPS-18 #123. Held: SYS-20 #41 (no extraction run since 2026-06-02), SYS-40 #126 (owner read + SRC-34). New: #204–#214.
