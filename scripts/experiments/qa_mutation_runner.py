@@ -112,11 +112,13 @@ M = [
   "        self._discard_terminal_embeddings(website_name, \"settled terminal this run (SYS-54)\")\n",
   ""),
  ("sys54_failed_fetches_not_candidates", "newscrawler/domain/services/crawler_service_impl.py",
-  "        self._source_failure_verdict = self._record_fetch_failures(website_name, attempted, run_failures)\n"
+  "        failure_note = self._record_fetch_failures(website_name, attempted, run_failures)\n"
+  "        self._source_failure_verdict = \"; \".join(n for n in (throttle_note, failure_note) if n) or None\n"
   "        # After _record_fetch_failures, so a failure that reached the cap counts.\n"
   "        self._discard_terminal_embeddings(website_name, \"settled terminal this run (SYS-54)\")\n",
   "        self._discard_terminal_embeddings(website_name, \"settled terminal this run (SYS-54)\")\n"
-  "        self._source_failure_verdict = self._record_fetch_failures(website_name, attempted, run_failures)\n"),
+  "        failure_note = self._record_fetch_failures(website_name, attempted, run_failures)\n"
+  "        self._source_failure_verdict = \"; \".join(n for n in (throttle_note, failure_note) if n) or None\n"),
  ("sys54_rows_before_flush", "newscrawler/infrastructure/repositories/dataflow/data_flow_repository_impl.py",
   "        if self.chunk_faiss_datasource.is_deferred:\n            self.__dict__.setdefault",
   "        if False:\n            self.__dict__.setdefault"),
@@ -135,7 +137,7 @@ M = [
   "    if problem:\n        raise CorruptIndexError(", "    if False:\n        raise CorruptIndexError("),
  # Re-targeted after SYS-60: commit_staged returns the generation; the caller rolls forward.
  ("sys56_swap_file_by_file", "newscrawler/infrastructure/datasource/dataflow/write/faiss/index_generation.py",
-  "    os.rename(staged, journal_dir(db_name))\n    return committed",
+  "    _retry_on_permission_error(os.rename, staged, journal_dir(db_name))\n    return committed",
   "    os.makedirs(db_name, exist_ok=True)\n"
   "    for name in INDEX_FILES:\n        os.replace(os.path.join(staged, name), os.path.join(db_name, name))\n"
   "    return committed"),
