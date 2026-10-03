@@ -46,6 +46,8 @@ from newscrawler.core.crawler_dict_list import CRAWLER_DICT  # noqa: E402
 from newscrawler.infrastructure.datasource.scrapers.crawler import SOFT_BRANCH_WORDS, Crawler  # noqa: E402
 
 
+from newscrawler.infrastructure.datasource.scrapers.crawler import SitemapIndexUnavailable  # noqa: E402
+
 def url_segments(link: str):
     """The SECTION-like parts of a URL: host labels plus the path segments that
     could name a desk.
@@ -90,7 +92,11 @@ def check(name, crawler, verbose=False):
     result["dropped_archive"] = sorted(
         k for k in branches if not crawler.is_soft_branch(k) and crawler.is_archive_branch(k))
 
-    listed = crawler.get_news_in_bulk() or []
+    try:
+        listed = crawler.get_news_in_bulk() or []
+    except SitemapIndexUnavailable as e:  # OPS-35: raised, no longer []
+        print(f"{name}: {e}")
+        listed = []
     result["listed"] = len(listed)
 
     dropped = set(result["dropped_soft"]) | set(result["dropped_archive"])

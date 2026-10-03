@@ -49,6 +49,26 @@ class NewsDetailsBatch(list):
         self.failures: Dict[int, str] = dict(failures or {})
 
 
+class SitemapIndexUnavailable(Exception):
+    """OPS-35 (#207): the source listed nothing because its sitemap index (or
+    every one of its branch sitemaps) did not load. Raised, not returned as [],
+    so crawl_sitemaps records the run as failed with the reason instead of
+    `completed, 0 new`, which is what a healthy source with nothing new looks
+    like (TEMPO's Cloudflare 403 looked healthy for days)."""
+
+
+class SitemapListing(list):
+    """What get_news_in_bulk has always returned (the raw entries of every
+    crawled branch) plus, since OPS-35, the branches whose sitemap did not load:
+    `branch_failures` is [(branch_name, reason), ...] and `branches_tried` how
+    many branches were fetched. Same shape as SitemapScrapeBatch."""
+
+    def __init__(self, items=(), branch_failures=(), branches_tried: int = 0):
+        super().__init__(items)
+        self.branch_failures = list(branch_failures)
+        self.branches_tried = branches_tried
+
+
 class SitemapScrapeBatch(list):
     """What batch_crawling_sitemap has always returned (a SitemapDTO per scraped
     entry) -- len()/iteration/indexing unchanged for every existing caller.
@@ -393,33 +413,56 @@ class Crawler:
         """Every branch this source lists, across all its indexes, BEFORE the soft
         drop -- or None when the primary index does not load. The one place that
         answers "what does this source list" (get_news_in_bulk and the probes)."""
-        soup = self.page_loader.get_soup(self.website_url)
+        soup, reason = self._load_page(self.website_url)
         if not soup:
+            # OPS-35: kept for get_news_in_bulk's error; list_branches' own
+            # contract (None) is unchanged for the probes.
+            self.last_index_error = reason or "page loader returned no document"
             return None
         branches = dict(self._get_branches(soup) or {})
         for key, link in self.extra_index_branches().items():
             branches.setdefault(key, link)
         return branches
 
-    def get_news_in_bulk(self) -> List:
+    def _note_branch_failure(self, branch_name, reason) -> None:
+        """OPS-35 (#207): a branch sitemap that did not load is counted, so a
+        source whose branches stopped loading is not recorded as a healthy source
+        with nothing new. Subclasses that load their own branch pages call it too."""
+        logger.warning(f"{self.website_name}: branch {branch_name} did not load: {reason}")
+        failures = self.__dict__.get("_branch_failures")
+        if failures is not None:
+            failures.append((branch_name, reason or "page loader returned no document"))
+
+    def get_news_in_bulk(self) -> "SitemapListing":
+        """Every entry of every crawled branch. OPS-35 (#207): raises
+        SitemapIndexUnavailable when the index does not load, or when every
+        branch sitemap failed; a partial failure rides on the result's
+        `branch_failures`."""
         listed = self.list_branches()
         if listed is None:
-            logger.warning(f"Could not load sitemap from {self.website_url}")
-            return []
+            reason = getattr(self, "last_index_error", None) or "page loader returned no document"
+            logger.error(f"{self.website_name}: sitemap index {self.website_url} did not load: {reason}")
+            raise SitemapIndexUnavailable(f"sitemap index did not load: {reason}")
 
         branches_to_crawl = self.drop_soft_branches(listed)
         links_to_crawl = []
+        self._branch_failures = []
 
         for branch_name, branch_link in branches_to_crawl.items():
             links = self._scrape(branch_link=branch_link, branch_name=branch_name)
             links_to_crawl.extend(links)
-        return links_to_crawl
+        failures = list(self._branch_failures)
+        if branches_to_crawl and len(failures) >= len(branches_to_crawl):
+            raise SitemapIndexUnavailable(
+                f"all {len(branches_to_crawl)} branch sitemap(s) failed to load, e.g. {failures[0][1]}")
+        return SitemapListing(links_to_crawl, failures, len(branches_to_crawl))
 
     def _scrape(self, branch_link, branch_name) -> List:
         logger.info(f"Scrape {branch_name} on {self.website_name}")
-        soup = self.page_loader.get_soup(branch_link)
+        soup, reason = self._load_page(branch_link)
         articles = []
         if soup is None:
+            self._note_branch_failure(branch_name, reason)
             return articles
         else:
             for idx, url in enumerate(soup.find_all("url")):

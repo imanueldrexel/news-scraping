@@ -42,9 +42,10 @@ class AntaraNewsCrawler(Crawler):
 
     def _scrape(self, branch_link, branch_name) -> List:
         logger.info(f"Scrape {branch_name} on {self.website_name}")
-        soup = self.page_loader.get_soup(branch_link)
+        soup, reason = self._load_page(branch_link)
         articles = []
         if soup is None:
+            self._note_branch_failure(branch_name, reason)
             return articles
         else:
             for idx, url in enumerate(soup.find_all("item")):

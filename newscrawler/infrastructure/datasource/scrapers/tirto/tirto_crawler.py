@@ -62,7 +62,11 @@ class TirtoCrawler(Crawler):
         """SRC-32: every recent monthly leaf of the section, under the one
         section name."""
         articles = []
-        for leaf in self._recent_monthly_leaves(branch_link):
+        leaves = self._recent_monthly_leaves(branch_link)
+        if not leaves:
+            # OPS-35: a section index that did not load counts as a failed branch.
+            self._note_branch_failure(branch_name, "section index did not load or lists no leaf")
+        for leaf in leaves:
             articles.extend(super()._scrape(branch_link=leaf, branch_name=branch_name))
         return articles
 

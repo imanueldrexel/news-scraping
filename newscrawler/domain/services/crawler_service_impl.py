@@ -67,7 +67,19 @@ class CrawlerServiceImpl(CrawlerService):
             if skipped_no_date:
                 logger.warning(f"{website_name}: {skipped_no_date} sitemap entries skipped (no publication date)")
 
-            self.data_flow_repo.log_crawl_complete(log_id, new_count)
+            # OPS-35 (#207): an index that did not load raised above (the run is
+            # `failed` with the reason); branches that did not load are a note on
+            # a completed run, so "nothing new" and "half the source is gone"
+            # differ in crawl_log.
+            branch_failures = getattr(raw_sitemaps, "branch_failures", None) or []
+            if branch_failures:
+                note = (f"{len(branch_failures)} of {getattr(raw_sitemaps, 'branches_tried', '?')} branch "
+                        f"sitemap(s) did not load: " +
+                        "; ".join(f"{name}: {reason}" for name, reason in branch_failures[:5]))[:1000]
+                logger.warning(f"{website_name}: {note}")
+                self.data_flow_repo.log_crawl_complete(log_id, new_count, note=note)
+            else:
+                self.data_flow_repo.log_crawl_complete(log_id, new_count)
             return sitemaps_dtos
         except Exception as e:
             self.data_flow_repo.log_crawl_failed(log_id, str(e))
