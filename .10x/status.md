@@ -12,7 +12,7 @@
 - Brainstorm: owner chose "close out the open QA/ops queue" with a QA verification pass first; design approved; spec at `.10x/specs/2026-10-04-qa-verification-pass-design.md`.
 
 ### In Progress
-- QA: baseline suites + mutation run, then per-ticket verification of 9 ready-for-qa tickets.
+- QA: baseline done (unit 1,643 / integration 156 / 140 mutants, 0 survivors). Per-ticket checks next; scheduled-run evidence waits for the 07:00 crawl.
 
 ### Pending
 - Per-ticket verdicts (close / send back / stay ready-for-qa)
