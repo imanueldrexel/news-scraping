@@ -134,6 +134,7 @@ One line each; read this before starting on a scraper or pipeline problem.
 - **A mutant runner that restores files by copy can keep running a mutant.** A same-length edit restored within the same second leaves the mutant's `.pyc` valid (mtime and size match), so later runs import the mutant. Restore with `git checkout`, or set `PYTHONDONTWRITEBYTECODE=1` and clear `__pycache__`. Tell-tale: one unrelated test "kills" every mutant after a certain point. → entry 2026-10-03 "QA audit of HANDOFF_2026-09-29"
 - **`requests_page_loader` retries without backoff (SYS-66 #213, open):** "ConnectionError after 5 retries" can be six attempts in milliseconds, and each one parks a good article for the 7-day cooldown. Don't read that reason as "the host is down". → same entry
 - **"ConnectionError after N retries" on PIKIRANRAKYAT's regional brand hosts is dead DNS, not a refusal** (2026-10-03). Check `socket.gaierror` in the cause chain (the loader now reports `NameResolutionError after N retries`) before treating a burst as a rate limit. A breaker that counts dead hosts stops the source on the same rows forever. → entry 2026-10-03 "SYS-66/SYS-70: bot User-Agent…"
+- **TEMPO (since 2026-09-30) blocks automated clients by fingerprint, not by IP**: real browsers on the same network get in, while `requests`, curl (any UA) and headless Chrome get Cloudflare's block page. UA, header and pacing changes cannot fix it; only permitted access can. → entry 2026-10-03 "SRC-56: owner browser test"
 ---
 
 ## Log
@@ -1721,3 +1722,16 @@ SINDONEWS   old 12 new 12 | lost [] | gained []   links identical: True
   3. Do not switch to a fleet-wide bot UA without `BROWSER_UA_HOSTS`, and do not cap concurrency fleet-wide without per-source timeouts measured first.
   4. Retries with backoff need `REQUEST_MAX_RETRIES` ≤ 3: `.env` had 5, which is ~23 s per dead-host URL.
 - **Links:** SYS-66 (#213), SYS-70 (#218), SRC-57 (#206) · `scripts/experiments/probe_bot_ua.py` · commit e9840d2
+
+### 2026-10-03 — SRC-56: owner browser test; TEMPO blocks by client fingerprint, not by IP
+- **Question / hypothesis:** Is TEMPO's block an IP ban of this network (fixable by politeness plus time) or a block on automated clients?
+- **Method:** the owner opened `https://www.tempo.co/` on the same device and network in Edge (normal profile), Edge incognito and Firefox, and on a phone browser. Compared with the earlier probe: `requests`, curl with several UAs, and `chrome --headless=new`.
+- **Result:**
+  - Edge incognito, Firefox and the phone: **homepage opens**.
+  - Edge's normal profile: HTTP 500 (stale profile state, not informative).
+  - Every automated client, headless Chrome included: the Cloudflare "Attention Required!" block page.
+- **Conclusion / do not repeat:**
+  - Not an IP ban. A fingerprint block (TLS / headless signals) on non-browser clients, since 2026-09-30.
+  - No UA, header or pacing change gets past it; don't retry those.
+  - The only in-scope route is permitted access from Tempo (an allow-listed bot UA, a feed, an API). TLS impersonation or stealth browsers would be evading an explicit anti-bot control and are out of scope, the same line as BISNIS.
+- **Links:** SRC-56 (#205), SRC-03 (#14), SYS-70 (#218)
