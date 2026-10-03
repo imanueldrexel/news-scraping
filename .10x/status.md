@@ -1,34 +1,28 @@
 # Project Status
 
 ## Project: NewsAggregator
-**Current Phase:** Brainstorming
-**Last Updated:** 2026-10-04 by init-project
+**Current Phase:** Verification (QA pass 2026-10-04; brainstorming + spec approved)
+**Last Updated:** 2026-10-04 by 10x-team (QA)
 **Health:** On Track
 
 ## Progress
 
 ### Done
-(none yet)
+- Project state initialized (`.10x/`).
+- Brainstorm: owner chose "close out the open QA/ops queue" with a QA verification pass first; design approved; spec at `.10x/specs/2026-10-04-qa-verification-pass-design.md`.
 
 ### In Progress
-(none yet)
+- QA: baseline suites + mutation run, then per-ticket verification of 9 ready-for-qa tickets.
 
 ### Pending
-- [ ] CTO: Strategic direction and tech decisions
-- [ ] PM: Requirements and scope definition
-- [ ] Architect: System design
-- [ ] Staff Engineer: Coding standards and patterns
-- [ ] EM: Task breakdown and estimation
-- [ ] Senior Engineer: Implementation planning
-- [ ] SDE: Code implementation
-- [ ] DBA: Schema and data modeling
-- [ ] Security: Threat model and security review
-- [ ] QA: Test strategy and verification
-- [ ] DevOps: CI/CD and deployment
-- [ ] SRE: Monitoring and reliability
+- Per-ticket verdicts (close / send back / stay ready-for-qa)
+- `HANDOFF_2026-10-04.md` for dev
+- Dev burn-down afterwards: OPS-20 (P1), OPS-38/SYS-68/SYS-67/SYS-65/SYS-69, SYS-63, P3s
 
 ### Blocked
-(none)
+- SRC-56 TEMPO: owner browser test (fingerprint block), source paused.
+- OPS-36: owner must register the liveness job and approve the drill.
 
 ## Risks
-(none identified yet)
+- 2026-10-04 07:00 crawl is the first run of the bot UA, host pacing and retry changes across the fleet.
+- Gemini free tier is 20 requests/day (OPS-20); gates extraction, audit and newsletter.
