@@ -41,6 +41,7 @@ import json
 import logging
 import os
 import shutil
+import time
 from typing import Optional, Tuple
 
 from filelock import FileLock
@@ -58,6 +59,29 @@ SAVE_LOCK_TIMEOUT_S = 600
 _ATTR = "_news_index_generation"
 
 Generation = Optional[Tuple]
+
+# SYS-64 (#208): on Windows a rename fails with PermissionError (WinError 5)
+# while any process holds a handle on a file inside the directory, which a
+# virus scanner or the search indexer does for a moment right after the files
+# are written. Three runs lost a source that way (2026-09-29/30). A rename
+# either happens or not, so it is retried: 0.2, 0.4, 0.8, 1.6, 3.2 s.
+RENAME_RETRIES = int(os.getenv("FAISS_RENAME_RETRIES", 5))
+RENAME_BACKOFF_S = float(os.getenv("FAISS_RENAME_BACKOFF_S", 0.2))
+_sleep = time.sleep  # patched by the tests
+
+
+def _retry_on_permission_error(op, src: str, dst: str):
+    """op(src, dst), retried on PermissionError; the last one is raised."""
+    for attempt in range(RENAME_RETRIES + 1):
+        try:
+            return op(src, dst)
+        except PermissionError as e:
+            if attempt == RENAME_RETRIES:
+                raise
+            delay = RENAME_BACKOFF_S * (2 ** attempt)
+            logger.warning(f"{getattr(op, '__name__', 'rename')}({src} -> {dst}) denied ({e}); retry {attempt + 1}/{RENAME_RETRIES} "
+                           f"in {delay:.1f}s (SYS-64)")
+            _sleep(delay)
 
 
 class StaleIndexError(RuntimeError):
@@ -120,7 +144,7 @@ def commit_staged(db_name: str) -> Generation:
     staged = staging_dir(db_name)
     _fsync_files(staged)
     committed = disk_generation(staged)
-    os.rename(staged, journal_dir(db_name))
+    _retry_on_permission_error(os.rename, staged, journal_dir(db_name))
     return committed
 
 
@@ -136,7 +160,7 @@ def roll_forward(db_name: str) -> bool:
     for name in _journal_order():
         src = os.path.join(journal, name)
         if os.path.exists(src):
-            os.replace(src, os.path.join(db_name, name))
+            _retry_on_permission_error(os.replace, src, os.path.join(db_name, name))
     shutil.rmtree(journal, ignore_errors=True)
     return True
 
