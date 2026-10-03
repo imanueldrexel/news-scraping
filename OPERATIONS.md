@@ -34,12 +34,22 @@
 | `SITEMAP_MAX_FETCH_FAILURES` | `3` | SYS-09: runs that produced no article for a sitemap before `load_all_sitemaps` stops offering it; undo with `scripts/reset_fetch_failures.py` |
 | `SITEMAP_SOURCE_FAILURE_RATIO` | `1.0` | OPS-15: the fraction of a run's attempted sitemaps that must fail before the run is considered source-wide (`1.0` = only when every one failed). Both this **and** `SITEMAP_SOURCE_FAILURE_MIN` must be met |
 | `SITEMAP_SOURCE_FAILURE_MIN` | `20` | OPS-16: the minimum number of failures before a run can be called source-wide. A ratio alone is undefined at small N — with 3 rows left in a source's queue and all 3 dead, "100% failed" is evidence about those 3 URLs, not about the source, and sparing them meant they were re-fetched every run forever with no cooldown |
-| `SOURCE_THROTTLE_STREAK` | `10` | SRC-55: this many HTTP 403/429 answers in a row from one source stop its full-text run. The streak's rows and the rows not yet fetched are left untouched (no strike, no `last_fetch_error`, no cooldown), so a rate limit costs the rest of that run, not the URLs. The run's `crawl_log.error_msg` starts `throttled (SRC-55): ...`; ERROR in the log when the source served nothing before the streak (a block, not a limit) |
+| `SOURCE_THROTTLE_STREAK` | `10` | SRC-55: this many HTTP 403/429 answers in a row from one source stop its full-text run. Since SYS-66, `ConnectionError`/`ReadTimeout after N retries` count too (a host refusing us); `NameResolutionError after N retries` (a host that no longer resolves) never does, so dead hosts retire under SYS-62 instead of stopping the source every run. The streak's rows and the rows not yet fetched are left untouched (no strike, no `last_fetch_error`, no cooldown), so a rate limit costs the rest of that run, not the URLs. The run's `crawl_log.error_msg` starts `throttled (SRC-55): ...`; ERROR in the log when the source served nothing before the streak (a block, not a limit) |
 | `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` | — | Scheduled-crawl and health-check alerts (OPS-01). Unset = nothing can be sent: each alert is logged at ERROR and queued in `logs/telegram_outbox.jsonl` (newest 20 kept, OPS-34), and the first send after both are set delivers them as `[delayed]` |
 | `HEALTH_ALERT_ON_NO_CHANGE` | `true` | OPS-13: `false` mutes the daily alert on a red day whose per-outlet statuses all match the previous run (exit code unaffected; NEW/CHANGED/RECOVERED always notify) |
 | `SCHEDULE_SOURCE_TIMEOUT` | `1200` | OPS-19/OPS-22: per-source seconds before the scheduled crawl **kills** that source's worker process and moves on. The kill completes before the next source starts, the source's `crawl_log` row is closed as `failed` (`killed by run_scheduled_crawl: …`), and the next source gets a fresh worker (one more ~2 min model load). It is a guard against a hung source, sized above a healthy one: the five sources that hit the 1,000-row cap take 580–950 s, and one connection burst adds ~300 s (DETIK: 885 of the old 900 s on 2026-09-28, OPS-28) |
 | `SCHEDULE_RUN_BUDGET` | `12600` (3 h 30 min) | OPS-22: no source is started once elapsed time + one `SCHEDULE_SOURCE_TIMEOUT` would pass this. The rest are reported as skipped, so the summary is sent before Task Scheduler's 4 h `ExecutionTimeLimit` kills the process silently. Keep it below that limit minus one timeout |
-| `SCHEDULE_SOURCE_TIMEOUTS` | `MEDIAINDONESIA=1500` | OPS-28: per-source timeouts, `NAME=seconds,...`, never below `SCHEDULE_SOURCE_TIMEOUT`. The run budget uses the source's own timeout. MEDIAINDONESIA runs serially and takes 880–947 s on a normal run (queue 11,460), so it keeps the same ~300 s burst allowance above that; a row cap instead would make its backlog permanent |
+| `SCHEDULE_SOURCE_TIMEOUTS` | `MEDIAINDONESIA=1500,KUMPARAN=1800` | OPS-28: per-source timeouts, `NAME=seconds,...`, never below `SCHEDULE_SOURCE_TIMEOUT`. The run budget uses the source's own timeout. MEDIAINDONESIA runs serially and takes 880–947 s on a normal run (queue 11,460), so it keeps the same ~300 s burst allowance above that; a row cap instead would make its backlog permanent. SYS-70: KUMPARAN is paced at ~1 req/s, so it fetches its whole queue (~1,000–1,300 s) instead of stopping at its rate-limit wall |
+| `REQUEST_MAX_RETRIES` | `3` (`.env`: 3, was 5) | SYS-66: retries of a connection error / read timeout per fetch. Each retry is preceded by a backoff sleep, so 5 would cost ~23 s per URL on a dead host |
+| `REQUEST_RETRY_BACKOFF_S` / `REQUEST_RETRY_BACKOFF_MAX_S` | `1.0` / `8.0` | SYS-66: retry n sleeps `base * 2**n` (±50% jitter), capped: 1, 2, 4 s for 3 retries |
+| `REQUEST_RETRY_AFTER_MAX_S` | `60` | SYS-70: a 429/503 with a `Retry-After` at most this long pauses the whole host and is retried once |
+| `CRAWLER_USER_AGENT` / `CRAWLER_CONTACT` | `NewsAggregatorBot/1.0` / unset | SYS-70: the crawler identifies itself; a contact (URL or `mailto:`) is appended as `(+contact)` when set. Owner decision 2026-10-03: no contact yet |
+| `BROWSER_UA_HOSTS` | `beritasatu.com,investor.id,tribunnews.com` | SYS-70: hosts (suffix match) that answer 403 to the bot UA and keep the old browser UA. Measured with `scripts/experiments/probe_bot_ua.py` |
+| `HOST_MIN_INTERVAL_S` / `HOST_MAX_CONCURRENCY` | `kumparan.com=1.0` / unset | SYS-70: per-host politeness, `host=value,...` (suffix match). Minimum seconds between request starts, and most requests in flight. Owner decision 2026-10-03: throughput kept (20 threads), pace only where measured |
+| `FAISS_RENAME_RETRIES` / `FAISS_RENAME_BACKOFF_S` | `5` / `0.2` | SYS-64: the FAISS commit rename and roll-forward moves retry on a transient Windows `PermissionError` (WinError 5): 0.2, 0.4, 0.8, 1.6, 3.2 s |
+| `AUDIT_MIN_JUDGED_SHARE` | `0.5` | OPS-37: a drift-audit side judged on less than this share of its sample is a failed audit (`crawl_log` failed, exit 1, alert), not a quiet week |
+| `FILTER_AUDIT_TIMEOUT_S` | `1800` | OPS-37: the health check stops a drift audit that has not exited by then and alerts |
+| `DB_LIVENESS_DEADLINE_S` / `DB_LIVENESS_FAILS_BEFORE_ALERT` / `DB_LIVENESS_STATE` | `20` / `2` / `logs/db_liveness_state.json` | OPS-36: `SELECT 1` deadline, failed probes in a row before the DOWN alert, state file |
 | `SCHEDULE_LOG_DIR` / `SCHEDULE_LOG_KEEP` | `logs/` / `28` | OPS-27: where the scheduled crawl writes `scheduled_crawl_<YYYY-MM-DD_HHMM>.log` (gitignored), and how many run logs are kept (two runs a day = 14 days) |
 | `SCHEDULE_INIT_TIMEOUT` | `1200` | OPS-22: seconds the worker process may take to build the crawler (`init_crawler()`) before the start counts as failed |
 | `SCHEDULE_FAILED_STARTS_BEFORE_STOP` | `2` | OPS-32: after this many sources in a row whose worker could not be built, the run stops. The remaining sources are not started, and the summary says `STOPPED: the crawler could not start N times in a row (<reason>)` |
@@ -142,6 +152,7 @@ Last run 2026-09-25 on `newsaggregator_20260925T140752Z.dump`: `pg_restore` rc 0
 |---|---|---|
 | 05:00 | Database backup (OPS-23) | `scripts/backup_db.py` — registered as **"NewsAggregator DB Backup"**, see "Database: container, backup, restore" |
 | 05:30 | Crawler health check (OPS-01) | `scripts/run_scheduled_health_check.py` — registered, see below |
+| every 15 min | DB liveness (OPS-36) | `scripts/db_liveness.py` — **not registered yet** (owner's go); see "DB liveness (OPS-36)" |
 | after each crawl | Store consistency check (OPS-04, OPS-29) | runs inside `scripts/run_scheduled_crawl.py` after its worker has closed; writes `crawler_health/store-consistency-<date>.json` and puts anything to act on in the crawl's Telegram line. `scripts/check_store_consistency.py` by hand for the full table |
 | 07:00 | Morning crawl (OPS-19) | `scripts/run_scheduled_crawl.py` — registered 2026-09-25 as **"NewsAggregator Scheduled Crawl (morning)"** (owner decision); first unattended run 2026-09-26 07:00. `python __main__.py` remains the manual equivalent |
 | 06:45 | Knowledge extraction | task=extract_knowledge |
@@ -506,9 +517,20 @@ If it is not, `scripts/recount_entity_mentions.py --dry-run` lists the drift, an
 
 ### Weekly filter drift audit (OPS-18)
 `scripts/audit_filter_drift.py` runs once a week inside the health-check job (`FILTER_AUDIT_WEEKDAY`). It samples up to 100 saved and 100 probe-rejected decisions from the last 7 days, spread across sources; category-denied rejects are left out because they're a publisher's signal. It asks the SYS-36 labeller (DeepSeek via `OPENAI_*`; `--provider gemini` also works) to judge them with the gold-set rubric. It writes a `crawl_log` row (`website='ALL'`, `task='filter_drift_audit'`, agreement in `error_msg`) and `crawler_health/filter_drift_<date>.json` with every disagreement. It alerts on Telegram when a side falls under its floor or a source x category cell under 0.80, marking what is NEW since the previous report. `--dry-run` shows the sample without a key. The disagreements are candidates for a SYS-36 re-label, not automatic actions.
+
+**It never fails silently (OPS-37).** A side judged on less than `AUDIT_MIN_JUDGED_SHARE` of its sample, a missing labeller key (the row is closed `failed`, not left `started`), a crash, or no exit within `FILTER_AUDIT_TIMEOUT_S` each produce one Telegram line from the health check: `Filter drift audit (OPS-18) FAILED, exit N: nothing was measured this week`.
 ```sql
 SELECT started_at, article_count, error_msg FROM crawl_log WHERE task = 'filter_drift_audit' ORDER BY log_id DESC LIMIT 5;
 ```
+
+### DB liveness (OPS-36)
+`scripts/db_liveness.py` runs `SELECT 1` with a hard client-side deadline (`DB_LIVENESS_DEADLINE_S`). On 2026-09-30 a stalled Docker engine still accepted TCP on 5431 but hung every query, which connect and statement timeouts alone do not catch. It sends one Telegram alert after `DB_LIVENESS_FAILS_BEFORE_ALERT` failed probes in a row (DOWN), and one on the first good probe after that (recovered). It never repeats in between, writes nothing to the DB, and never raises. `--check` probes and prints only.
+
+Register it (owner's go first):
+```
+schtasks /Create /TN "NewsAggregator DB Liveness" /SC MINUTE /MO 15 /TR "\"<repo>env\Scripts\python.exe\" \"<repo>\scripts\db_liveness.py\"" /F
+```
+When it alerts DOWN: `docker ps` (a hang means the Docker Desktop engine itself is stalled; `docker desktop restart` brought it back on 2026-09-30), then `venv\Scripts\python.exe scripts\db_liveness.py --check`.
 
 ### API stats endpoint
 ```

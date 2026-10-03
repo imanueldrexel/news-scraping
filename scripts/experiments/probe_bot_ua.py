@@ -12,7 +12,7 @@ request at a time with a pause, ~5 requests per source.
     venv\\Scripts\\python.exe scripts/experiments/probe_bot_ua.py
     venv\\Scripts\\python.exe scripts/experiments/probe_bot_ua.py --only KUMPARAN,DETIK
 
-First run + conclusions: EXPERIMENTS.md, "SYS-70: bot User-Agent and robots.txt across the fleet".
+First run + conclusions: EXPERIMENTS.md, "SYS-66/SYS-70: bot User-Agent across the fleet, fetch share of run time, ...".
 """
 import argparse
 import os

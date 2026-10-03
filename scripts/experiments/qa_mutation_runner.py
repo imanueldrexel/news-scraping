@@ -285,6 +285,40 @@ M = [
  # OPS-18 (#123)
  ("ops18_deny_rejects_kept", "scripts/audit_filter_drift.py", '                and category_gate(r["category"], r["source"]) != "deny"]', "]"),
  ("ops18_cell_min_ignored", "scripts/audit_filter_drift.py", 'if c["n"] >= CELL_MIN_N and', "if"),
+ # 2026-10-03 dev session (HANDOFF_2026-10-03.md list, Phase 1 + 3).
+ # SYS-66 (#213)
+ ('sys66_no_backoff_sleep', 'newscrawler/core/page_loader/requests_page_loader.py', '                _sleep(self._backoff(attempt - 1))', '                pass'),
+ ('sys66_dns_not_named', 'newscrawler/core/page_loader/requests_page_loader.py', '        name = "NameResolutionError" if is_name_resolution_failure(last_err) else type(last_err).__name__', '        name = type(last_err).__name__'),
+ ('sys66_dns_trips_breaker', 'newscrawler/core/page_loader/throttle.py', '(ConnectionError|ConnectTimeout|ReadTimeout|Timeout) after', '(ConnectionError|ConnectTimeout|ReadTimeout|Timeout|NameResolutionError) after'),
+ ('sys66_refusals_ignored', 'newscrawler/core/page_loader/throttle.py', '    return reason in THROTTLE_REASONS or bool(reason and _REFUSAL_AFTER_RETRIES.match(reason))', '    return reason in THROTTLE_REASONS'),
+ ('sys66_gaierror_check_dropped', 'newscrawler/core/page_loader/requests_page_loader.py', '        if isinstance(e, socket.gaierror):', '        if False:'),
+ # SYS-70 (#218)
+ ('sys70_gate_bypassed', 'newscrawler/core/page_loader/requests_page_loader.py', '                with gate.slot():', '                if True:'),
+ ('sys70_interval_ignored', 'newscrawler/core/page_loader/requests_page_loader.py', '                self._next_start = start + self.min_interval', '                self._next_start = start'),
+ ('sys70_retry_after_not_deferred', 'newscrawler/core/page_loader/requests_page_loader.py', '                    gate.defer(delay)', '                    pass'),
+ ('sys70_retry_after_cap_ignored', 'newscrawler/core/page_loader/requests_page_loader.py', '                if delay is not None and delay <= REQUEST_RETRY_AFTER_MAX_S:', '                if delay is not None:'),
+ ('sys70_browser_ua_hosts_ignored', 'newscrawler/core/page_loader/requests_page_loader.py', '            return dict(self.headers, **{"User-Agent": BROWSER_USER_AGENT})', '            return self.headers'),
+ ('sys70_suffix_lookalike', 'newscrawler/core/page_loader/requests_page_loader.py', '        if host == suffix or host.endswith("." + suffix):', '        if host.endswith(suffix):'),
+ ('sys70_no_concurrency_cap', 'newscrawler/core/page_loader/requests_page_loader.py', '        self._slots = threading.BoundedSemaphore(max_concurrency) if max_concurrency else None', '        self._slots = None'),
+ ('sys70_bot_ua_not_used', 'newscrawler/core/page_loader/requests_page_loader.py', '            "User-Agent": bot_ua,', '            "User-Agent": BROWSER_USER_AGENT,'),
+ # OPS-35 (#207)
+ ('ops35_dead_index_is_empty', 'newscrawler/infrastructure/datasource/scrapers/crawler.py', '            raise SitemapIndexUnavailable(f"sitemap index did not load: {reason}")', '            return []'),
+ ('ops35_all_branches_check_dropped', 'newscrawler/infrastructure/datasource/scrapers/crawler.py', '        if branches_to_crawl and len(failures) >= len(branches_to_crawl):', '        if False:'),
+ ('ops35_note_not_logged', 'newscrawler/domain/services/crawler_service_impl.py', '            if branch_failures:', '            if False:'),
+ ('ops35_branch_failure_not_counted', 'newscrawler/infrastructure/datasource/scrapers/crawler.py', '            failures.append((branch_name, reason or "page loader returned no document"))', '            pass'),
+ # SYS-64 (#208)
+ ('sys64_commit_not_retried', 'newscrawler/infrastructure/datasource/dataflow/write/faiss/index_generation.py', '    _retry_on_permission_error(os.rename, staged, journal_dir(db_name))', '    os.rename(staged, journal_dir(db_name))'),
+ ('sys64_rollforward_not_retried', 'newscrawler/infrastructure/datasource/dataflow/write/faiss/index_generation.py', '            _retry_on_permission_error(os.replace, src, os.path.join(db_name, name))', '            os.replace(src, os.path.join(db_name, name))'),
+ # OPS-37 (#210) + OPS-18 (#123) send-back
+ ('ops37_shortfall_ignored', 'scripts/audit_filter_drift.py', '        if shortfall:', '        if False:'),
+ ('ops37_systemexit_escapes', 'scripts/audit_filter_drift.py', '    except BaseException as e:  # noqa: BLE001 -- recorded, then re-raised for the exit code', '    except Exception as e:  # noqa: BLE001 -- recorded, then re-raised for the exit code'),
+ ('ops37_failed_audit_not_relayed', 'scripts/run_scheduled_health_check.py', '    if returncode == 0:\n        logger.info(f"filter drift audit exit 0: {tail}")', '    if True:\n        logger.info(f"filter drift audit exit 0: {tail}")'),
+ ('ops37_no_timeout', 'scripts/run_scheduled_health_check.py', '                                timeout=FILTER_AUDIT_TIMEOUT_S)', '                                )'),
+ ('ops18_alert_never_sent', 'scripts/audit_filter_drift.py', '        if found:\n            sys.path.insert', '        if False:\n            sys.path.insert'),
+ # OPS-36 (#209)
+ ('ops36_repeats_while_down', 'scripts/db_liveness.py', '    if state.get("status") != "down" and failures >= FAILS_BEFORE_ALERT:', '    if failures >= FAILS_BEFORE_ALERT:'),
+ ('ops36_no_deadline', 'scripts/db_liveness.py', '    worker.join(deadline_s)', '    worker.join()'),
+ ('ops36_recovery_silent', 'scripts/db_liveness.py', '        if state.get("status") == "down":', '        if False:'),
 ]
 only = sys.argv[1:]
 env = dict(os.environ, VECTOR_DB_NAME_L1=os.path.join(SCRATCH, "NOPE_L1"),

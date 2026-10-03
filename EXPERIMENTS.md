@@ -133,6 +133,7 @@ One line each; read this before starting on a scraper or pipeline problem.
 - **The encoder revision is recorded, not assumed (SYS-61, 2026-09-28).** `refs/main` moves on any online load by Hub id. The probe sidecar's `embedding_revision` and each FAISS pair's `encoder.json` are compared at start-up. To learn what a legacy artifact was built with, re-embed a sample and compare it with the stored vectors (`scripts/experiments/probe_encoder_revision.py`). → same entry
 - **A mutant runner that restores files by copy can keep running a mutant.** A same-length edit restored within the same second leaves the mutant's `.pyc` valid (mtime and size match), so later runs import the mutant. Restore with `git checkout`, or set `PYTHONDONTWRITEBYTECODE=1` and clear `__pycache__`. Tell-tale: one unrelated test "kills" every mutant after a certain point. → entry 2026-10-03 "QA audit of HANDOFF_2026-09-29"
 - **`requests_page_loader` retries without backoff (SYS-66 #213, open):** "ConnectionError after 5 retries" can be six attempts in milliseconds, and each one parks a good article for the 7-day cooldown. Don't read that reason as "the host is down". → same entry
+- **"ConnectionError after N retries" on PIKIRANRAKYAT's regional brand hosts is dead DNS, not a refusal** (2026-10-03). Check `socket.gaierror` in the cause chain (the loader now reports `NameResolutionError after N retries`) before treating a burst as a rate limit. A breaker that counts dead hosts stops the source on the same rows forever. → entry 2026-10-03 "SYS-66/SYS-70: bot User-Agent…"
 ---
 
 ## Log
@@ -1700,3 +1701,23 @@ SINDONEWS   old 12 new 12 | lost [] | gained []   links identical: True
   - `rss.tempo.co` is no workaround: it's stale and its links hit the block.
   - Do not rotate IPs or proxies around a ban.
 - **Links:** SRC-56 (#205), SRC-03 (#14) precedent, SRC-57 (#206) / SYS-66 (#213) pacing
+
+### 2026-10-03 — SYS-66/SYS-70: bot User-Agent across the fleet, fetch share of run time, and PIKIRANRAKYAT's "refusal burst" was dead DNS
+- **Question / hypothesis:**
+  - Can the crawler identify itself honestly without losing sources?
+  - How much per-source concurrency can it give up within the 1,200 s kill?
+  - Was PIKIRANRAKYAT's 727/896 `ConnectionError` burst (2026-09-29) a host refusing us, as SYS-66 assumed?
+- **Method:**
+  - `scripts/experiments/probe_bot_ua.py` (new, read-only, sequential, 1 s pauses): each source's sitemap index and its newest saved article with the old browser UA vs `NewsAggregatorBot/1.0`, plus `robots.txt` (`Crawl-delay`, `can_fetch`).
+  - Fetch share from the 2026-10-01..03 run logs ("Processing batch" → "Batch N has X articles extracted" vs the `[full_text]` seconds).
+  - `nslookup` + `curl` on 4 PIKIRANRAKYAT hosts, and the `requests` exception chain for a dead host vs a refused port.
+- **Result:**
+  - **Bot UA:** refused (403) by BERITASATU (index + article), INVESTORID (index + article) and TRIBUN (article only). Served by the other 23 working sources; BISNIS and TEMPO are 403 to both UAs. **No source sets `Crawl-delay`; `robots.txt` allows every index and article.** After the change, `check_crawlers.py` over the fleet gives OK = 27, FALLBACK = 0 (bot UA + browser UA for the three).
+  - **Fetch share at 20 threads:** VIVA 418 of 794 s, MEDIAINDONESIA 478 of 705 s (serial already), JPNN 115 of 180 s, DETIK 136 of 583 s, all others < 40 s. A fleet cap of 2–4 would push VIVA/DETIK past the 1,200 s kill, so the owner chose to keep throughput and pace only where measured.
+  - **PIKIRANRAKYAT:** `jurnalgarut.`, `kendalku.`, `portalbangkabelitung.`, `utaratimes.pikiran-rakyat.com` do **not resolve** (curl exit 6, no DNS answer). The 989 parked rows are on retired regional brand subdomains (13 in the top 15 hosts by count), newest row id 35,577 (June residue, no longer listed). A dead host raises `ConnectionError → MaxRetryError → NewConnectionError → socket.gaierror`; a refused port has `ConnectionRefusedError` there instead.
+- **Conclusion / do not repeat:**
+  1. Not a refusal burst. SYS-66's ticket text was wrong on this point. Those rows are dead URLs, and SYS-62's repeat rule striking and retiring them is correct.
+  2. Counting every `ConnectionError` in SRC-55's breaker would have **starved PIKIRANRAKYAT for good**: 10 dead-host rows in a row on every run, never stamped. The loader now names the dead-host case `NameResolutionError after N retries`, and the breaker ignores it.
+  3. Do not switch to a fleet-wide bot UA without `BROWSER_UA_HOSTS`, and do not cap concurrency fleet-wide without per-source timeouts measured first.
+  4. Retries with backoff need `REQUEST_MAX_RETRIES` ≤ 3: `.env` had 5, which is ~23 s per dead-host URL.
+- **Links:** SYS-66 (#213), SYS-70 (#218), SRC-57 (#206) · `scripts/experiments/probe_bot_ua.py` · commit e9840d2
