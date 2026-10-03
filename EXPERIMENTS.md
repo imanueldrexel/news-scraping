@@ -1685,3 +1685,18 @@ SINDONEWS   old 12 new 12 | lost [] | gained []   links identical: True
   2. A Done-when bar that a sampling design can't reach (OPS-18's per-cell n ≥ 20 with ~7 rows per source) is dead code. Measure the reachable n on production before accepting the threshold.
   3. Dev's SYS-38 70% gate: QA accepted on evidence. LIPUTAN6's 18 re-rejects were 16 clear soft and 2 arguable, all caught by the body pass.
 - **Links:** closed SRC-55 #201, OPS-34 #202, SRC-32 #117, DBT-27 #88, DBT-21 #72, SRC-10 #65, DBT-16 #51, DBT-02 #21, DBT-05 #24, SRC-19/20/22/23/24/26 #99–#106, DBT-49 #203, OPS-19 #132, SYS-51 #170, SYS-48 #144, SYS-38 #122, SYS-54 #185. Sent back: OPS-18 #123. Held: SYS-20 #41 (no extraction run since 2026-06-02), SYS-40 #126 (owner read + SRC-34). New: #204–#214.
+
+### 2026-10-03 — SRC-56: TEMPO block probed; a firewall/IP block page, not BISNIS's JS challenge; rss.tempo.co is stale
+- **Question / hypothesis:** Is TEMPO's 403 (since the 2026-09-30 19:00 run) the BISNIS-style Cloudflare challenge, or something narrower, and is there an unblocked listing? (The owner decided not to retire TEMPO.)
+- **Method:** `curl -L -A "<Chrome 129 UA>" -H "Accept-Language: id-ID"` on www.tempo.co's `/sitemap.xml`, `/sitemap-news.xml`, `/news-sitemap.xml`, `/rss`, `/feed`, `/amp` and homepage, on a stored article URL, on `nasional.`, `koran.`, `rss.`, `en.tempo.co`. Then `chrome.exe --headless=new --virtual-time-budget=15000 --dump-dom https://www.tempo.co/`. About 15 requests in total.
+- **Result:**
+  - Every www path, articles included, gives **403** with a 5,481 B `Attention Required! | Cloudflare` page ("Why have I been blocked?…"), and **no `cf-mitigated` header**. Real headless Chrome gets the same page.
+  - `nasional.`/`koran.` redirect into the block.
+  - `rss.tempo.co` gives 200, but the feed is stale (newest item 2026-09-27, 50 items), summary-only, and its links redirect into the block.
+  - `en.tempo.co` gives 200, but it's the English edition (out of scope).
+- **Conclusion / do not repeat:**
+  - This is not BISNIS's managed challenge (`cf-mitigated: challenge`, "Just a moment…"). A block page shown to a real browser engine fits a **firewall/IP rule**, plausibly against this network after weeks of twice-daily parallel fetching.
+  - Decisive next test (owner): a normal browser on this network vs a phone on mobile data.
+  - `rss.tempo.co` is no workaround: it's stale and its links hit the block.
+  - Do not rotate IPs or proxies around a ban.
+- **Links:** SRC-56 (#205), SRC-03 (#14) precedent, SRC-57 (#206) / SYS-66 (#213) pacing
