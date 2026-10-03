@@ -30,6 +30,16 @@ def _load():
 
 
 rc = _load()
+# The real exclusion list, read before any test isolates itself from it.
+REAL_EXCLUDED = dict(rc.DEFAULT_EXCLUDED)
+
+
+@pytest.fixture(autouse=True)
+def _no_default_exclusions(monkeypatch):
+    """The run-loop tests use real source names (TEMPO, CNBC, ...) as stand-ins;
+    which sources the owner has paused must not change what they test. Tests of
+    the exclusion list itself read REAL_EXCLUDED."""
+    monkeypatch.setattr(rc, "DEFAULT_EXCLUDED", {})
 
 HEALTHY = ["ANTARANEWS", "CNBC", "KOMPAS", "VIVA", "WARTAEKONOMI"]
 
@@ -62,8 +72,15 @@ class TestScheduledSources:
         assert sources == ["KOMPAS", "CNBC"]
 
     def test_the_exclusion_list_is_documented_per_source(self):
-        for name, why in rc.DEFAULT_EXCLUDED.items():
+        for name, why in REAL_EXCLUDED.items():
             assert "#" in why, "every exclusion cites the ticket that justifies it: %s" % name
+
+    def test_tempo_is_paused_under_src56(self, monkeypatch):
+        """Owner decision 2026-10-03: TEMPO (Cloudflare fingerprint block) is
+        paused, not retired, until Tempo grants access."""
+        monkeypatch.setattr(rc, "DEFAULT_EXCLUDED", REAL_EXCLUDED)
+        sources, skipped = rc._scheduled_sources(["KOMPAS", "TEMPO"])
+        assert sources == ["KOMPAS"] and "#205" in skipped["TEMPO"]
 
 
 class TestFullTextSelection:

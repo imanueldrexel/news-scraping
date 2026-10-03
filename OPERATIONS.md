@@ -162,6 +162,8 @@ Last run 2026-09-25 on `newsaggregator_20260925T140752Z.dump`: `pg_restore` rc 0
 
 ### Scheduled crawl (OPS-19) — registered 2026-09-25
 
+**Paused sources** (`DEFAULT_EXCLUDED` in `scripts/run_scheduled_crawl.py`, each against an open ticket; `--website` cannot bring one back in): **TEMPO**, since 2026-10-03 (SRC-56 #205: Cloudflare blocks automated clients by fingerprint; real browsers get in). It comes back when Tempo grants access. The 05:30 health check keeps sampling it.
+
 Two Task Scheduler jobs, **"NewsAggregator Scheduled Crawl (morning)"** (07:00) and **"(evening)"** (19:00), both running `venv\Scripts\python.exe scripts\run_scheduled_crawl.py` with the repo as the working directory. Settings: runs on battery and doesn't stop on battery, StartWhenAvailable, WakeToRun, a 4 h ExecutionTimeLimit, and `MultipleInstances=IgnoreNew`, so a slow morning run never overlaps the evening one. Inspect with `Get-ScheduledTask -TaskName "NewsAggregator*" | Get-ScheduledTaskInfo`. Verified the same night through a temporary task (`--website ERAID --phase sitemap`): LastTaskResult 0, crawl_log row 628 `completed` (+7), no leftover worker. Schedule on that date: 27 sources (HEALTHY minus VIVA; GRIDID retired). Pause it with `Disable-ScheduledTask -TaskName "NewsAggregator Scheduled Crawl (morning)"` (and evening).
 
 `scripts/run_scheduled_crawl.py` is the scheduled entry point for the crawl itself. Two phases, in this order: `task=sitemap` for every scheduled source, then `task=full_text` for `SCHEDULE_FULL_TEXT_WEBSITES`. Listing first for everyone, so a slow source's fetch phase cannot delay another source's listing.

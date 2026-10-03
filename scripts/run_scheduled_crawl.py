@@ -110,7 +110,13 @@ logger.setLevel(logging.INFO)
 # A source goes here only against an open ticket, with the ticket in the reason,
 # and comes out when that ticket lands. VIVA was here until SRC-33 (#119) landed
 # on 2026-09-26 (URL-keyed branches fixed, soft leaves denied, backlog settled).
-DEFAULT_EXCLUDED = {}
+DEFAULT_EXCLUDED = {
+    # Owner decision 2026-10-03: paused, not retired (a key politics source).
+    # The 05:30 health check still samples TEMPO and reports RECOVERED if the
+    # block lifts.
+    "TEMPO": "SRC-56 (#205): Cloudflare blocks automated clients by fingerprint since 2026-09-30 "
+             "(real browsers on this network get in); paused until Tempo grants access",
+}
 
 # OPS-28 (2026-09-28): the timeout catches a hung source; it must not trim a
 # healthy one. The five sources that hit the 1,000-row cap every run
