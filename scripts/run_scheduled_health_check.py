@@ -86,6 +86,9 @@ MISSED_RUN_GAP_HOURS = 36
 # weekday (0 = Monday; -1 disables it). It alerts on its own; its failure never
 # changes this job's exit code, which is about the crawlers.
 FILTER_AUDIT_WEEKDAY = int(os.getenv("FILTER_AUDIT_WEEKDAY", 0))
+# OPS-37 (#210): the audit makes up to FILTER_AUDIT_MAX_CALLS LLM calls; a hung
+# one must not hang the health-check job.
+FILTER_AUDIT_TIMEOUT_S = int(os.getenv("FILTER_AUDIT_TIMEOUT_S", 1800))
 
 
 def filter_audit_due(today) -> bool:
@@ -93,12 +96,26 @@ def filter_audit_due(today) -> bool:
 
 
 def run_filter_audit() -> int:
-    result = subprocess.run([sys.executable, os.path.join(SCRIPTS_DIR, "audit_filter_drift.py")],
-                            cwd=REPO_ROOT, capture_output=True, encoding="utf-8", errors="replace")
-    tail = " | ".join(((result.stdout or "") + (result.stderr or "")).strip().splitlines()[-5:])
-    log = logger.info if result.returncode == 0 else logger.error
-    log(f"filter drift audit exit {result.returncode}: {tail}")
-    return result.returncode
+    """Run the audit; a failed one (non-zero exit, or no exit within
+    FILTER_AUDIT_TIMEOUT_S) is an ERROR and, since OPS-37 (#210), one Telegram
+    alert through the outbox. The audit alerts on drift itself; this is the
+    alert that it could not measure, which used to look like a quiet week."""
+    try:
+        result = subprocess.run([sys.executable, os.path.join(SCRIPTS_DIR, "audit_filter_drift.py")],
+                                cwd=REPO_ROOT, capture_output=True, encoding="utf-8", errors="replace",
+                                timeout=FILTER_AUDIT_TIMEOUT_S)
+        returncode, output = result.returncode, (result.stdout or "") + (result.stderr or "")
+    except subprocess.TimeoutExpired:
+        returncode, output = -1, f"no exit within FILTER_AUDIT_TIMEOUT_S={FILTER_AUDIT_TIMEOUT_S}s"
+    tail = " | ".join(output.strip().splitlines()[-5:])
+    if returncode == 0:
+        logger.info(f"filter drift audit exit 0: {tail}")
+        return 0
+    logger.error(f"filter drift audit exit {returncode}: {tail}")
+    from notify_telegram import send
+    send(f"🔎 Filter drift audit (OPS-18) FAILED, exit {returncode}: nothing was measured this week. "
+         f"{tail[-600:]}")
+    return returncode
 
 
 def _hours_since_last_health_check():

@@ -63,6 +63,10 @@ MIN_AGREEMENT = {"saved": float(os.getenv("AUDIT_MIN_AGREEMENT_SAVED", 0.80)),
                  "rejected": float(os.getenv("AUDIT_MIN_AGREEMENT_REJECTED", 0.70))}
 CELL_MIN_N = int(os.getenv("AUDIT_CELL_MIN_N", 20))
 CELL_MIN_AGREEMENT = float(os.getenv("AUDIT_CELL_MIN_AGREEMENT", 0.80))
+# OPS-37 (#210): a side judged on fewer than this share of its sample is a
+# failed audit, not a quiet week. A labeller that answers nothing usable used to
+# give n=0, agreement None, no alert, and a `completed` crawl_log row.
+MIN_JUDGED_SHARE = float(os.getenv("AUDIT_MIN_JUDGED_SHARE", 0.5))
 BODY_CHARS = 500
 
 _DECISIONS_SQL = text("""
@@ -121,6 +125,19 @@ def agreement(judged):
                             if topic_rows else None),
         "cells": {f"{s}/{c}": {"n": len(rs), "agreement": rate(rs)} for (s, c), rs in cells.items()},
     }
+
+
+def judged_shortfall(sample, judged):
+    """OPS-37: why the judged rows cannot stand for the sample, or None. Each
+    side (saved / rejected) that was sampled must have at least
+    MIN_JUDGED_SHARE of its rows judged."""
+    problems = []
+    for side, live in (("saved", True), ("rejected", False)):
+        n_sampled = sum(1 for r in sample if r["live_news"] is live)
+        n_judged = sum(1 for r in judged if r["live_news"] is live)
+        if n_sampled and n_judged < MIN_JUDGED_SHARE * n_sampled:
+            problems.append(f"judged only {n_judged} of {n_sampled} {side} rows")
+    return "; ".join(problems) or None
 
 
 def alerts(summary, previous=None):
@@ -234,6 +251,13 @@ def main(argv=None) -> int:
         lfg = labeller_module()
         labeller, model = lfg.make_labeller(args.provider)
         judged, calls = judge(lfg, labeller, sample)
+        shortfall = judged_shortfall(sample, judged)
+        if shortfall:
+            # OPS-37: an audit that could not judge its sample measured nothing.
+            msg = f"drift audit incomplete ({calls} labeller call(s)): {shortfall}"
+            logger.error(msg)
+            log_ds.log_crawl_failed(log_id, msg[:1000])
+            return 1
         summary = agreement(judged)
         found = alerts(summary, previous_report(today))
         report = {"date": today, "model": model, "calls": calls, "summary": summary,
@@ -255,7 +279,9 @@ def main(argv=None) -> int:
             from notify_telegram import send
             send(alert_message(summary, found, judged))
         return 0
-    except Exception as e:  # noqa: BLE001 -- recorded, then re-raised for the exit code
+    except BaseException as e:  # noqa: BLE001 -- recorded, then re-raised for the exit code
+        # OPS-37: BaseException, because make_labeller raises SystemExit for a
+        # missing key; `except Exception` let it past and the row stayed `started`.
         log_ds.log_crawl_failed(log_id, f"{type(e).__name__}: {e}"[:1000])
         raise
 
