@@ -135,7 +135,10 @@ def _parse_timeouts(raw):
 # serially and takes 880-947 s on a normal run (queue 11,460), so it keeps the
 # same burst allowance above that. A row cap instead would make its backlog
 # permanent. The budget check uses the source's own timeout.
-SOURCE_TIMEOUTS = _parse_timeouts(os.getenv("SCHEDULE_SOURCE_TIMEOUTS", "MEDIAINDONESIA=1500"))
+# SYS-70 (#218): KUMPARAN is paced at ~1 request/s (HOST_MIN_INTERVAL_S), so a
+# full 1,000-row queue takes ~1,000-1,300 s of fetching where SRC-55's breaker
+# used to stop it after ~120. 1,800 s keeps that plus a burst under the kill.
+SOURCE_TIMEOUTS = _parse_timeouts(os.getenv("SCHEDULE_SOURCE_TIMEOUTS", "MEDIAINDONESIA=1500,KUMPARAN=1800"))
 # OPS-19 proposal 5: a source that lists rows but saves nothing for this many
 # consecutive full_text runs is the new "needs attention".
 ZERO_SAVE_RUNS_BEFORE_ALERT = int(os.getenv("SCHEDULE_ZERO_SAVE_RUNS", "3"))

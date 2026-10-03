@@ -16,9 +16,18 @@ are "throttled", not facts about their URLs. The service leaves both sets
 untouched: no strike, no last_fetch_error, no cooldown stamp.
 
 "In a row" is in completion order across the worker threads. Any other
-outcome (a served page, a 404, a timeout, an extractor exception) breaks the
-streak, so one dead article answering 403 among served pages never trips it.
+outcome (a served page, a 404, a 5xx, a dead host, an extractor exception)
+breaks the streak, so one dead article answering 403 among served pages never
+trips it.
+
+SYS-66 (#213): a host that stops accepting connections or stops answering is
+the same wall one layer down, so `ConnectionError`/`ReadTimeout` that survived
+the page loader's backed-off retries count too. A host that does not resolve
+(`NameResolutionError after N retries`) does not: that is a fact about the
+URL's host (PIKIRANRAKYAT's retired regional brands), and counting it would
+stop the source on the same dead rows every run, forever.
 """
+import re
 import threading
 from typing import Optional, Set
 
@@ -26,6 +35,16 @@ from typing import Optional, Set
 # out on purpose: VIVA's 502s are scattered over every batch (~12%), not a
 # wall, and SYS-62 already handles them per URL.
 THROTTLE_REASONS = frozenset({"HTTP 403", "HTTP 429"})
+
+# SYS-66: transport failures that mean "this host is refusing or not answering
+# us", as the page loader names them after its retries. NameResolutionError is
+# deliberately absent (see the module docstring).
+_REFUSAL_AFTER_RETRIES = re.compile(r"^(ConnectionError|ConnectTimeout|ReadTimeout|Timeout) after \d+ retries$")
+
+
+def is_throttle_reason(reason: Optional[str]) -> bool:
+    """True when `reason` says the source, not the URL, turned us away."""
+    return reason in THROTTLE_REASONS or bool(reason and _REFUSAL_AFTER_RETRIES.match(reason))
 
 # The reason a skipped row carries in NewsDetailsBatch.failures. The service
 # recognises it by this constant, never by parsing the text.
@@ -66,7 +85,7 @@ class ThrottleGuard:
         """One finished fetch. `reason` is the failure reason the page loader
         or extractor gave, None for success."""
         with self._lock:
-            is_throttle = reason in THROTTLE_REASONS
+            is_throttle = is_throttle_reason(reason)
             if self._tripped:
                 if is_throttle:
                     self._throttled.add(sitemap_id)

@@ -7,7 +7,32 @@ VERBOSE = os.getenv("VERBOSE", "False") == "True"
 # VERBOSE = False
 # PARALLELIZE = os.getenv("PARALLELIZE", "False") == "True"
 PARALLELIZE = True
-REQUEST_MAX_RETRIES = int(os.getenv("REQUEST_MAX_RETRIES", 5))
+# SYS-66 (#213): retries of a connection error / read timeout, with exponential
+# backoff and jitter between them (base * 2**n, capped). Five immediate retries
+# used to fail in milliseconds ("after 5 retries" in 0.1 s), so a sub-second
+# blip parked good articles for the 7-day cooldown.
+REQUEST_MAX_RETRIES = int(os.getenv("REQUEST_MAX_RETRIES", 3))
+REQUEST_RETRY_BACKOFF_S = float(os.getenv("REQUEST_RETRY_BACKOFF_S", 1.0))
+REQUEST_RETRY_BACKOFF_MAX_S = float(os.getenv("REQUEST_RETRY_BACKOFF_MAX_S", 8.0))
+# SYS-70 (#218): a 429/503 with a Retry-After at most this long is waited out
+# once (the whole host pauses, not just the one request).
+REQUEST_RETRY_AFTER_MAX_S = float(os.getenv("REQUEST_RETRY_AFTER_MAX_S", 60.0))
+# SYS-70: the crawler says what it is. CRAWLER_CONTACT (a URL or mailto:) is
+# appended as "(+contact)" when set. Owner decision 2026-10-03: no contact yet.
+CRAWLER_USER_AGENT = os.getenv("CRAWLER_USER_AGENT", "NewsAggregatorBot/1.0")
+CRAWLER_CONTACT = os.getenv("CRAWLER_CONTACT", "").strip()
+# SYS-70: hosts (suffix match) that answer 403 to the bot UA and are served the
+# browser UA instead. Measured 2026-10-03 (scripts/experiments/probe_bot_ua.py):
+# BERITASATU and INVESTORID refuse it on index and articles, TRIBUN on articles;
+# the other 23 working sources serve it. Owner decision 2026-10-03.
+BROWSER_UA_HOSTS = os.getenv("BROWSER_UA_HOSTS", "beritasatu.com,investor.id,tribunnews.com")
+# SYS-70: per-host politeness, "host=value,..." (suffix match: kumparan.com
+# covers m.kumparan.com). Minimum seconds between request starts to one host,
+# and the most requests in flight to it at once. Owner decision 2026-10-03:
+# keep throughput, pace only where measured. KUMPARAN walls off after ~110-130
+# fast requests and served 250 paced at ~1 req/s without one 403 (SRC-55 probe).
+HOST_MIN_INTERVAL_S = os.getenv("HOST_MIN_INTERVAL_S", "kumparan.com=1.0")
+HOST_MAX_CONCURRENCY = os.getenv("HOST_MAX_CONCURRENCY", "")
 SITEMAP_RECRAWL_COOLDOWN_DAYS = int(os.getenv("SITEMAP_RECRAWL_COOLDOWN_DAYS", 7))
 # SYS-09: a sitemap whose URL fails to fetch/extract this many times in a row (not
 # necessarily consecutive runs -- any run that doesn't produce a NewsDetailsDTO for

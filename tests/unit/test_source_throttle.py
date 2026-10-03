@@ -37,7 +37,7 @@ class TestThrottleGuard:
         assert g.fetches_before_trip == 3
         assert g.trip_reason == "HTTP 403"
 
-    @pytest.mark.parametrize("breaker", [None, "HTTP 404", "HTTP 502", "ReadTimeout after 5 retries",
+    @pytest.mark.parametrize("breaker", [None, "HTTP 404", "HTTP 502", "NameResolutionError after 3 retries",
                                          "AttributeError: x"])
     def test_any_other_outcome_breaks_the_streak(self, breaker):
         """A single dead article answering 403 between served pages is a fact
@@ -58,6 +58,32 @@ class TestThrottleGuard:
         g.record(3, "HTTP 403")   # was already in flight
         g.record(4, None)          # an in-flight success is simply a success
         assert g.throttled_ids == {1, 2, 3}
+
+    @pytest.mark.parametrize("reason", ["ConnectionError after 3 retries", "ReadTimeout after 3 retries",
+                                        "ConnectTimeout after 5 retries"])
+    def test_a_refusing_host_trips_like_a_403_wall(self, reason):
+        """SYS-66 (#213): a host that stops accepting connections or answering,
+        after the loader's backed-off retries, is a wall one layer down."""
+        g = ThrottleGuard(3)
+        for i in range(1, 4):
+            g.record(i, reason)
+        assert g.tripped and g.trip_reason == reason
+
+    def test_403_and_refusals_make_one_streak(self):
+        g = ThrottleGuard(3)
+        g.record(1, "HTTP 403")
+        g.record(2, "ConnectionError after 3 retries")
+        g.record(3, "HTTP 429")
+        assert g.tripped
+
+    def test_a_host_that_does_not_resolve_never_trips(self):
+        """SYS-66: PIKIRANRAKYAT's retired regional brands do not resolve. Those
+        rows are facts about their URLs; if they tripped the guard, the source
+        would stop on the same unstamped rows at the head of its queue every run."""
+        g = ThrottleGuard(3)
+        for i in range(1, 30):
+            g.record(i, "NameResolutionError after 3 retries")
+        assert not g.tripped
 
     def test_rejects_a_non_positive_limit(self):
         with pytest.raises(ValueError):
@@ -268,3 +294,34 @@ class TestCrawlerSkipsAfterTheTrip:
         batch = _Crawler(loader).batch_crawling_details(_sitemaps(5), "KUMPARAN")
         assert loader.calls == 5
         assert set(batch.failures.values()) == {"HTTP 403"}
+
+
+@patch("newscrawler.domain.services.crawler_service_impl.SOURCE_THROTTLE_STREAK", STREAK)
+class TestRefusalsAndDeadHosts:
+    def test_a_connection_wall_stops_the_run_and_leaves_the_rows_untouched(self):
+        """SYS-66: the SRC-55 contract, for a host that refuses connections."""
+        loader = _WallLoader(served=12, status="ConnectionError after 3 retries")
+        svc = _service(_Crawler(loader), _sitemaps(50))
+
+        svc.crawl_newsdetails("KUMPARAN")
+
+        repo = svc.data_flow_repo
+        assert loader.calls == 22
+        repo.increment_fetch_failures.assert_not_called()
+        repo.record_fetch_error.assert_not_called()
+        note = repo.log_crawl_complete.call_args.kwargs["note"]
+        assert note.startswith("throttled (SRC-55): 10 x ConnectionError after 3 retries in a row"), note
+
+    def test_dead_hosts_never_stop_the_run(self):
+        """SYS-66: every row on a host that does not resolve is fetched and goes
+        to SYS-62 (first transient failure: recorded, cooldown-stamped), so the
+        dead rows leave the head of the queue and retire on the repeat rule."""
+        loader = _WallLoader(served=5, status="NameResolutionError after 3 retries")
+        svc = _service(_Crawler(loader), _sitemaps(40))
+
+        svc.crawl_newsdetails("KUMPARAN")
+
+        assert loader.calls == 40, "a dead host must not trip SRC-55's guard"
+        assert sorted(_ids(svc.data_flow_repo.record_fetch_error)) == list(range(6, 41))
+        note = svc.data_flow_repo.log_crawl_complete.call_args.kwargs["note"]
+        assert "SRC-55" not in note, note
