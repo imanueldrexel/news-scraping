@@ -21,3 +21,30 @@ def _no_real_backoff_sleep(monkeypatch):
     monkeypatch.setattr(requests_page_loader, "_sleep", lambda seconds: None)
     # SYS-64: the FAISS rename retry's backoff, likewise.
     monkeypatch.setattr(index_generation, "_sleep", lambda seconds: None)
+
+
+@pytest.fixture(autouse=True)
+def _no_real_database_or_telegram(monkeypatch, tmp_path):
+    """DBT-53 (#226): a unit test may not reach a database or Telegram. The default
+    POSTGRES_DB_* point at production, so a test that exercises a script whose guard
+    is broken (a mutant, a refactor) used to run it for real: the OPS-38 mutation run
+    rewrote the 2026-10-04 digest row at 17:44. Every connection now fails loudly;
+    the integration suite (which forces newsaggregator_test) is where Postgres is used.
+    A test that needs a connection patches psycopg2.connect itself, after this."""
+    import psycopg2
+
+    def refuse(*args, **kwargs):
+        raise AssertionError("unit tests may not reach a database: patch the client or move the test to "
+                             "tests/integration (DBT-53)")
+    monkeypatch.setattr(psycopg2, "connect", refuse)
+
+    import newscrawler.core.constants as constants
+    monkeypatch.setattr(constants, "TELEGRAM_BOT_TOKEN", "")
+    monkeypatch.setattr(constants, "TELEGRAM_CHAT_ID", "")
+    monkeypatch.setenv("TELEGRAM_OUTBOX", str(tmp_path / "telegram_outbox.jsonl"))
+    import sys
+    notifier = sys.modules.get("notify_telegram")
+    if notifier is not None:
+        monkeypatch.setattr(notifier, "TELEGRAM_BOT_TOKEN", "", raising=False)
+        monkeypatch.setattr(notifier, "TELEGRAM_CHAT_ID", "", raising=False)
+        monkeypatch.setattr(notifier, "OUTBOX_PATH", str(tmp_path / "telegram_outbox.jsonl"), raising=False)

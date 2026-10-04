@@ -273,7 +273,12 @@ class TestRunStopsAtTheWall:
 
         repo = svc.data_flow_repo
         assert 22 <= loader.calls <= 22 + crawler.max_worker
-        assert sorted(_ids(repo.mark_sitemaps_attempted)) == list(range(1, 13))
+        # Which ids the 12 served calls belong to depends on thread scheduling (DBT-54): the
+        # requirement is that exactly the 12 served rows were attempted, all from the part of
+        # the queue a worker pool could have reached before the trip, and nothing was struck.
+        attempted = _ids(repo.mark_sitemaps_attempted)
+        assert len(attempted) == 12 and len(set(attempted)) == 12
+        assert max(attempted) <= 22 + crawler.max_worker
         repo.increment_fetch_failures.assert_not_called()
         repo.record_fetch_error.assert_not_called()
 

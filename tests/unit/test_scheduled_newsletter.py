@@ -69,11 +69,14 @@ class TestScript:
         assert script.default_date(date(2026, 10, 4)) == date(2026, 10, 3)
         assert script.default_date(date(2026, 3, 1)) == date(2026, 2, 28)
 
-    def test_today_and_the_future_are_refused(self, script):
+    def test_today_and_the_future_are_refused(self, script, monkeypatch):
+        # a broken guard must fail this test, not run the script (DBT-53)
+        monkeypatch.setattr(script, "_run", lambda *a: pytest.fail("ran for a date that is not a finished day"))
         assert script.main(["--date", date.today().isoformat()]) == 1
         assert script.main(["--date", (date.today() + timedelta(days=1)).isoformat()]) == 1
 
-    def test_a_malformed_date_is_refused(self, script):
+    def test_a_malformed_date_is_refused(self, script, monkeypatch):
+        monkeypatch.setattr(script, "_run", lambda *a: pytest.fail("ran for a malformed date"))
         assert script.main(["--date", "yesterday"]) == 1
 
     def test_dry_run_builds_nothing(self, script):
