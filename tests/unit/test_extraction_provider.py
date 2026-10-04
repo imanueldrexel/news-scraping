@@ -135,6 +135,22 @@ class TestGeminiProvider:
         with pytest.raises(ProviderTransientError, match="503"):
             GeminiProvider("m", "k", client=client).complete("p")
 
+    def test_a_per_day_quota_error_is_a_quota_stop(self):
+        """OPS-20: the free tier's daily cap. The run stops instead of failing every remaining article."""
+        client = MagicMock()
+        client.models.generate_content.side_effect = RuntimeError(
+            "429 RESOURCE_EXHAUSTED quotaId: GenerateRequestsPerDayPerProjectPerModel-FreeTier")
+        with pytest.raises(ProviderQuotaExhausted) as raised:
+            GeminiProvider("m", "k", client=client).complete("p")
+        assert raised.value.quota == "GenerateRequestsPerDayPerProjectPerModel-FreeTier"
+
+    def test_a_per_minute_429_is_only_transient(self):
+        client = MagicMock()
+        client.models.generate_content.side_effect = RuntimeError("429 RESOURCE_EXHAUSTED quotaId: PerMinute")
+        with pytest.raises(ProviderTransientError) as raised:
+            GeminiProvider("m", "k", client=client).complete("p")
+        assert not isinstance(raised.value, ProviderQuotaExhausted)
+
     def test_it_is_not_priced(self):
         assert GeminiProvider("m", "k", client=MagicMock()).priced is False
 

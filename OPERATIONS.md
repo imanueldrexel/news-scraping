@@ -23,7 +23,14 @@
 | `NEWSLETTER_MAX_CONSECUTIVE_SUMMARY_ERRORS` | `5` | SYS-68: this many failed summary calls in a row stop the calls (an outage); a quota 429 stops them at once. The clusters left show their headlines and the footer says how many |
 | `NEWSLETTER_SUMMARY_TIMEOUT_S` / `NEWSLETTER_SUMMARY_MAX_TOKENS` | `60` / `600` | SYS-68: per-call timeout and output bound of the OpenAI-compatible summarizer |
 | `NEWSLETTER_MAX_CLUSTERS_PER_STORY` | `2` | SYS-67: a section shows at most this many clusters of one story (a scandal covered from many angles used to fill 5 of 8 slots). The summarizer is asked once per section — before the summaries — which of the section's best 2× `NEWSLETTER_MAX_CLUSTERS_PER_TOPIC` clusters are the same story; the rest join "…dan N berita lainnya". `0` turns it off. A failed grouping shows that section as ranked and the footer says `pengelompokan cerita gagal di N bagian` |
-| `KNOWLEDGE_BATCH_SIZE` | `50` | Articles per extraction run |
+| `KNOWLEDGE_LLM_PROVIDER` | empty (= `gemini`) | SYS-39 (#125, ADR-003): `openai` extracts on the OpenAI-compatible endpoint (SumoPod DeepSeek, `OPENAI_*`), `gemini` on Gemini. Empty keeps Gemini: the switch spends money, so it is made on purpose after the bake-off |
+| `KNOWLEDGE_BATCH_SIZE` | `50` | Pending articles one extraction query fetches. A run keeps fetching until the queue is empty (it used to be the whole run) |
+| `KNOWLEDGE_MAX_PER_RUN` | `6000` | Articles one `task=extract_knowledge` run may try (a normal day is ~4,000) |
+| `KNOWLEDGE_DAILY_COST_LIMIT_USD` | `5.0` | Priced provider: the run stops before the next call once the day's `api_usage_log.cost_usd` for the model reaches this. A normal day is ~$1.3 off-peak, so this is a runaway guard; raise it for the one backlog run (~$27) |
+| `KNOWLEDGE_MAX_CONSECUTIVE_ERRORS` | `5` | Failed calls in a row after which the run stops (the provider is down) |
+| `KNOWLEDGE_ALLOW_PEAK` | unset | `true` lets a run start or continue inside SumoPod's peak window (UTC weekdays 01:00-04:00 and 06:00-10:00, double price) |
+| `KNOWLEDGE_PRICE_INPUT_OFFPEAK` / `_PEAK`, `KNOWLEDGE_PRICE_OUTPUT_OFFPEAK` / `_PEAK` | `0.15` / `0.30`, `0.60` / `1.20` | USD per 1M tokens (owner, 2026-10-04); update when the price list changes |
+| `KNOWLEDGE_REQUEST_TIMEOUT_S` | `60` | Per-call timeout of the OpenAI-compatible provider |
 | `EMBEDDING_MODEL_HF` | `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` | Embedding model |
 | `VECTOR_DB_NAME_L1` | `NEWS_L1` | FAISS L1 index directory |
 | `VECTOR_DB_NAME_L2` | `NEWS_L2` | FAISS L2 index directory |
@@ -84,7 +91,9 @@ lambda_handler.process_event({"task": "all", "website": "BISNIS,KOMPAS,CNBC"}, N
 ```python
 lambda_handler.process_event({"task": "extract_knowledge"}, None)
 ```
-Processes up to 50 unextracted articles per run. Safe to run repeatedly.
+Extracts pending articles, finance topics first (then newest), until the queue is empty or a stop condition fires (SYS-39): the peak window opens (unless `KNOWLEDGE_ALLOW_PEAK`), the day's dollar budget (`KNOWLEDGE_DAILY_COST_LIMIT_USD`, priced provider) or call budget (`GEMINI_DAILY_CALL_LIMIT`, Gemini) is spent, a per-day quota 429 comes back, `KNOWLEDGE_MAX_CONSECUTIVE_ERRORS` calls fail in a row, or `KNOWLEDGE_MAX_PER_RUN` articles were tried. The `crawl_log` row's note says what ran: `1,212/1,230 extracted; 959000 in / 411000 out tokens, $0.4000; stopped: peak hours (...)`. Safe to run repeatedly.
+
+**Before the first run on this code, apply `scripts/migrate_api_usage_tokens.sql`** to `newsaggregator` (`venv\Scripts\python.exe scripts\migrate.py`, after a backup): the usage insert names its three new columns. Run it on a weekend, or after 10:00 UTC on a weekday (17:00 WIB), when the price is off-peak; the 19:00 WIB crawl ends well before the next peak block. Not scheduled yet (owner's go).
 
 ### Newsletter generation (Phase 3)
 ```python
@@ -289,7 +298,12 @@ FROM api_usage_log
 ORDER BY log_date DESC
 LIMIT 7;
 ```
-Stop at 1,400 calls/day (hard-coded guard). If limit is hit frequently, reduce `KNOWLEDGE_BATCH_SIZE`.
+Per model and day: `call_count`, `input_tokens`, `output_tokens` and `cost_usd` (SYS-39; zeros before 2026-10-04, when tokens were not recorded). Extraction is bounded by the dollar budget for a priced provider and by `GEMINI_DAILY_CALL_LIMIT` for Gemini, see the env table. Spend this week:
+```sql
+SELECT log_date, api_name, call_count, input_tokens, output_tokens, cost_usd
+FROM api_usage_log WHERE log_date >= CURRENT_DATE - 7 ORDER BY log_date DESC, api_name;
+```
+The summarizer counts calls on the same model name but records no dollars, so `cost_usd` is extraction's spend.
 
 ### Check crawl health
 ```sql

@@ -361,7 +361,7 @@ Output:
 ```
 Input:  articles WHERE knowledge_extracted = FALSE
 
-For each article (batched, max 50/run to stay within Gemini free tier):
+For each article (SYS-39: until the queue is empty, finance topics first, bounded by a daily dollar budget and the provider's peak window; see "Provider and budget" below):
     
     LLM Prompt (Gemini 1.5 Flash):
     ┌──────────────────────────────────────────────────────────────┐
@@ -389,10 +389,12 @@ For each article (batched, max 50/run to stay within Gemini free tier):
 Output: entities, entity_mentions tables populated
 ```
 
-**Gemini Free Tier Budget:**
-- Free tier: 1,500 req/day (Gemini 1.5 Flash)
-- 2 crawls/day × avg 50 new articles/crawl = ~100 articles/day
-- Well within free tier. Safety margin: implement a daily counter with hard stop at 1,400 req/day.
+**Provider and budget (SYS-39, 2026-10-04 -- replaces the free-tier paragraph):**
+- The 1,400 req/day figure was a margin under a 1,500 req/day free tier for ~100 articles/day. Neither number holds: this project's Gemini free tier is 20 requests/day/model (OPS-20), and the news-worthy scope saves ~4,000 articles/day.
+- Owner decision: the KB covers all news, on DeepSeek via SumoPod (`KNOWLEDGE_LLM_PROVIDER=openai`), thinking off. Price per 1M tokens: input $0.15 off-peak / $0.30 peak, output $0.60 / $1.20; peak is UTC weekdays 01:00-04:00 and 06:00-10:00, weekends off-peak.
+- Measured on the 200-article bake-off fixture (791 input and 335 output tokens per article): $0.32 per 1,000 articles off-peak, ~$1.3 a day at 4,000, ~$27 for the 84,606-article backlog.
+- Guards: the run does not start or continue in the peak window; it stops at `KNOWLEDGE_DAILY_COST_LIMIT_USD` (default $5), on a daily-quota 429, or after 5 failed calls in a row. Gemini stays available as `KNOWLEDGE_LLM_PROVIDER=gemini`, held to `GEMINI_DAILY_CALL_LIMIT`.
+- Catch-up order: finance topics first, then newest.
 
 ### 7.7 Phase 6 — Newsletter Job (NEW, Scheduled)
 

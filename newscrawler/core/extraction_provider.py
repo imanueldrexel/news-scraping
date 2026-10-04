@@ -24,7 +24,14 @@ from newscrawler.core.constants import (
     OPENAI_BASE_URL,
     OPENAI_MODEL,
 )
-from newscrawler.core.summarizer import QuotaExhausted, SummarizerError, call_guarded
+from newscrawler.core.summarizer import (
+    QuotaExhausted,
+    SummarizerError,
+    call_guarded,
+    is_daily_quota,
+    is_quota_error,
+    quota_name,
+)
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -126,6 +133,9 @@ class GeminiProvider:
             response = self._client.models.generate_content(
                 model=self.name, contents=prompt, config={"response_mime_type": "application/json"})
         except Exception as e:  # noqa: BLE001 -- any SDK or network error: no response came back
+            if is_quota_error(e) and is_daily_quota(e):
+                # The free tier's 20 requests/day/model (OPS-20): every further call today fails too.
+                raise ProviderQuotaExhausted(str(e), quota_name(e)) from e
             raise ProviderTransientError(str(e)) from e
         usage = getattr(response, "usage_metadata", None)
         return Completion(response.text, _tokens(getattr(usage, "prompt_token_count", 0)),
