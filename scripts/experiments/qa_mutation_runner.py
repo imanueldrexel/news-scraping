@@ -449,6 +449,20 @@ M = [
   '_RELATED_HEADLINE = r"(?:\\s*[:|]\\s*(?=.{0,250}$).*)?"', '_RELATED_HEADLINE = r"(?:\\s*[:|]?\\s*.*)?"'),
  ('sys72_promo_needs_no_object', 'newscrawler/core/utils/utils.py',
   '(?=.{{0,120}}\\b{_PROMO_OBJECT}\\b)', ''),
+ ('sys69_links_not_deduped_by_source', 'newscrawler/core/newsletter_generator.py',
+  'if a["source"].upper() not in seen:', 'if True:'),
+ ('sys69_links_source_case_sensitive', 'newscrawler/core/newsletter_generator.py',
+  'if a["source"].upper() not in seen:
+                seen.add(a["source"].upper())', 'if a["source"] not in seen:
+                seen.add(a["source"])'),
+ ('sys69_no_fill_for_two_outlet_story', 'newscrawler/core/newsletter_generator.py',
+  'picked += [a for a in ranked if a not in picked][:_MAX_LINKS - len(picked)]', 'pass'),
+ ('sys69_link_label_is_the_date', 'newscrawler/core/newsletter_generator.py',
+  'link_parts = [f"[{self._link_label(l)}]({l['link']})"', 'link_parts = [f"[{l['source']}, {date_str}]({l['link']})"'),
+ ('sys69_label_brackets_kept', 'newscrawler/core/newsletter_generator.py',
+  'link["headline"].replace("[", "(").replace("]", ")").split()', 'link["headline"].split()'),
+ ('sys69_label_not_cut', 'newscrawler/core/newsletter_generator.py',
+  'if len(headline) > _LINK_LABEL_CHARS:', 'if False:'),
 ]
 only = sys.argv[1:]
 env = dict(os.environ, VECTOR_DB_NAME_L1=os.path.join(SCRATCH, "NOPE_L1"),

@@ -51,6 +51,9 @@ _SUMMARIZE_PROMPT = (
     "Artikel:\n{articles}"
 )
 
+_MAX_LINKS = 3           # "Artikel terkait" links per cluster
+_LINK_LABEL_CHARS = 70   # headline characters in a link label
+
 _FROM_CONFIG = object()   # "build the summarizer from the environment" (None means: none)
 
 # SYS-68 (#216): why a digest has fewer real summaries than clusters.
@@ -395,13 +398,31 @@ class NewsletterGenerator:
 
     @staticmethod
     def _top_links(articles: list) -> List[dict]:
-        sorted_arts = sorted(
-            articles,
+        """Up to three links, one per outlet, most authoritative outlets first
+        (SYS-69). A story only two outlets carried fills its third slot with a
+        second article of the best outlet rather than leaving it empty."""
+        ranked = sorted(
+            (a for a in articles if a.get("link")),
             key=lambda a: SOURCE_AUTHORITY.get(a["source"].upper(), 0.5),
             reverse=True,
-        )[:3]
-        return [{"source": a["source"], "link": a["link"], "headline": a["headline"]}
-                for a in sorted_arts if a.get("link")]
+        )
+        picked, seen = [], set()
+        for a in ranked:
+            if a["source"].upper() not in seen:
+                seen.add(a["source"].upper())
+                picked.append(a)
+        picked = picked[:_MAX_LINKS]
+        picked += [a for a in ranked if a not in picked][:_MAX_LINKS - len(picked)]
+        return [{"source": a["source"], "link": a["link"], "headline": a["headline"]} for a in picked]
+
+    @staticmethod
+    def _link_label(link: dict) -> str:
+        """`SOURCE: headline`, the headline cut at a word. Every article of a
+        digest is from the digest's own day, so a date says nothing (SYS-69)."""
+        headline = " ".join(link["headline"].replace("[", "(").replace("]", ")").split())
+        if len(headline) > _LINK_LABEL_CHARS:
+            headline = headline[:_LINK_LABEL_CHARS].rsplit(" ", 1)[0].rstrip(" ,;:-") + "…"
+        return f"{link['source']}: {headline}" if headline else link["source"]
 
     def _render_markdown(self, target_date: date, sections: list, all_articles: list,
                          stats: Optional[SummaryStats] = None) -> str:
@@ -421,7 +442,7 @@ class NewsletterGenerator:
                 lines.append("")
                 sources_str = " · ".join(cluster["sources"])
                 lines.append(f"**Sumber ({len(cluster['sources'])} portal):** {sources_str}")
-                link_parts = [f"[{l['source']}, {date_str}]({l['link']})"
+                link_parts = [f"[{self._link_label(l)}]({l['link']})"
                               for l in cluster["links"]]
                 if link_parts:
                     lines.append(f"**Artikel terkait:** {' · '.join(link_parts)}")
