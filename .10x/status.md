@@ -64,3 +64,9 @@
 - **Live now:** extraction on DeepSeek (4 workers) - 5,992 articles, $1.98, KB 54 -> 10,006 entities; jobs registered: Knowledge Extraction 21:00, Newsletter 12:00, DB Liveness every 15 min. 80,355 articles pending (~4 nights); lower KNOWLEDGE_DAILY_COST_LIMIT_USD from 8 to 3 afterwards.
 - **Filed by QA:** DBT-53, DBT-54, SYS-76/77/78, SRC-58 #231, OPS-39 #232. Open and not started: SYS-73 apply path (per source, DETIK first), SYS-74, SYS-41, SRC-34, SRC-47/42/40/39, SRC-58, OPS-39, DBT-01.
 - Tests: unit 2,061 / integration 172; QA mutation runs in clean copies: 69 + 61 + 8 killed, 0 survivors; 270 registered mutants all match exactly once.
+
+## 2026-10-05 06:20: body repair done (SYS-73 closed)
+- All 24 sources with polluted bodies repaired 03:19-06:09 WIB, before the 07:00 crawl: 35,547 articles rewritten, 165,319 chunk rows and vectors replaced, 0 failed. Verified: dry run over 86,347 articles 0 changed; store check all 11 zero; DETIK 46,196 L2 rows = 46,196 vectors; counters recomputed; chrome in search results 10 -> 3 and 4 -> 0.
+- Built for it: `repair_boilerplate_bodies.py --apply --source NAME` (backup, vectors, one SQL transaction, re-chunk with one FAISS flush per block, recount), 11 integration + 10 unit tests, 13 mutants killed. Runbook in OPERATIONS.md.
+- DBT-55 (#233) found and closed: 6 unit tests failed on Mondays (the weekly audit day). Tests: unit 2,087, integration 183.
+- Still waiting for scheduled evidence: #136 and #125 (first 21:00 extraction, which also re-extracts the 2,530 reset articles), SRC-57, SYS-64, SYS-66, OPS-38. Backups of the repair: 55 GB in `backups/` (24 x 2.1 GB), prune after a few days.
