@@ -181,6 +181,27 @@ class TestGeneratorShowsAStoryAtMostTwice:
         assert len(summary_prompts) == 5
         assert all("rangkum hanya peristiwa yang paling banyak dibahas" in p for p in summary_prompts)
 
+    def test_the_more_line_counts_hidden_clusters_and_articles_in_no_cluster(self, monkeypatch, tmp_path):
+        """DBT-51 (#221): after grouping, 'dan N berita lainnya' is the clusters the story
+        cap hid (8 - 5) plus the articles that formed no cluster at all (2)."""
+        s = FakeSummarizer()
+        gen, ds = self._generator(monkeypatch, s)
+        articles, labels = [], []
+        for c, group in enumerate(SECTION):
+            for k, headline in enumerate(group):
+                articles.append(_article(10 * c + k, "law_crime", headline))
+                labels.append(c)
+        for i, headline in enumerate(["Sidang Perdana Kasus Pungli Terminal", "Polisi Tangkap Pengedar Narkoba"]):
+            articles.append(_article(900 + i, "law_crime", headline))
+            labels.append(-1)
+        monkeypatch.setattr(gen, "_cluster", lambda vectors: list(labels))
+        monkeypatch.setattr(gen, "_encode", lambda texts: [[0.0]] * len(texts))
+        monkeypatch.setattr(ng, "DIGESTS_DIR", str(tmp_path))
+        ds.get_articles_for_date.return_value = articles
+        text = open(gen.generate(date(2026, 9, 28)), encoding="utf-8").read()
+        assert text.count("### ") == 5
+        assert "dan 5 berita lainnya" in text
+
     def test_the_row_and_the_footer_count_the_grouped_sections(self, monkeypatch, tmp_path):
         gen, ds = self._generator(monkeypatch, FakeSummarizer())
         self._run(gen, ds, monkeypatch, tmp_path)
