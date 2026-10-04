@@ -52,3 +52,66 @@ def cascaded_pairs(paragraphs) -> int:
 def is_cascaded(paragraphs) -> bool:
     """SRC-54: the QA fleet scan's definition -- at least two cascaded pairs."""
     return cascaded_pairs(paragraphs) >= 2
+
+
+# SYS-63 (#204): lines that belong to the page, not the article. Stored bodies
+# carried other stories' headlines ("Baca juga: ..."), ad markers and video
+# widgets: 68-100% of the saved articles of 12 sources. The injected headline
+# is a different story, so knowledge extraction, the topic probe (body[:500]),
+# the L2 chunks and the newsletter's L1 clusters all read it as this article's.
+# Every pattern is anchored at the start of a line (prose that merely mentions
+# "Google News" survives) and matches what real stored bodies contain.
+_BOILERPLATE_LINE = re.compile(
+    r"^(?:"
+    r"baca\s+(?:juga|selengkapnya)\b.*"                  # KONTAN, ANTARA, MEDIAINDONESIA, BERITASATU ("BACA JUGA")
+    r"|lihat\s+juga\b.*"                                  # DETIK, CNN ("Lihat Juga :EDUKASI KEUANGAN ...")
+    r"|advertisement"                                     # VIVA, TVONE, LIPUTAN6, MERDEKA
+    r"|scroll\s+to\s+continue(?:\s+with\s+content)?"      # DETIK
+    r"|gulir\s+untuk\s+lanjut\s+baca"                     # VIVA, TVONE
+    r"|berita\s+selengkapnya\b.*"                         # DETIK, CNBC tail
+    r"|ikuti\b.*\b(?:google\s+news|whatsapp\s+channel|saluran\s+whatsapp)\b.*"
+    r")\s*[:|]?\s*$",
+    re.IGNORECASE,
+)
+# Unmistakable widget text, dropped wherever it sits in a line.
+_BOILERPLATE_ANYWHERE = re.compile(r"\[gambas:|tautan\s+telah\s+disalin", re.IGNORECASE)
+# Editor initials: "(fsd/fsd)" alone on a line, or closing the body. Lowercase
+# only, so "(AS/NATO)" and "(yoy/qoq)" mid-sentence are never touched.
+_EDITOR_INITIALS = r"\(\s*[a-z]{2,5}\s*/\s*[a-z]{2,5}\s*\)"
+_INITIALS_LINE = re.compile(rf"^{_EDITOR_INITIALS}$")
+_INITIALS_TAIL = re.compile(rf"\s*{_EDITOR_INITIALS}\s*$")
+
+
+def is_boilerplate_line(line: str) -> bool:
+    line = line.strip()
+    return bool(_BOILERPLATE_LINE.match(line) or _BOILERPLATE_ANYWHERE.search(line) or _INITIALS_LINE.match(line))
+
+
+def clean_body_paragraphs(body):
+    """SYS-63: the article body without page chrome and related-headline lines.
+
+    Takes what an extractor returns -- a list of paragraphs, one string, or None --
+    and returns the same shape. Works line by line inside each paragraph, because
+    trafilatura and several site selectors keep a "Baca Juga: ..." line in the
+    middle of a paragraph. A paragraph left empty is dropped; an editor-initials
+    tail "(ega/ega)" is cut from the body's last line only."""
+    if body is None:
+        return None
+    paragraphs = [body] if isinstance(body, str) else list(body)
+    cleaned = []
+    for paragraph in paragraphs:
+        if not isinstance(paragraph, str):
+            continue
+        lines = paragraph.split("\n")
+        kept = [line for line in lines if not is_boilerplate_line(line)]
+        if len(kept) == len(lines):
+            cleaned.append(paragraph)           # nothing to remove: not even whitespace is touched
+            continue
+        text = "\n".join(kept).strip()
+        if text:
+            cleaned.append(text)
+    if cleaned:
+        tail = _INITIALS_TAIL.search(cleaned[-1])
+        if tail and cleaned[-1][:tail.start()].strip():
+            cleaned[-1] = cleaned[-1][:tail.start()]
+    return "\n\n".join(cleaned) if isinstance(body, str) else cleaned

@@ -13,6 +13,7 @@ import pydantic
 
 from newscrawler.core.constants import VERBOSE, PARALLELIZE, MAX_WORKER, MIN_ARTICLE_CHARS
 from newscrawler.core.page_loader.throttle import NOT_FETCHED_REASON, ThrottleGuard
+from newscrawler.core.utils.utils import clean_body_paragraphs
 from newscrawler.core.page_loader.page_loader import PageLoader
 from newscrawler.core.page_loader.requests_page_loader import RequestsPageLoader
 from newscrawler.domain.dtos.dataflow.details.news_details_dto import NewsDetailsDTO
@@ -678,11 +679,13 @@ class Crawler:
                 if self.PRIMARY_EXTRACTOR == "trafilatura":
                     # DBT-05 (#24): no site selector for this source; trafilatura is
                     # its extractor by design, newspaper below its fallback.
-                    extracted_text = self._trafilatura_fallback(soup)
+                    extracted_text = clean_body_paragraphs(self._trafilatura_fallback(soup))
                     extractor_used = "trafilatura"
                 else:
                     try:
-                        extracted_text = self._get_whole_text(soup)
+                        # SYS-63 (#204): every extractor's output is cleaned here, once,
+                        # before it is measured -- a related-headline line is not article text.
+                        extracted_text = clean_body_paragraphs(self._get_whole_text(soup))
                     except Exception as x_err:
                         logger.warning(f"Site extractor raised for {url}: {x_err!r}")
                         extracted_text = None
@@ -694,14 +697,14 @@ class Crawler:
                     # extractor.
                     if not self._has_usable_text(extracted_text):
                         logger.info(f"Standard extraction failed for {url}. Attempting Trafilatura fallback...")
-                        trafilatura_text = self._trafilatura_fallback(soup)
+                        trafilatura_text = clean_body_paragraphs(self._trafilatura_fallback(soup))
                         combined = self._best_of(extracted_text, trafilatura_text)
                         if trafilatura_text is not None and combined is trafilatura_text:
                             extractor_used = "trafilatura"
                         extracted_text = combined
 
                 if not self._has_usable_text(extracted_text):
-                    newspaper_text = self._newspaper_fallback(url)
+                    newspaper_text = clean_body_paragraphs(self._newspaper_fallback(url))
                     combined = self._best_of(extracted_text, newspaper_text)
                     if newspaper_text is not None and combined is newspaper_text:
                         extractor_used = "newspaper"
