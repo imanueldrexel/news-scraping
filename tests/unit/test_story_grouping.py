@@ -147,6 +147,7 @@ class TestGeneratorShowsAStoryAtMostTwice:
         monkeypatch.setattr(ng, "NEWSLETTER_MAX_CLUSTERS_PER_TOPIC", cap)
         monkeypatch.setattr(ng, "NEWSLETTER_MIN_CLUSTER_SIZE", 2)
         monkeypatch.setattr(ng, "NEWSLETTER_MAX_CLUSTERS_PER_STORY", 2)
+        monkeypatch.setattr(gen, "_merge_across_sections", lambda entries, vectors: entries)  # stub vectors are labels, not geometry: SYS-65's merge has its own tests (test_newsletter_cross_section.py)
         return gen, ds
 
     def _run(self, gen, ds, monkeypatch, tmp_path):

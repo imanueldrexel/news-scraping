@@ -205,34 +205,80 @@ class NewsletterGenerator:
         SECTION_ORDER, empty topics omitted. `clusters` are the shown ones,
         ranked by size x distinct sources, at most
         NEWSLETTER_MAX_CLUSTERS_PER_TOPIC; `more` counts the stories not shown
-        (the clusters past the cap plus the unclustered articles)."""
+        (the clusters past the cap plus the unclustered articles).
+
+        Clustering is per topic, then clusters of different topics that are as
+        close as one cluster may be are merged into the section of the larger
+        one (SYS-65), so a story whose articles got different topics is shown
+        once."""
         by_topic: dict = {}
         for i, a in enumerate(articles):
             by_topic.setdefault(self.topic_of(a), []).append(i)
-        sections = []
+        entries, unclustered = [], {}
         for topic in SECTION_ORDER:
             idx = by_topic.get(topic)
             if not idx:
                 continue
-            members = [articles[i] for i in idx]
             if len(idx) >= NEWSLETTER_MIN_CLUSTER_SIZE:
                 labels = self._cluster([vectors[i] for i in idx])
             else:
                 labels = [-1] * len(idx)
-            groups = self._group_by_label(members, labels)
-            clusters = [self._describe_cluster(group) for label, group in groups.items() if label != -1]
+            groups = self._group_by_label(idx, labels)
+            unclustered[topic] = groups.pop(-1, [])
+            entries += [{"topic": topic, "idx": group} for group in groups.values()]
+        entries = self._merge_across_sections(entries, vectors)
+        sections = []
+        for topic in SECTION_ORDER:
+            clusters = [self._describe_cluster([articles[i] for i in e["idx"]])
+                        for e in entries if e["topic"] == topic]
+            loose = unclustered.get(topic, [])
+            if not clusters and not loose:
+                continue
             clusters.sort(key=lambda c: (len(c["articles"]) * len(c["sources"]), len(c["articles"])), reverse=True)
             shown = clusters[:NEWSLETTER_MAX_CLUSTERS_PER_TOPIC]
             sections.append({
                 "topic": topic,
-                "article_count": len(members),
+                "article_count": len(loose) + sum(len(c["articles"]) for c in clusters),
                 "cluster_count": len(clusters),
                 "clusters": shown,
                 "ranked": clusters,                       # SYS-67: every cluster, best first
-                "unclustered": len(groups.get(-1, [])),
-                "more": len(clusters) - len(shown) + len(groups.get(-1, [])),
+                "unclustered": len(loose),
+                "more": len(clusters) - len(shown) + len(loose),
             })
         return sections
+
+    @staticmethod
+    def _merge_across_sections(entries: list, vectors) -> list:
+        """SYS-65: merge clusters whose average member-to-member cosine distance
+        is at most NEWSLETTER_CLUSTER_DISTANCE -- the same cut the per-topic
+        clustering uses -- whatever their topics, closest pair first. The merged
+        cluster keeps the topic of the larger one, or of the earlier
+        SECTION_ORDER topic on a tie. For unit vectors the average pairwise
+        cosine similarity of two groups is the dot product of their sums over
+        the product of their sizes, so each pass is one matrix product."""
+        if len(entries) < 2:
+            return entries
+        import numpy as np
+        v = np.asarray(vectors, dtype=float)
+        norms = np.linalg.norm(v, axis=1, keepdims=True)
+        v = np.divide(v, norms, out=np.zeros_like(v), where=norms > 0)
+        sums = np.array([v[e["idx"]].sum(axis=0) for e in entries])
+        sizes = np.array([len(e["idx"]) for e in entries], dtype=float)
+        live = list(range(len(entries)))
+        while len(live) > 1:
+            s, n = sums[live], sizes[live]
+            dist = 1.0 - (s @ s.T) / np.outer(n, n)
+            np.fill_diagonal(dist, np.inf)
+            a, b = np.unravel_index(np.argmin(dist), dist.shape)
+            if dist[a, b] > NEWSLETTER_CLUSTER_DISTANCE:
+                break
+            keep, drop = sorted((live[a], live[b]), key=lambda k: (
+                -len(entries[k]["idx"]), SECTION_ORDER.index(entries[k]["topic"])))
+            entries[keep]["idx"] = entries[keep]["idx"] + entries[drop]["idx"]
+            sums[keep] += sums[drop]
+            sizes[keep] += sizes[drop]
+            live.remove(drop)
+        return [entries[k] for k in live]
 
     def _describe_cluster(self, cluster_articles: list) -> dict:
         return {

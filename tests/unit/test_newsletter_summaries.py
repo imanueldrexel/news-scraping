@@ -53,6 +53,7 @@ def _gen(monkeypatch, summarizer, ds=None):
     monkeypatch.setattr(ng, "NEWSLETTER_MAX_CLUSTERS_PER_TOPIC", 100)
     monkeypatch.setattr(ng, "NEWSLETTER_MIN_CLUSTER_SIZE", 2)
     monkeypatch.setattr(gen, "_cluster", lambda vectors: [int(v[0]) for v in vectors])
+    monkeypatch.setattr(gen, "_merge_across_sections", lambda entries, vectors: entries)  # stub vectors are labels, not geometry: SYS-65's merge has its own tests (test_newsletter_cross_section.py)
     return gen, ds
 
 
