@@ -72,11 +72,13 @@ class TestScript:
     def test_today_and_the_future_are_refused(self, script, monkeypatch):
         # a broken guard must fail this test, not run the script (DBT-53)
         monkeypatch.setattr(script, "_run", lambda *a: pytest.fail("ran for a date that is not a finished day"))
+        monkeypatch.setattr(script, "open_run_log", lambda d: (None, None))      # and writes no log file
         assert script.main(["--date", date.today().isoformat()]) == 1
         assert script.main(["--date", (date.today() + timedelta(days=1)).isoformat()]) == 1
 
     def test_a_malformed_date_is_refused(self, script, monkeypatch):
         monkeypatch.setattr(script, "_run", lambda *a: pytest.fail("ran for a malformed date"))
+        monkeypatch.setattr(script, "open_run_log", lambda d: (None, None))
         assert script.main(["--date", "yesterday"]) == 1
 
     def test_dry_run_builds_nothing(self, script):
