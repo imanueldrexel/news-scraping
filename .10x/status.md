@@ -2,7 +2,7 @@
 
 ## Project: NewsAggregator
 **Current Phase:** Implementation (dev): P1/P2 fixes + newsletter. Design approved by owner choice of DeepSeek; spec + ADR-001 written.
-**Last Updated:** 2026-10-04 by 10x-team (dev)
+**Last Updated:** 2026-10-04 by 10x-team (sde)
 **Health:** On Track
 
 ## Progress
@@ -36,3 +36,9 @@
 - [ ] SYS-67 #215 clustering (measure, then fix)
 - [ ] SYS-63 #204 boilerplate cleaner
 - Not code: SRC-56 #205, SRC-03 #14
+
+## SDE update 2026-10-04 (after QA feedback)
+- [x] SYS-71 #219 (P2), SYS-72 #220, DBT-51 #221, DBT-52 #222 fixed and labelled `status: ready-for-qa`; #216, #215, #204 re-labelled with evidence (#204 waits for the 19:00 run).
+- [x] Newsletter run for 2026-10-03: 94/94 summaries (a partial 2026-10-04 row was also written by mistake, see decisions/sde).
+- [ ] SYS-73 #223 dry run (unblocked); OPS-38 #212 (date argument + schedule); #136 needs owner.
+- Tests: unit 1,827 passed, integration 156 passed, 11 new/retargeted mutants killed.
