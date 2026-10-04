@@ -167,7 +167,7 @@ Last run 2026-09-25 on `newsaggregator_20260925T140752Z.dump`: `pg_restore` rc 0
 |---|---|---|
 | 05:00 | Database backup (OPS-23) | `scripts/backup_db.py` — registered as **"NewsAggregator DB Backup"**, see "Database: container, backup, restore" |
 | 05:30 | Crawler health check (OPS-01) | `scripts/run_scheduled_health_check.py` — registered, see below |
-| every 15 min | DB liveness (OPS-36) | `scripts/db_liveness.py` — **not registered yet** (owner's go); see "DB liveness (OPS-36)" |
+| every 15 min | DB liveness (OPS-36) | `scripts/db_liveness.py` — registered 2026-10-04 as **"NewsAggregator DB Liveness"**; see "DB liveness (OPS-36)" |
 | after each crawl | Store consistency check (OPS-04, OPS-29) | runs inside `scripts/run_scheduled_crawl.py` after its worker has closed; writes `crawler_health/store-consistency-<date>.json` and puts anything to act on in the crawl's Telegram line. `scripts/check_store_consistency.py` by hand for the full table |
 | 07:00 | Morning crawl (OPS-19) | `scripts/run_scheduled_crawl.py` — registered 2026-09-25 as **"NewsAggregator Scheduled Crawl (morning)"** (owner decision); first unattended run 2026-09-26 07:00. `python __main__.py` remains the manual equivalent |
 | 06:45 | Knowledge extraction | task=extract_knowledge |
@@ -563,10 +563,9 @@ SELECT started_at, article_count, error_msg FROM crawl_log WHERE task = 'filter_
 ### DB liveness (OPS-36)
 `scripts/db_liveness.py` runs `SELECT 1` with a hard client-side deadline (`DB_LIVENESS_DEADLINE_S`). On 2026-09-30 a stalled Docker engine still accepted TCP on 5431 but hung every query, which connect and statement timeouts alone do not catch. It sends one Telegram alert after `DB_LIVENESS_FAILS_BEFORE_ALERT` failed probes in a row (DOWN), and one on the first good probe after that (recovered). It never repeats in between, writes nothing to the DB, and never raises. `--check` probes and prints only.
 
-Register it (owner's go first):
-```
-schtasks /Create /TN "NewsAggregator DB Liveness" /SC MINUTE /MO 15 /TR "\"<repo>env\Scripts\python.exe\" \"<repo>\scripts\db_liveness.py\"" /F
-```
+Registered 2026-10-04 (PM decision) as **"NewsAggregator DB Liveness"**: every 15 minutes, working directory the repo, battery and `StartWhenAvailable` as the crawl jobs, `MultipleInstances IgnoreNew`, a 5 min limit. To re-create it use `New-ScheduledTaskAction` (python.exe, argument the script, `-WorkingDirectory` the repo), a `-Once` trigger with `-RepetitionInterval (New-TimeSpan -Minutes 15)` and `Register-ScheduledTask`.
+
+Drilled 2026-10-04 21:16-21:18 with `docker stop newsaggregator-postgres` (2 min, no crawl running): the first failed probe changes nothing, the second sets `down` and sends the alert, a further probe while down repeats nothing, and the first probe after `docker start` sets `up` and sends the recovery. Row counts were identical before and after. A drill outside a crawl window costs nothing; during one it would fail that source's run.
 When it alerts DOWN: `docker ps` (a hang means the Docker Desktop engine itself is stalled; `docker desktop restart` brought it back on 2026-09-30), then `venv\Scripts\python.exe scripts\db_liveness.py --check`.
 
 ### API stats endpoint
