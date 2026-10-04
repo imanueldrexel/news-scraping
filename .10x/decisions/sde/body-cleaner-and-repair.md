@@ -10,3 +10,10 @@
 
 ### Tech debt created
 - The dry run reads all 84,606 bodies in one streamed query (about 100 s); fine for a one-off, not a monitor.
+
+### 2026-10-04 (late evening) — owner decisions, executed
+1. **SYS-39 gate: accepted on evidence** (repeatability 0.960, 0 parse failures, $0.32/1,000, reversible env switch, gold-set hand check 96-98%). No hand-check, no Gemini reference. `KNOWLEDGE_LLM_PROVIDER=openai` is still NOT set in `.env`: setting it and scheduling the extraction run are the next steps (off-peak; backlog needs `KNOWLEDGE_DAILY_COST_LIMIT_USD` ~30 for one run).
+2. **Production migration applied** after a verified dump (`backups/pg_dump/newsaggregator_20261004T133211Z.dump`, 246 MB): `api_usage_log` has the 3 new columns, 9 existing rows intact.
+3. **OPS-38: 12:00, registered** as "NewsAggregator Newsletter" (first run 2026-10-05 12:00, digests 2026-10-04 and replaces the stray partial row).
+4. **SYS-73: per source, DETIK first, after QA closes SYS-75.** The apply path is the next code to write (dry-run per source first).
+

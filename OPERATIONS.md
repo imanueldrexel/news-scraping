@@ -93,7 +93,7 @@ lambda_handler.process_event({"task": "extract_knowledge"}, None)
 ```
 Extracts pending articles, finance topics first (then newest), until the queue is empty or a stop condition fires (SYS-39): the peak window opens (unless `KNOWLEDGE_ALLOW_PEAK`), the day's dollar budget (`KNOWLEDGE_DAILY_COST_LIMIT_USD`, priced provider) or call budget (`GEMINI_DAILY_CALL_LIMIT`, Gemini) is spent, a per-day quota 429 comes back, `KNOWLEDGE_MAX_CONSECUTIVE_ERRORS` calls fail in a row, or `KNOWLEDGE_MAX_PER_RUN` articles were tried. The `crawl_log` row's note says what ran: `1,212/1,230 extracted; 959000 in / 411000 out tokens, $0.4000; stopped: peak hours (...)`. Safe to run repeatedly.
 
-**Before the first run on this code, apply `scripts/migrate_api_usage_tokens.sql`** to `newsaggregator` (`venv\Scripts\python.exe scripts\migrate.py`, after a backup): the usage insert names its three new columns. Run it on a weekend, or after 10:00 UTC on a weekday (17:00 WIB), when the price is off-peak; the 19:00 WIB crawl ends well before the next peak block. Not scheduled yet (owner's go).
+`scripts/migrate_api_usage_tokens.sql` was applied to `newsaggregator` on 2026-10-04 (owner-approved, after a verified `backup_db.py` dump `newsaggregator_20261004T133211Z.dump`); the usage insert names its three new columns. Run it on a weekend, or after 10:00 UTC on a weekday (17:00 WIB), when the price is off-peak; the 19:00 WIB crawl ends well before the next peak block. Not scheduled yet (owner's go).
 
 ### Newsletter generation (Phase 3)
 ```python
@@ -171,11 +171,11 @@ Last run 2026-09-25 on `newsaggregator_20260925T140752Z.dump`: `pg_restore` rc 0
 | after each crawl | Store consistency check (OPS-04, OPS-29) | runs inside `scripts/run_scheduled_crawl.py` after its worker has closed; writes `crawler_health/store-consistency-<date>.json` and puts anything to act on in the crawl's Telegram line. `scripts/check_store_consistency.py` by hand for the full table |
 | 07:00 | Morning crawl (OPS-19) | `scripts/run_scheduled_crawl.py` — registered 2026-09-25 as **"NewsAggregator Scheduled Crawl (morning)"** (owner decision); first unattended run 2026-09-26 07:00. `python __main__.py` remains the manual equivalent |
 | 06:45 | Knowledge extraction | task=extract_knowledge |
-| 12:00 | Newsletter (OPS-38) | `scripts/run_scheduled_newsletter.py` — digests the previous day; **not registered yet** (owner's go), see "Scheduled newsletter (OPS-38)" |
+| 12:00 | Newsletter (OPS-38) | `scripts/run_scheduled_newsletter.py` — digests the previous day; registered 2026-10-04 as **"NewsAggregator Newsletter"** (owner decision), first run 2026-10-05 12:00; see "Scheduled newsletter (OPS-38)" |
 | 19:00 | Evening crawl (OPS-19) | `scripts/run_scheduled_crawl.py` — registered as **"NewsAggregator Scheduled Crawl (evening)"** |
 | 18:45 | Knowledge extraction | task=extract_knowledge |
 
-### Scheduled newsletter (OPS-38) — not registered yet
+### Scheduled newsletter (OPS-38) — registered 2026-10-04
 
 `venv\Scripts\python.exe scripts\run_scheduled_newsletter.py [--date YYYY-MM-DD] [--dry-run]` builds the digest of the previous day (or `--date`; today and later are refused), through `crawler_service.generate_newsletter`, so it writes the `newsletter_digests` row, the `digests/<date>.md` file and a `crawl_log` row (`website='ALL'`, `task='newsletter'`, OPS-11). It then sends one Telegram line:
 
@@ -186,7 +186,7 @@ Last run 2026-09-25 on `newsaggregator_20260925T140752Z.dump`: `pg_restore` rc 0
 
 Exit 2 = refused by the run lock (OPS-26): a scheduled crawl holds FAISS in memory, so the run says so in its log and does nothing (no database, no Telegram line; Task Scheduler's "Last Run Result" is the only trace). Run log: `logs/scheduled_newsletter_<YYYY-MM-DD_HHMM>.log`, newest 28 kept.
 
-**Why 12:00 and not the ticket's 06:30.** A day's digest is built from that day's `sitemaps.posted_at`. The 19:00 crawl runs for up to 4 h, but what is published after it starts is fetched by the 07:00 crawl, which can run until 11:00. A 06:30 digest of yesterday would miss those hours for good. 12:00 clears the longest allowed morning crawl. Register it with the command in the script's docstring (the same two battery settings as OPS-01 and OPS-19, plus `-MultipleInstances IgnoreNew`) once the owner approves; then check `Get-ScheduledTask -TaskName "NewsAggregator Newsletter" | Get-ScheduledTaskInfo`.
+**Why 12:00 and not the ticket's 06:30.** A day's digest is built from that day's `sitemaps.posted_at`. The 19:00 crawl runs for up to 4 h, but what is published after it starts is fetched by the 07:00 crawl, which can run until 11:00. A 06:30 digest of yesterday would miss those hours for good. 12:00 clears the longest allowed morning crawl. Registered (owner decision 2026-10-04, 12:00) as **"NewsAggregator Newsletter"** with the crawl jobs' settings (battery, wake, `StartWhenAvailable`, `MultipleInstances IgnoreNew`) and a 1 h limit, working directory the repo; check it with `Get-ScheduledTask -TaskName "NewsAggregator Newsletter" | Get-ScheduledTaskInfo`. Pause it with `Disable-ScheduledTask -TaskName "NewsAggregator Newsletter"`. The first run (2026-10-05) digests 2026-10-04 and replaces the stray partial-day row (`newsletter_digests` upserts on `digest_date`). Done-when evidence still to come: three consecutive daily digests, each with a `crawl_log` row and its Telegram line.
 
 `task=newsletter` through `process_event` is the manual equivalent and is **not** guarded by the run lock (it writes no FAISS): it reads Postgres and the embedding model. The summaries' daily call count is in `api_usage_log` under the summarizer's model name; with DeepSeek there is no daily cap to fit, and `GEMINI_DAILY_CALL_LIMIT` (20) applies only if `NEWSLETTER_LLM_PROVIDER=gemini`.
 

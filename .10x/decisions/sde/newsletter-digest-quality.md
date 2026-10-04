@@ -17,3 +17,10 @@
 - The harness turns `\r`/`\n`/`\b` inside python heredoc strings into control characters (a lone CR landed in OPERATIONS.md and EXPERIMENTS.md and made git treat the file as binary). Write regexes and paths with the Edit/Write tools, then check for lone CR bytes (`ord 13` not followed by `ord 10`).
 - Whole-file line-ending rewrites make a 1,800-line diff of a 7-line change (DBT-52's lesson again): edit mixed-ending files with a replace that tries LF then CRLF, never `replace("\n","\r\n")` on the whole file.
 - `pgrep`/`sleep N` do not work as waits here; use a Monitor with an `until grep` loop on the output file.
+
+### 2026-10-04 (late evening) — owner decisions, executed
+1. **SYS-39 gate: accepted on evidence** (repeatability 0.960, 0 parse failures, $0.32/1,000, reversible env switch, gold-set hand check 96-98%). No hand-check, no Gemini reference. `KNOWLEDGE_LLM_PROVIDER=openai` is still NOT set in `.env`: setting it and scheduling the extraction run are the next steps (off-peak; backlog needs `KNOWLEDGE_DAILY_COST_LIMIT_USD` ~30 for one run).
+2. **Production migration applied** after a verified dump (`backups/pg_dump/newsaggregator_20261004T133211Z.dump`, 246 MB): `api_usage_log` has the 3 new columns, 9 existing rows intact.
+3. **OPS-38: 12:00, registered** as "NewsAggregator Newsletter" (first run 2026-10-05 12:00, digests 2026-10-04 and replaces the stray partial row).
+4. **SYS-73: per source, DETIK first, after QA closes SYS-75.** The apply path is the next code to write (dry-run per source first).
+
