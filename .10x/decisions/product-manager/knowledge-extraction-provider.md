@@ -7,3 +7,10 @@
 - **Success criteria (from SYS-39):** entity agreement >= 0.85 vs reference on a 200-article fixture; a real day extracted without hitting the cap; finance topics first on a catch-up run; cost per 1,000 articles recorded.
 - **Unknown:** SumoPod price per token and its rate limits; tokens/article until measured (usage metadata); whether thinking must be disabled (it must, as for the summarizer, or output can balloon).
 - **Open product question:** who reads the KB (`kb_query`, RAG)? Answer sets whether "all topics" or "finance first, rest later" is worth the spend.
+
+### 2026-10-04 (later) — Owner: extract ALL news; DeepSeek pricing supplied
+- **Decision (owner):** the KB must cover all news, not finance only. Finance-first stays only as ordering for catch-up runs.
+- **Pricing (owner, SumoPod DeepSeek, per 1M tokens):** input $0.15 off-peak / $0.30 peak; output $0.60 / $1.20; cache $0.003 / $0.006. Peak (UTC) weekdays 01:00-04:00 and 06:00-10:00 (= 08:00-11:00 and 13:00-17:00 WIB, assuming the machine is on WIB); weekends and Chinese public holidays all off-peak.
+- **Cost from the token estimate (+-30%):** per day (3.1M in, 1.2M out) ~$1.19 off-peak, ~$2.37 peak; ~$36 / ~$71 a month; backlog (64M in, 25M out) ~$25 off-peak, ~$49 peak. Cache saves ~$0.07/day (only the ~110-token prompt prefix repeats), so ignore it.
+- **Scheduling:** 07:00 and 19:00 crawls are off-peak; run extraction after the evening crawl or overnight, the backlog on a weekend; add a peak-hours guard (skip peak blocks unless forced).
+- **Unchanged:** quality bake-off (entity agreement >= 0.85 vs reference) and real token counts from the provider response (SYS-39 step 1) before the switch is final.
