@@ -17,16 +17,19 @@ from sqlalchemy import text  # noqa: E402
 
 SOURCE = "SYS20"
 
-# The drift query from SYS-20 / OPERATIONS.md, restricted to this test's entities.
-DRIFT_SQL = text("""
-    SELECT e.entity_id FROM entities e
-    LEFT JOIN (SELECT entity_id, COUNT(*) n, MIN(posted_at) lo, MAX(posted_at) hi
-               FROM entity_mentions GROUP BY 1) m USING (entity_id)
-    WHERE e.normalized_name LIKE :tag
-      AND (e.mention_count <> COALESCE(m.n, 0)
-           OR e.first_seen_at IS DISTINCT FROM m.lo
-           OR e.last_seen_at IS DISTINCT FROM m.hi)
-""")
+
+def _recount_script():
+    """The script under test: its own DRIFT_SQL is the selection (DBT-50 -- the
+    test used to carry a private copy, so dropping a clause from the script's
+    query left every test green)."""
+    import importlib.util
+    import os
+    path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+                        "scripts", "recount_entity_mentions.py")
+    spec = importlib.util.spec_from_file_location("recount_entity_mentions", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
 
 
 @pytest.fixture
@@ -85,9 +88,15 @@ def _entity(client, normalized):
                               "WHERE normalized_name = :n"), {"n": normalized}).fetchone()
 
 
-def _no_drift(client):
+def _drift(client):
+    """The script's selection, narrowed to this test's entities by name."""
     with client.get_session() as s:
-        return s.execute(DRIFT_SQL, {"tag": "sys20%"}).fetchall() == []
+        rows = s.execute(_recount_script().DRIFT_SQL).fetchall()
+    return [r.name for r in rows if r.name.lower().startswith("sys20")]
+
+
+def _no_drift(client):
+    return _drift(client) == []
 
 
 class TestMentionCounts:
@@ -136,7 +145,6 @@ class TestMentionCounts:
 
 class TestRecountScript:
     def test_it_repairs_drift_written_before_the_fix(self, client, kb, tmp_path, monkeypatch):
-        import importlib.util
         import os
         ds, extractor = kb
         _process(ds, extractor, _article(client, 20260915), orgs=["Sys20 Bank"])
@@ -149,11 +157,7 @@ class TestRecountScript:
             s.commit()
         assert not _no_drift(client)
 
-        path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-                            "scripts", "recount_entity_mentions.py")
-        spec = importlib.util.spec_from_file_location("recount_entity_mentions", path)
-        mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
+        mod = _recount_script()
         monkeypatch.setattr(mod, "BACKUP_DIR", str(tmp_path))
 
         assert mod.main(["--dry-run"]) == 0
@@ -162,6 +166,31 @@ class TestRecountScript:
         assert _no_drift(client)
         assert _entity(client, "sys20 seeded") == (0, None, None)
         assert len(os.listdir(tmp_path)) == 1
+
+
+class TestRecountSelectsEachKindOfDrift:
+    """DBT-50: one fixture per clause of the script's DRIFT_SQL. Each must be
+    selected on its own and cleared by the repair."""
+
+    @pytest.mark.parametrize("column, value", [
+        ("mention_count", "7"),
+        ("first_seen_at", "'2026-01-01'"),
+        ("last_seen_at", "'2026-12-31'"),
+    ])
+    def test_a_single_drifting_column_is_selected_and_repaired(self, client, kb, tmp_path, monkeypatch,
+                                                               column, value):
+        ds, extractor = kb
+        _process(ds, extractor, _article(client, 20260915), orgs=["Sys20 Bank"])
+        assert _no_drift(client)
+        with client.get_session() as s:
+            s.execute(text(f"UPDATE entities SET {column} = {value} WHERE normalized_name LIKE 'sys20%'"))
+            s.commit()
+        assert _drift(client) == ["Sys20 Bank"], f"drift in {column} alone must be selected"
+
+        mod = _recount_script()
+        monkeypatch.setattr(mod, "BACKUP_DIR", str(tmp_path))
+        assert mod.main([]) == 0
+        assert _no_drift(client)
 
 
 class TestAcrossRuns:
