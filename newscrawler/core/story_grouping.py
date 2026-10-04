@@ -28,9 +28,14 @@ HEADLINE_CHARS = 90
 
 _PROMPT = (
     "Berikut daftar kelompok berita (nomor: beberapa judul, dipisah ||).\n"
-    "Kelompokkan nomor yang membahas PERISTIWA atau KASUS YANG SAMA, misalnya sudut pandang berbeda "
-    "dari satu skandal. Kasus berbeda yang kebetulan melibatkan lembaga yang sama (misalnya dua kasus "
-    "KPK yang tidak berhubungan) harus terpisah. Setiap nomor muncul tepat sekali.\n"
+    "Kelompokkan nomor yang membahas SATU PERISTIWA atau KASUS yang sama. Satu cerita mencakup SEMUA "
+    "sudutnya: temuan awal, pemeriksaan, pernyataan atau bantahan pejabat, rapat DPR, langkah kementerian "
+    "atau lembaga lain, dan perkembangan lanjutan, walaupun setiap judul membahas bagian yang berbeda dari "
+    "kasus itu (misalnya skandal satu lapas: sidak, rapat DPR, KPK, bantahan kepala lapas, dan langkah "
+    "kementerian adalah SATU cerita).\n"
+    "Kasus yang berbeda harus terpisah, termasuk kasus yang kebetulan melibatkan lembaga atau orang yang "
+    "sama (misalnya dua kasus KPK yang tidak berhubungan, atau KPK memeriksa seseorang dalam kasus lain). "
+    "Setiap nomor muncul tepat sekali.\n"
     'Balas HANYA dengan JSON: {{"grup": [[0,3],[1],[2]]}}\n\n'
     "{clusters}"
 )

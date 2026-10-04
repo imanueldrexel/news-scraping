@@ -252,3 +252,31 @@ class TestGeneratorShowsAStoryAtMostTwice:
         gen, ds = self._generator(monkeypatch, FakeSummarizer())
         text = open(self._run(gen, ds, monkeypatch, tmp_path), encoding="utf-8").read()
         assert json.dumps(REAL_ANSWER)[1:20] not in text and "grup" not in text
+
+
+class TestPromptStatesWhatAStoryIs:
+    """SYS-67 QA 2026-10-04: with 'the same event or case' the model kept sub-events apart
+    (a DPR hearing, a KPK statement and a denial were three stories, so one scandal took 4 of 8
+    slots). The prompt must say that every angle of an incident is one story and that
+    unrelated cases of one institution are not. The behaviour itself is checked on real
+    clusters by tests/integration/test_story_grouping_live.py (RUN_LIVE_LLM=1)."""
+
+    def test_every_angle_of_one_incident_is_one_story(self):
+        prompt = sg.build_prompt(_clusters(SECTION[:2]))
+        for angle in ("SEMUA sudutnya", "pernyataan atau bantahan pejabat", "rapat DPR",
+                      "langkah kementerian", "perkembangan lanjutan"):
+            assert angle in prompt, angle
+
+    def test_the_example_is_one_scandal_in_several_parts(self):
+        assert "adalah SATU cerita" in sg.build_prompt(_clusters(SECTION[:2]))
+
+    def test_unrelated_cases_of_one_institution_stay_apart(self):
+        prompt = sg.build_prompt(_clusters(SECTION[:2]))
+        assert "Kasus yang berbeda harus terpisah" in prompt
+        assert "dua kasus KPK yang tidak berhubungan" in prompt
+        assert "KPK memeriksa seseorang dalam kasus lain" in prompt
+
+    def test_the_answer_format_and_the_clusters_survive(self):
+        prompt = sg.build_prompt(_clusters(SECTION[:2]))
+        assert '{"grup": [[0,3],[1],[2]]}' in prompt and prompt.rstrip().endswith(prompt.splitlines()[-1])
+        assert "0: " in prompt and "1: " in prompt

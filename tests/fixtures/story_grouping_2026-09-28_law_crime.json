@@ -1,0 +1,234 @@
+{
+ "date": "2026-09-28",
+ "topic": "law_crime",
+ "expect": {
+  "together": [
+   [
+    0,
+    4,
+    7,
+    9,
+    11,
+    13,
+    15
+   ]
+  ],
+  "apart": [
+   [
+    0,
+    2
+   ],
+   [
+    0,
+    3
+   ],
+   [
+    0,
+    5
+   ],
+   [
+    0,
+    6
+   ],
+   [
+    0,
+    8
+   ],
+   [
+    0,
+    10
+   ],
+   [
+    0,
+    12
+   ],
+   [
+    0,
+    14
+   ],
+   [
+    2,
+    14
+   ]
+  ]
+ },
+ "clusters": [
+  {
+   "headlines": [
+    "Komisi XIII DPR Cecar Dirjenpas Soal Hunian Mewah Lapas Cibinong",
+    "6 Kesimpulan Hasil Rapat DPR dan Ditjenpas Soal Lapas Mewah Cibinong",
+    "Alasan Ombudsman Tak Hadir Rapat di DPR soal Lapas Mewah Cibinong",
+    "Komisi II DPR Panggil Ombudsman Soal Kasus Lapas Cibinong Besok",
+    "Ombudsman Tak Hadir Rapat di DPR soal Dugaan Lapas Mewah Cibinong",
+    "DPR, Ombudsman dan Imipas Rapat Bahas Lapas Mewah Cibinong Hari Ini"
+   ],
+   "portals": 10
+  },
+  {
+   "headlines": [
+    "KPK Cium Aroma Suap di Balik Fasilitas Mewah Lapas Cibinong",
+    "KPK Periksa Bobby Rizaldi soal Dugaan Pengubahan Opini BPK Muara Enim",
+    "KPK Buka Suara soal Lapas Cibinong: Fasilitas di Luar Standar Rawan Korupsi",
+    "KPK Periksa Anggota BPK Bobby Rizaldi Jadi Saksi Kasus Suap Bupati Muara Enim",
+    "KPK Geledah Ruang Kerja dan Kantor Dinas di Bolmut",
+    "Heboh Fasilitas Mewah bak Apartemen di Lapas Cibinong, KPK: Kita Pantau!"
+   ],
+   "portals": 11
+  },
+  {
+   "headlines": [
+    "KPK Beber Kantor Pertanahan di Jatim Setor Uang Haram ke Kanwil BPN",
+    "KPK sita dolar AS dan dolar Singapura sekaligus perhiasan dari Kantor Wilayah BPN Jatim",
+    "KPK Temukan Uang Dolar Singapura & AS Saat Geledah Kantor BPN Jatim",
+    "KPK Temukan Rekening Penampung di Kasus Setoran Kanwil BPN Jatim",
+    "KPK Duga Ada Setoran Uang Sejumlah Kantor Tanah ke Kanwil BPN Jatim",
+    "KPK Temukan Uang Dolar Singapura dan AS Saat Geledah BPN Jatim"
+   ],
+   "portals": 11
+  },
+  {
+   "headlines": [
+    "Remaja Makassar Tewas Diduga Tertembak Saat Tawuran Alami 2 Luka",
+    "Dugaan Salah Tembak Saat Tawuran Makassar, Polisi Cek Pelanggaran SOP",
+    "Polisi Uji Balistik Tewasnya Remaja Diduga Tertembak Saat Tawuran",
+    "Tawuran Berujung Maut di Makassar, 5 Polisi Diperiksa Propam",
+    "Remaja Pelaku Tawuran Tewas Diduga Tertembak Polisi Makassar",
+    "Lima Polisi Diperiksa Propam Buntut Tawuran Tewaskan Satu Orang di Makassar"
+   ],
+   "portals": 9
+  },
+  {
+   "headlines": [
+    "Foto Jimmy Masrin Ada di Rumah Dinas Kasimamtib Lapas IIA Cibinong",
+    "DPR Pertanyakan Foto Jimmy Masrin dan CCTV di Hunian Lapas Cibinong",
+    "Dirjenpas Ungkap Pemilik Miras dan Foto Jimmy Masrin di Lapas Cibinong",
+    "Dicecar soal Pigura Jimmy Masrin, Kalapas Cibinong Nonaktif Gelagapan",
+    "Penjelasan Dirjenpas soal Foto Napi Jimmy Masrin di Lapas Cibinong",
+    "Dirjenpas Sebut Foto Jimmy Masrin di Rumah Mewah Lapas Cibinong Hasil Sitaan"
+   ],
+   "portals": 10
+  },
+  {
+   "headlines": [
+    "Kejagung Tahan Eks Sekjen ESDM dalam Kasus Korupsi Nikel",
+    "Kejagung Amankan Tersangka ke-5 Kasus Korupsi Nikel CNI",
+    "Kejagung Tangkap Eks Sekjen ESDM Teguh Pamudji di Kasus Korupsi Nikel",
+    "Kejagung Tangkap Tersangka Kelima Kasus Korupsi Nikel",
+    "Kejagung Tangkap Eks Sekjen ESDM Mochamad Teguh Pamudji Terkait Kasus Korupsi Nikel",
+    "Kejagung Tangkap Eks Sekjen Kementerian ESDM Terkait Korupsi Nikel"
+   ],
+   "portals": 10
+  },
+  {
+   "headlines": [
+    "Gibran Jenguk Korban Keracunan MBG di Batang Hari Ini",
+    "Kunjungi Korban Keracunan di Batang, Gibran Tekankan Evaluasi Program MBG",
+    "Gibran &amp; Ahmad Luthfi Menemui Korban Dugaan Keracunan MBG di Batang",
+    "Gibran dan Ahmad Luthfi Besuk Pasien Diduga Keracunan MBG",
+    "Gibran Bertolak ke Batang, Pastikan Keracunan Massal MBG Segera Diinvestigasi",
+    "Gibran Jenguk Korban Keracunan MBG di Batang, Minta Investigasi Dituntaskan"
+   ],
+   "portals": 8
+  },
+  {
+   "headlines": [
+    "Dirjen PAS Perintahkan Bongkar Bangunan Tak Sesuai Peruntukan di Lapas",
+    "Seluruh Kapalas-Karutan Harus Bongkar Bangunan Ilegal Buntut Kasus Lapas Cibinong",
+    "Dirjen PAS Klaim Tak Ada Klaster atau Apartemen Mewah di Lapas Cibinong",
+    "Pasca Kasus Lapas Cibinong, Kemenimipas Buka Opsi Cek Lapas Lain",
+    "Dirjen PAS Minta Bangunan Tak Sesuai Aturan di Seluruh Lapas Dibongkar",
+    "Dirjen PAS Klaim Tak Ada Klaster Mewah di Lapas Cibinong"
+   ],
+   "portals": 7
+  },
+  {
+   "headlines": [
+    "Wamenhaj Respons Viral Mutawif Diduga Hina Jemaah Lansia: Bisa Di-blacklist",
+    "Viral Pembimbing Umrah Diduga Hina Jamaah Lansia, Wamenhaj: Blacklist!",
+    "Viral Pembimbing Umrah Hina Jemaah Lansia, Wamenhaj: Blacklist!",
+    "Wamenhaj Minta Muthawif Sindir Jemaah Lansia Di-blacklist jika Terbukti Langgar Etika",
+    "Kemenhaj Blacklist Muthawif yang Sindir Jemaah Umrah Lansia",
+    "Wamenhaj Minta Mutawif yang Hina Jemaah Lansia Masuk Blacklist"
+   ],
+   "portals": 8
+  },
+  {
+   "headlines": [
+    "13 Rumah Mewah di Lapas Cibinong Tak Tercatat sebagai Aset Negara",
+    "Dirjen PAS ke DPR: Miras di Lapas Cibinong Milik Pribadi Kasi Kamtib, Ada 3 Wiski dan 1 Bir",
+    "Dirjen PAS Dalami Dugaan ‘Apartemen’ di Lapas Cibinong Dibangun Swakelola",
+    "Dirjenpas Laporkan 7 Temuan Investigasi Lapas Cibinong ke DPR",
+    "Hasil Investigasi Lapas Cibinong Diumumkan Kamis, Dirjen PAS Minta Publik Bersabar",
+    "7 Poin Hasil Pemeriksaan Ditjenpas soal Fasilitas Mewah di Lapas Cibinong: Wiski-Bir Milik Kepala Seksi Administrasi Keamanan dan Ketertiban hingga Tidak Ditemukan Jalur Tikus"
+   ],
+   "portals": 7
+  },
+  {
+   "headlines": [
+    "Mabes Polri Tindaklanjuti Insiden KM Virgo Seusai Perkara Dilimpahkan",
+    "Baharkam Polri Ambil Alih Pengusutan Kasus Kecelakaan Maut KM Virgo 8",
+    "Penyelidikan-Penyidikan Tenggelamnya Kapal Virgo Dilimpahkan ke Mabes Polri",
+    "Mabes Polri Tangani Kasus Tenggelamnya KM Virgo Transport 8",
+    "Kasus Dilimpahkan, Penanganan Kecelakaan KM Virgo Transport 8 Kini Ditangani Mabes Polri",
+    "Kasus Kecelakaan KM Virgo Transport 8 Dilimpahkan ke Mabes Polri, Polisi Bongkar Langkah Berikutnya"
+   ],
+   "portals": 7
+  },
+  {
+   "headlines": [
+    "Kalapas Cibinong Nonaktif Akui Perintahkan Pindahkan Barang Usai Sidak",
+    "Kalapas Cibinong Akui Perintahkan Pindah Barang Usai Sidak Ombudsman",
+    "Kalapas Cibinong Akui Perintahkan Anak Buah Pindahkan Barang Temuan Sidak Ombudsman",
+    "Alasan Kepala Lapas Cibinong Perintahkan Pindahkan Barang dari Rumah Mewah Setelah Disidak",
+    "Kalapas Cibinong Akui Perintahkan Pencopotan Fasilitas Mewah Usai Temuan Ombudsman",
+    "DPR Bongkar Kejanggalan Usai Sidak Ombudsman, Kalapas Cibinong Akui Perintahkan Pemindahan Barang"
+   ],
+   "portals": 7
+  },
+  {
+   "headlines": [
+    "Eks Kepala Sekolah SMPN 18 Malang Lakukan Kekerasan ke 8 Siswa, Dipicu Hal Sepele",
+    "Laporan Kekerasan Eks Kepsek SMPN 18 Malang Bertambah, Pelapor 8 Siswa",
+    "Delapan Pelajar SMPN 18 Malang Dapat Trauma Healing, Pemkot Mulai Datangi Rumah Korban",
+    "Polisi Periksa 8 Pelajar SMPN 18 Malang dalam Dugaan Kekerasan, Dua Korban Jalani Visum",
+    "Dugaan Kekerasan Kepsek SMPN 18 Malang, 8 Siswa Melapor, Diduga Masih Ada Korban Lain yang Belum Lapor",
+    "Kesaksian Siswa SMPN 18 Malang Korban Penganiayaan Kepsek, Diintimidasi dan Ponsel Disita"
+   ],
+   "portals": 6
+  },
+  {
+   "headlines": [
+    "KPK Soroti Sumber Dana 13 Rumah Dinas di Lapas Cibinong",
+    "13 Rumah Dinas Lapas Cibinong Tak Tercatat, Anggarannya Dipertanyakan",
+    "Dirjen PAS Akui 13 Rumah Lapas Cibinong Tak Terdaftar di Sistem Negara",
+    "13 Unit Rumah Dinas di Lapas Cibinong Tak Terdaftar di Sistem Barang Milik Negara",
+    "Dirjen PAS Sebut 13 Rumah Dinas di Lapas Cibinong Tak Terdaftar Milik Negara",
+    "Terungkap! 13 Rumah Dinas di Lapas Cibinong Tak Terdaftar di Sistem Barang Milik Negara"
+   ],
+   "portals": 6
+  },
+  {
+   "headlines": [
+    "Anggota BPK Bobby Rizaldi Diperiksa KPK",
+    "KPK Panggil Anggota BPK V, Bobby Adhityo, Terkait Kasus Audit di Muara Enim",
+    "KPK Periksa Anggota BPK Bobby Rizaldi Terkait Suap Audit di Muara Enim",
+    "KPK Kembali Periksa Anggota BPK RI Bobby Rizaldi, Ada Apa dengan Kasus Audit Muara Enim?",
+    "Anggota BPK Bobby Rizaldi Diperiksa KPK 8 Jam Terkait Kasus Muara Enim",
+    "Diperiksa KPK 8 Jam, Anggota BPK Bobby Rizaldi: Seluruh Keterangan Sudah Disampaikan"
+   ],
+   "portals": 6
+  },
+  {
+   "headlines": [
+    "Begini Nasib Kepala Lapas Cibinong",
+    "DPR Minta Pemeriksaan Kasus Rumah Mewah Lapas Cibinong Transparan",
+    "Daftar Pejabat Lapas Cibinong yang Dinonaktifkan Imipas",
+    "Kalapas Cibinong Nonaktif Jelaskan Insiden Cegat Ombudsman Sidak",
+    "Temuan Klaster Mewah di Lapas Cibinong: Berawal dari Sidak Ombudsman, Kini 5 Pejabat Dinonaktifkan",
+    "Anggota DPR Cecar Kalapas Cibinong: Anda Bukan Cuman Bohongin Pak Menteri"
+   ],
+   "portals": 6
+  }
+ ],
+ "notes": "2026-09-28 law_crime pool (16 clusters). Together: every angle of the Lapas Cibinong 'klaster mewah' scandal. Apart: the BPN Jatim KPK case (2), the BPK member's KPK exam (14), the Makassar shooting (3), nickel (5), MBG poisoning (6), mutawif (8), KM Virgo (10), Malang school (12). Cluster 1 is CONTAMINATED (one Cibinong headline, three about the BPK/Muara Enim case, one Bolmut search; SYS-74 #224): it is its own story here and is left out of 'together' on purpose."
+}
