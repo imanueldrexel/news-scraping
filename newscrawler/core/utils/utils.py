@@ -69,7 +69,7 @@ _BOILERPLATE_LINE = re.compile(
     r"|scroll\s+to\s+continue(?:\s+with\s+content)?"      # DETIK
     r"|gulir\s+untuk\s+lanjut\s+baca"                     # VIVA, TVONE
     r"|berita\s+selengkapnya\b.*"                         # DETIK, CNBC tail
-    r"|ikuti\b.*\b(?:google\s+news|whatsapp\s+channel|saluran\s+whatsapp)\b.*"
+    r"|(?:ikuti|cek|dapatkan|klik|follow|temukan)\b.*\b(?:google\s+news|whatsapp\s+channel|saluran\s+whatsapp)\b.*"
     r")\s*[:|]?\s*$",
     re.IGNORECASE,
 )

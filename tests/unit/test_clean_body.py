@@ -31,6 +31,8 @@ REAL_BOILERPLATE = [
     ("CNN", "Lihat Juga :EDUKASI KEUANGAN Financial Check-up Tengah Tahun: Sudah Sehatkah Keuangan Anda? |"),
     ("DETIK", "Tautan telah disalin"),
     ("DETIK", "Berita selengkapnya tentang Kunjungi"),
+    ("KONTAN", "Cek Berita dan Artikel yang lain di Google News"),
+    ("PIKIRANRAKYAT", "Dapatkan juga informasi terkini di MantraSukabumi.com melalui Google News dengan klik tautan berikut: KLIK DISINI"),
     ("ANY", "Ikuti kami di Google News"),
     ("ANY", "Ikuti saluran WhatsApp Channel kami untuk berita terkini"),
     ("ANY", "(ega/ega)"),
@@ -47,6 +49,8 @@ PROSE = [
     "Pasar menunggu rilis data (yoy/qoq) pekan depan.",
     "Pertemuan AS/NATO (AS/NATO) digelar di Brussel.",
     "Ia meminta warga untuk ikuti arahan petugas dan jangan panik.",
+    "Cek fakta menunjukkan klaim itu keliru, kata juru bicara.",
+    "Dapatkan hasil lengkap pemungutan suara dari komisi pemilihan, kata Ketua KPU.",
     # starts with a vocabulary word but is a sentence
     "Advertisement belanja perusahaan naik 12 persen sepanjang kuartal ketiga.",
     # initials are lowercase editor tags; an upper-case pair is an abbreviation

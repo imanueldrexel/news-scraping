@@ -11,12 +11,18 @@
 | `POSTGRES_DB_NAME` | `newsaggregator` | DB name |
 | `GEMINI_API_KEY` | — | **Required for extraction, newsletter, RAG** |
 | `GEMINI_MODEL` | `gemini-1.5-flash` | Gemini model name |
-| `DAILY_API_CALL_LIMIT` | `1400` | Hard stop for LLM calls/day, per model name in `api_usage_log`. **The Gemini free tier on this project enforces 20/day/model** (OPS-20, #136) — the 1400 is not what the API allows |
+| `GEMINI_DAILY_CALL_LIMIT` | `20` | OPS-20 (#136): Gemini calls/day per model, counted in `api_usage_log`. **This project's free tier enforces 20/day/model**; knowledge extraction stops cleanly at the limit instead of spinning on 429s, and logs one WARNING naming the quota (`...PerDayPerProjectPerModel-FreeTier`) on the day's first 429. Raise it only after enabling billing |
+| `DAILY_API_CALL_LIMIT` | `1400` | OPS-20: budget of the OpenAI-compatible endpoint (labeller, drift audit) per model name in `api_usage_log`. Not Gemini's quota — see `GEMINI_DAILY_CALL_LIMIT` |
 | `SOFT_THRESHOLD` | *(unset)* | SYS-37: overrides the probe artifact's CV-chosen P(soft) threshold (0.39 for the 2026-09-22 artifact, `newscrawler/core/models/importance_probe.json`). Leave unset unless OPS-18 says the operating point must move. The probe's encoder (`intfloat/multilingual-e5-large`, ~2.2 GB) is loaded by the crawler in addition to MiniLM. |
 | `CHUNK_MIN_TOKENS` / `CHUNK_MAX_TOKENS` / `CHUNK_OVERLAP_TOKENS` | `80` / `450` / `50` | DBT-13: whitespace-token bounds of the L2 paragraph chunks; `HierarchicalChunker()` reads them as its defaults and refuses `overlap >= max` or `min > max` at start-up. Changing them changes the L2 vector count (SYS-41). |
-| `OPENAI_API_KEY` | — | OPS-20: OpenAI-compatible endpoint used **only** by the offline gold-set labeller (`scripts/label_filter_gold.py label`, SYS-36); never in the crawl path |
+| `OPENAI_API_KEY` | — | OPS-20: OpenAI-compatible endpoint (SumoPod). Used by the offline gold-set labeller / drift audit and, since 2026-10-04, by the **newsletter's cluster summaries** (SYS-68, ADR-001); never in the per-article crawl path. Knowledge extraction still calls Gemini until SYS-39 decides |
 | `OPENAI_BASE_URL` | — | e.g. `https://ai.sumopod.com/v1` |
-| `OPENAI_MODEL` | `deepseek-v4-flash` | Labelling model; a reasoning model is called with thinking disabled |
+| `OPENAI_MODEL` | `deepseek-v4-flash` | Labelling and summary model; a reasoning model is called with thinking disabled |
+| `NEWSLETTER_LLM_PROVIDER` | *(empty)* | SYS-68: who writes the summaries. Empty prefers the OpenAI-compatible endpoint when `OPENAI_API_KEY` is set, then Gemini; `openai` / `gemini` force one (a forced provider without its key means no summaries, never the other provider) |
+| `NEWSLETTER_MIN_SUMMARY_SHARE` | `0.8` | SYS-68: a digest with a smaller share of real summaries is logged at ERROR and noted on its `crawl_log` row (`digest degraded: Ringkasan AI: n/N ...`) |
+| `NEWSLETTER_MAX_CONSECUTIVE_SUMMARY_ERRORS` | `5` | SYS-68: this many failed summary calls in a row stop the calls (an outage); a quota 429 stops them at once. The clusters left show their headlines and the footer says how many |
+| `NEWSLETTER_SUMMARY_TIMEOUT_S` / `NEWSLETTER_SUMMARY_MAX_TOKENS` | `60` / `600` | SYS-68: per-call timeout and output bound of the OpenAI-compatible summarizer |
+| `NEWSLETTER_MAX_CLUSTERS_PER_STORY` | `2` | SYS-67: a section shows at most this many clusters of one story (a scandal covered from many angles used to fill 5 of 8 slots). The summarizer is asked once per section — before the summaries — which of the section's best 2× `NEWSLETTER_MAX_CLUSTERS_PER_TOPIC` clusters are the same story; the rest join "…dan N berita lainnya". `0` turns it off. A failed grouping shows that section as ranked and the footer says `pengelompokan cerita gagal di N bagian` |
 | `KNOWLEDGE_BATCH_SIZE` | `50` | Articles per extraction run |
 | `EMBEDDING_MODEL_HF` | `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` | Embedding model |
 | `VECTOR_DB_NAME_L1` | `NEWS_L1` | FAISS L1 index directory |
@@ -601,7 +607,11 @@ pip install scikit-learn
 ```
 
 **Newsletter: 0 clusters produced**
-- Check `NEWSLETTER_CLUSTER_DISTANCE` -- raise it (0.35) if related articles stay apart, lower it (0.25) if clusters mix stories.
+- Check `NEWSLETTER_CLUSTER_DISTANCE` -- raise it (0.35) if related articles stay apart, lower it (0.25) if clusters mix stories. Neither the vectors nor the headline words can tell one scandal's angles from two cases of one institution (EXPERIMENTS.md "SYS-67"), so `NEWSLETTER_MAX_CLUSTERS_PER_STORY` asks the summarizer instead; a cluster that mixes two unrelated cases is only handled in its summary (the prompt says to summarize the event most articles are about), its "Sumber" count can still include a stray article.
+
+**Newsletter: the digest lists headlines instead of summaries**
+- The footer says why: `Ringkasan AI: 0/94 ... kuota harian habis` (the provider's quota), `layanan gagal berulang` (an outage: 5 failed calls in a row), or `tidak ada penyedia LLM yang dikonfigurasi` (no `OPENAI_API_KEY`/`GEMINI_API_KEY`). The same numbers are in `newsletter_digests.categories->'_summaries'` and, below 80%, in the `crawl_log` row's `error_msg`.
+- Preview a day without writing to the database: `venv\Scripts\python.exe scripts\preview_newsletter.py --date YYYY-MM-DD` (file in `digests/preview/`; no `newsletter_digests` row, no `api_usage_log` increment).
 - Check that today's articles exist: `SELECT COUNT(*) FROM sitemaps WHERE posted_at = YYYYMMDD;`
 
 **RAG: FTS returns no results**

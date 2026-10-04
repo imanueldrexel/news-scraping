@@ -167,6 +167,12 @@ NEWSLETTER_MAX_CONSECUTIVE_SUMMARY_ERRORS = int(os.getenv("NEWSLETTER_MAX_CONSEC
 NEWSLETTER_SUMMARY_TIMEOUT_S = float(os.getenv("NEWSLETTER_SUMMARY_TIMEOUT_S", 60))
 NEWSLETTER_SUMMARY_MAX_TOKENS = int(os.getenv("NEWSLETTER_SUMMARY_MAX_TOKENS", 600))
 
+# SYS-67 (#215): one scandal covered from many angles used to fill five of a section's eight
+# slots. The summarizer is asked once per section which of its best 2x NEWSLETTER_MAX_CLUSTERS_PER_TOPIC
+# clusters tell one story (core/story_grouping.py), and a section shows at most this many
+# clusters of one story; the rest join its "and N more" line. 0 turns the grouping off.
+NEWSLETTER_MAX_CLUSTERS_PER_STORY = int(os.getenv("NEWSLETTER_MAX_CLUSTERS_PER_STORY", 2))
+
 # ── RAG Search (Phase 4) ─────────────────────────────────────────────────────
 RAG_SEMANTIC_WEIGHT = float(os.getenv("RAG_SEMANTIC_WEIGHT", 0.6))
 RAG_BM25_WEIGHT     = float(os.getenv("RAG_BM25_WEIGHT", 0.3))

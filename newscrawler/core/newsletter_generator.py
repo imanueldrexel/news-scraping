@@ -8,6 +8,7 @@ from newscrawler.core.constants import (
     DIGESTS_DIR,
     EMBEDDING_MODEL_HF,
     NEWSLETTER_CLUSTER_DISTANCE,
+    NEWSLETTER_MAX_CLUSTERS_PER_STORY,
     NEWSLETTER_MAX_CLUSTERS_PER_TOPIC,
     NEWSLETTER_MAX_CONSECUTIVE_SUMMARY_ERRORS,
     NEWSLETTER_MIN_CLUSTER_SIZE,
@@ -15,6 +16,7 @@ from newscrawler.core.constants import (
     SOURCE_AUTHORITY,
 )
 from newscrawler.core.filter_rubric import TOPICS_FINANCE, TOPICS_NEWS
+from newscrawler.core.story_grouping import group_clusters, pick_shown
 from newscrawler.core.summarizer import QuotaExhausted, Summarizer, SummarizerError, build_summarizer
 
 logger = logging.getLogger(__name__)
@@ -43,6 +45,8 @@ SECTION_TITLES = {
 _SUMMARIZE_PROMPT = (
     "Buat rangkuman berita berikut dalam 3-5 poin dalam bahasa yang sama dengan artikel.\n"
     "Fokus pada: apa yang terjadi, siapa yang terlibat, angka-angka penting.\n"
+    "Jika artikel membahas peristiwa yang berbeda, rangkum hanya peristiwa yang paling banyak dibahas "
+    "dan abaikan artikel yang tidak berkaitan.\n"
     "Gunakan format bullet point dengan tanda '-'.\n\n"
     "Artikel:\n{articles}"
 )
@@ -66,6 +70,8 @@ class SummaryStats:
     summarized: int = 0
     provider: Optional[str] = None
     stopped: Optional[str] = None      # a key of _STOP_REASONS once the calls stopped
+    groups_ok: int = 0                 # SYS-67: sections whose clusters were grouped by story
+    groups_failed: int = 0             # ... and those where the grouping failed (shown as ranked)
 
     @property
     def fallback(self) -> int:
@@ -82,6 +88,8 @@ class SummaryStats:
         if self.fallback:
             reason = _STOP_REASONS.get(self.stopped, "sebagian ringkasan gagal")
             line += f" — {reason}; sisanya hanya daftar judul"
+        if self.groups_failed:
+            line += f" | pengelompokan cerita gagal di {self.groups_failed} bagian"
         return line
 
     def as_dict(self) -> dict:
@@ -217,6 +225,8 @@ class NewsletterGenerator:
                 "article_count": len(members),
                 "cluster_count": len(clusters),
                 "clusters": shown,
+                "ranked": clusters,                       # SYS-67: every cluster, best first
+                "unclustered": len(groups.get(-1, [])),
                 "more": len(clusters) - len(shown) + len(groups.get(-1, [])),
             })
         return sections
@@ -258,10 +268,13 @@ class NewsletterGenerator:
         all of them today); NEWSLETTER_MAX_CONSECUTIVE_SUMMARY_ERRORS failures
         in a row stop them too (an outage). Every cluster without a summary
         shows its headlines, and the stats say how many."""
-        clusters = [c for section in sections for c in section["clusters"]]
-        stats = SummaryStats(total=len(clusters), provider=getattr(self._summarizer, "name", None))
+        stats = SummaryStats(provider=getattr(self._summarizer, "name", None))
         if self._summarizer is None:
             stats.stopped = "no_provider"
+        else:
+            self._diversify(sections, stats)
+        clusters = [c for section in sections for c in section["clusters"]]
+        stats.total = len(clusters)
         consecutive_errors = 0
         for cluster in clusters:
             if not stats.stopped:
@@ -281,6 +294,40 @@ class NewsletterGenerator:
                         stats.stopped = "errors"
             cluster["summary"] = self.headline_summary(cluster["articles"])
         return stats
+
+    def _diversify(self, sections: list, stats: SummaryStats) -> None:
+        """SYS-67 (#215): replace each section's shown clusters by the best ones with at
+        most NEWSLETTER_MAX_CLUSTERS_PER_STORY of any one story, as the summarizer
+        groups them. A section whose grouping fails is shown as ranked and counted;
+        a quota error stops the calls (the summaries stop with it)."""
+        if not NEWSLETTER_MAX_CLUSTERS_PER_STORY:
+            return
+        pool_size = 2 * NEWSLETTER_MAX_CLUSTERS_PER_TOPIC
+        consecutive_errors = 0
+        for section in sections:
+            ranked = section["ranked"]
+            if len(ranked) <= NEWSLETTER_MAX_CLUSTERS_PER_STORY:
+                continue                  # too few clusters for one story to crowd the section
+            pool = ranked[:pool_size]
+            try:
+                groups = group_clusters(self._summarizer, pool)
+            except QuotaExhausted as e:
+                stats.stopped = "quota"
+                logger.warning(f"Summarizer quota exhausted while grouping stories ({e.quota or 'unnamed quota'}).")
+                return
+            except SummarizerError as e:
+                stats.groups_failed += 1
+                consecutive_errors += 1
+                logger.warning(f"Story grouping failed for {section['topic']}: {e}. Showing the ranked clusters.")
+                if consecutive_errors >= NEWSLETTER_MAX_CONSECUTIVE_SUMMARY_ERRORS:
+                    stats.stopped = "errors"
+                    return
+                continue
+            consecutive_errors = 0
+            stats.groups_ok += 1
+            shown = pick_shown(pool, groups, NEWSLETTER_MAX_CLUSTERS_PER_STORY, NEWSLETTER_MAX_CLUSTERS_PER_TOPIC)
+            section["clusters"] = shown
+            section["more"] = section["cluster_count"] - len(shown) + section["unclustered"]
 
     @staticmethod
     def _summary_note(stats: SummaryStats) -> Optional[str]:
