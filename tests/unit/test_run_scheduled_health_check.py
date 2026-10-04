@@ -44,6 +44,15 @@ def _fresh_backup():
         yield
 
 
+@pytest.fixture(autouse=True)
+def _no_audit_day(monkeypatch):
+    """DBT-55 (#233): the wrapper also runs OPS-18's weekly drift audit on FILTER_AUDIT_WEEKDAY (Monday),
+    a second subprocess and a second alert, so these tests passed six days a week. The module reads the
+    weekday when it is loaded, so every `_load()` below gets the audit switched off; the tests that are
+    about the audit day set it themselves (TestAuditDay)."""
+    monkeypatch.setenv("FILTER_AUDIT_WEEKDAY", "-1")
+
+
 def _load():
     spec = importlib.util.spec_from_file_location("run_scheduled_health_check", _SCRIPT)
     mod = importlib.util.module_from_spec(spec)
@@ -259,3 +268,43 @@ class TestStaleBackupAlert:
     def test_a_fresh_dump_is_silent(self):
         _, sent = self._run(3.0)
         assert sent == []
+
+
+class TestAuditDay:
+    """DBT-55 (#233): the same healthy run on each of the seven weekdays. With the audit on Monday it
+    runs one extra subprocess that day and none on the others; with it off, never."""
+
+    @staticmethod
+    def _run_on(weekday, audit_weekday, monkeypatch):
+        from datetime import date as real_date
+        monkeypatch.setenv("FILTER_AUDIT_WEEKDAY", str(audit_weekday))
+        mod = _load()
+
+        original = mod.filter_audit_due
+        day = real_date(2026, 10, 5 + weekday)               # 2026-10-05 is a Monday
+        with patch.object(mod, "filter_audit_due", side_effect=lambda today: original(day)),              patch.object(mod, "_hours_since_last_health_check", return_value=None),              patch.object(mod.subprocess, "run") as mock_run,              patch("notify_telegram.send") as mock_send:
+            mock_run.return_value = MagicMock(returncode=0, stdout="ALL OK", stderr="")
+            rc = mod.main()
+        return rc, mock_run.call_count, mock_send.call_count
+
+    @pytest.mark.parametrize("weekday", range(7))
+    def test_the_audit_runs_on_its_day_only(self, weekday, monkeypatch):
+        rc, runs, sends = self._run_on(weekday, 0, monkeypatch)
+        assert (rc, sends) == (0, 0)
+        assert runs == (2 if weekday == 0 else 1)
+
+    @pytest.mark.parametrize("weekday", range(7))
+    def test_with_the_audit_off_every_day_is_the_same(self, weekday, monkeypatch):
+        assert self._run_on(weekday, -1, monkeypatch) == (0, 1, 0)
+
+    def test_a_failed_audit_on_its_day_alerts_once_and_never_changes_the_exit_code(self, monkeypatch):
+        from datetime import date as real_date
+        monkeypatch.setenv("FILTER_AUDIT_WEEKDAY", "0")
+        mod = _load()
+
+        original = mod.filter_audit_due
+        results = iter([MagicMock(returncode=0, stdout="ALL OK", stderr=""),
+                        MagicMock(returncode=1, stdout="", stderr="boom")])
+        with patch.object(mod, "filter_audit_due", side_effect=lambda today: original(real_date(2026, 10, 5))),              patch.object(mod, "_hours_since_last_health_check", return_value=None),              patch.object(mod.subprocess, "run", side_effect=lambda *a, **k: next(results)),              patch("notify_telegram.send") as mock_send:
+            assert mod.main() == 0
+        assert mock_send.call_count == 1 and "Filter drift audit (OPS-18) FAILED, exit 1" in mock_send.call_args.args[0]
