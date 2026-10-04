@@ -72,6 +72,11 @@ class TestParseGroups:
     def test_anything_else_is_refused(self, answer):
         assert sg.parse_groups(answer, 3) is None
 
+    def test_a_bool_is_not_an_index_even_when_it_equals_one(self):
+        """True == 1 in Python, so [[0],[true]] would pass an index check done with ==."""
+        assert sg.parse_groups('{"grup": [[0],[true]]}', 2) is None
+        assert sg.parse_groups('{"grup": [[0],[1]]}', 2) == [[0], [1]]
+
     def test_empty_groups_are_dropped(self):
         assert sg.parse_groups('{"grup": [[0,1],[],[2]]}', 3) == [[0, 1], [2]]
 
@@ -135,7 +140,7 @@ def _article(i, topic, headline):
 class TestGeneratorShowsAStoryAtMostTwice:
     """The generator end to end with a fake summarizer: the section of SECTION's eight clusters."""
 
-    def _generator(self, monkeypatch, summarizer, cap=5):
+    def _generator(self, monkeypatch, summarizer, cap=8):
         ds = MagicMock()
         ds.save_digest.return_value = 1
         gen = ng.NewsletterGenerator(ds, summarizer=summarizer, embed_documents=lambda t: [])
@@ -184,7 +189,7 @@ class TestGeneratorShowsAStoryAtMostTwice:
 
     def test_a_failed_grouping_shows_the_ranked_clusters_and_says_so(self, monkeypatch, tmp_path):
         s = FakeSummarizer(group_answer="bukan json")
-        gen, ds = self._generator(monkeypatch, s)
+        gen, ds = self._generator(monkeypatch, s, cap=5)
         path = self._run(gen, ds, monkeypatch, tmp_path)
         text = open(path, encoding="utf-8").read()
         assert text.count("### ") == 5                            # the five best, as before
