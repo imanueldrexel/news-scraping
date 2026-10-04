@@ -368,7 +368,7 @@ M = [
  ('sys63_newspaper_not_cleaned', 'newscrawler/infrastructure/datasource/scrapers/crawler.py',
   'newspaper_text = clean_body_paragraphs(self._newspaper_fallback(url))', 'newspaper_text = self._newspaper_fallback(url)'),
  ('sys63_baca_juga_dropped', 'newscrawler/core/utils/utils.py',
-  'r"baca\\s+(?:juga|selengkapnya)\\b.*"', 'r"baca\\s+selengkapnya\\b.*"'),
+  'rf"baca\\s+juga{_RELATED_HEADLINE}"', 'rf"baca\\s+selengkapnya{_RELATED_HEADLINE}"'),
  ('sys63_lihat_juga_dropped', 'newscrawler/core/utils/utils.py',
   'r"|lihat\\s+juga\\b.*"', 'r"|lihat\\s+jugaX\\b.*"'),
  ('sys63_advertisement_dropped', 'newscrawler/core/utils/utils.py',

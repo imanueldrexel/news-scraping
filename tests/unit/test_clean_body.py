@@ -79,6 +79,10 @@ class TestSys72ProseThatLooksLikeChrome:
     def test_a_closing_abbreviation_pair_is_not_an_editor_tag(self, tail):
         assert clean_body_paragraphs([f"Pemerintah akan menaikkan tarif. {tail}"]) == [f"Pemerintah akan menaikkan tarif. {tail}"]
 
+    def test_an_initials_shaped_pair_after_a_word_is_not_cut(self):
+        """SYS-72: the tag is cut only after a sentence end or a newline; a pair that follows a word is prose."""
+        assert clean_body_paragraphs(["Rapat digelar di Jakarta (abc/xyz)"]) == ["Rapat digelar di Jakarta (abc/xyz)"]
+
     def test_a_pair_after_a_word_not_a_sentence_end_is_not_cut(self):
         assert clean_body_paragraphs(["Harga naik 5% (yoy/qoq)"]) == ["Harga naik 5% (yoy/qoq)"]
 
