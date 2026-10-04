@@ -54,7 +54,16 @@ class TestNewsletterCrawlLog:
         service.data_flow_repo.generate_newsletter.return_value = "digests/2026-09-22.md"
         assert service.generate_newsletter() == "digests/2026-09-22.md"
         service.data_flow_repo.log_crawl_start.assert_called_once_with("ALL", "newsletter")
-        service.data_flow_repo.log_crawl_complete.assert_called_once_with(77, 1)
+        service.data_flow_repo.log_crawl_complete.assert_called_once_with(77, 1, note=None)
+
+    def test_a_degraded_digest_puts_its_reason_on_the_row(self, service):
+        """SYS-68 (#216): the digest path carries `.note`; crawl_log says what the file says."""
+        from newscrawler.core.newsletter_generator import DigestPath
+        path = DigestPath("digests/2026-09-22.md", "digest degraded: Ringkasan AI: 0/9")
+        service.data_flow_repo.generate_newsletter.return_value = path
+        service.generate_newsletter()
+        service.data_flow_repo.log_crawl_complete.assert_called_once_with(
+            77, 1, note="digest degraded: Ringkasan AI: 0/9")
 
     def test_exception_is_a_failed_row_and_propagates(self, service):
         service.data_flow_repo.generate_newsletter.side_effect = ValueError("no digest")

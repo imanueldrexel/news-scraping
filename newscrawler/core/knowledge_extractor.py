@@ -4,12 +4,13 @@ from datetime import date, datetime
 from typing import Dict, Optional
 
 from newscrawler.core.constants import (
-    DAILY_API_CALL_LIMIT,
     GEMINI_API_KEY,
+    GEMINI_DAILY_CALL_LIMIT,
     GEMINI_MODEL,
     KNOWLEDGE_BATCH_SIZE,
 )
 from newscrawler.core.entity_normalizer import EntityNormalizer
+from newscrawler.core.summarizer import is_quota_error, quota_name
 from newscrawler.infrastructure.datasource.dataflow.model.entity_model import (
     EntityMentionModel,
     EntityModel,
@@ -71,7 +72,7 @@ class KnowledgeExtractor:
         self.ds          = knowledge_datasource
         self.api_key     = api_key     or GEMINI_API_KEY
         self.model_name  = model_name  or GEMINI_MODEL
-        self.daily_limit = daily_limit or DAILY_API_CALL_LIMIT
+        self.daily_limit = daily_limit or GEMINI_DAILY_CALL_LIMIT
         self.batch_size  = batch_size  or KNOWLEDGE_BATCH_SIZE
         self.normalizer  = EntityNormalizer()
         self.alias_map: Dict[str, int] = {}
@@ -123,6 +124,7 @@ class KnowledgeExtractor:
         attempted = 0
         transient_failures = 0
         first_transient_error = None
+        quota_warned = False
         for article_meta in articles:
             current_count = self.ds.get_today_api_call_count(self.model_name)
             if current_count >= self.daily_limit:
@@ -145,6 +147,16 @@ class KnowledgeExtractor:
                     f"Article {article_id}: transient Gemini API failure, leaving "
                     f"attempts and call count untouched: {e}"
                 )
+                if not quota_warned and is_quota_error(e.__cause__ or e):
+                    # OPS-20 (#136): "20 extractions, then 429s all day" must be
+                    # visible: one WARNING per run, naming the quota that ran out.
+                    quota_warned = True
+                    logger.warning(
+                        f"Gemini quota exhausted ({quota_name(e.__cause__ or e) or 'unnamed quota'}) "
+                        f"after {processed} extractions this run; every further call today will "
+                        f"fail the same way. GEMINI_DAILY_CALL_LIMIT={self.daily_limit} should match "
+                        f"the project's real per-model quota."
+                    )
                 continue
 
             # Increment regardless of parse success (the API call was made and got

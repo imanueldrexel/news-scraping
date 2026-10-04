@@ -682,7 +682,10 @@ class CrawlerServiceImpl(CrawlerService):
         except Exception as e:
             self.data_flow_repo.log_crawl_failed(log_id, str(e)[:500])
             raise
-        self.data_flow_repo.log_crawl_complete(log_id, 1 if path else 0)
+        # SYS-68 (#216): a digest whose summaries are mostly headlines is
+        # complete but degraded; the reason rides on the row (the generator's
+        # path carries it as `.note`), so crawl_log says what the file says.
+        self.data_flow_repo.log_crawl_complete(log_id, 1 if path else 0, note=getattr(path, "note", None))
         logger.info(f"Newsletter generated: {path}")
         return path
 

@@ -18,7 +18,7 @@ def _art(i, topic, source="KOMPAS", cluster=None):
 
 def _gen(monkeypatch, cap=2):
     ds = MagicMock()
-    gen = ng.NewsletterGenerator(ds, api_key="", embed_documents=lambda texts: [[0.0, 1.0]] * len(texts))
+    gen = ng.NewsletterGenerator(ds, summarizer=None, embed_documents=lambda texts: [[0.0, 1.0]] * len(texts))
     monkeypatch.setattr(ng, "NEWSLETTER_MAX_CLUSTERS_PER_TOPIC", cap)
     monkeypatch.setattr(ng, "NEWSLETTER_MIN_CLUSTER_SIZE", 2)
     return gen, ds
@@ -84,8 +84,10 @@ class TestGenerate:
         assert md.count("### ") == 2, "one shown cluster per section at cap=1"
         assert "dan 1 berita lainnya" in md
         kwargs = ds.save_digest.call_args.kwargs
-        assert kwargs["categories"] == {"markets": {"articles": 4, "clusters": 2, "shown": 1},
-                                        "law_crime": {"articles": 2, "clusters": 1, "shown": 1}}
+        topics = {k: v for k, v in kwargs["categories"].items() if not k.startswith("_")}
+        assert topics == {"markets": {"articles": 4, "clusters": 2, "shown": 1},
+                          "law_crime": {"articles": 2, "clusters": 1, "shown": 1}}
+        assert kwargs["categories"][ng.SUMMARIES_KEY]["total"] == 2          # SYS-68: counted beside the topics
         assert kwargs["cluster_count"] == 3 and kwargs["article_count"] == 6
 
     def test_the_keyword_category_is_gone(self):
@@ -99,7 +101,7 @@ class TestClustering:
         """DBSCAN joined a chain in which each neighbour is close to the next;
         average linkage keeps two tight groups apart even with a bridge."""
         import numpy as np
-        gen = ng.NewsletterGenerator(MagicMock(), api_key="", embed_documents=lambda t: [])
+        gen = ng.NewsletterGenerator(MagicMock(), summarizer=None, embed_documents=lambda t: [])
         a = [np.array([1.0, 0.0, 0.0])] * 4
         b = [np.array([0.0, 1.0, 0.0])] * 4
         bridge = [np.array([0.7, 0.7, 0.0])]
@@ -110,6 +112,6 @@ class TestClustering:
     def test_a_group_below_the_minimum_size_is_unclustered(self, monkeypatch):
         import numpy as np
         monkeypatch.setattr(ng, "NEWSLETTER_MIN_CLUSTER_SIZE", 2)
-        gen = ng.NewsletterGenerator(MagicMock(), api_key="", embed_documents=lambda t: [])
+        gen = ng.NewsletterGenerator(MagicMock(), summarizer=None, embed_documents=lambda t: [])
         labels = gen._cluster(np.array([[1.0, 0.0], [1.0, 0.01], [0.0, 1.0]]))
         assert labels[0] == labels[1] != -1 and labels[2] == -1

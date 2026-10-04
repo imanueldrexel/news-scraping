@@ -107,12 +107,20 @@ SOFT_THRESHOLD = float(_soft) if _soft else None
 # ── Knowledge Extraction (Phase 2) ──────────────────────────────────────────
 GEMINI_API_KEY        = os.getenv("GEMINI_API_KEY")
 GEMINI_MODEL          = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+# OPS-20 (#136): two budgets, because the two providers have two quotas.
+# GEMINI_DAILY_CALL_LIMIT is Gemini's per-model requests/day: this project's
+# free tier enforces 20 (429 ...GenerateRequestsPerDayPerProjectPerModel-FreeTier,
+# 2026-09-20), so the default is 20 and the extractor stops there cleanly instead
+# of spinning on 429s; raise it only after enabling billing. DAILY_API_CALL_LIMIT
+# is the budget of the OpenAI-compatible endpoint (labeller, newsletter).
+GEMINI_DAILY_CALL_LIMIT = int(os.getenv("GEMINI_DAILY_CALL_LIMIT", 20))
 DAILY_API_CALL_LIMIT  = int(os.getenv("DAILY_API_CALL_LIMIT", 1400))
-# OPS-20 (#136): an OpenAI-compatible endpoint for the OFFLINE labeller
-# (SYS-36) only -- owner decision 2026-09-20 after the Gemini free tier turned
-# out to be 20 requests/day/model. Nothing in the per-article crawl path
-# calls it. The openai SDK reads OPENAI_API_KEY/OPENAI_BASE_URL by name; the
-# model is ours (SumoPod: "deepseek-v4-flash").
+# OPS-20 (#136): an OpenAI-compatible endpoint -- owner decision 2026-09-20 for
+# the offline labeller (SYS-36) after the Gemini free tier turned out to be 20
+# requests/day/model, and 2026-10-04 for the newsletter's summaries (SYS-68).
+# Knowledge extraction still calls Gemini until SYS-39 decides. The openai SDK
+# reads OPENAI_API_KEY/OPENAI_BASE_URL by name; the model is ours (SumoPod:
+# "deepseek-v4-flash").
 OPENAI_API_KEY        = os.getenv("OPENAI_API_KEY")
 OPENAI_BASE_URL       = os.getenv("OPENAI_BASE_URL")
 OPENAI_MODEL          = os.getenv("OPENAI_MODEL", "deepseek-v4-flash")
@@ -147,6 +155,17 @@ SOURCE_AUTHORITY = {
 # SYS-40 (#126): the digest shows at most this many clusters per topic
 # section (ranked by size x distinct sources); the rest is one "and N more" line.
 NEWSLETTER_MAX_CLUSTERS_PER_TOPIC = int(os.getenv("NEWSLETTER_MAX_CLUSTERS_PER_TOPIC", 8))
+
+# SYS-68 (#216) / ADR-001: who writes the cluster summaries and what happens
+# when they cannot. "" prefers the OpenAI-compatible endpoint when its key is
+# set, then Gemini; "openai" / "gemini" force one. A digest whose share of real
+# summaries is under NEWSLETTER_MIN_SUMMARY_SHARE is logged at ERROR and noted
+# on its crawl_log row; N consecutive failed calls stop the calls (an outage).
+NEWSLETTER_LLM_PROVIDER = os.getenv("NEWSLETTER_LLM_PROVIDER", "").strip().lower()
+NEWSLETTER_MIN_SUMMARY_SHARE = float(os.getenv("NEWSLETTER_MIN_SUMMARY_SHARE", 0.8))
+NEWSLETTER_MAX_CONSECUTIVE_SUMMARY_ERRORS = int(os.getenv("NEWSLETTER_MAX_CONSECUTIVE_SUMMARY_ERRORS", 5))
+NEWSLETTER_SUMMARY_TIMEOUT_S = float(os.getenv("NEWSLETTER_SUMMARY_TIMEOUT_S", 60))
+NEWSLETTER_SUMMARY_MAX_TOKENS = int(os.getenv("NEWSLETTER_SUMMARY_MAX_TOKENS", 600))
 
 # ── RAG Search (Phase 4) ─────────────────────────────────────────────────────
 RAG_SEMANTIC_WEIGHT = float(os.getenv("RAG_SEMANTIC_WEIGHT", 0.6))

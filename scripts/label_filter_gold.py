@@ -591,7 +591,7 @@ class OpenAICompatLabeller:
 def make_labeller(provider: str):
     """The labelling client for --provider, from constants.py (env)."""
     from newscrawler.core.constants import (
-        DAILY_API_CALL_LIMIT, GEMINI_API_KEY, GEMINI_MODEL, OPENAI_API_KEY, OPENAI_BASE_URL, OPENAI_MODEL,
+        DAILY_API_CALL_LIMIT, GEMINI_API_KEY, GEMINI_DAILY_CALL_LIMIT, GEMINI_MODEL, OPENAI_API_KEY, OPENAI_BASE_URL, OPENAI_MODEL,
     )
     from newscrawler.infrastructure.datasource.dataflow.write.sqlalchemy.sql_alchemy_knowledge_data_source import (
         SQLAlchemyKnowledgeDataSource,
@@ -602,7 +602,7 @@ def make_labeller(provider: str):
     if provider == "gemini":
         if not GEMINI_API_KEY:
             raise SystemExit("GEMINI_API_KEY is not set")
-        return GeminiLabeller(ds, GEMINI_MODEL, GEMINI_API_KEY, DAILY_API_CALL_LIMIT), GEMINI_MODEL
+        return GeminiLabeller(ds, GEMINI_MODEL, GEMINI_API_KEY, GEMINI_DAILY_CALL_LIMIT), GEMINI_MODEL
     if provider == "openai":
         if not OPENAI_API_KEY:
             raise SystemExit("OPENAI_API_KEY is not set (OPENAI_BASE_URL / OPENAI_MODEL alongside it in .env)")

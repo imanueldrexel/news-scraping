@@ -347,3 +347,50 @@ class TestExtractAllOutageSignal:
         ds = self._ds(0)
         result = _make(ds=ds, client=MagicMock()).extract_all()
         assert (int(result), result.attempted, result.all_calls_failed) == (0, 0, False)
+
+
+class TestQuotaWarning:
+    """OPS-20 (#136): "20 extractions, then 429s all day" must be visible. One
+    WARNING per run names the quota that ran out; every other call is untouched."""
+
+    def _ds(self, n):
+        ds = MagicMock()
+        ds.get_today_api_call_count.return_value = 0
+        ds.load_alias_map.return_value = {}
+        ds.get_articles_pending_extraction.return_value = [
+            {"article_id": i, "sitemap_id": i, "posted_at": 20260101, "source": "S", "extracted_text": "x"}
+            for i in range(1, n + 1)
+        ]
+        return ds
+
+    def test_the_first_quota_error_logs_one_warning_naming_the_quota(self, caplog):
+        kx = _make(ds=self._ds(4), client=MagicMock())
+
+        def quota(text):
+            raise GeminiTransientError(
+                "429 RESOURCE_EXHAUSTED quotaId: GenerateRequestsPerDayPerProjectPerModel-FreeTier")
+        kx._call_gemini = quota
+        with caplog.at_level(logging.WARNING, logger="newscrawler.core.knowledge_extractor"):
+            result = kx.extract_all()
+        named = [r for r in caplog.records
+                 if "quota exhausted (GenerateRequestsPerDayPerProjectPerModel-FreeTier)" in r.message]
+        assert len(named) == 1
+        assert result.attempted == 4                      # the batch is not cut short
+
+    def test_an_ordinary_transient_failure_logs_no_quota_warning(self, caplog):
+        kx = _make(ds=self._ds(2), client=MagicMock())
+
+        def timeout(text):
+            raise GeminiTransientError("timeout")
+        kx._call_gemini = timeout
+        with caplog.at_level(logging.WARNING, logger="newscrawler.core.knowledge_extractor"):
+            kx.extract_all()
+        assert not [r for r in caplog.records if "quota exhausted" in r.message]
+
+    def test_the_default_budget_is_geminis_not_the_other_endpoints(self, monkeypatch):
+        """OPS-20: Gemini's per-model quota (20/day on the free tier) and the
+        OpenAI-compatible endpoint's budget are two numbers."""
+        import newscrawler.core.knowledge_extractor as ke
+        monkeypatch.setattr(ke, "GEMINI_API_KEY", None)
+        monkeypatch.setattr(ke, "GEMINI_DAILY_CALL_LIMIT", 20)
+        assert KnowledgeExtractor(MagicMock()).daily_limit == 20

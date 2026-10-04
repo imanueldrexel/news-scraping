@@ -1,19 +1,21 @@
 import logging
 import os
+from dataclasses import asdict, dataclass
 from datetime import date, datetime
 from typing import Callable, List, Optional
 
 from newscrawler.core.constants import (
     DIGESTS_DIR,
     EMBEDDING_MODEL_HF,
-    GEMINI_API_KEY,
-    GEMINI_MODEL,
     NEWSLETTER_CLUSTER_DISTANCE,
     NEWSLETTER_MAX_CLUSTERS_PER_TOPIC,
+    NEWSLETTER_MAX_CONSECUTIVE_SUMMARY_ERRORS,
     NEWSLETTER_MIN_CLUSTER_SIZE,
+    NEWSLETTER_MIN_SUMMARY_SHARE,
     SOURCE_AUTHORITY,
 )
 from newscrawler.core.filter_rubric import TOPICS_FINANCE, TOPICS_NEWS
+from newscrawler.core.summarizer import QuotaExhausted, Summarizer, SummarizerError, build_summarizer
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -22,6 +24,7 @@ logger.setLevel(logging.INFO)
 # filter_rubric's order -- the five finance topics first, then the rest.
 SECTION_ORDER: List[str] = TOPICS_FINANCE + TOPICS_NEWS
 FALLBACK_TOPIC = "other_news"   # an article with no (or an unknown) topic
+SUMMARIES_KEY = "_summaries"    # newsletter_digests.categories: summary counts, not a topic (SYS-68)
 SECTION_TITLES = {
     "markets":             "📈 Pasar",
     "macro_policy":        "📊 Kebijakan & Makroekonomi",
@@ -44,27 +47,79 @@ _SUMMARIZE_PROMPT = (
     "Artikel:\n{articles}"
 )
 
+_FROM_CONFIG = object()   # "build the summarizer from the environment" (None means: none)
+
+# SYS-68 (#216): why a digest has fewer real summaries than clusters.
+_STOP_REASONS = {
+    "no_provider": "tidak ada penyedia LLM yang dikonfigurasi",
+    "quota":       "kuota harian habis",
+    "errors":      "layanan gagal berulang",
+}
+
+
+@dataclass
+class SummaryStats:
+    """SYS-68 (#216): how many of the shown clusters got a real summary. The
+    rest carry their top headlines, which is a different product -- the digest
+    footer, the newsletter_digests row and the log must all say so."""
+    total: int = 0
+    summarized: int = 0
+    provider: Optional[str] = None
+    stopped: Optional[str] = None      # a key of _STOP_REASONS once the calls stopped
+
+    @property
+    def fallback(self) -> int:
+        return self.total - self.summarized
+
+    @property
+    def share(self) -> float:
+        return self.summarized / self.total if self.total else 1.0
+
+    def footer(self) -> str:
+        line = f"Ringkasan AI: {self.summarized}/{self.total}"
+        if self.provider:
+            line += f" ({self.provider})"
+        if self.fallback:
+            reason = _STOP_REASONS.get(self.stopped, "sebagian ringkasan gagal")
+            line += f" — {reason}; sisanya hanya daftar judul"
+        return line
+
+    def as_dict(self) -> dict:
+        return asdict(self)
+
+
+class DigestPath(str):
+    """The digest's path, carrying `note`: what a caller must tell the operator
+    about a degraded digest (None when every summary is real). Behaves as the
+    plain path everywhere else."""
+
+    def __new__(cls, path: str, note: Optional[str] = None):
+        obj = super().__new__(cls, path)
+        obj.note = note
+        return obj
+
 
 class NewsletterGenerator:
-    def __init__(self, newsletter_datasource, api_key: str = None, model_name: str = None,
-                 embed_documents: Optional[Callable[[List[str]], List[List[float]]]] = None):
+    def __init__(self, newsletter_datasource,
+                 embed_documents: Optional[Callable[[List[str]], List[List[float]]]] = None,
+                 summarizer=_FROM_CONFIG, usage=None):
         """embed_documents: DBT-02 (#21) -- the pipeline passes the FAISS
         datasource's MiniLM (`embed_documents`, normalized, batch 64), so a
         newsletter run does not load a second copy of the same model. Without
-        it the model is loaded here on first use (a standalone generator)."""
-        self.ds         = newsletter_datasource
-        self._embed_documents = embed_documents
-        self.api_key    = api_key    or GEMINI_API_KEY
-        self.model_name = model_name or GEMINI_MODEL
+        it the model is loaded here on first use (a standalone generator).
 
-        if self.api_key:
-            from google import genai
-            # Initialize the client instead of using a global configuration.
-            # (If you set GEMINI_API_KEY as an environment var, you can just use genai.Client())
-            self._client = genai.Client(api_key=self.api_key)
-        else:
-            logger.warning("GEMINI_API_KEY not set — summaries will use headlines only.")
-            self._client = None
+        summarizer: an object with `.name` and `.summarize(prompt)` (ADR-001).
+        Left out, it is built from NEWSLETTER_LLM_PROVIDER / the API keys, its
+        calls counted through `usage` (anything with increment_api_call_count);
+        None means no summaries -- the digest lists headlines and says so."""
+        self.ds = newsletter_datasource
+        self._embed_documents = embed_documents
+        if summarizer is _FROM_CONFIG:
+            summarizer = build_summarizer(usage=usage)
+        if summarizer is None:
+            logger.warning("No summarizer configured (OPENAI_API_KEY / GEMINI_API_KEY) — "
+                           "summaries will use headlines only.")
+        self._summarizer: Optional[Summarizer] = summarizer
 
         # Lazy-load embedding model (same as pipeline)
         self._embedding_model = None
@@ -92,11 +147,10 @@ class NewsletterGenerator:
         sections = self.build_sections(articles, vectors)
 
         # Summaries only for the clusters that are shown.
-        for section in sections:
-            for cluster in section["clusters"]:
-                cluster["summary"] = self.summarize_cluster(cluster["articles"])
+        stats = self._summarize_sections(sections)
+        note = self._summary_note(stats)
 
-        md_content = self._render_markdown(target_date, sections, articles)
+        md_content = self._render_markdown(target_date, sections, articles, stats)
 
         os.makedirs(DIGESTS_DIR, exist_ok=True)
         file_name = target_date.strftime("%Y-%m-%d.md")
@@ -111,6 +165,7 @@ class NewsletterGenerator:
                            "shown": len(sec["clusters"])}
             for sec in sections
         }
+        composition[SUMMARIES_KEY] = stats.as_dict()   # SYS-68: not a topic; readers skip "_" keys
         cluster_count = sum(sec["cluster_count"] for sec in sections)
         generation_ms = _now_ms() - start_ms
         self.ds.save_digest(
@@ -123,8 +178,9 @@ class NewsletterGenerator:
             generation_ms=generation_ms,
         )
         logger.info(f"Newsletter generated in {generation_ms}ms: "
-                    f"{cluster_count} clusters in {len(sections)} sections, {len(articles)} articles.")
-        return file_path
+                    f"{cluster_count} clusters in {len(sections)} sections, {len(articles)} articles. "
+                    f"{stats.footer()}")
+        return DigestPath(file_path, note)
 
     # ── Sections ──
 
@@ -175,30 +231,66 @@ class NewsletterGenerator:
 
     # ── Cluster summarization ────────────────────────────────────────────────
 
-    def summarize_cluster(self, articles: list) -> str:
-        top3 = sorted(
+    @staticmethod
+    def _top_articles(articles: list) -> list:
+        return sorted(
             articles,
             key=lambda a: SOURCE_AUTHORITY.get(a["source"].upper(), 0.5),
             reverse=True,
         )[:3]
 
-        if not self._client:
-            return "\n".join(f"- {a['headline']}" for a in top3)
+    def headline_summary(self, articles: list) -> str:
+        """What a cluster shows when no real summary was produced."""
+        return "\n".join(f"- {a['headline']}" for a in self._top_articles(articles))
 
+    def summarize_cluster(self, articles: list) -> str:
+        """The summarizer's answer for one cluster. Raises QuotaExhausted or
+        SummarizerError; the caller decides what a failure costs."""
         article_texts = "\n\n".join(
             f"[{a['source']}] {a['headline']}\n{a['l1_text'][:500]}"
-            for a in top3
+            for a in self._top_articles(articles)
         )
-        prompt = _SUMMARIZE_PROMPT.format(articles=article_texts)
-        try:
-            resp = self._client.models.generate_content(
-                model=self.model_name,
-                contents=prompt
-            )
-            return resp.text.strip()
-        except Exception as e:
-            logger.warning(f"Gemini summarization failed: {e}. Using headlines.")
-            return "\n".join(f"- {a['headline']}" for a in top3)
+        return self._summarizer.summarize(_SUMMARIZE_PROMPT.format(articles=article_texts))
+
+    def _summarize_sections(self, sections: list) -> SummaryStats:
+        """SYS-68 (#216): summarize every shown cluster, counting the real
+        summaries. A quota error stops the calls at once (the provider refuses
+        all of them today); NEWSLETTER_MAX_CONSECUTIVE_SUMMARY_ERRORS failures
+        in a row stop them too (an outage). Every cluster without a summary
+        shows its headlines, and the stats say how many."""
+        clusters = [c for section in sections for c in section["clusters"]]
+        stats = SummaryStats(total=len(clusters), provider=getattr(self._summarizer, "name", None))
+        if self._summarizer is None:
+            stats.stopped = "no_provider"
+        consecutive_errors = 0
+        for cluster in clusters:
+            if not stats.stopped:
+                try:
+                    cluster["summary"] = self.summarize_cluster(cluster["articles"])
+                    stats.summarized += 1
+                    consecutive_errors = 0
+                    continue
+                except QuotaExhausted as e:
+                    stats.stopped = "quota"
+                    quota = f" ({e.quota})" if e.quota else ""
+                    logger.warning(f"Summarizer quota exhausted{quota}; the remaining clusters list headlines.")
+                except SummarizerError as e:
+                    consecutive_errors += 1
+                    logger.warning(f"Summarization failed ({consecutive_errors} in a row): {e}. Using headlines.")
+                    if consecutive_errors >= NEWSLETTER_MAX_CONSECUTIVE_SUMMARY_ERRORS:
+                        stats.stopped = "errors"
+            cluster["summary"] = self.headline_summary(cluster["articles"])
+        return stats
+
+    @staticmethod
+    def _summary_note(stats: SummaryStats) -> Optional[str]:
+        """None when the summaries are good enough; otherwise the sentence the
+        operator needs, also logged at ERROR (SYS-68)."""
+        if stats.total == 0 or stats.share >= NEWSLETTER_MIN_SUMMARY_SHARE:
+            return None
+        note = f"digest degraded: {stats.footer()}"
+        logger.error(note)
+        return note
 
     # ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -264,7 +356,8 @@ class NewsletterGenerator:
         return [{"source": a["source"], "link": a["link"], "headline": a["headline"]}
                 for a in sorted_arts if a.get("link")]
 
-    def _render_markdown(self, target_date: date, sections: list, all_articles: list) -> str:
+    def _render_markdown(self, target_date: date, sections: list, all_articles: list,
+                         stats: Optional[SummaryStats] = None) -> str:
         lines = []
         date_str = target_date.strftime("%-d %B %Y") if os.name != "nt" else \
                    target_date.strftime("%d %B %Y").lstrip("0")
@@ -291,11 +384,12 @@ class NewsletterGenerator:
             lines.append("\n---\n")
 
         cluster_count = sum(sec["cluster_count"] for sec in sections)
-        lines.append(
-            f"*Total artikel hari ini: {len(all_articles)} | "
-            f"Cluster teridentifikasi: {cluster_count} | "
-            f"Dihasilkan: {datetime.now().strftime('%H:%M')} WIB*"
-        )
+        footer = (f"*Total artikel hari ini: {len(all_articles)} | "
+                  f"Cluster teridentifikasi: {cluster_count} | "
+                  f"Dihasilkan: {datetime.now().strftime('%H:%M')} WIB")
+        if stats is not None:
+            footer += f" | {stats.footer()}"
+        lines.append(footer + "*")
         return "\n".join(lines) + "\n"
 
     def _write_empty_digest(self, target_date: date, start_ms: int) -> Optional[str]:

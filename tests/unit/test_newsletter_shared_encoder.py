@@ -9,7 +9,7 @@ from newscrawler.core.newsletter_generator import NewsletterGenerator
 
 def test_an_injected_embedder_is_used_and_no_model_is_loaded():
     embed = MagicMock(return_value=[[1.0, 0.0], [0.0, 1.0]])
-    gen = NewsletterGenerator(MagicMock(), api_key="", embed_documents=embed)
+    gen = NewsletterGenerator(MagicMock(), summarizer=None, embed_documents=embed)
     with patch("sentence_transformers.SentenceTransformer", side_effect=AssertionError("second model load")):
         vectors = gen._encode(["a", "b"])
     embed.assert_called_once_with(["a", "b"])
