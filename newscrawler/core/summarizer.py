@@ -12,7 +12,8 @@ not eat budget.
 """
 import logging
 import re
-from typing import Optional, Protocol
+import time
+from typing import Callable, Optional, Protocol
 
 from newscrawler.core.constants import (
     GEMINI_API_KEY,
@@ -34,7 +35,8 @@ class SummarizerError(Exception):
 
 
 class QuotaExhausted(SummarizerError):
-    """The provider refused the call for quota (HTTP 429 / RESOURCE_EXHAUSTED).
+    """The provider refused the call because a DAILY quota is spent (SYS-71: a
+    429 that names no per-day quota is a rate limit, retried once, not this).
     Every further call today will fail the same way, so the caller stops."""
 
     def __init__(self, message: str, quota: Optional[str] = None):
@@ -65,9 +67,66 @@ def quota_name(error: BaseException) -> Optional[str]:
 
 def is_quota_error(error: BaseException) -> bool:
     """True for an HTTP 429 or a RESOURCE_EXHAUSTED status, whatever SDK raised
-    it (openai.RateLimitError and google.genai errors both carry them)."""
+    it (openai.RateLimitError and google.genai errors both carry them). This
+    says the provider pushed back, not for how long: see `is_daily_quota`."""
     status = getattr(error, "status_code", None) or getattr(error, "code", None)
     return status == 429 or "RESOURCE_EXHAUSTED" in str(error)
+
+
+_DAILY = re.compile(r"per[\s_-]?day|daily|requests per day", re.IGNORECASE)
+
+
+def is_daily_quota(error: BaseException) -> bool:
+    """True when the error names a per-DAY quota (Gemini's quotaId
+    `...PerDay...`, or the message says daily / per day). Only that is worth
+    stopping for (SYS-71): a per-minute 429 clears in seconds."""
+    return bool(_DAILY.search(f"{quota_name(error) or ''} {error}"))
+
+
+RATE_LIMIT_DEFAULT_WAIT_S = 5.0     # no Retry-After given
+RATE_LIMIT_MAX_WAIT_S = 30.0        # never stall a digest longer than this per retry
+
+_RETRY_IN_MESSAGE = re.compile(r"retry(?:Delay)?\D{0,12}?(\d+(?:\.\d+)?)\s*s", re.IGNORECASE)
+
+
+def retry_after_seconds(error: BaseException) -> float:
+    """How long the provider asks us to wait: the `Retry-After` header
+    (openai SDK errors carry the response), or Gemini's `retryDelay: '23s'` /
+    "Please retry in 23.4s" in the message. Bounded to [0, RATE_LIMIT_MAX_WAIT_S];
+    RATE_LIMIT_DEFAULT_WAIT_S when it says nothing usable."""
+    wait: Optional[float] = None
+    headers = getattr(getattr(error, "response", None), "headers", None)
+    if headers is not None:
+        try:
+            wait = float(headers.get("retry-after"))
+        except (TypeError, ValueError, AttributeError):
+            wait = None
+    if wait is None:
+        match = _RETRY_IN_MESSAGE.search(str(error))
+        wait = float(match.group(1)) if match else RATE_LIMIT_DEFAULT_WAIT_S
+    return max(0.0, min(wait, RATE_LIMIT_MAX_WAIT_S))
+
+
+def call_guarded(call: Callable[[], object], sleep: Callable[[float], None] = time.sleep):
+    """Run one provider call, translating its failures (SYS-71):
+    - a per-day 429 -> QuotaExhausted (the caller stops);
+    - any other 429 -> wait `retry_after_seconds`, retry ONCE, and if it is
+      refused again a plain SummarizerError (the caller's consecutive-error
+      rule decides whether the provider is down);
+    - anything else -> SummarizerError naming the exception type."""
+    for attempt in (1, 2):
+        try:
+            return call()
+        except Exception as e:  # noqa: BLE001 -- any SDK or network error
+            if not is_quota_error(e):
+                raise SummarizerError(f"{type(e).__name__}: {e}") from e
+            if is_daily_quota(e):
+                raise QuotaExhausted(str(e), quota_name(e)) from e
+            if attempt == 2:
+                raise SummarizerError(f"rate limited twice ({type(e).__name__}): {e}") from e
+            wait = retry_after_seconds(e)
+            logger.info(f"Summarizer rate-limited; retrying once in {wait:.0f}s.")
+            sleep(wait)
 
 
 def _count(usage: Optional[UsageCounter], model_name: str) -> None:
@@ -88,8 +147,9 @@ class OpenAICompatSummarizer:
     def __init__(self, model_name: str, api_key: str, base_url: Optional[str] = None,
                  usage: Optional[UsageCounter] = None, client=None,
                  timeout_s: float = NEWSLETTER_SUMMARY_TIMEOUT_S,
-                 max_tokens: int = NEWSLETTER_SUMMARY_MAX_TOKENS):
+                 max_tokens: int = NEWSLETTER_SUMMARY_MAX_TOKENS, sleep=time.sleep):
         self.name = model_name
+        self._sleep = sleep
         self._usage = usage
         self._max_tokens = max_tokens
         if client is None:
@@ -98,25 +158,22 @@ class OpenAICompatSummarizer:
         self._client = client
 
     def summarize(self, prompt: str) -> str:
-        try:
-            response = self._client.chat.completions.create(
-                model=self.name,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.2,
-                max_tokens=self._max_tokens,
-                extra_body={"thinking": {"type": "disabled"}},
-            )
-        except Exception as e:  # noqa: BLE001 -- any SDK or network error
-            if is_quota_error(e):
-                raise QuotaExhausted(str(e), quota_name(e)) from e
-            raise SummarizerError(f"{type(e).__name__}: {e}") from e
+        response = call_guarded(lambda: self._client.chat.completions.create(
+            model=self.name,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.2,
+            max_tokens=self._max_tokens,
+            extra_body={"thinking": {"type": "disabled"}},
+        ), self._sleep)
         _count(self._usage, self.name)
         return _answer(response.choices[0].message.content)
 
 
 class GeminiSummarizer:
-    def __init__(self, model_name: str, api_key: str, usage: Optional[UsageCounter] = None, client=None):
+    def __init__(self, model_name: str, api_key: str, usage: Optional[UsageCounter] = None, client=None,
+                 sleep=time.sleep):
         self.name = model_name
+        self._sleep = sleep
         self._usage = usage
         if client is None:
             from google import genai
@@ -124,12 +181,8 @@ class GeminiSummarizer:
         self._client = client
 
     def summarize(self, prompt: str) -> str:
-        try:
-            response = self._client.models.generate_content(model=self.name, contents=prompt)
-        except Exception as e:  # noqa: BLE001
-            if is_quota_error(e):
-                raise QuotaExhausted(str(e), quota_name(e)) from e
-            raise SummarizerError(f"{type(e).__name__}: {e}") from e
+        response = call_guarded(
+            lambda: self._client.models.generate_content(model=self.name, contents=prompt), self._sleep)
         _count(self._usage, self.name)
         return _answer(response.text)
 

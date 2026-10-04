@@ -11,19 +11,25 @@ import newscrawler.core.summarizer as sm
 
 
 class _StatusError(Exception):
-    def __init__(self, status, message="boom"):
+    def __init__(self, status, message="boom", retry_after=None):
         super().__init__(message)
         self.status_code = status
+        if retry_after is not None:
+            self.response = SimpleNamespace(headers={"retry-after": retry_after})
 
 
-def _openai(answer=None, error=None, usage=None):
+def _answer(text):
+    return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=text))])
+
+
+def _openai(answer=None, error=None, usage=None, sleeps=None):
     client = MagicMock()
     if error is not None:
         client.chat.completions.create.side_effect = error
     else:
-        client.chat.completions.create.return_value = SimpleNamespace(
-            choices=[SimpleNamespace(message=SimpleNamespace(content=answer))])
-    return sm.OpenAICompatSummarizer("deepseek-test", "k", usage=usage, client=client), client
+        client.chat.completions.create.return_value = _answer(answer)
+    sleep = sleeps.append if sleeps is not None else (lambda s: None)
+    return sm.OpenAICompatSummarizer("deepseek-test", "k", usage=usage, client=client, sleep=sleep), client
 
 
 class TestOpenAICompatSummarizer:
@@ -49,12 +55,39 @@ class TestOpenAICompatSummarizer:
         with pytest.raises(sm.SummarizerError, match="empty"):
             s.summarize("p")
 
-    def test_http_429_is_quota_exhausted_and_not_counted(self):
+    def test_a_per_day_429_is_quota_exhausted_and_not_counted(self):
         usage = MagicMock()
-        s, _ = _openai(error=_StatusError(429, "rate limited"), usage=usage)
+        s, client = _openai(error=_StatusError(429, "Daily request limit reached"), usage=usage)
         with pytest.raises(sm.QuotaExhausted):
             s.summarize("p")
         usage.increment_api_call_count.assert_not_called()
+        assert client.chat.completions.create.call_count == 1   # a spent day is not retried
+
+    def test_a_per_minute_429_waits_retries_once_and_then_succeeds(self):
+        """SYS-71: the next call 2 s later would work, so it must run."""
+        sleeps = []
+        usage = MagicMock()
+        s, client = _openai(usage=usage, sleeps=sleeps,
+                            error=[_StatusError(429, "Rate limit exceeded: 60 requests per minute", retry_after="7"),
+                                   _answer("- ok")])
+        assert s.summarize("p") == "- ok"
+        assert sleeps == [7.0]
+        assert client.chat.completions.create.call_count == 2
+        usage.increment_api_call_count.assert_called_once_with("deepseek-test")   # only the answered call
+
+    def test_a_rate_limit_twice_is_a_plain_error_not_a_daily_quota(self):
+        sleeps = []
+        s, client = _openai(sleeps=sleeps, error=[_StatusError(429, "slow down"), _StatusError(429, "slow down")])
+        with pytest.raises(sm.SummarizerError, match="rate limited twice") as info:
+            s.summarize("p")
+        assert not isinstance(info.value, sm.QuotaExhausted)
+        assert client.chat.completions.create.call_count == 2    # one retry, never a loop
+        assert len(sleeps) == 1
+
+    def test_a_per_day_429_on_the_retry_still_stops_the_run(self):
+        s, _ = _openai(error=[_StatusError(429, "slow down"), _StatusError(429, "daily quota spent")])
+        with pytest.raises(sm.QuotaExhausted):
+            s.summarize("p")
 
     def test_any_other_failure_is_a_plain_error_that_names_its_type(self):
         s, _ = _openai(error=_StatusError(503, "unavailable"))
@@ -87,6 +120,47 @@ class TestGeminiSummarizer:
         s = sm.GeminiSummarizer("gemini-test", "k", usage=usage, client=client)
         assert s.summarize("p") == "- ok"
         usage.increment_api_call_count.assert_called_once_with("gemini-test")
+
+
+class TestRateLimitVersusDailyQuota:
+    """SYS-71 (#219): only a quota that names a day stops the run."""
+
+    @pytest.mark.parametrize("message", [
+        "429 RESOURCE_EXHAUSTED. quotaId: GenerateRequestsPerDayPerProjectPerModel-FreeTier",
+        "You exceeded your daily quota",
+        "limit: 20 requests per day",
+    ])
+    def test_daily_quota_messages(self, message):
+        assert sm.is_daily_quota(Exception(message))
+
+    @pytest.mark.parametrize("message", [
+        "Rate limit exceeded: 60 requests per minute",
+        "429 RESOURCE_EXHAUSTED. quotaId: GenerateRequestsPerMinutePerProjectPerModel-FreeTier",
+        "429 slow down",
+    ])
+    def test_rate_limit_messages_are_not_daily(self, message):
+        assert not sm.is_daily_quota(Exception(message))
+
+    def test_gemini_per_minute_429_retries_using_its_retry_delay(self):
+        sleeps = []
+        client = MagicMock()
+        client.models.generate_content.side_effect = [
+            Exception("429 RESOURCE_EXHAUSTED. quotaId: GenerateRequestsPerMinutePerProjectPerModel-FreeTier "
+                      "retryDelay: '23s'"),
+            SimpleNamespace(text="- ok"),
+        ]
+        s = sm.GeminiSummarizer("gemini-test", "k", client=client, sleep=sleeps.append)
+        assert s.summarize("p") == "- ok"
+        assert sleeps == [23.0]
+
+    def test_retry_after_is_read_from_the_header_the_message_or_defaults(self):
+        assert sm.retry_after_seconds(_StatusError(429, "x", retry_after="3")) == 3.0
+        assert sm.retry_after_seconds(Exception("Please retry in 4.5s")) == 4.5
+        assert sm.retry_after_seconds(Exception("429")) == sm.RATE_LIMIT_DEFAULT_WAIT_S
+        assert sm.retry_after_seconds(_StatusError(429, "x", retry_after="garbage")) == sm.RATE_LIMIT_DEFAULT_WAIT_S
+
+    def test_a_long_retry_after_is_capped(self):
+        assert sm.retry_after_seconds(_StatusError(429, "x", retry_after="3600")) == sm.RATE_LIMIT_MAX_WAIT_S
 
 
 class TestQuotaHelpers:
