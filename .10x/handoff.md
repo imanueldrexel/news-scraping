@@ -1,29 +1,36 @@
 # Current Handoff
 
-## From: Product Manager -> To: SDE
-**Date:** 2026-10-04
-**Phase:** Requirements -> Implementation (SYS-39 #125)
+## From: SDE -> To: QA (and the owner for the decisions below)
+**Date:** 2026-10-04 (evening)
+**Phase:** Implementation -> QA
+**Feature files:** `decisions/sde/newsletter-digest-quality.md`, `decisions/sde/sys-39-knowledge-extraction.md`, `decisions/sde/body-cleaner-and-repair.md`; ADR-003.
 
-### Context
-Owner decision: knowledge extraction covers ALL news, on DeepSeek via SumoPod (pending the SYS-39 bake-off). Source of truth: `decisions/product-manager/knowledge-extraction-provider.md`; the requirement is also commented on #125.
+### Ready for QA (label `status: ready-for-qa`, evidence on each ticket)
+- DBT-50 #214: recount test uses the script's own `DRIFT_SQL`; mutants = drop each of the 3 OR clauses.
+- SYS-69 #217: one link per outlet, headline labels (`tests/unit/test_newsletter_links.py`). Offline only; a regenerated digest needs the owner-approved newsletter run.
+- SYS-65 #211: cross-section merge; the replay is `scripts/experiments/replay_cross_section_merge.py --date 2026-09-28` (read-only, expect 2 pairs before / 0 after).
+- SYS-75 #225: the body cleaner removes the widget, not the paragraph (`clean_line`). Check: `repair_boilerplate_bodies.py` "longest removed lines" holds no sentence; known residual ~7 glued-headline articles.
 
-### Requirements (priority order)
-1. **P1 Measure first:** token counts from the provider response (input/output per article) into `api_usage_log`; replace the PM estimate (~1,050 tokens/article, ~4.3M tokens/day, ~$1.2/day off-peak) with real numbers.
-2. **P1 Bake-off:** 200-article stratified fixture, DeepSeek vs the Gemini reference; entity agreement >= 0.85 (persons/orgs/locations), event_type agreement, parse-failure rate, 429 rate under load. Thinking disabled for the provider.
-3. **P1 Implement behind `KnowledgeExtractor`** (strategy chosen by env var), keeping the OPS-09 transient-vs-deterministic error boundary and SYS-19 attempt tracking. `GEMINI_DAILY_CALL_LIMIT` (20) must stop gating DeepSeek calls; replace with a token/cost guard.
-4. **P1 Peak-hours guard:** skip peak blocks (UTC weekdays 01:00-04:00 and 06:00-10:00) unless forced. Pricing: input $0.15/$0.30, output $0.60/$1.20 per 1M tokens (off-peak/peak); weekends all off-peak.
-5. **P2 Catch-up ordering:** finance topics first, then everything else. Backlog is 84,606 articles (~$25 off-peak): run on a weekend after SumoPod rate limits are checked.
+### Built, NOT labelled (needs the owner)
+- OPS-38 #212: date arg + `scripts/run_scheduled_newsletter.py`; decide 06:30 vs 12:00 and approve registering "NewsAggregator Newsletter".
+- SYS-39 #125 / OPS-20 #136: provider, cost and peak guards, bake-off. Decide how to settle the 0.85 gate, approve applying `scripts/migrate_api_usage_tokens.sql` to `newsaggregator` (backup first), then set `KNOWLEDGE_LLM_PROVIDER=openai` and schedule.
+- SYS-73 #223: dry run only; approve the report, a backup, and one-job-vs-per-source before the apply path is written.
 
-### Out of scope
-Extraction schema, entity normaliser, newsletter, embeddings. Do not label #136 ready-for-qa until the owner confirms the provider choice on it.
+### What to test / mutate
+`PYTHONDONTWRITEBYTECODE=1 venv\Scripts\python.exe scripts\experiments\qa_mutation_runner.py` has `sys65_*`, `sys69_*`, `ops38_*`, `sys39_*`, `sys75_*` mutants (run on a clean tree). Unit 1,976 / integration 165 pass. Things worth a second look: the extractor's new loop (`seen` set, five stop conditions), `KNOWLEDGE_BATCH_SIZE` meaning, the Gemini daily-quota classification, and any DETIK body that still shows `Tautan telah disalin`.
 
-### Open Questions
-- SumoPod rate limits and what its daily-limit 429 body looks like (unverified, see SYS-71).
-- Who reads the KB (`kb_query`, RAG)? Only affects reporting, not scope.
+### Risks
+- Running `task=extract_knowledge` or `task=newsletter` on production before the migration fails the extractor's usage insert.
+- `task=newsletter` with no date now digests YESTERDAY.
+
+### Not done
+SYS-74 #224, SYS-41 #127, SRC-34 #124, SRC-47 #157, SRC-42 #145, SRC-40 #134, SRC-39 #133, DBT-19 #69, DBT-22 #73, DBT-01 #20; SRC-56/SRC-03 are owner-only.
 
 ---
 
 ## Handoff History
+- 2026-10-04 PM -> SDE: SYS-39 (extract all news on DeepSeek, peak guard). Picked up and built (see above).
+
 - 2026-10-04 SDE -> QA (still pending QA): SYS-71 #219, SYS-72 #220, DBT-51 #221, DBT-52 #222 ready-for-qa, #216/#215/#204 re-labelled; #204 needs the 19:00 crawl; stray partial-day 2026-10-04 digest row awaits the owner. Full text: `decisions/sde/p1-p2-newsletter-fixes.md`, section "QA feedback fixed".
 - 2026-10-04 QA -> SDE: fix SYS-71 first, then SYS-72, DBT-51, DBT-52; owner approved task=newsletter, SYS-67 as scoped, SYS-63 repair after SYS-72.
 
