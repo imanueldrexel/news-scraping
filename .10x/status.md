@@ -57,3 +57,10 @@
 ## Owner decisions 2026-10-04 (late evening), executed
 - SYS-39 gate accepted on evidence; prod migration applied (verified backup first); newsletter job registered at 12:00 ("NewsAggregator Newsletter", first run 2026-10-05); SYS-73 repair per source, DETIK first, after QA closes SYS-75.
 - Next dev: set `KNOWLEDGE_LLM_PROVIDER=openai` + schedule off-peak extraction (owner go on the date), write the SYS-73 apply path. Watch: first newsletter run 2026-10-05 12:00.
+
+## Night push 2026-10-04: P1/P2 (CTO/PM decided, dev built, QA verified against the tickets' wording)
+- **Closed by QA (17 + 2 decided):** OPS-35, OPS-37, SYS-71, SYS-72, SYS-67 (sent back once, fixed), SYS-68, SYS-63, SYS-69, SYS-65, SYS-75, SYS-76, SYS-77, SYS-78, SYS-20, DBT-50/19/22/53/54; SRC-03 won't fix (CTO), SRC-56 re-prioritised P3.
+- **Ready for QA, waiting on scheduled runs:** OPS-20 #136 (P1) and SYS-39 #125 (first nightly extraction 2026-10-05 21:00), SRC-57 (3 runs), SYS-64 (7 days), SYS-66 (PIKIRANRAKYAT cooldown ~10-09), OPS-38 (3 digests from 10-05 12:00). OPS-36 #209 waits for the owner to confirm the two Telegram messages of the drill.
+- **Live now:** extraction on DeepSeek (4 workers) - 5,992 articles, $1.98, KB 54 -> 10,006 entities; jobs registered: Knowledge Extraction 21:00, Newsletter 12:00, DB Liveness every 15 min. 80,355 articles pending (~4 nights); lower KNOWLEDGE_DAILY_COST_LIMIT_USD from 8 to 3 afterwards.
+- **Filed by QA:** DBT-53, DBT-54, SYS-76/77/78, SRC-58 #231, OPS-39 #232. Open and not started: SYS-73 apply path (per source, DETIK first), SYS-74, SYS-41, SRC-34, SRC-47/42/40/39, SRC-58, OPS-39, DBT-01.
+- Tests: unit 2,061 / integration 172; QA mutation runs in clean copies: 69 + 61 + 8 killed, 0 survivors; 270 registered mutants all match exactly once.

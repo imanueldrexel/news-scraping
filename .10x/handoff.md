@@ -1,34 +1,26 @@
 # Current Handoff
 
-## From: SDE -> To: QA (and the owner for the decisions below)
-**Date:** 2026-10-04 (evening)
-**Phase:** Implementation -> QA
-**Feature files:** `decisions/sde/newsletter-digest-quality.md`, `decisions/sde/sys-39-knowledge-extraction.md`, `decisions/sde/body-cleaner-and-repair.md`; ADR-003.
+## From: QA (+ CTO/PM decisions, dev fixes) -> To: QA of the next days, and the owner
+**Date:** 2026-10-04 (night)
+**Report:** `.10x/reviews/2026-10-04-night-qa-report.md`; decisions `.10x/decisions/{cto,product-manager,qa}/night-2026-10-04-*.md`; ADR-004.
 
-### Ready for QA (label `status: ready-for-qa`, evidence on each ticket)
-- DBT-50 #214: recount test uses the script's own `DRIFT_SQL`; mutants = drop each of the 3 OR clauses.
-- SYS-69 #217: one link per outlet, headline labels (`tests/unit/test_newsletter_links.py`). Offline only; a regenerated digest needs the owner-approved newsletter run.
-- SYS-65 #211: cross-section merge; the replay is `scripts/experiments/replay_cross_section_merge.py --date 2026-09-28` (read-only, expect 2 pairs before / 0 after).
-- SYS-75 #225: the body cleaner removes the widget, not the paragraph (`clean_line`). Check: `repair_boilerplate_bodies.py` "longest removed lines" holds no sentence; known residual ~7 glued-headline articles.
-
-### Built, NOT labelled (needs the owner)
-- OPS-38 #212: date arg + `scripts/run_scheduled_newsletter.py`; decide 06:30 vs 12:00 and approve registering "NewsAggregator Newsletter".
-- SYS-39 #125 / OPS-20 #136: provider, cost and peak guards, bake-off. Decide how to settle the 0.85 gate, approve applying `scripts/migrate_api_usage_tokens.sql` to `newsaggregator` (backup first), then set `KNOWLEDGE_LLM_PROVIDER=openai` and schedule.
-- SYS-73 #223: dry run only; approve the report, a backup, and one-job-vs-per-source before the apply path is written.
-
-### What to test / mutate
-`PYTHONDONTWRITEBYTECODE=1 venv\Scripts\python.exe scripts\experiments\qa_mutation_runner.py` has `sys65_*`, `sys69_*`, `ops38_*`, `sys39_*`, `sys75_*` mutants (run on a clean tree). Unit 1,976 / integration 165 pass. Things worth a second look: the extractor's new loop (`seen` set, five stop conditions), `KNOWLEDGE_BATCH_SIZE` meaning, the Gemini daily-quota classification, and any DETIK body that still shows `Tautan telah disalin`.
-
-### Risks
-- Running `task=extract_knowledge` or `task=newsletter` on production before the migration fails the extractor's usage insert.
-- `task=newsletter` with no date now digests YESTERDAY.
+### Watch in the next 24 h (QA closes these when seen)
+- **2026-10-05 05:30** health check; **07:00** crawl (first for SRC-57's 3rd run, SYS-64 day 2).
+- **12:00 newsletter** (first scheduled): `newsletter_digests` row for 2026-10-04 replaces the stray partial row; Telegram line with `x/y summaries`; owner reads it (SYS-40, SYS-65). `scheduled_newsletter_*.log` for the first real run.
+- **21:00 extraction** (first scheduled): Telegram line `n/m extracted ... pending a -> b`; `crawl_log` task `extract_knowledge`; non-finance topics now; cost per 1,000 ~$0.33; the 8 articles that failed on the old cap should extract (SYS-78). Close #125 and #136 on this evidence.
+- Owner: confirm the two Telegram messages of the DB-liveness drill (21:16-21:18 WIB 10-04: "DOWN" then "RECOVERED"), then QA closes OPS-36 #209.
 
 ### Not done
-SYS-74 #224, SYS-41 #127, SRC-34 #124, SRC-47 #157, SRC-42 #145, SRC-40 #134, SRC-39 #133, DBT-19 #69, DBT-22 #73, DBT-01 #20; SRC-56/SRC-03 are owner-only.
+SYS-73 apply path (owner decided per source, DETIK first), SYS-74, SYS-41, SRC-34, SRC-47/42/40/39, SRC-58, OPS-39, DBT-01. Lower `KNOWLEDGE_DAILY_COST_LIMIT_USD` to 3 when the backlog is gone.
+
+### Risks
+- The extraction job loads the whole pipeline (~4 GB) at 21:00; it waits up to 90 min for a running crawl, else exits 2 (visible only in Task Scheduler).
+- 4 workers have been tested at 4 with no 429; a per-minute 429 gets one wait-and-retry on DeepSeek, five failures in a row stop the run and say so.
 
 ---
 
 ## Handoff History
+- 2026-10-04 night QA/CTO/PM -> QA: P1/P2 pass (this file).
 - 2026-10-04 PM -> SDE: SYS-39 (extract all news on DeepSeek, peak guard). Picked up and built (see above).
 
 - 2026-10-04 SDE -> QA (still pending QA): SYS-71 #219, SYS-72 #220, DBT-51 #221, DBT-52 #222 ready-for-qa, #216/#215/#204 re-labelled; #204 needs the 19:00 crawl; stray partial-day 2026-10-04 digest row awaits the owner. Full text: `decisions/sde/p1-p2-newsletter-fixes.md`, section "QA feedback fixed".
