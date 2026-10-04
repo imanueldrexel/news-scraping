@@ -12,7 +12,7 @@ QA audited OPS-20/SYS-68/SYS-67/SYS-63 (see `decisions/qa/p1-p2-newsletter-fixes
 - SYS-63 stored rows will be repaired: SYS-73 (#223), blocked by SYS-72 (#220).
 
 ### Open Questions
-- Owner: approval before running `task=newsletter` (writes digests/ file + one DB row).
+- ~~Owner approval to run `task=newsletter`~~ APPROVED 2026-10-04 (writes `digests/<date>.md` + one `newsletter_digests` row). Dev runs it for the most recent complete day and shows the owner the file and the footer's summary count.
 - Scheduled-run evidence (07:00/19:00) for SYS-66/SYS-70 still unseen.
 
 ---
