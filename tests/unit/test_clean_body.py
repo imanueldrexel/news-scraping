@@ -47,6 +47,10 @@ PROSE = [
     "Pasar menunggu rilis data (yoy/qoq) pekan depan.",
     "Pertemuan AS/NATO (AS/NATO) digelar di Brussel.",
     "Ia meminta warga untuk ikuti arahan petugas dan jangan panik.",
+    # starts with a vocabulary word but is a sentence
+    "Advertisement belanja perusahaan naik 12 persen sepanjang kuartal ketiga.",
+    # initials are lowercase editor tags; an upper-case pair is an abbreviation
+    "(AS/NATO)",
 ]
 
 
