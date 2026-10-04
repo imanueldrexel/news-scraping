@@ -88,8 +88,20 @@ _BOILERPLATE_LINE = re.compile(
     r")\s*[:|]?\s*$",
     re.IGNORECASE,
 )
-# Unmistakable widget text, dropped wherever it sits in a line.
+# Unmistakable widget text, removed wherever it sits in a line (SYS-75: the widget,
+# not the line -- a paragraph of prose can carry it at its end).
 _BOILERPLATE_ANYWHERE = re.compile(r"\[gambas:|tautan\s+telah\s+disalin", re.IGNORECASE)
+_WIDGET = re.compile(r"\[gambas:[^\]]*\]", re.IGNORECASE)
+# "Tautan telah disalin" is the copy-link toast; the related headlines after it on the
+# same line are chrome too, and an unclosed "[Gambas:" runs to the end.
+_DANGLING_ELLIPSIS = re.compile(r"\s*\.\.\.\s*$")
+_WIDGET_TAIL = re.compile(r"(?:tautan\s+telah\s+disalin|\[gambas:).*$", re.IGNORECASE)
+# What must remain of a line once a [Gambas:...] widget is cut for it to be kept as
+# prose. A line that was only a widget plus initials or a promo ("(fsd/fsd) Add as a
+# preferredsource on Google [Gambas:Video CNBC]") is shorter and is dropped whole, as
+# before. After "Tautan telah disalin" no minimum applies: the toast closes a body, so
+# what precedes it is the body's last paragraph, however short a quote it is.
+MIN_PROSE_AFTER_WIDGET = 120
 # Editor initials: "(fsd/fsd)" alone on a line, or closing the body after a
 # sentence end. Lowercase only, so "(AS/NATO)" is never touched; and a pair that
 # is a finance or English abbreviation ("yoy/qoq", "and/or") is not initials
@@ -104,10 +116,29 @@ def _is_initials(match) -> bool:
     return bool(match) and not ({match.group(1), match.group(2)} & _NOT_INITIALS)
 
 
+def clean_line(line: str):
+    """SYS-63/SYS-75: the line without page chrome, or None when nothing worth
+    keeping is left. A line with nothing to remove comes back unchanged."""
+    stripped = line.strip()
+    if _BOILERPLATE_LINE.match(stripped) or _is_initials(_INITIALS_LINE.match(stripped)):
+        return None
+    if not _BOILERPLATE_ANYWHERE.search(stripped):
+        return line
+    rest = _WIDGET.sub("", stripped)                # a closed widget: cut it, the rest of the line stays
+    tail = _WIDGET_TAIL.search(rest)                # the copy-link toast, an unclosed widget: to the end
+    if tail:
+        rest = rest[:tail.start()]
+    rest = _DANGLING_ELLIPSIS.sub("", rest).strip()  # "(anl/ega) ... Tautan telah disalin ..."
+    if not rest or _BOILERPLATE_LINE.match(rest) or _is_initials(_INITIALS_LINE.match(rest)):
+        return None
+    if tail and tail.group(0).lower().startswith("tautan"):
+        return rest
+    return rest if len(rest) >= MIN_PROSE_AFTER_WIDGET else None
+
+
 def is_boilerplate_line(line: str) -> bool:
-    line = line.strip()
-    return bool(_BOILERPLATE_LINE.match(line) or _BOILERPLATE_ANYWHERE.search(line)
-                or _is_initials(_INITIALS_LINE.match(line)))
+    """True when the whole line is page chrome and is dropped."""
+    return clean_line(line) is None
 
 
 def clean_body_paragraphs(body):
@@ -126,10 +157,11 @@ def clean_body_paragraphs(body):
         if not isinstance(paragraph, str):
             continue
         lines = paragraph.split("\n")
-        kept = [line for line in lines if not is_boilerplate_line(line)]
-        if len(kept) == len(lines):
+        cleaned_lines = [clean_line(line) for line in lines]
+        if cleaned_lines == lines:
             cleaned.append(paragraph)           # nothing to remove: not even whitespace is touched
             continue
+        kept = [line for line in cleaned_lines if line is not None]
         text = "\n".join(kept).strip()
         if text:
             cleaned.append(text)

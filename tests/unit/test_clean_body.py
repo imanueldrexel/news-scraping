@@ -8,7 +8,7 @@ import pytest
 from bs4 import BeautifulSoup
 
 from newscrawler.core.crawler_dict_list import CRAWLER_DICT
-from newscrawler.core.utils.utils import clean_body_paragraphs, is_boilerplate_line
+from newscrawler.core.utils.utils import clean_body_paragraphs, clean_line, is_boilerplate_line
 from newscrawler.domain.dtos.dataflow.details.site_map_dto import SitemapDTO
 from newscrawler.infrastructure.datasource.scrapers.crawler import Crawler
 
@@ -234,3 +234,71 @@ class TestFleet:
         cls = type(CRAWLER_DICT[name])
         for method in ("_fetch_news_details", "_get_news_details"):
             assert getattr(cls, method) is getattr(Crawler, method), f"{name} overrides {method}"
+
+
+class TestWidgetTrailingProse:
+    """SYS-75 (#225): "Tautan telah disalin" and "[Gambas:...]" are removed from a
+    line, not the line from the body. A DETIK paragraph that ends with the copy-link
+    toast (and the related headlines after it) used to vanish whole."""
+
+    PROSE = ("Sedangkan sumber Emisi GRK yang dilakukan dalam Inventarisasi Emisi GRK terdiri atas pengadaan "
+             "dan penggunaan energi, proses industri dan penggunaan produk, pertanian, serta kehutanan.")
+
+    def test_prose_followed_by_the_copy_link_toast_keeps_the_prose(self):
+        line = f"{self.PROSE} Tautan telah disalin peraturan presiden perdagangan karbon Kemenhut Pertamina"
+        assert clean_line(line) == self.PROSE
+        assert clean_body_paragraphs([line]) == [self.PROSE]
+
+    def test_prose_followed_by_a_gambas_widget_keeps_the_prose(self):
+        assert clean_line(f"{self.PROSE} [Gambas:Video detik]") == self.PROSE
+
+    def test_prose_on_both_sides_of_a_widget_keeps_both(self):
+        line = f"{self.PROSE} [Gambas:Video detik] Pernyataan itu disampaikan pada Senin."
+        assert clean_line(line) == f"{self.PROSE}  Pernyataan itu disampaikan pada Senin."
+
+    def test_an_unclosed_widget_runs_to_the_end_of_the_line(self):
+        assert clean_line(f"{self.PROSE} [Gambas:Video detik Pernyataan lain") == self.PROSE
+
+    @pytest.mark.parametrize("line", [
+        "(fsd/fsd) [Gambas:Video CNBC]",
+        "(pgr/pgr) Add as a preferredsource on Google [Gambas:Video CNBC]",
+        "source on Google [Gambas:Video CNBC]",
+        "[Gambas:Video detik]",
+        "[Gambas:Instagram]",
+        "Tautan telah disalin",
+        "Simak videonya. [Gambas:Video detik]",
+    ])
+    def test_a_line_that_is_only_chrome_is_still_dropped_whole(self, line):
+        assert clean_line(line) is None and is_boilerplate_line(line)
+
+    def test_a_short_closing_quote_before_the_toast_is_kept(self):
+        """The toast closes a body: what precedes it is the last paragraph, however short."""
+        quote = "\"Ini soal biaya. Ini soal harga strategis yang dihasilkan,\" terangnya. (rea/rrd)"
+        assert clean_line(quote + " ... Tautan telah disalin energi hijau") == quote
+
+    @pytest.mark.parametrize("line", [
+        "(anl/ega) ... Tautan telah disalin pemprov jateng pembiayaan hijau Berita selengkapnya tentang  Kunjungi",
+        "(anl/ega) Tautan telah disalin pemprov jateng",
+        "... Tautan telah disalin energi hijau",
+        "Tautan telah disalin",
+    ])
+    def test_a_toast_with_only_initials_or_nothing_before_it_is_dropped(self, line):
+        assert clean_line(line) is None
+
+    def test_the_boundary_is_the_minimum_prose_that_must_remain(self):
+        from newscrawler.core.utils.utils import MIN_PROSE_AFTER_WIDGET
+        just_enough = "a" * MIN_PROSE_AFTER_WIDGET
+        assert clean_line(just_enough + " [Gambas:Video detik]") == just_enough
+        assert clean_line(just_enough[:-1] + " [Gambas:Video detik]") is None
+
+    def test_a_line_without_chrome_comes_back_untouched(self):
+        line = "  Kalimat biasa dengan spasi di depan.  "
+        assert clean_line(line) is line
+
+    def test_in_a_body_only_the_widget_part_of_the_paragraph_goes(self):
+        body = ["Pembuka.", f"{self.PROSE} Tautan telah disalin Berita lain", "Penutup."]
+        assert clean_body_paragraphs(body) == ["Pembuka.", self.PROSE, "Penutup."]
+
+    def test_a_paragraph_with_nothing_to_remove_is_still_byte_identical(self):
+        paragraph = "Satu.  \nDua."
+        assert clean_body_paragraphs([paragraph])[0] is paragraph
