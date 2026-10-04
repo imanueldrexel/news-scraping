@@ -665,12 +665,13 @@ class CrawlerServiceImpl(CrawlerService):
             raise
         count = int(result)
         if getattr(result, "all_calls_failed", False):
-            msg = (f"all {result.attempted} Gemini calls failed without a response: "
+            msg = (f"all {result.attempted} extraction calls failed without a response: "
                    f"{result.first_transient_error}")
             self.data_flow_repo.log_crawl_failed(log_id, msg[:500])
             logger.error(f"Knowledge extraction FAILED: {msg}")
             return count
-        self.data_flow_repo.log_crawl_complete(log_id, count)
+        # SYS-39 (#125): what the run spent and why it stopped early, beside the count.
+        self.data_flow_repo.log_crawl_complete(log_id, count, note=getattr(result, "note", lambda: None)())
         logger.info(f"Knowledge extraction complete. Processed {count} articles.")
         return count
 

@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Column, BigInteger, Integer, String, Date, TIMESTAMP, ForeignKey, Index
+from sqlalchemy import Column, BigInteger, Integer, String, Date, TIMESTAMP, ForeignKey, Index, Numeric
 
 from newscrawler.infrastructure.datasource.dataflow.write.sqlalchemy.table import Base
 from newscrawler.infrastructure.datasource.dataflow.model.entity_model import (
@@ -93,3 +93,7 @@ class ApiUsageLogTable(Base):
     log_date   = Column(Date, nullable=False)
     api_name   = Column(String, nullable=False)
     call_count = Column(Integer, nullable=False, default=0)
+    # SYS-39: what the provider reported and what it cost (migrate_api_usage_tokens.sql)
+    input_tokens  = Column(BigInteger, nullable=False, default=0)
+    output_tokens = Column(BigInteger, nullable=False, default=0)
+    cost_usd      = Column(Numeric(12, 6), nullable=False, default=0)

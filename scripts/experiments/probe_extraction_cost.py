@@ -4,7 +4,7 @@ OPS-20 (#136) / SYS-39 (#125) step 1: what does one knowledge-extraction call
 cost, per configuration, on real articles?
 
 Sends the extractor's own prompt (`knowledge_extractor._PROMPT_TEMPLATE`,
-article text cut at 3,000 chars exactly as `_call_gemini` does) for the same
+article text cut at 3,000 chars exactly as `build_prompt` does) for the same
 N recent articles to each configuration, and records the provider's token
 counts (input, output, thinking), latency, whether the answer parses as the
 schema, and how many entities it names. The first configuration is the

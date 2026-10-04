@@ -26,7 +26,9 @@ class TestGetArticlesPendingExtractionExcludesExhaustedAttempts:
         session.execute.return_value.fetchall.return_value = []
         ds.get_articles_pending_extraction(batch_size=50, max_attempts=3)
         params = session.execute.call_args[0][1]
-        assert params == {"batch_size": 50, "max_attempts": 3}
+        assert params["batch_size"] == 50 and params["max_attempts"] == 3
+        from newscrawler.core.filter_rubric import TOPICS_FINANCE
+        assert params["finance_topics"] == list(TOPICS_FINANCE)
 
     def test_default_max_attempts_comes_from_the_constant(self):
         ds, session = _ds_with_session()
@@ -118,3 +120,74 @@ class TestSessionAwareWrites:
         shared_session.execute.assert_called_once()
         shared_session.commit.assert_not_called()
         standalone_session.execute.assert_not_called()
+
+
+class TestFinanceTopicsFirst:
+    """SYS-39 (#125): within an attempt count the finance topics are extracted
+    first; a catch-up never leaves ticker lookups waiting behind general news."""
+
+    def _sql(self):
+        ds, session = _ds_with_session()
+        session.execute.return_value.fetchall.return_value = []
+        ds.get_articles_pending_extraction(batch_size=50)
+        return " ".join(str(session.execute.call_args[0][0]).split())
+
+    def test_finance_comes_after_the_attempt_count_and_before_recency(self):
+        order = self._sql().split("ORDER BY", 1)[1]
+        attempts = order.index("a.knowledge_extract_attempts ASC")
+        finance = order.index("COALESCE(a.topic = ANY(:finance_topics), FALSE) DESC")
+        recency = order.index("s.posted_at DESC")
+        assert attempts < finance < recency
+
+    def test_an_article_with_no_topic_is_not_finance(self):
+        assert "COALESCE(a.topic = ANY(:finance_topics), FALSE)" in self._sql()
+
+
+class TestApiUsage:
+    def test_today_usage_reads_calls_tokens_and_dollars(self):
+        ds, session = _ds_with_session()
+        row = MagicMock(call_count=12, input_tokens=9000, output_tokens=3600, cost_usd="0.003510")
+        session.execute.return_value.fetchone.return_value = row
+        usage = ds.get_today_api_usage("deepseek-v4-flash")
+        assert usage == (12, 9000, 3600, 0.00351) and isinstance(usage.cost_usd, float)
+        assert session.execute.call_args[0][1] == {"api_name": "deepseek-v4-flash"}
+
+    def test_a_model_not_used_today_is_all_zeros(self):
+        ds, session = _ds_with_session()
+        session.execute.return_value.fetchone.return_value = None
+        assert tuple(ds.get_today_api_usage("m")) == (0, 0, 0, 0.0)
+
+    def test_increment_adds_tokens_and_cost_to_the_days_row(self):
+        ds, session = _ds_with_session()
+        ds.increment_api_call_count("m", input_tokens=700, output_tokens=300, cost_usd=0.000285)
+        sql = " ".join(str(session.execute.call_args[0][0]).split())
+        assert session.execute.call_args[0][1] == {"api_name": "m", "input_tokens": 700,
+                                                   "output_tokens": 300, "cost_usd": 0.000285}
+        assert "call_count = api_usage_log.call_count + 1" in sql
+        assert "input_tokens = api_usage_log.input_tokens + EXCLUDED.input_tokens" in sql
+        assert "output_tokens = api_usage_log.output_tokens + EXCLUDED.output_tokens" in sql
+        assert "cost_usd = api_usage_log.cost_usd + EXCLUDED.cost_usd" in sql
+        session.commit.assert_called_once()
+
+    def test_a_call_count_only_increment_adds_zero_tokens(self):
+        """The summarizer counts calls only."""
+        ds, session = _ds_with_session()
+        ds.increment_api_call_count("m")
+        assert session.execute.call_args[0][1] == {"api_name": "m", "input_tokens": 0,
+                                                   "output_tokens": 0, "cost_usd": 0.0}
+
+
+class TestMigration:
+    def test_it_is_registered_and_idempotent(self):
+        import os
+        import re
+        root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        sql = open(os.path.join(root, "scripts", "migrate_api_usage_tokens.sql"), encoding="utf-8").read()
+        statements = [s for s in re.findall(r"^ALTER TABLE .*?;", sql, flags=re.M | re.S)]
+        assert len(statements) == 3 and all("ADD COLUMN IF NOT EXISTS" in s for s in statements)
+        for column in ("input_tokens", "output_tokens", "cost_usd"):
+            assert column in sql
+        from newscrawler.infrastructure.datasource.dataflow.write.sqlalchemy.knowledge_table import ApiUsageLogTable
+        assert {"input_tokens", "output_tokens", "cost_usd"} <= set(ApiUsageLogTable.__table__.columns.keys())
+        spec_path = os.path.join(root, "scripts", "migrate.py")
+        assert '"migrate_api_usage_tokens.sql"' in open(spec_path, encoding="utf-8").read()

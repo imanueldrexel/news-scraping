@@ -1,6 +1,6 @@
 import logging
 from datetime import date, datetime
-from typing import Dict, List, Optional
+from typing import Dict, List, NamedTuple, Optional
 
 from sqlalchemy import text
 
@@ -12,6 +12,14 @@ from newscrawler.infrastructure.network.clients.sqlalchemy_client import SQLAlch
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
+
+
+class ApiUsage(NamedTuple):
+    """One model's usage today (api_usage_log): answered calls, tokens, dollars."""
+    call_count: int
+    input_tokens: int
+    output_tokens: int
+    cost_usd: float
 
 
 class SQLAlchemyKnowledgeDataSource:
@@ -29,6 +37,10 @@ class SQLAlchemyKnowledgeDataSource:
         order every run, burning one Gemini call each time and starving every other
         pending article). Orders by attempts first so a once-failed article sinks
         behind fresh ones instead of being retried ahead of them.
+
+        SYS-39 (#125): within an attempt count, the finance topics come first
+        (articles.topic from SYS-37), so a catch-up over the whole backlog never
+        leaves ticker and entity lookups waiting behind general news; then newest first.
         """
         if max_attempts is None:
             from newscrawler.core.constants import KNOWLEDGE_EXTRACT_MAX_ATTEMPTS
@@ -41,11 +53,15 @@ class SQLAlchemyKnowledgeDataSource:
             JOIN sitemaps s ON a.sitemap_id = s.sitemap_id
             WHERE a.knowledge_extracted = 0
               AND a.knowledge_extract_attempts < :max_attempts
-            ORDER BY a.knowledge_extract_attempts ASC, s.posted_at DESC
+            ORDER BY a.knowledge_extract_attempts ASC,
+                     COALESCE(a.topic = ANY(:finance_topics), FALSE) DESC,
+                     s.posted_at DESC
             LIMIT :batch_size
         """)
+        from newscrawler.core.filter_rubric import TOPICS_FINANCE
         with self.client.get_session() as session:
-            rows = session.execute(sql, {"batch_size": batch_size, "max_attempts": max_attempts}).fetchall()
+            rows = session.execute(sql, {"batch_size": batch_size, "max_attempts": max_attempts,
+                                         "finance_topics": list(TOPICS_FINANCE)}).fetchall()
         return [
             {
                 "article_id":     row.articles_id,
@@ -211,15 +227,34 @@ class SQLAlchemyKnowledgeDataSource:
             row = session.execute(sql, {"api_name": api_name}).fetchone()
         return row.call_count if row else 0
 
-    def increment_api_call_count(self, api_name: str) -> None:
+    def get_today_api_usage(self, api_name: str) -> ApiUsage:
+        """SYS-39: today's calls, tokens and dollars for one model (zeros when none)."""
         sql = text("""
-            INSERT INTO api_usage_log (log_date, api_name, call_count)
-            VALUES (CURRENT_DATE, :api_name, 1)
-            ON CONFLICT (log_date, api_name)
-            DO UPDATE SET call_count = api_usage_log.call_count + 1
+            SELECT call_count, input_tokens, output_tokens, cost_usd FROM api_usage_log
+            WHERE log_date = CURRENT_DATE AND api_name = :api_name
         """)
         with self.client.get_session() as session:
-            session.execute(sql, {"api_name": api_name})
+            row = session.execute(sql, {"api_name": api_name}).fetchone()
+        if row is None:
+            return ApiUsage(0, 0, 0, 0.0)
+        return ApiUsage(row.call_count, row.input_tokens, row.output_tokens, float(row.cost_usd))
+
+    def increment_api_call_count(self, api_name: str, input_tokens: int = 0, output_tokens: int = 0,
+                                 cost_usd: float = 0.0) -> None:
+        """One more answered call today, with the tokens the provider reported and
+        what they cost (SYS-39). The summarizer counts calls only."""
+        sql = text("""
+            INSERT INTO api_usage_log (log_date, api_name, call_count, input_tokens, output_tokens, cost_usd)
+            VALUES (CURRENT_DATE, :api_name, 1, :input_tokens, :output_tokens, :cost_usd)
+            ON CONFLICT (log_date, api_name)
+            DO UPDATE SET call_count    = api_usage_log.call_count + 1,
+                          input_tokens  = api_usage_log.input_tokens + EXCLUDED.input_tokens,
+                          output_tokens = api_usage_log.output_tokens + EXCLUDED.output_tokens,
+                          cost_usd      = api_usage_log.cost_usd + EXCLUDED.cost_usd
+        """)
+        with self.client.get_session() as session:
+            session.execute(sql, {"api_name": api_name, "input_tokens": input_tokens,
+                                  "output_tokens": output_tokens, "cost_usd": cost_usd})
             session.commit()
 
     # ── Chunk lookup ─────────────────────────────────────────────────────────

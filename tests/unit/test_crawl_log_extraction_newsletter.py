@@ -24,7 +24,7 @@ class TestExtractKnowledgeCrawlLog:
                                                                                 first_transient_error="timeout")
         assert service.extract_knowledge() == 12
         service.data_flow_repo.log_crawl_start.assert_called_once_with("ALL", "extract_knowledge")
-        service.data_flow_repo.log_crawl_complete.assert_called_once_with(77, 12)
+        service.data_flow_repo.log_crawl_complete.assert_called_once_with(77, 12, note="12/15 extracted")
         service.data_flow_repo.log_crawl_failed.assert_not_called()
 
     def test_all_calls_failed_is_a_failed_row_with_the_first_error(self, service, caplog):
@@ -34,19 +34,30 @@ class TestExtractKnowledgeCrawlLog:
         service.data_flow_repo.log_crawl_complete.assert_not_called()
         log_id, msg = service.data_flow_repo.log_crawl_failed.call_args.args
         assert log_id == 77
-        assert "all 50 Gemini calls failed" in msg and "API key not valid" in msg
+        assert "all 50 extraction calls failed" in msg and "API key not valid" in msg
         assert any(r.levelname == "ERROR" and "FAILED" in r.message for r in caplog.records)
 
     def test_a_plain_int_from_an_older_repository_still_completes(self, service):
         service.data_flow_repo.extract_knowledge.return_value = 4
         assert service.extract_knowledge() == 4
-        service.data_flow_repo.log_crawl_complete.assert_called_once_with(77, 4)
+        service.data_flow_repo.log_crawl_complete.assert_called_once_with(77, 4, note=None)
 
     def test_an_exception_is_a_failed_row_and_propagates(self, service):
         service.data_flow_repo.extract_knowledge.side_effect = RuntimeError("db down")
         with pytest.raises(RuntimeError):
             service.extract_knowledge()
         service.data_flow_repo.log_crawl_failed.assert_called_once_with(77, "db down")
+
+
+    def test_the_row_carries_tokens_cost_and_why_the_run_stopped(self, service):
+        """SYS-39 (#125): what a run spent and why it ended early, beside the count."""
+        service.data_flow_repo.extract_knowledge.return_value = ExtractionResult(
+            40, attempted=42, transient_failures=2, input_tokens=31000, output_tokens=12000, cost_usd=0.0118,
+            stopped="peak hours (UTC weekdays 01-04, 06-10)")
+        service.extract_knowledge()
+        note = service.data_flow_repo.log_crawl_complete.call_args.kwargs["note"]
+        assert "40/42 extracted" in note and "31000 in / 12000 out tokens, $0.0118" in note
+        assert "stopped: peak hours" in note
 
 
 class TestNewsletterCrawlLog:

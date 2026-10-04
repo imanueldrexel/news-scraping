@@ -127,19 +127,14 @@ class TestTransientApiFailureDoesNotRetireTheQueue:
                     text("SELECT articles_id FROM articles WHERE sitemap_id = :id"), {"id": sitemap_id}
                 ).scalar()
 
-            def outage(text_):
-                raise GeminiTransientError("503 Service Unavailable (simulated)")
+            class Outage:
+                name, priced = "gemini-test", False
+
+                def complete(self, prompt):
+                    raise GeminiTransientError("503 Service Unavailable (simulated)")
 
             for run in range(3):
-                kx = KnowledgeExtractor.__new__(KnowledgeExtractor)
-                kx.ds = ds
-                kx.model_name = "gemini-test"
-                kx.daily_limit = 1400
-                kx.batch_size = 1000
-                kx.normalizer = EntityNormalizer()
-                kx.alias_map = {}
-                kx._client = MagicMock()
-                kx._call_gemini = outage
+                kx = KnowledgeExtractor(ds, provider=Outage(), daily_limit=1400, batch_size=1000, allow_peak=True)
 
                 processed = kx.extract_all()
                 assert processed == 0, f"run {run}: nothing should have been extractable during the outage"
@@ -161,7 +156,7 @@ class TestTransientApiFailureDoesNotRetireTheQueue:
 
 
 class TestAtomicRollbackOnMidArticleFailure:
-    def test_a_crash_mid_article_leaves_no_partial_mentions_but_does_not_block_others(self, client):
+    def test_a_crash_mid_article_leaves_no_partial_mentions_but_does_not_block_others(self, client, monkeypatch):
         # Distinct posted_at (both still far-future) makes fetch order deterministic:
         # ORDER BY attempts ASC, posted_at DESC means "bad" (higher) is always
         # processed before "good" (lower), matching call_state's assumption below.
@@ -175,14 +170,8 @@ class TestAtomicRollbackOnMidArticleFailure:
             from newscrawler.core.entity_normalizer import EntityNormalizer
 
             ds = SQLAlchemyKnowledgeDataSource(client)
-            kx = KnowledgeExtractor.__new__(KnowledgeExtractor)
-            kx.ds = ds
-            kx.model_name = "gemini-test"
-            kx.daily_limit = 1400
-            kx.batch_size = 2  # exactly our two test rows -- see _insert_article's posted_at note
-            kx.normalizer = EntityNormalizer()
-            kx.alias_map = {}
-            kx._client = MagicMock()
+            import json
+            from newscrawler.core.extraction_provider import Completion
 
             # First article: two persons, the second of which is malformed (a bare
             # string) mixed with entities that DO parse -- but real crash comes from
@@ -196,7 +185,17 @@ class TestAtomicRollbackOnMidArticleFailure:
                     return {"persons": [{"name": "Bad Article Person"}], "event_type": "x"}
                 return {"persons": [{"name": "Good Article Person"}], "event_type": "x"}
 
-            kx._call_gemini = fake_gemini
+            class Scripted:
+                name, priced = "gemini-test", False
+
+                def complete(self, prompt):
+                    return Completion(json.dumps(fake_gemini(prompt)))
+
+            # SYS-39: a run now goes on until the queue is empty; this test is about its two rows,
+            # not about whatever else is pending in the DB.
+            monkeypatch.setattr("newscrawler.core.knowledge_extractor.KNOWLEDGE_MAX_PER_RUN", 2)
+            # batch_size 2: exactly our two test rows -- see _insert_article's posted_at note
+            kx = KnowledgeExtractor(ds, provider=Scripted(), daily_limit=1400, batch_size=2, allow_peak=True)
 
             original_get_chunk = ds.get_l1_chunk_id_for_article
 

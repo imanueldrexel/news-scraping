@@ -5,26 +5,48 @@ record an attempt (so it eventually drops out of the pending query) instead of b
 silently retried forever, and a partial failure mid-article must roll back instead of
 leaving some mentions committed.
 """
+import json
 import logging
-from types import SimpleNamespace
+from datetime import datetime, timezone
 from unittest.mock import MagicMock
 
-from newscrawler.core.knowledge_extractor import GeminiTransientError, KnowledgeExtractor
-from newscrawler.core.entity_normalizer import EntityNormalizer
+import pytest
 
-_FENCE = chr(96) * 3  # triple backtick
+from newscrawler.core.entity_normalizer import EntityNormalizer
+from newscrawler.core.extraction_provider import Completion, ProviderQuotaExhausted
+from newscrawler.core.knowledge_extractor import GeminiTransientError, KnowledgeExtractor
+
+
+class FakeProvider:
+    """A provider that is never called: tests replace `kx._complete`."""
+    name = "gemini-test"
+    priced = False
+
+    def complete(self, prompt):
+        raise AssertionError("the provider was called")
 
 
 def _make(ds=None, client=None, daily_limit=1400, batch_size=50):
+    """`client` is truthy when a provider is configured (None: extraction disabled)."""
     kx = KnowledgeExtractor.__new__(KnowledgeExtractor)
     kx.ds = ds or _mock_ds()
-    kx._client = client
+    kx._provider = FakeProvider() if client is not None else None
     kx.model_name = "gemini-test"
     kx.daily_limit = daily_limit
     kx.batch_size = batch_size
+    kx.allow_peak = True          # the clock is not under test here (test_extraction_stops.py)
+    kx._now = lambda: datetime(2026, 10, 3, 12, 0, tzinfo=timezone.utc)   # a Saturday: off-peak
     kx.normalizer = EntityNormalizer()
     kx.alias_map = {}
     return kx
+
+
+def _wrapped(fn):
+    """Adapt a test's `text -> extraction dict | None` into a provider answer."""
+    def complete(text):
+        result = fn(text)
+        return Completion(None if result is None else json.dumps(result))
+    return complete
 
 
 def _mock_ds():
@@ -32,69 +54,6 @@ def _mock_ds():
     manager (MagicMock supports __enter__/__exit__ automatically)."""
     ds = MagicMock()
     return ds
-
-
-def _resp(text):
-    return SimpleNamespace(text=text)
-
-
-class TestCallGemini:
-    def test_parses_fenced_json(self):
-        fenced = _FENCE + "json" + chr(10) + '{"persons": []}' + chr(10) + _FENCE
-        client = MagicMock()
-        client.models.generate_content.return_value = _resp(fenced)
-        kx = _make(client=client)
-        assert kx._call_gemini("article") == {"persons": []}
-
-    def test_parses_bare_json(self):
-        client = MagicMock()
-        client.models.generate_content.return_value = _resp('{"event_type": "earnings"}')
-        kx = _make(client=client)
-        assert kx._call_gemini("article")["event_type"] == "earnings"
-
-    def test_invalid_json_returns_none(self):
-        client = MagicMock()
-        client.models.generate_content.return_value = _resp("not json at all")
-        kx = _make(client=client)
-        assert kx._call_gemini("article") is None
-
-    def test_prose_prefix_before_json_returns_none_without_raising(self):
-        """SYS-19's own repro: Gemini prefixing prose before the JSON."""
-        client = MagicMock()
-        client.models.generate_content.return_value = _resp("Here is the JSON you asked for: {not json")
-        kx = _make(client=client)
-        assert kx._call_gemini("article") is None
-
-    def test_response_text_none_returns_none_without_raising(self):
-        """SYS-19: a safety-blocked response has response.text is None -- must not
-        crash with AttributeError on .strip()."""
-        client = MagicMock()
-        client.models.generate_content.return_value = _resp(None)
-        kx = _make(client=client)
-        assert kx._call_gemini("article") is None
-
-    def test_api_error_raises_transient_not_returns_none(self):
-        """OPS-09 (#63): an error from the API call itself (network/timeout/5xx/
-        rate-limit/auth) has nothing to do with this article's content and must be
-        told apart from a deterministic "got a response, couldn't use it" failure
-        -- silently returning None here is what let a transient outage count
-        against knowledge_extract_attempts the same as a poison article."""
-        client = MagicMock()
-        client.models.generate_content.side_effect = RuntimeError("503")
-        kx = _make(client=client)
-        try:
-            kx._call_gemini("article")
-            assert False, "expected GeminiTransientError"
-        except GeminiTransientError as e:
-            assert "503" in str(e)
-
-    def test_requests_json_mime_type(self):
-        client = MagicMock()
-        client.models.generate_content.return_value = _resp('{}')
-        kx = _make(client=client)
-        kx._call_gemini("article")
-        _, kwargs = client.models.generate_content.call_args
-        assert kwargs["config"]["response_mime_type"] == "application/json"
 
 
 class TestInferSubtype:
@@ -181,7 +140,7 @@ class TestExtractAllGuards:
              "source": "S", "extracted_text": "x"}
         ]
         kx = _make(ds=ds, client=MagicMock())
-        kx._call_gemini = lambda text: None
+        kx._complete = _wrapped(lambda text: None)
         assert kx.extract_all() == 0
         ds.mark_article_extracted.assert_not_called()
         ds.increment_api_call_count.assert_called()
@@ -201,7 +160,7 @@ class TestExtractAllGuards:
         ds.upsert_entity.return_value = 1
         ds.get_l1_chunk_id_for_article.return_value = None
         kx = _make(ds=ds, client=MagicMock())
-        kx._call_gemini = lambda text: {"persons": [{"name": "Prabowo"}], "event_type": "x"}
+        kx._complete = _wrapped(lambda text: {"persons": [{"name": "Prabowo"}], "event_type": "x"})
         assert kx.extract_all() == 1
         ds.mark_article_extracted.assert_called_once()
         assert ds.mark_article_extracted.call_args.args[0] == 9
@@ -223,7 +182,7 @@ class TestExtractAllGuards:
 
         def raise_transient(text):
             raise GeminiTransientError("503 Service Unavailable")
-        kx._call_gemini = raise_transient
+        kx._complete = _wrapped(raise_transient)
 
         assert kx.extract_all() == 0
         ds.record_extraction_failure.assert_not_called()
@@ -248,7 +207,7 @@ class TestExtractAllGuards:
                 raise GeminiTransientError("timeout")
             return {"persons": [{"name": "Prabowo"}]}
         flaky.calls = 0
-        kx._call_gemini = flaky
+        kx._complete = _wrapped(flaky)
 
         assert kx.extract_all() == 1
         ds.mark_article_extracted.assert_called_once()
@@ -268,13 +227,14 @@ class TestExtractAllGuards:
              "source": "S", "extracted_text": "x"}
         ]
         kx = _make(ds=ds, client=MagicMock())
-        kx._call_gemini = lambda text: (_ for _ in ()).throw(GeminiTransientError("outage"))
+        kx._complete = _wrapped(lambda text: (_ for _ in ()).throw(GeminiTransientError("outage")))
 
         for _ in range(3):
             assert kx.extract_all() == 0
 
         ds.record_extraction_failure.assert_not_called()
-        assert ds.get_articles_pending_extraction.call_count == 3
+        # every run was offered the article again (a run asks once more for the next batch)
+        assert ds.get_articles_pending_extraction.call_count >= 3
 
     def test_process_extraction_raising_records_failure_and_rolls_back(self):
         """SYS-19: a mid-article crash (e.g. a malformed entity that still slips
@@ -289,7 +249,7 @@ class TestExtractAllGuards:
         ]
         ds.upsert_entity.side_effect = RuntimeError("DB exploded")
         kx = _make(ds=ds, client=MagicMock())
-        kx._call_gemini = lambda text: {"persons": [{"name": "Prabowo"}]}
+        kx._complete = _wrapped(lambda text: {"persons": [{"name": "Prabowo"}]})
         assert kx.extract_all() == 0
         ds.mark_article_extracted.assert_not_called()
         ds.record_extraction_failure.assert_called_once()
@@ -319,13 +279,13 @@ class TestExtractAllOutageSignal:
 
         def boom(text):
             raise GeminiTransientError("429 RESOURCE_EXHAUSTED quota")
-        kx._call_gemini = boom
+        kx._complete = _wrapped(boom)
         with caplog.at_level(logging.ERROR, logger="newscrawler.core.knowledge_extractor"):
             result = kx.extract_all()
         assert result == 0 and isinstance(result, int)
         assert (result.attempted, result.transient_failures, result.all_calls_failed) == (3, 3, True)
         assert "429" in result.first_transient_error
-        assert any("all 3 Gemini call(s) failed" in r.message for r in caplog.records)
+        assert any("all 3 call(s) failed" in r.message for r in caplog.records)
         ds.increment_api_call_count.assert_not_called()      # OPS-09 semantics untouched
         ds.record_extraction_failure.assert_not_called()
 
@@ -339,7 +299,7 @@ class TestExtractAllOutageSignal:
             if isinstance(r, Exception):
                 raise r
             return r
-        kx._call_gemini = flaky
+        kx._complete = _wrapped(flaky)
         result = kx.extract_all()
         assert (result.attempted, result.transient_failures, result.all_calls_failed) == (2, 1, False)
 
@@ -349,9 +309,10 @@ class TestExtractAllOutageSignal:
         assert (int(result), result.attempted, result.all_calls_failed) == (0, 0, False)
 
 
-class TestQuotaWarning:
-    """OPS-20 (#136): "20 extractions, then 429s all day" must be visible. One
-    WARNING per run names the quota that ran out; every other call is untouched."""
+class TestQuotaStop:
+    """OPS-20 (#136): "20 extractions, then 429s all day" must be visible and must
+    not spin. A provider's per-day quota ends the run and the run says which quota;
+    an ordinary transient failure does not."""
 
     def _ds(self, n):
         ds = MagicMock()
@@ -363,34 +324,36 @@ class TestQuotaWarning:
         ]
         return ds
 
-    def test_the_first_quota_error_logs_one_warning_naming_the_quota(self, caplog):
+    def test_a_daily_quota_ends_the_run_and_names_the_quota(self, caplog):
         kx = _make(ds=self._ds(4), client=MagicMock())
 
         def quota(text):
-            raise GeminiTransientError(
-                "429 RESOURCE_EXHAUSTED quotaId: GenerateRequestsPerDayPerProjectPerModel-FreeTier")
-        kx._call_gemini = quota
+            raise ProviderQuotaExhausted("429", "GenerateRequestsPerDayPerProjectPerModel-FreeTier")
+        kx._complete = _wrapped(quota)
         with caplog.at_level(logging.WARNING, logger="newscrawler.core.knowledge_extractor"):
             result = kx.extract_all()
-        named = [r for r in caplog.records
-                 if "quota exhausted (GenerateRequestsPerDayPerProjectPerModel-FreeTier)" in r.message]
-        assert len(named) == 1
-        assert result.attempted == 4                      # the batch is not cut short
+        assert result.attempted == 1, "every further call today fails the same way: stop, do not try all four"
+        assert "GenerateRequestsPerDayPerProjectPerModel-FreeTier" in result.stopped
+        assert result.all_calls_failed
+        assert [r for r in caplog.records if "GenerateRequestsPerDayPerProjectPerModel-FreeTier" in r.message]
+        kx.ds.record_extraction_failure.assert_not_called()      # OPS-09: the article is not at fault
 
-    def test_an_ordinary_transient_failure_logs_no_quota_warning(self, caplog):
+    def test_an_ordinary_transient_failure_does_not_stop_the_batch(self, caplog):
         kx = _make(ds=self._ds(2), client=MagicMock())
 
         def timeout(text):
             raise GeminiTransientError("timeout")
-        kx._call_gemini = timeout
-        with caplog.at_level(logging.WARNING, logger="newscrawler.core.knowledge_extractor"):
-            kx.extract_all()
-        assert not [r for r in caplog.records if "quota exhausted" in r.message]
+        kx._complete = _wrapped(timeout)
+        result = kx.extract_all()
+        assert result.attempted == 2 and result.stopped is None
 
     def test_the_default_budget_is_geminis_not_the_other_endpoints(self, monkeypatch):
         """OPS-20: Gemini's per-model quota (20/day on the free tier) and the
         OpenAI-compatible endpoint's budget are two numbers."""
+        import newscrawler.core.extraction_provider as ep
+        monkeypatch.setattr(ep, "GEMINI_API_KEY", None)
+        monkeypatch.setattr(ep, "OPENAI_API_KEY", None)
+        monkeypatch.setattr(ep, "KNOWLEDGE_LLM_PROVIDER", "")
         import newscrawler.core.knowledge_extractor as ke
-        monkeypatch.setattr(ke, "GEMINI_API_KEY", None)
         monkeypatch.setattr(ke, "GEMINI_DAILY_CALL_LIMIT", 20)
         assert KnowledgeExtractor(MagicMock()).daily_limit == 20

@@ -61,8 +61,8 @@ def _seed_pending_articles(client, n):
 
 def _service_with_failing_gemini(client, error):
     """CrawlerServiceImpl over a repository double that owns a REAL
-    SQLAlchemyKnowledgeDataSource + KnowledgeExtractor (only _call_gemini
-    replaced) and the real crawl_log writer -- without loading FAISS/e5."""
+    SQLAlchemyKnowledgeDataSource + KnowledgeExtractor (only the
+    provider replaced) and the real crawl_log writer -- without loading FAISS/e5."""
     from unittest.mock import MagicMock
     from newscrawler.core.knowledge_extractor import GeminiTransientError, KnowledgeExtractor
     from newscrawler.domain.services.crawler_service_impl import CrawlerServiceImpl
@@ -74,14 +74,13 @@ def _service_with_failing_gemini(client, error):
     )
 
     ds = SQLAlchemyKnowledgeDataSource(client)
-    kx = KnowledgeExtractor(ds)
-    kx._client = object()   # "configured"; the call below is what fails
-    kx.daily_limit = 1400
-    kx.batch_size = 50
+    class Down:
+        """A configured provider whose every call fails without a response."""
+        name, priced = "gemini-test", False
 
-    def boom(text):
-        raise GeminiTransientError(error)
-    kx._call_gemini = boom
+        def complete(self, prompt):
+            raise GeminiTransientError(error)
+    kx = KnowledgeExtractor(ds, provider=Down(), daily_limit=1400, batch_size=50, allow_peak=True)
 
     articles_ds = SQLAlchemyArticleDataSource(client)
     repo = MagicMock()
@@ -108,7 +107,7 @@ class TestExtractKnowledgeCrawlLogLive:
         assert svc.extract_knowledge() == 0
         row = _last_row(client, "extract_knowledge")
         assert (row.website, row.task, row.status) == ("ALL", "extract_knowledge", "failed")
-        assert "all 2 Gemini calls failed" in row.error_msg and "API key not valid" in row.error_msg
+        assert "all 2 extraction calls failed" in row.error_msg and "API key not valid" in row.error_msg
         with client.get_session() as s:
             attempts = s.execute(text("SELECT COALESCE(SUM(knowledge_extract_attempts), 0) FROM articles a JOIN sitemaps s "
                                       "USING (sitemap_id) WHERE s.sources = :s"), {"s": SOURCE}).scalar()

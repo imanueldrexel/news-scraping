@@ -118,13 +118,39 @@ DAILY_API_CALL_LIMIT  = int(os.getenv("DAILY_API_CALL_LIMIT", 1400))
 # OPS-20 (#136): an OpenAI-compatible endpoint -- owner decision 2026-09-20 for
 # the offline labeller (SYS-36) after the Gemini free tier turned out to be 20
 # requests/day/model, and 2026-10-04 for the newsletter's summaries (SYS-68).
-# Knowledge extraction still calls Gemini until SYS-39 decides. The openai SDK
+# Knowledge extraction (SYS-39) uses it only when KNOWLEDGE_LLM_PROVIDER=openai. The openai SDK
 # reads OPENAI_API_KEY/OPENAI_BASE_URL by name; the model is ours (SumoPod:
 # "deepseek-v4-flash").
 OPENAI_API_KEY        = os.getenv("OPENAI_API_KEY")
 OPENAI_BASE_URL       = os.getenv("OPENAI_BASE_URL")
 OPENAI_MODEL          = os.getenv("OPENAI_MODEL", "deepseek-v4-flash")
+# SYS-39 (#125, ADR-003): knowledge extraction's provider is configuration:
+# "openai" (the OpenAI-compatible endpoint above -- SumoPod's DeepSeek) or "gemini".
+# Empty means gemini, today's behaviour: the switch spends money, so it is made on
+# purpose, after the SYS-39 bake-off and the owner's confirmation on #136.
+KNOWLEDGE_LLM_PROVIDER = os.getenv("KNOWLEDGE_LLM_PROVIDER", "").strip().lower()
+KNOWLEDGE_REQUEST_TIMEOUT_S = float(os.getenv("KNOWLEDGE_REQUEST_TIMEOUT_S", 60))
+# KNOWLEDGE_BATCH_SIZE is how many pending articles one query fetches; a run keeps
+# fetching until the queue is empty, KNOWLEDGE_MAX_PER_RUN articles were tried, or
+# a stop condition below fires. (It used to be the whole run: 50.)
 KNOWLEDGE_BATCH_SIZE  = int(os.getenv("KNOWLEDGE_BATCH_SIZE", 50))
+KNOWLEDGE_MAX_PER_RUN = int(os.getenv("KNOWLEDGE_MAX_PER_RUN", 6000))
+# Stop conditions of a run on a priced provider. The budget is dollars per day
+# (the day's api_usage_log.cost_usd), not requests: a normal day is ~$1.2
+# off-peak, so 5 is a guard against a runaway, not a target; the 84,606-article
+# backlog (~$25 off-peak) needs it raised for that one run.
+KNOWLEDGE_DAILY_COST_LIMIT_USD = float(os.getenv("KNOWLEDGE_DAILY_COST_LIMIT_USD", 5.0))
+# After this many failed calls in a row the provider is down; stop instead of
+# trying every remaining article.
+KNOWLEDGE_MAX_CONSECUTIVE_ERRORS = int(os.getenv("KNOWLEDGE_MAX_CONSECUTIVE_ERRORS", 5))
+# The provider charges double in its peak window (core/peak_hours.py); a run does
+# not start or continue inside it unless this is true.
+KNOWLEDGE_ALLOW_PEAK = os.getenv("KNOWLEDGE_ALLOW_PEAK", "").strip().lower() in ("1", "true", "yes")
+# USD per 1M tokens (owner, 2026-10-04: SumoPod DeepSeek).
+KNOWLEDGE_PRICE_INPUT_OFFPEAK  = float(os.getenv("KNOWLEDGE_PRICE_INPUT_OFFPEAK", 0.15))
+KNOWLEDGE_PRICE_INPUT_PEAK     = float(os.getenv("KNOWLEDGE_PRICE_INPUT_PEAK", 0.30))
+KNOWLEDGE_PRICE_OUTPUT_OFFPEAK = float(os.getenv("KNOWLEDGE_PRICE_OUTPUT_OFFPEAK", 0.60))
+KNOWLEDGE_PRICE_OUTPUT_PEAK    = float(os.getenv("KNOWLEDGE_PRICE_OUTPUT_PEAK", 1.20))
 # SYS-19: a poison article (unparseable Gemini response, or a response whose shape
 # crashes _process_extraction) burns one Gemini call per run forever without this --
 # it's re-selected as part of the newest-first pending query every single time.
