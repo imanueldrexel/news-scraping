@@ -31,6 +31,7 @@
 | `KNOWLEDGE_MAX_CONSECUTIVE_ERRORS` | `5` | Failed calls in a row after which the run stops (the provider is down) |
 | `KNOWLEDGE_ALLOW_PEAK` | unset | `true` lets a run start or continue inside SumoPod's peak window (UTC weekdays 01:00-04:00 and 06:00-10:00, double price) |
 | `KNOWLEDGE_PRICE_INPUT_OFFPEAK` / `_PEAK`, `KNOWLEDGE_PRICE_OUTPUT_OFFPEAK` / `_PEAK` | `0.15` / `0.30`, `0.60` / `1.20` | USD per 1M tokens (owner, 2026-10-04); update when the price list changes |
+| `KNOWLEDGE_MAX_OUTPUT_TOKENS` | `3000` | Reply cap of the OpenAI-compatible provider (SYS-78: at 1,200 about 1 article in 100 was cut mid-JSON, failed to parse on every retry and was dropped after 3 attempts). Only tokens used are billed; a cut reply logs `the reply was cut at max_tokens=` |
 | `KNOWLEDGE_REQUEST_TIMEOUT_S` | `60` | Per-call timeout of the OpenAI-compatible provider |
 | `EMBEDDING_MODEL_HF` | `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` | Embedding model |
 | `VECTOR_DB_NAME_L1` | `NEWS_L1` | FAISS L1 index directory |

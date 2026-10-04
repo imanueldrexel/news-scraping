@@ -19,6 +19,7 @@ from newscrawler.core.constants import (
     GEMINI_API_KEY,
     GEMINI_MODEL,
     KNOWLEDGE_LLM_PROVIDER,
+    KNOWLEDGE_MAX_OUTPUT_TOKENS,
     KNOWLEDGE_REQUEST_TIMEOUT_S,
     OPENAI_API_KEY,
     OPENAI_BASE_URL,
@@ -85,7 +86,8 @@ class OpenAICompatProvider:
     priced = True
 
     def __init__(self, model_name: str, api_key: str, base_url: Optional[str] = None, client=None,
-                 timeout_s: float = KNOWLEDGE_REQUEST_TIMEOUT_S, max_tokens: int = 1200, sleep=None):
+                 timeout_s: float = KNOWLEDGE_REQUEST_TIMEOUT_S, max_tokens: int = KNOWLEDGE_MAX_OUTPUT_TOKENS,
+                 sleep=None):
         self.name = model_name
         self._max_tokens = max_tokens
         self._sleep = sleep
@@ -112,6 +114,11 @@ class OpenAICompatProvider:
         usage = getattr(response, "usage", None)
         choices = getattr(response, "choices", None) or []
         text = choices[0].message.content if choices else None
+        if choices and getattr(choices[0], "finish_reason", None) == "length":
+            # SYS-78: a reply cut at the cap is unparseable JSON and would fail the same way on
+            # every retry, so say what happened instead of leaving a bare parse error.
+            logger.warning(f"{self.name}: the reply was cut at max_tokens={self._max_tokens} "
+                           "(KNOWLEDGE_MAX_OUTPUT_TOKENS); the article will fail to parse until the cap is raised")
         return Completion(text, _tokens(getattr(usage, "prompt_tokens", 0)),
                           _tokens(getattr(usage, "completion_tokens", 0)))
 

@@ -215,3 +215,40 @@ class TestParseExtraction:
         """A list or a number parses but would crash extraction.get(...); it is an unusable reply."""
         assert parse_extraction("[1, 2]") is None
         assert parse_extraction("42") is None
+
+
+class TestReplyCap:
+    """SYS-78 (#230): on the first real run one reply in ~100 was cut at the 1,200-token cap,
+    unparseable every time, and the article was dropped after 3 attempts."""
+
+    def _cut_reply(self):
+        client = MagicMock()
+        client.chat.completions.create.return_value = SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content='{"persons": [{"name": "A"'), finish_reason="length")],
+            usage=SimpleNamespace(prompt_tokens=900, completion_tokens=3000))
+        return client
+
+    def test_a_cut_reply_is_named_in_the_log_and_still_returned(self, caplog):
+        provider = OpenAICompatProvider("deepseek-v4-flash", "k", client=self._cut_reply())
+        with caplog.at_level(logging.WARNING, logger="newscrawler.core.extraction_provider"):
+            completion = provider.complete("p")
+        assert completion.text == '{"persons": [{"name": "A"' and completion.output_tokens == 3000
+        assert "cut at max_tokens=" in caplog.text and "KNOWLEDGE_MAX_OUTPUT_TOKENS" in caplog.text
+        assert parse_extraction(completion.text) is None
+
+    def test_a_complete_reply_logs_nothing(self, caplog):
+        client = _chat('{"persons": []}')
+        client.chat.completions.create.return_value.choices[0].finish_reason = "stop"
+        with caplog.at_level(logging.WARNING, logger="newscrawler.core.extraction_provider"):
+            OpenAICompatProvider("m", "k", client=client).complete("p")
+        assert "cut at max_tokens" not in caplog.text
+
+    def test_the_cap_sent_to_the_provider_is_the_configured_one(self, monkeypatch):
+        client = _chat("{}")
+        OpenAICompatProvider("m", "k", client=client).complete("p")
+        assert client.chat.completions.create.call_args.kwargs["max_tokens"] == ep.KNOWLEDGE_MAX_OUTPUT_TOKENS == 3000
+
+    def test_a_custom_cap_is_passed_through(self):
+        client = _chat("{}")
+        OpenAICompatProvider("m", "k", client=client, max_tokens=500).complete("p")
+        assert client.chat.completions.create.call_args.kwargs["max_tokens"] == 500

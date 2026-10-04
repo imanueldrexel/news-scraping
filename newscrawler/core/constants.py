@@ -130,6 +130,9 @@ OPENAI_MODEL          = os.getenv("OPENAI_MODEL", "deepseek-v4-flash")
 # purpose, after the SYS-39 bake-off and the owner's confirmation on #136.
 KNOWLEDGE_LLM_PROVIDER = os.getenv("KNOWLEDGE_LLM_PROVIDER", "").strip().lower()
 KNOWLEDGE_REQUEST_TIMEOUT_S = float(os.getenv("KNOWLEDGE_REQUEST_TIMEOUT_S", 60))
+# The reply cap. The bake-off's average reply is ~310 tokens but a long article lists dozens of
+# entities; at 1,200 one in ~100 was cut mid-JSON (SYS-78). Only tokens used are billed.
+KNOWLEDGE_MAX_OUTPUT_TOKENS = int(os.getenv("KNOWLEDGE_MAX_OUTPUT_TOKENS", 3000))
 # KNOWLEDGE_BATCH_SIZE is how many pending articles one query fetches; a run keeps
 # fetching until the queue is empty, KNOWLEDGE_MAX_PER_RUN articles were tried, or
 # a stop condition below fires. (It used to be the whole run: 50.)
