@@ -134,7 +134,7 @@ class TestTransientApiFailureDoesNotRetireTheQueue:
                     raise GeminiTransientError("503 Service Unavailable (simulated)")
 
             for run in range(3):
-                kx = KnowledgeExtractor(ds, provider=Outage(), daily_limit=1400, batch_size=1000, allow_peak=True)
+                kx = KnowledgeExtractor(ds, provider=Outage(), daily_limit=1400, batch_size=1000, allow_peak=True, workers=1)
 
                 processed = kx.extract_all()
                 assert processed == 0, f"run {run}: nothing should have been extractable during the outage"
@@ -195,7 +195,7 @@ class TestAtomicRollbackOnMidArticleFailure:
             # not about whatever else is pending in the DB.
             monkeypatch.setattr("newscrawler.core.knowledge_extractor.KNOWLEDGE_MAX_PER_RUN", 2)
             # batch_size 2: exactly our two test rows -- see _insert_article's posted_at note
-            kx = KnowledgeExtractor(ds, provider=Scripted(), daily_limit=1400, batch_size=2, allow_peak=True)
+            kx = KnowledgeExtractor(ds, provider=Scripted(), daily_limit=1400, batch_size=2, allow_peak=True, workers=1)
 
             original_get_chunk = ds.get_l1_chunk_id_for_article
 

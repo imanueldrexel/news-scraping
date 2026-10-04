@@ -80,7 +80,7 @@ def _service_with_failing_gemini(client, error):
 
         def complete(self, prompt):
             raise GeminiTransientError(error)
-    kx = KnowledgeExtractor(ds, provider=Down(), daily_limit=1400, batch_size=50, allow_peak=True)
+    kx = KnowledgeExtractor(ds, provider=Down(), daily_limit=1400, batch_size=50, allow_peak=True, workers=1)
 
     articles_ds = SQLAlchemyArticleDataSource(client)
     repo = MagicMock()
