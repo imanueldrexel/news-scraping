@@ -7,9 +7,12 @@
 ### Context
 QA audited OPS-20/SYS-68/SYS-67/SYS-63 (see `decisions/qa/p1-p2-newsletter-fixes.md`, `reviews/2026-10-04-qa-report.md`). Fix SYS-71 #219 (P2) first, then SYS-72 #220, DBT-51 #221, DBT-52 #222. Then post Done-when evidence and label #216/#215/#204/#136 `status: ready-for-qa`; QA re-verifies.
 
+### Owner decisions 2026-10-04 (decisions/cto/sys-63-sys-67-decisions.md)
+- SYS-67 accepted as scoped; contamination -> SYS-74 (#224).
+- SYS-63 stored rows will be repaired: SYS-73 (#223), blocked by SYS-72 (#220).
+
 ### Open Questions
-- Owner: accept SYS-67's unmet "<=1 contaminated cluster/day" Done-when?
-- Owner: SYS-63 stored-row repair; approval before running `task=newsletter`.
+- Owner: approval before running `task=newsletter` (writes digests/ file + one DB row).
 - Scheduled-run evidence (07:00/19:00) for SYS-66/SYS-70 still unseen.
 
 ---
