@@ -171,6 +171,10 @@ class TestGeneratorShowsAStoryAtMostTwice:
         grouping_calls = [p for p in s.prompts if "Balas HANYA dengan JSON" in p]
         assert len(grouping_calls) == 1                           # one call for the section, before the summaries
         assert s.prompts.index(grouping_calls[0]) == 0
+        # a cluster that mixes two cases is summarized by the event most of its articles are about
+        summary_prompts = [p for p in s.prompts if "Balas HANYA dengan JSON" not in p]
+        assert len(summary_prompts) == 5
+        assert all("rangkum hanya peristiwa yang paling banyak dibahas" in p for p in summary_prompts)
 
     def test_the_row_and_the_footer_count_the_grouped_sections(self, monkeypatch, tmp_path):
         gen, ds = self._generator(monkeypatch, FakeSummarizer())
