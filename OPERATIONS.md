@@ -187,6 +187,23 @@ Last run 2026-09-25 on `newsaggregator_20260925T140752Z.dump`: `pg_restore` rc 0
 - **Watch:** `crawl_log` rows `task='extract_knowledge'` (`article_count` and the note), `api_usage_log` (`cost_usd` per day), the parse-failure warnings in the run log (SYS-78 raised the reply cap to 3,000 tokens), and `pending` falling.
 - **Pause it:** `Disable-ScheduledTask -TaskName "NewsAggregator Knowledge Extraction"`. To change provider: `KNOWLEDGE_LLM_PROVIDER` in `.env` (empty = Gemini, held to 20 calls a day).
 
+### Repairing stored article bodies (SYS-73)
+
+`scripts/repair_boilerplate_bodies.py` re-applies the body cleaner to what is already stored. Without arguments it is the read-only dry run (per-source report, `crawler_health/boilerplate-repair-dryrun-<date>.json`). `--apply --source NAME` repairs one source (owner decision 2026-10-04: per source, DETIK first):
+
+```
+venv\Scripts\python.exe scripts\repair_boilerplate_bodies.py --apply --source DETIK --until 06:15 --block 1000
+```
+
+What it does, in order, holding the run lock throughout: back up `NEWS_L1`/`NEWS_L2` and the rows about to change to `backups/sys73_<SOURCE>_<stamp>/` (about 2.1 GB; delete it once the source is verified); delete the changed articles' vectors from both indexes (one atomic, generation-checked save each); one SQL transaction that deletes their entity mentions (those articles are reset for extraction and re-extracted by the nightly job), deletes their chunk rows and writes the cleaned text; re-chunk and re-embed them from the stored text, `--block` articles per FAISS flush; recompute the counters of the entities that lost mentions (SYS-20). A telegram line reports the result.
+
+- **When:** only when no crawl, newsletter or extraction is due. The crawls hold the lock from 07:00 and 19:00 for up to 4 h, the newsletter job is at 12:00 and the extraction at 21:00 (it waits up to 90 min for the lock), so the free windows are about 02:00-06:30 and 08:30-11:30. Pass `--until HH:MM` so no new block starts after that time; the 12:00 newsletter exits 2 if the lock is held.
+- **Cost:** about 0.25 s per article, a 5 min SQL step per 10,000 articles and 1-2 min for the backup: DETIK (10,413 articles, 56,858 chunk rows) took 44 minutes on 2026-10-05.
+- **Interrupted or stopped at the deadline (exit 3):** the rewritten articles have no chunks yet and nothing else is inconsistent; `--apply --source NAME --rechunk-only` finishes it (`scripts/backfill_orphan_chunks.py --website NAME` does the same).
+- **Refuses (exit 2)** while a crawl holds the run lock or a crawl_log row is `started` in the last 4 h. It is idempotent: a second run finds no article whose cleaned text differs.
+- **Verify a source:** the dry run for it shows 0 changed; `scripts\check_store_consistency.py` is all zero; the source's L2 chunk rows equal its vectors in `NEWS_L2` with no NULL `embedding_id`; a query for the chrome text (`ADVERTISEMENT SCROLL TO CONTINUE WITH CONTENT`) returns fewer chrome chunks. DETIK, measured: chrome chunks in the top 20 for that query 10 -> 3, for `Lihat Juga : Video detikFinance` 4 -> 0; 19 remaining pattern hits are ordinary prose ("kami melihat juga").
+- **Restore:** copy the backup's `L1`/`L2` directories back over `NEWS_L1`/`NEWS_L2` and restore the rows from `rows.json` (articles' old text, chunk rows, entity mentions); do this only with the run lock held.
+
 ### Scheduled newsletter (OPS-38) — registered 2026-10-04
 
 `venv\Scripts\python.exe scripts\run_scheduled_newsletter.py [--date YYYY-MM-DD] [--dry-run]` builds the digest of the previous day (or `--date`; today and later are refused), through `crawler_service.generate_newsletter`, so it writes the `newsletter_digests` row, the `digests/<date>.md` file and a `crawl_log` row (`website='ALL'`, `task='newsletter'`, OPS-11). It then sends one Telegram line:
