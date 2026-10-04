@@ -1,5 +1,8 @@
+import collections
 import json
 import logging
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 from typing import Callable, Dict, Optional
 
@@ -11,6 +14,7 @@ from newscrawler.core.constants import (
     KNOWLEDGE_DAILY_COST_LIMIT_USD,
     KNOWLEDGE_MAX_CONSECUTIVE_ERRORS,
     KNOWLEDGE_MAX_PER_RUN,
+    KNOWLEDGE_WORKERS,
 )
 from newscrawler.core.entity_normalizer import EntityNormalizer
 from newscrawler.core.extraction_provider import (
@@ -116,13 +120,31 @@ def parse_extraction(text: Optional[str]) -> Optional[dict]:
     return parsed if isinstance(parsed, dict) else None
 
 
+@dataclass
+class _RunState:
+    """What one `extract_all` run has done so far (SYS-39). Touched only by the calling
+    thread: the worker threads run provider calls and nothing else."""
+    processed: int = 0
+    attempted: int = 0
+    transient_failures: int = 0
+    first_transient_error: Optional[str] = None
+    consecutive_failures: int = 0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cost: float = 0.0
+    stopped: Optional[str] = None
+    seen: set = field(default_factory=set)
+
+
 _FROM_CONFIG = object()   # "build the provider from the environment" (None means: none)
 
 
 class KnowledgeExtractor:
+    workers = 1     # provider calls in flight; __init__ sets KNOWLEDGE_WORKERS (a test may set it directly)
+
     def __init__(self, knowledge_datasource, api_key: str = None,
                  model_name: str = None, daily_limit: int = None,
-                 batch_size: int = None, provider=_FROM_CONFIG, allow_peak: bool = None,
+                 batch_size: int = None, provider=_FROM_CONFIG, allow_peak: bool = None, workers: int = None,
                  now: Callable[[], datetime] = None):
         """provider: an ExtractionProvider (ADR-003). Left out, it is built from
         KNOWLEDGE_LLM_PROVIDER and the API keys; `api_key` (with an optional
@@ -140,6 +162,7 @@ class KnowledgeExtractor:
         self.daily_limit = daily_limit or GEMINI_DAILY_CALL_LIMIT
         self.batch_size  = batch_size  or KNOWLEDGE_BATCH_SIZE
         self.allow_peak  = KNOWLEDGE_ALLOW_PEAK if allow_peak is None else allow_peak
+        self.workers     = max(1, workers or KNOWLEDGE_WORKERS)
         self._now        = now or (lambda: datetime.now(timezone.utc))
         self.normalizer  = EntityNormalizer()
         self.alias_map: Dict[str, int] = {}
@@ -178,123 +201,130 @@ class KnowledgeExtractor:
             return ExtractionResult(0, stopped=stop)
 
         self.alias_map = self.ds.load_alias_map()
-        logger.info(f"Loaded {len(self.alias_map)} aliases. Provider {self.model_name}; "
+        logger.info(f"Loaded {len(self.alias_map)} aliases. Provider {self.model_name}; {self.workers} worker(s); "
                     f"up to {KNOWLEDGE_MAX_PER_RUN} articles this run, {self.batch_size} per query.")
 
-        processed = 0
-        # OPS-11 (#67): OPS-09 made a transient API failure leave no trace in
-        # any table, by design. Count them here so a run where EVERY call
-        # failed is reported as the outage it is (ERROR + crawl_log failed),
-        # instead of N warnings nobody reads and exit 0.
-        attempted = 0
-        transient_failures = 0
-        first_transient_error = None
-        consecutive_failures = 0
-        input_tokens = output_tokens = 0
-        cost = 0.0
-        stopped = None
-        seen = set()    # a transient failure leaves the article pending: do not retry it this run
-        while not stopped and attempted < KNOWLEDGE_MAX_PER_RUN:
+        run = _RunState()
+        # A transient failure leaves the article pending (OPS-09), so the next query offers it
+        # again: `run.seen` keeps one run from retrying it.
+        while not run.stopped and run.attempted < KNOWLEDGE_MAX_PER_RUN:
             articles = [a for a in self.ds.get_articles_pending_extraction(
-                min(self.batch_size, KNOWLEDGE_MAX_PER_RUN - attempted)) if a["article_id"] not in seen]
+                min(self.batch_size, KNOWLEDGE_MAX_PER_RUN - run.attempted)) if a["article_id"] not in run.seen]
             if not articles:
                 break
             logger.info(f"Found {len(articles)} articles pending extraction.")
-            for article_meta in articles:
-                stopped = self._stop_reason()
-                if stopped:
-                    logger.warning(f"Stopping knowledge extraction: {stopped}.")
-                    break
+            self._extract_batch(articles, run)
 
-                article_id = article_meta["article_id"]
-                seen.add(article_id)
-                attempted += 1
-                peak = is_peak(self._now())
-                try:
-                    completion = self._complete(article_meta["extracted_text"])
-                except ProviderQuotaExhausted as e:
-                    # OPS-20 (#136): "20 extractions, then 429s all day" -- every further
-                    # call today fails the same way, so stop instead of trying them all.
-                    transient_failures += 1
-                    first_transient_error = first_transient_error or f"{type(e).__name__}: {e}"[:200]
-                    stopped = f"provider quota exhausted ({e.quota or 'unnamed quota'})"
-                    logger.warning(f"Stopping knowledge extraction after {processed} extractions this run: "
-                                   f"{stopped}; every further call today will fail the same way.")
-                    break
-                except ProviderTransientError as e:
-                    # OPS-09 (#63): we never got a response to evaluate, so this has
-                    # nothing to do with this article's content -- leave
-                    # knowledge_extract_attempts and today's API call count untouched.
-                    # The next article gets its own independent attempt rather than
-                    # assuming one failure means a full outage, until
-                    # KNOWLEDGE_MAX_CONSECUTIVE_ERRORS in a row say it is one.
-                    transient_failures += 1
-                    consecutive_failures += 1
-                    first_transient_error = first_transient_error or f"{type(e).__name__}: {e}"[:200]
-                    logger.warning(
-                        f"Article {article_id}: transient provider failure, leaving "
-                        f"attempts and call count untouched: {e}"
-                    )
-                    if consecutive_failures >= KNOWLEDGE_MAX_CONSECUTIVE_ERRORS:
-                        stopped = f"{consecutive_failures} failed calls in a row ({first_transient_error})"
-                        logger.error(f"Stopping knowledge extraction: {stopped}.")
-                        break
-                    continue
-                consecutive_failures = 0
-
-                # Increment regardless of parse success (the API call was made and got
-                # a response -- this is the boundary ProviderTransientError sits outside of).
-                call_cost = (cost_usd(completion.input_tokens, completion.output_tokens, peak)
-                             if self._provider.priced else 0.0)
-                input_tokens += completion.input_tokens
-                output_tokens += completion.output_tokens
-                cost += call_cost
-                self.ds.increment_api_call_count(self.model_name, input_tokens=completion.input_tokens,
-                                                 output_tokens=completion.output_tokens, cost_usd=call_cost)
-                extraction = parse_extraction(completion.text)
-
-                try:
-                    if extraction is None:
-                        # Unparseable response or a safety block -- a response we DID
-                        # get back but couldn't use. SYS-19: this must count against
-                        # knowledge_extract_attempts, or a deterministically-unparseable
-                        # response burns one call every run forever.
-                        logger.warning(
-                            f"Article {article_id}: no usable extraction (safety block/parse failure) "
-                            "- leaving pending for retry"
-                        )
-                        self.ds.record_extraction_failure(article_id,
-                                                          "no usable extraction (safety block/parse failure)")
-                        continue
-
-                    # SYS-19: persons/organizations/locations + mark_article_extracted all
-                    # happen in one transaction now -- a malformed entity (or any other
-                    # mid-article failure) rolls back every mention this article would
-                    # have written instead of leaving some committed while the article
-                    # stays knowledge_extracted=0 (which would double-count them via
-                    # upsert_entity's mention_count += 1 on the next attempt).
-                    with self.ds.atomic_extraction_session() as session:
-                        self._process_extraction(extraction, article_meta, session)
-                        self.ds.mark_article_extracted(article_id, session=session)
-                        session.commit()
-                    processed += 1
-                    logger.debug(f"Processed article {article_id}")
-                except Exception as e:
-                    # A deterministic, content-specific failure (malformed entity shape,
-                    # a DB constraint this article's data violates) -- distinct from
-                    # ProviderTransientError above, and legitimately counts against the cap.
-                    logger.error(f"Error processing article {article_id}: {e}")
-                    self.ds.record_extraction_failure(article_id, str(e))
-
-        result = ExtractionResult(processed, attempted, transient_failures, first_transient_error,
-                                  input_tokens, output_tokens, round(cost, 6), stopped)
+        result = ExtractionResult(run.processed, run.attempted, run.transient_failures, run.first_transient_error,
+                                  run.input_tokens, run.output_tokens, round(run.cost, 6), run.stopped)
         logger.info(f"Knowledge extraction complete: {result.note() or 'nothing to do'}.")
         if result.all_calls_failed:
             logger.error(
-                f"Knowledge extraction: all {attempted} call(s) failed without a response "
-                f"({first_transient_error}) -- an API outage, not {attempted} skips. Nothing was extracted."
+                f"Knowledge extraction: all {run.attempted} call(s) failed without a response "
+                f"({run.first_transient_error}) -- an API outage, not {run.attempted} skips. Nothing was extracted."
             )
         return result
+
+    def _extract_batch(self, articles: list, run: "_RunState") -> None:
+        """One query's articles. The provider calls run on `self.workers` threads; the
+        stop checks, the usage counters and every database write stay on this one, in
+        article order. At most `workers` calls are in flight, so a stop (the peak window
+        opening, the budget, a quota) overshoots by at most that many calls, each a
+        fraction of a cent; their answers are still recorded, because they were paid for."""
+        in_flight = collections.deque()
+        remaining = iter(articles)
+        with ThreadPoolExecutor(max_workers=self.workers) as pool:
+            while True:
+                while len(in_flight) < self.workers and not run.stopped:
+                    meta = next(remaining, None)
+                    if meta is None:
+                        break
+                    run.stopped = self._stop_reason()
+                    if run.stopped:
+                        logger.warning(f"Stopping knowledge extraction: {run.stopped}.")
+                        break
+                    run.seen.add(meta["article_id"])
+                    run.attempted += 1
+                    in_flight.append((meta, is_peak(self._now()),
+                                      pool.submit(self._complete, meta["extracted_text"])))
+                if not in_flight:
+                    return
+                meta, peak, future = in_flight.popleft()
+                self._consume(meta, peak, future, run)
+
+    def _consume(self, article_meta: dict, peak: bool, future, run: "_RunState") -> None:
+        """One finished call: count it, then extract or record the failure."""
+        article_id = article_meta["article_id"]
+        try:
+            completion = future.result()
+        except ProviderQuotaExhausted as e:
+            # OPS-20 (#136): "20 extractions, then 429s all day" -- every further
+            # call today fails the same way, so stop instead of trying them all.
+            run.transient_failures += 1
+            run.first_transient_error = run.first_transient_error or f"{type(e).__name__}: {e}"[:200]
+            run.stopped = f"provider quota exhausted ({e.quota or 'unnamed quota'})"
+            logger.warning(f"Stopping knowledge extraction after {run.processed} extractions this run: "
+                           f"{run.stopped}; every further call today will fail the same way.")
+            return
+        except ProviderTransientError as e:
+            # OPS-09 (#63): we never got a response to evaluate, so this has nothing to do with
+            # this article's content -- leave knowledge_extract_attempts and today's API call
+            # count untouched. The next article gets its own independent attempt rather than
+            # assuming one failure means a full outage, until KNOWLEDGE_MAX_CONSECUTIVE_ERRORS
+            # in a row say it is one.
+            run.transient_failures += 1
+            run.consecutive_failures += 1
+            run.first_transient_error = run.first_transient_error or f"{type(e).__name__}: {e}"[:200]
+            logger.warning(
+                f"Article {article_id}: transient provider failure, leaving "
+                f"attempts and call count untouched: {e}"
+            )
+            if run.consecutive_failures >= KNOWLEDGE_MAX_CONSECUTIVE_ERRORS and not run.stopped:
+                run.stopped = f"{run.consecutive_failures} failed calls in a row ({run.first_transient_error})"
+                logger.error(f"Stopping knowledge extraction: {run.stopped}.")
+            return
+        run.consecutive_failures = 0
+
+        # Increment regardless of parse success (the API call was made and got a response --
+        # this is the boundary ProviderTransientError sits outside of).
+        call_cost = (cost_usd(completion.input_tokens, completion.output_tokens, peak)
+                     if self._provider.priced else 0.0)
+        run.input_tokens += completion.input_tokens
+        run.output_tokens += completion.output_tokens
+        run.cost += call_cost
+        self.ds.increment_api_call_count(self.model_name, input_tokens=completion.input_tokens,
+                                         output_tokens=completion.output_tokens, cost_usd=call_cost)
+        extraction = parse_extraction(completion.text)
+
+        try:
+            if extraction is None:
+                # Unparseable response or a safety block -- a response we DID get back but couldn't
+                # use. SYS-19: this must count against knowledge_extract_attempts, or a
+                # deterministically-unparseable response burns one call every run forever.
+                logger.warning(
+                    f"Article {article_id}: no usable extraction (safety block/parse failure) "
+                    "- leaving pending for retry"
+                )
+                self.ds.record_extraction_failure(article_id, "no usable extraction (safety block/parse failure)")
+                return
+
+            # SYS-19: persons/organizations/locations + mark_article_extracted all happen in one
+            # transaction -- a malformed entity (or any other mid-article failure) rolls back every
+            # mention this article would have written instead of leaving some committed while the
+            # article stays knowledge_extracted=0 (which would double-count them via
+            # upsert_entity's mention_count += 1 on the next attempt).
+            with self.ds.atomic_extraction_session() as session:
+                self._process_extraction(extraction, article_meta, session)
+                self.ds.mark_article_extracted(article_id, session=session)
+                session.commit()
+            run.processed += 1
+            logger.debug(f"Processed article {article_id}")
+        except Exception as e:
+            # A deterministic, content-specific failure (malformed entity shape, a DB constraint
+            # this article's data violates) -- distinct from ProviderTransientError above, and
+            # legitimately counts against the cap.
+            logger.error(f"Error processing article {article_id}: {e}")
+            self.ds.record_extraction_failure(article_id, str(e))
 
     # ── Provider call ────────────────────────────────────────────────────────
 

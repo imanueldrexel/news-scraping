@@ -26,6 +26,7 @@
 | `KNOWLEDGE_LLM_PROVIDER` | empty (= `gemini`) | SYS-39 (#125, ADR-003): `openai` extracts on the OpenAI-compatible endpoint (SumoPod DeepSeek, `OPENAI_*`), `gemini` on Gemini. Empty keeps Gemini: the switch spends money, so it is made on purpose after the bake-off |
 | `KNOWLEDGE_BATCH_SIZE` | `50` | Pending articles one extraction query fetches. A run keeps fetching until the queue is empty (it used to be the whole run) |
 | `KNOWLEDGE_MAX_PER_RUN` | `6000` | Articles one `task=extract_knowledge` run may try (a normal day is ~4,000) |
+| `KNOWLEDGE_WORKERS` | `4` | Provider calls in flight during extraction (ADR-004; 1 = serial). Bake-off: 4 workers, 0 errors, ~55 min per 4,000 articles. Lower it if `crawl_log` ever shows rate-limit failures |
 | `KNOWLEDGE_DAILY_COST_LIMIT_USD` | `5.0` | Priced provider: the run stops before the next call once the day's `api_usage_log.cost_usd` for the model reaches this. A normal day is ~$1.3 off-peak, so this is a runaway guard; raise it for the one backlog run (~$27) |
 | `KNOWLEDGE_MAX_CONSECUTIVE_ERRORS` | `5` | Failed calls in a row after which the run stops (the provider is down) |
 | `KNOWLEDGE_ALLOW_PEAK` | unset | `true` lets a run start or continue inside SumoPod's peak window (UTC weekdays 01:00-04:00 and 06:00-10:00, double price) |

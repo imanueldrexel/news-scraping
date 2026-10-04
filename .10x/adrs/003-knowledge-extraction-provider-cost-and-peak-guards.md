@@ -1,6 +1,6 @@
 # ADR-003: Knowledge extraction behind a provider, bounded by dollars and the provider's peak window
 
-**Status:** Proposed (the code is in; the default stays Gemini until the owner confirms DeepSeek on #136 after the bake-off)
+**Status:** Accepted 2026-10-04 (owner accepted the bake-off on #136; the default stays Gemini until `KNOWLEDGE_LLM_PROVIDER=openai` is set; serial calls were replaced by ADR-004)
 **Date:** 2026-10-04
 **Feature:** sys-39-knowledge-extraction
 **Author:** 10x-Team (SDE); provider and prices from the owner 2026-10-04

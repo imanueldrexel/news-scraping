@@ -135,6 +135,9 @@ KNOWLEDGE_REQUEST_TIMEOUT_S = float(os.getenv("KNOWLEDGE_REQUEST_TIMEOUT_S", 60)
 # a stop condition below fires. (It used to be the whole run: 50.)
 KNOWLEDGE_BATCH_SIZE  = int(os.getenv("KNOWLEDGE_BATCH_SIZE", 50))
 KNOWLEDGE_MAX_PER_RUN = int(os.getenv("KNOWLEDGE_MAX_PER_RUN", 6000))
+# Provider calls in flight at once (SYS-39, ADR-004). 1 is serial. The 2026-10-04 bake-off ran 4 with
+# no 429 and no parse failure; calls take ~3 s, so 4 workers turn ~3.5 h per 4,000 articles into ~55 min.
+KNOWLEDGE_WORKERS = int(os.getenv("KNOWLEDGE_WORKERS", 4))
 # Stop conditions of a run on a priced provider. The budget is dollars per day
 # (the day's api_usage_log.cost_usd), not requests: a normal day is ~$1.2
 # off-peak, so 5 is a guard against a runaway, not a target; the 84,606-article

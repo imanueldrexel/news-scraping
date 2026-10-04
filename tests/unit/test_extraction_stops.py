@@ -237,3 +237,126 @@ class TestProviderDown:
         kx = _kx(_ds([]))
         kx._provider = None
         assert kx.extract_all() == 0
+
+
+class TestParallelWorkers:
+    """SYS-39 / ADR-004: provider calls run on KNOWLEDGE_WORKERS threads; the stop checks,
+    the usage counters and every database write stay on the calling thread, in article order."""
+
+    @staticmethod
+    def _provider(delay=0.05, fail_on=None, results=None):
+        import threading
+        import time
+
+        class Overlapping(ScriptedProvider):
+            def __init__(self):
+                super().__init__()
+                self.lock = threading.Lock()
+                self.active = 0
+                self.max_active = 0
+                self.calls = 0
+                self.thread_ids = set()
+
+            def complete(self, prompt):
+                with self.lock:
+                    self.calls += 1
+                    n = self.calls
+                    self.active += 1
+                    self.max_active = max(self.max_active, self.active)
+                    self.thread_ids.add(threading.get_ident())
+                try:
+                    time.sleep(delay(n) if callable(delay) else delay)
+                    if fail_on and n in fail_on:
+                        raise fail_on[n]
+                    return Completion(REPLY, 700, 300)
+                finally:
+                    with self.lock:
+                        self.active -= 1
+        return Overlapping()
+
+    def test_the_calls_overlap_up_to_the_worker_count(self):
+        provider = self._provider()
+        kx = _kx(_ds([_articles(1, 12)]), provider=provider)
+        kx.workers = 4
+        result = kx.extract_all()
+        assert result.processed == 12
+        assert provider.max_active == 4, "four calls were in flight at once"
+
+    def test_one_worker_is_serial(self):
+        provider = self._provider(delay=0.01)
+        kx = _kx(_ds([_articles(1, 5)]), provider=provider)
+        kx.workers = 1
+        kx.extract_all()
+        assert provider.max_active == 1
+
+    def test_every_database_write_happens_on_the_calling_thread(self):
+        import threading
+        ds = _ds([_articles(1, 8)])
+        writers = set()
+        for name in ("increment_api_call_count", "mark_article_extracted", "record_extraction_failure"):
+            getattr(ds, name).side_effect = lambda *a, _n=name, **k: writers.add(threading.get_ident())
+        provider = self._provider()
+        kx = _kx(ds, provider=provider)
+        kx.workers = 4
+        kx.extract_all()
+        assert writers == {threading.get_ident()}
+        assert threading.get_ident() not in provider.thread_ids, "the calls ran on worker threads"
+
+    def test_articles_are_consumed_in_order_even_when_later_calls_finish_first(self):
+        ds = _ds([_articles(1, 8)])
+        order = []
+        ds.mark_article_extracted.side_effect = lambda article_id, session=None: order.append(article_id)
+        # the first call is the slowest, so a later call finishes before it
+        provider = self._provider(delay=lambda n: 0.15 if n == 1 else 0.01)
+        kx = _kx(ds, provider=provider)
+        kx.workers = 4
+        kx.extract_all()
+        assert order == list(range(1, 9))
+
+    def test_totals_match_a_serial_run(self):
+        serial = _kx(_ds([_articles(1, 9)]), provider=self._provider(delay=0.0))
+        serial.workers = 1
+        parallel = _kx(_ds([_articles(1, 9)]), provider=self._provider(delay=0.0))
+        parallel.workers = 4
+        a, b = serial.extract_all(), parallel.extract_all()
+        assert (a.processed, a.attempted, a.input_tokens, a.output_tokens) == \
+               (b.processed, b.attempted, b.input_tokens, b.output_tokens) == (9, 9, 6300, 2700)
+        assert a.cost_usd == pytest.approx(b.cost_usd)
+
+    def test_a_quota_stop_overshoots_by_less_than_the_worker_count_and_keeps_the_paid_answers(self):
+        ds = _ds([_articles(1, 40)])
+        provider = self._provider(delay=0.02, fail_on={6: ProviderQuotaExhausted("429", "PerDay")})
+        kx = _kx(ds, provider=provider)
+        kx.workers = 4
+        result = kx.extract_all()
+        assert "provider quota exhausted (PerDay)" in result.stopped
+        assert result.attempted <= 6 + kx.workers - 1, "in-flight calls only, nothing new after the stop"
+        assert result.processed >= 5 and ds.mark_article_extracted.call_count == result.processed
+
+    def test_consecutive_failures_stop_a_parallel_run(self, monkeypatch):
+        monkeypatch.setattr(ke, "KNOWLEDGE_MAX_CONSECUTIVE_ERRORS", 3)
+        errors = {n: ProviderTransientError("502") for n in range(1, 60)}
+        provider = self._provider(delay=0.01, fail_on=errors)
+        kx = _kx(_ds([_articles(1, 50)]), provider=provider)
+        kx.workers = 4
+        result = kx.extract_all()
+        assert "failed calls in a row" in result.stopped
+        assert result.attempted <= 3 + kx.workers - 1
+        assert result.all_calls_failed
+
+    def test_the_peak_window_opening_stops_new_submissions(self):
+        clock = iter([MONDAY_1200] * 8 + [MONDAY_0700] * 100)
+        kx = _kx(_ds([_articles(1, 30)]), provider=self._provider(delay=0.01))
+        kx.workers = 4
+        kx._now = lambda: next(clock)
+        result = kx.extract_all()
+        assert "peak hours" in result.stopped and 0 < result.attempted < 30
+
+    def test_the_default_is_four_workers_and_one_is_the_floor(self, monkeypatch):
+        assert ke.KNOWLEDGE_WORKERS == 4
+        kx = KnowledgeExtractor(MagicMock(), provider=ScriptedProvider())
+        assert kx.workers == 4
+        assert KnowledgeExtractor(MagicMock(), provider=ScriptedProvider(), workers=0).workers == 4
+        assert KnowledgeExtractor(MagicMock(), provider=ScriptedProvider(), workers=1).workers == 1
+        monkeypatch.setattr(ke, "KNOWLEDGE_WORKERS", 0)
+        assert KnowledgeExtractor(MagicMock(), provider=ScriptedProvider()).workers == 1
