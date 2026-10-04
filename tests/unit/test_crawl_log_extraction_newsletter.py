@@ -37,6 +37,19 @@ class TestExtractKnowledgeCrawlLog:
         assert "all 50 extraction calls failed" in msg and "API key not valid" in msg
         assert any(r.levelname == "ERROR" and "FAILED" in r.message for r in caplog.records)
 
+    def test_the_result_keeps_its_tokens_cost_and_stop_reason_for_the_scheduled_job(self, service):
+        """SYS-39: scripts/run_scheduled_extraction.py reports them in Telegram; a bare int would drop them."""
+        result = ExtractionResult(12, attempted=15, input_tokens=9000, output_tokens=3000, cost_usd=0.0042,
+                                  stopped="peak hours")
+        service.data_flow_repo.extract_knowledge.return_value = result
+        returned = service.extract_knowledge()
+        assert returned is result and returned.cost_usd == 0.0042 and returned.stopped == "peak hours"
+
+    def test_an_all_failed_run_also_returns_the_result(self, service):
+        result = ExtractionResult(0, attempted=3, transient_failures=3, first_transient_error="401")
+        service.data_flow_repo.extract_knowledge.return_value = result
+        assert service.extract_knowledge() is result
+
     def test_a_plain_int_from_an_older_repository_still_completes(self, service):
         service.data_flow_repo.extract_knowledge.return_value = 4
         assert service.extract_knowledge() == 4

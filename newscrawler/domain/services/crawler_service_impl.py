@@ -656,6 +656,8 @@ class CrawlerServiceImpl(CrawlerService):
     # call failed without a response is recorded as status='failed' with the
     # first error -- OPS-09 made those failures leave no other trace.
     def extract_knowledge(self) -> int:
+        """The processed count. When the repository returns an ExtractionResult (an int that also carries
+        tokens, cost and the stop reason, SYS-39) it is returned as is, so the scheduled job can report them."""
         logger.info("Starting knowledge extraction phase...")
         log_id = self.data_flow_repo.log_crawl_start("ALL", "extract_knowledge")
         try:
@@ -669,11 +671,11 @@ class CrawlerServiceImpl(CrawlerService):
                    f"{result.first_transient_error}")
             self.data_flow_repo.log_crawl_failed(log_id, msg[:500])
             logger.error(f"Knowledge extraction FAILED: {msg}")
-            return count
+            return result
         # SYS-39 (#125): what the run spent and why it stopped early, beside the count.
         self.data_flow_repo.log_crawl_complete(log_id, count, note=getattr(result, "note", lambda: None)())
         logger.info(f"Knowledge extraction complete. Processed {count} articles.")
-        return count
+        return result
 
     def generate_newsletter(self, target_date=None):
         logger.info(f"Starting newsletter generation for {target_date or 'today'}...")
