@@ -236,6 +236,7 @@ WRITE_PATHS = [
     ("backfill_pending_embeddings", ["--website", "VIVA"]),
     ("run_scheduled_newsletter", []),
     ("run_scheduled_extraction", []),
+    ("repair_boilerplate_bodies", ["--apply", "--source", "DETIK"]),
 ]
 
 

@@ -66,39 +66,11 @@ _FETCH_SQL = text("""
 """)
 
 
-def main(argv=None) -> dict:
-    """Returns {"selected", "repaired", "empty", "failed"} so the integration test
-    can drive this in-process (argv=None reads sys.argv as usual), or the exit
-    status 2 when a scheduled crawl holds the run lock."""
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--website", default=None, help="Limit to one source (default: all)")
-    parser.add_argument("--dry-run", action="store_true", help="Report counts without writing")
-    args = parser.parse_args(argv)
-    # OPS-26/DBT-43: this writes NEWS_L1/L2 (through save_chunk_data); refuse at the
-    # door while a scheduled crawl holds them, before any fetch or write.
-    from newscrawler.tools.run_lock import refused_by_run_lock
-    if not args.dry_run and refused_by_run_lock(logger):
-        return 2
-
-    client = SQLAlchemyClient()
-    with client.get_session() as session:
-        rows = session.execute(_FETCH_SQL, {"website": args.website}).fetchall()
-
-    summary = {"selected": len(rows), "repaired": 0, "empty": 0, "failed": 0}
-    logger.info("%d orphan article(s) found%s", len(rows), f" for {args.website}" if args.website else "")
-    if not rows:
-        return summary
-
-    if args.dry_run:
-        by_source = {}
-        for r in rows:
-            by_source[r.sources] = by_source.get(r.sources, 0) + 1
-        logger.info("[dry-run] Would re-chunk: %s", by_source)
-        return summary
-
-    chunker = HierarchicalChunker()
-    repo = DataFlowRepositoryImpl(client)
-
+def rechunk_articles(repo, chunker, rows):
+    """Re-chunk and save `rows` (articles with an `articles` row but missing chunks) from
+    their stored text. Returns (repaired, empty, failed). Used by this script and by
+    scripts/repair_boilerplate_bodies.py (SYS-73), which wraps it in `deferred_embeddings`
+    so a block of articles costs one FAISS save instead of one per article."""
     repaired, empty, failed = 0, 0, 0
     for row in rows:
         # SYS-18: extracted_text is prose joined with "\n\n" at the write boundary
@@ -137,6 +109,43 @@ def main(argv=None) -> dict:
         except Exception as e:
             logger.error("sitemap_id %d: failed to save chunks: %s", row.sitemap_id, e)
             failed += 1
+    return repaired, empty, failed
+
+
+def main(argv=None) -> dict:
+    """Returns {"selected", "repaired", "empty", "failed"} so the integration test
+    can drive this in-process (argv=None reads sys.argv as usual), or the exit
+    status 2 when a scheduled crawl holds the run lock."""
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--website", default=None, help="Limit to one source (default: all)")
+    parser.add_argument("--dry-run", action="store_true", help="Report counts without writing")
+    args = parser.parse_args(argv)
+    # OPS-26/DBT-43: this writes NEWS_L1/L2 (through save_chunk_data); refuse at the
+    # door while a scheduled crawl holds them, before any fetch or write.
+    from newscrawler.tools.run_lock import refused_by_run_lock
+    if not args.dry_run and refused_by_run_lock(logger):
+        return 2
+
+    client = SQLAlchemyClient()
+    with client.get_session() as session:
+        rows = session.execute(_FETCH_SQL, {"website": args.website}).fetchall()
+
+    summary = {"selected": len(rows), "repaired": 0, "empty": 0, "failed": 0}
+    logger.info("%d orphan article(s) found%s", len(rows), f" for {args.website}" if args.website else "")
+    if not rows:
+        return summary
+
+    if args.dry_run:
+        by_source = {}
+        for r in rows:
+            by_source[r.sources] = by_source.get(r.sources, 0) + 1
+        logger.info("[dry-run] Would re-chunk: %s", by_source)
+        return summary
+
+    chunker = HierarchicalChunker()
+    repo = DataFlowRepositoryImpl(client)
+
+    repaired, empty, failed = rechunk_articles(repo, chunker, rows)
 
     logger.info("Done. repaired=%d empty=%d failed=%d (of %d)", repaired, empty, failed, len(rows))
     summary.update(repaired=repaired, empty=empty, failed=failed)

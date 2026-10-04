@@ -1,32 +1,44 @@
 #!/usr/bin/env python3
 r"""
-SYS-73 (#223): clean the bodies already stored. Step 1 of 2, and read-only.
+SYS-73 (#223): clean the bodies already stored.
 
 The SYS-63 cleaner (`clean_body_paragraphs`) fixes rows saved from 2026-10-04
-on; 41% of the 84,606 stored articles still carry other stories' headlines or
-page chrome, and so do 163,696 of their 411,994 chunks, in the text RAG search
-retrieves and the extractor reads. This step reports what the cleaner would do
-to every stored `articles.extracted_text`, writes nothing, and saves the report
-for the owner to approve.
+on; 41% of the 84,606 stored articles still carried other stories' headlines or
+page chrome, and so did 163,696 of their 411,994 chunks, in the text RAG search
+retrieves and the extractor reads.
 
-    venv\Scripts\python.exe scripts\repair_boilerplate_bodies.py            # the dry run (the only mode)
-    venv\Scripts\python.exe scripts\repair_boilerplate_bodies.py --source KOMPAS --top 80
+  Step 1, the dry run (the default), is read-only: it reports what the cleaner would do to
+  every stored `articles.extracted_text` and saves the report for the owner to approve.
 
-It prints, per source, how many bodies would change, how many would be left
-empty or nearly empty (a body the cleaner reduces to nothing is a page that was
-only chrome -- the owner decides whether such an article stays), the share of
-characters removed, and the chunk rows those articles own. Then the most
-frequent removed lines and the longest removed lines: the second list is the one
-to read for real sentences, which is how SYS-72 was found. The report goes to
-crawler_health/boilerplate-repair-dryrun-<date>.json.
+      venv\Scripts\python.exe scripts\repair_boilerplate_bodies.py
+      venv\Scripts\python.exe scripts\repair_boilerplate_bodies.py --source KOMPAS --top 80
 
-The write step (rewrite `articles.extracted_text`, delete the changed articles'
-chunk rows and their vectors, re-chunk, re-embed) is not here yet: it needs the
-owner's approval of this report, a fresh `scripts/backup_db.py` dump, and the
-run lock and generation checks every FAISS writer has (OPS-26, SYS-53, SYS-56).
+  Step 2, `--apply --source NAME`, repairs one source (owner decision 2026-10-04: per source,
+  DETIK first). Holding the run lock throughout, in this order:
+    1. back up NEWS_L1/NEWS_L2 and the rows about to change (backups/sys73_<source>_<stamp>/);
+    2. delete the changed articles' vectors from both indexes (one atomic, generation-checked save each);
+    3. one SQL transaction: delete their entity mentions (and reset those articles for extraction), delete
+       their chunk rows, write the cleaned text;
+    4. re-chunk and re-embed them from the stored text in blocks of --block articles, one FAISS flush per
+       block (`deferred_embeddings`), until --until HH:MM (local) if given;
+    5. recompute the counters of the entities that lost mentions (SYS-20).
+  Killed or stopped at the deadline between 3 and 4, the articles have no chunks and nothing else
+  changes: `--rechunk-only` (or scripts/backfill_orphan_chunks.py) finishes the job. The step is
+  idempotent: a second run finds no article whose cleaned text differs.
+
+      venv\Scripts\python.exe scripts\repair_boilerplate_bodies.py --apply --source DETIK --until 11:30
+
+  Exit: 0 done, 1 some articles failed to re-chunk, 2 refused (a crawl holds the run lock, or a
+  crawl_log row is 'started'), 3 stopped at the deadline with articles left.
+
+The dry run prints, per source, how many bodies would change, how many would be left empty or nearly
+empty, the share of characters removed and the chunk rows those articles own, then the most frequent and
+the longest removed lines (the second list is the one to read for real sentences, which is how SYS-72
+and SYS-75 were found). The report goes to crawler_health/boilerplate-repair-dryrun-<date>.json.
 """
 import argparse
 import json
+import logging
 import os
 import re
 import sys
@@ -46,8 +58,14 @@ from newscrawler.core.utils.utils import clean_body_paragraphs, is_boilerplate_l
 from newscrawler.infrastructure.network.clients.sqlalchemy_client import SQLAlchemyClient  # noqa: E402
 
 REPORT_DIR = os.path.join(ROOT, "crawler_health")
+BACKUP_DIR = os.path.join(ROOT, "backups")
+
+logging.basicConfig(format="%(asctime)s %(levelname)s %(message)s")
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 NEARLY_EMPTY_CHARS = 200     # a cleaned body shorter than this is reported as nearly empty
 BATCH = 2000
+BLANK_RUNS = re.compile(r"\n{3,}")
 BACA = re.compile(r"baca juga", re.IGNORECASE)
 CHROME = re.compile(r"advertisement|scroll to continue|google news|whatsapp channel|ikuti kami|gulir untuk|\[gambas:",
                     re.IGNORECASE)
@@ -153,12 +171,229 @@ def render(report, chunks, top):
     return "\n".join(lines)
 
 
+# ── SYS-73 step 2: the write path ────────────────────────────────────────────
+
+MIN_FREE_GB_FOR_BACKUP = 8       # the FAISS directories are ~2.1 GB and the backup copies them
+DEFAULT_BLOCK = 1000             # articles per FAISS flush while re-chunking
+
+
+def select_targets(rows):
+    """Pure. `rows`: (sitemap_id, stored body). [(sitemap_id, cleaned body)] for the articles whose
+    cleaned body differs from the stored one. An article the cleaner would empty is not rewritten
+    (the dry run reports it; deleting an article's whole text is the owner's call)."""
+    out = []
+    for sitemap_id, body in rows:
+        body = body or ""
+        cleaned = clean_body_paragraphs(body) or ""
+        if cleaned != body and cleaned.strip():
+            # A stored body is one string; a removed line leaves its blank line behind. Collapse the
+            # runs here, in rows that are being rewritten anyway (a clean body is never touched).
+            out.append((sitemap_id, BLANK_RUNS.sub("\n\n", cleaned)))
+    return out
+
+
+def parse_until(value, now=None):
+    """'HH:MM' (local time, today) -> datetime, or None. A deadline already past means 'stop now'."""
+    if not value:
+        return None
+    hour, minute = (int(x) for x in value.split(":"))
+    now = now or datetime.now()
+    return now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+
+
+def _crawl_running(session):
+    return session.execute(text(
+        "SELECT count(*) FROM crawl_log WHERE status = 'started' AND task IN ('sitemap', 'full_text', 'all') "
+        "AND started_at > NOW() - INTERVAL '4 hours'")).scalar()
+
+
+def rewrite_rows(session, targets):
+    """One transaction: drop the targets' entity mentions (their articles are re-extracted from the
+    cleaned text; the counters are recomputed afterwards), drop their chunk rows, write the cleaned text.
+    Returns (mentions deleted, articles reset for extraction, chunk rows deleted, articles rewritten)."""
+    ids = [sid for sid, _ in targets]
+    extracted = [r[0] for r in session.execute(text(
+        "SELECT DISTINCT sitemap_id FROM entity_mentions WHERE sitemap_id = ANY(:i)"), {"i": ids})]
+    n_mentions = session.execute(text("DELETE FROM entity_mentions WHERE sitemap_id = ANY(:i)"),
+                                 {"i": ids}).rowcount
+    n_reset = session.execute(text(
+        "UPDATE articles SET knowledge_extracted = 0, knowledge_extracted_at = NULL, "
+        "knowledge_extract_attempts = 0, last_extract_error = NULL WHERE sitemap_id = ANY(:i)"),
+        {"i": extracted}).rowcount if extracted else 0
+    n_chunks = session.execute(text("DELETE FROM chunks WHERE sitemap_id = ANY(:i)"), {"i": ids}).rowcount
+    for sitemap_id, cleaned in targets:
+        session.execute(text("UPDATE articles SET extracted_text = :t WHERE sitemap_id = :i"),
+                        {"t": cleaned, "i": sitemap_id})
+    session.commit()
+    return n_mentions, n_reset, n_chunks, len(targets)
+
+
+def _faiss_dirs():
+    import newscrawler.infrastructure.datasource.dataflow.write.faiss.chunk_faiss_data_source as cfd
+    return cfd.VECTOR_DB_NAME_L1, cfd.VECTOR_DB_NAME_L2
+
+
+def backup(client, source, targets, dirs, stamp):
+    """FAISS directories and the rows about to change, under backups/sys73_<source>_<stamp>/."""
+    import shutil
+    free_gb = shutil.disk_usage(BACKUP_DIR if os.path.isdir(BACKUP_DIR) else ROOT).free / 1e9
+    if free_gb < MIN_FREE_GB_FOR_BACKUP:
+        raise RuntimeError("only %.1f GB free; the backup needs about %d" % (free_gb, MIN_FREE_GB_FOR_BACKUP))
+    path = os.path.join(BACKUP_DIR, "sys73_%s_%s" % (source, stamp))
+    for db in dirs:
+        shutil.copytree(db, os.path.join(path, os.path.basename(db.rstrip("/\\"))))
+    ids = [sid for sid, _ in targets]
+    with client.get_session() as session:
+        dump = {
+            "articles": [dict(r._mapping) for r in session.execute(text(
+                "SELECT * FROM articles WHERE sitemap_id = ANY(:i)"), {"i": ids})],
+            "chunks": [dict(r._mapping) for r in session.execute(text(
+                "SELECT chunk_id, sitemap_id, article_id, chunk_level, chunk_index, chunk_total, is_first_chunk, "
+                "is_last_chunk, text_content, token_count, embedding_id, chunk_status FROM chunks "
+                "WHERE sitemap_id = ANY(:i)"), {"i": ids})],
+            "entity_mentions": [dict(r._mapping) for r in session.execute(text(
+                "SELECT * FROM entity_mentions WHERE sitemap_id = ANY(:i)"), {"i": ids})],
+        }
+    with open(os.path.join(path, "rows.json"), "w", encoding="utf-8") as f:
+        json.dump(dump, f, default=str)
+    logger.info("backup: %s (FAISS + %d article, %d chunk, %d mention rows)", path, len(dump["articles"]),
+                len(dump["chunks"]), len(dump["entity_mentions"]))
+    return path
+
+
+def delete_vectors(targets, dirs):
+    """Remove the targets' vectors from NEWS_L1/NEWS_L2: atomic save, generation-checked (SYS-53/56).
+    They must go before the new chunks are embedded: the reuse path (SYS-17) finds an existing vector by
+    (sitemap, level, index) and would link the new rows to the old, polluted ones."""
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from repair_store_consistency import _NoEmbeddings
+    from requeue_cascaded_articles import vector_ids_for
+    from newscrawler.infrastructure.datasource.dataflow.write.faiss.chunk_faiss_data_source import ChunkFAISSDatasource
+    from newscrawler.infrastructure.datasource.dataflow.write.faiss.index_generation import load_index
+    ids = [sid for sid, _ in targets]
+    deleted = {}
+    for db in dirs:
+        store = load_index(db, _NoEmbeddings())
+        doomed = vector_ids_for(store.docstore._dict, ids)
+        if doomed:
+            store.delete(doomed)
+            ChunkFAISSDatasource._atomic_save_local(store, db)
+        deleted[db] = len(doomed)
+        logger.info("%s: deleted %d vector(s), saved", db, len(doomed))
+    return deleted
+
+
+def rechunk(client, source, block, deadline, make_repo=None, now=datetime.now):
+    """Re-chunk and re-embed this source's articles that have no chunks, `block` articles per FAISS
+    flush (`deferred_embeddings`: without it every article would rewrite the 2 GB index). Stops starting
+    blocks at the deadline. Returns (repaired, empty, failed, left)."""
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from backfill_orphan_chunks import _FETCH_SQL, rechunk_articles
+    from newscrawler.core.chunker import HierarchicalChunker
+    with client.get_session() as session:
+        orphans = session.execute(_FETCH_SQL, {"website": source}).fetchall()
+    logger.info("%s: %d article(s) to re-chunk", source, len(orphans))
+    if not orphans:
+        return 0, 0, 0, 0
+    if make_repo is None:
+        from newscrawler.infrastructure.repositories.dataflow.data_flow_repository_impl import DataFlowRepositoryImpl
+        make_repo = DataFlowRepositoryImpl
+    repo = make_repo(client)
+    chunker = HierarchicalChunker()
+    repaired = empty = failed = 0
+    for start in range(0, len(orphans), block):
+        if deadline is not None and now() >= deadline:
+            logger.warning("deadline %s reached: %d article(s) not re-chunked yet (run again with --rechunk-only)",
+                           deadline.strftime("%H:%M"), len(orphans) - start)
+            return repaired, empty, failed, len(orphans) - start
+        with repo.deferred_embeddings(source):
+            r, e, f = rechunk_articles(repo, chunker, orphans[start:start + block])
+        repaired, empty, failed = repaired + r, empty + e, failed + f
+        logger.info("%s: %d/%d re-chunked (%d empty, %d failed)", source, start + len(orphans[start:start + block]),
+                    len(orphans), empty, failed)
+    return repaired, empty, failed, 0
+
+
+def apply_source(args, client=None, make_repo=None) -> int:
+    """The write step for one source. Holds the run lock (a crawl, the newsletter and the extraction
+    all wait or refuse meanwhile). Exit: 0 done, 1 failures, 2 refused, 3 stopped at the deadline."""
+    source = args.source.upper()
+    from newscrawler.tools.run_lock import RunLock, RunLockHeld
+    client = client or SQLAlchemyClient()
+    try:
+        with RunLock(purpose="boilerplate repair %s" % source):
+            return _apply_locked(args, source, client, make_repo)
+    except RunLockHeld as e:
+        logger.error("refusing to write: %s", e)
+        return 2
+
+
+def _apply_locked(args, source, client, make_repo) -> int:
+    dirs = _faiss_dirs()
+    with client.get_session() as session:
+        logger.info("database: %s", session.execute(text("SELECT current_database()")).scalar())
+        if _crawl_running(session):
+            logger.error("a crawl_log row is 'started' in the last 4 h; refusing to rewrite FAISS under a running crawl")
+            return 2
+        rows = session.execute(text(
+            "SELECT a.sitemap_id, a.extracted_text FROM articles a JOIN sitemaps s USING (sitemap_id) "
+            "WHERE s.sources = :w ORDER BY a.sitemap_id"), {"w": source}).fetchall()
+    targets = [] if args.rechunk_only else select_targets((r.sitemap_id, r.extracted_text) for r in rows)
+    logger.info("%s: %d article(s), %d to rewrite", source, len(rows), len(targets))
+    summary = {"rewritten": 0, "mentions_deleted": 0, "reset_for_extraction": 0, "chunk_rows_deleted": 0,
+               "vectors_deleted": 0}
+    if targets:
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        summary["backup"] = backup(client, source, targets, dirs, stamp)
+        summary["vectors_deleted"] = sum(delete_vectors(targets, dirs).values())
+        with client.get_session() as session:
+            m, reset, c, n = rewrite_rows(session, targets)
+        summary.update(mentions_deleted=m, reset_for_extraction=reset, chunk_rows_deleted=c, rewritten=n)
+        logger.info("rewrote %d article(s); deleted %d chunk row(s) and %d mention(s); %d reset for extraction",
+                    n, c, m, reset)
+    repaired, empty, failed, left = rechunk(client, source, args.block, parse_until(args.until), make_repo)
+    summary.update(rechunked=repaired, empty=empty, failed=failed, left=left)
+    if summary["mentions_deleted"]:
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import recount_entity_mentions
+        recount_entity_mentions.main([])     # SYS-20: the counters of entities that lost mentions
+    logger.info("SUMMARY %s: %s", source, json.dumps(summary))
+    _notify("Boilerplate repair %s: %d articles rewritten, %d re-chunked, %d failed, %d left%s" % (
+        source, summary["rewritten"], repaired, failed, left, " (stopped at the deadline)" if left else ""))
+    return 3 if left else (1 if failed else 0)
+
+
+def _notify(message: str) -> None:
+    """Telegram, via the OPS-01 notifier; a failure to notify never changes the result."""
+    try:
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        from notify_telegram import send
+        send(message)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Telegram notification failed: %s", e)
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--source", default=None, help="One source only (default: all)")
     parser.add_argument("--top", type=int, default=40)
     parser.add_argument("--report-dir", default=REPORT_DIR)
+    parser.add_argument("--apply", action="store_true", help="Write: repair --source (default: the dry run)")
+    parser.add_argument("--rechunk-only", action="store_true",
+                        help="With --apply: only re-chunk the source's articles that have no chunks")
+    parser.add_argument("--block", type=int, default=DEFAULT_BLOCK, help="Articles per FAISS flush (default 1000)")
+    parser.add_argument("--until", default=None, metavar="HH:MM", help="Stop starting blocks at this local time")
     args = parser.parse_args(argv)
+
+    if args.apply or args.rechunk_only:
+        if not args.source:
+            parser.error("--apply needs --source (one source at a time)")
+        # OPS-26/DBT-43: this writes NEWS_L1/L2; refuse at the door while a crawl holds the run lock,
+        # before the database or the indexes are touched.
+        from newscrawler.tools.run_lock import refused_by_run_lock
+        if refused_by_run_lock(logger):
+            return 2
+        return apply_source(args)
 
     sql = text("SELECT s.sitemap_id, s.sources AS source, a.extracted_text AS body "
                "FROM articles a JOIN sitemaps s ON s.sitemap_id = a.sitemap_id "
