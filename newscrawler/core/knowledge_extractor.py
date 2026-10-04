@@ -81,6 +81,16 @@ class ExtractionResult(int):
 GeminiTransientError = ProviderTransientError
 
 
+# SYS-76/SYS-77 (QA 2026-10-04): on 200 real articles 30% listed the publishing outlet as an
+# organization (Kompas.com 29 times, the most frequent "organization" of the sample) and the
+# free-text event_type took 189 distinct values, so neither the KB's entity counts nor
+# `kb_query --event-type` meant anything. event_type is now one of a closed list.
+EVENT_TYPES = (
+    "earnings_report", "corporate_action", "policy_announcement", "regulation_law", "market_movement",
+    "commodity_price", "economic_data", "legal_case", "crime", "accident", "disaster",
+    "politics_election", "international_relations", "social_welfare", "technology", "other",
+)
+
 _PROMPT_TEMPLATE = (
     "Extract entities from the following Indonesian news article.\n"
     "Return ONLY a JSON object with this exact schema and no other text:\n"
@@ -88,9 +98,24 @@ _PROMPT_TEMPLATE = (
     ' "organizations": [{{"name": "string", "type": "string", "ticker": "string or null"}}],\n'
     ' "locations": [{{"name": "string", "type": "string"}}],\n'
     ' "event_type": "string",\n'
-    ' "key_metrics": [{{"metric": "string", "value": "string"}}]}}\n\n'
+    ' "key_metrics": [{{"metric": "string", "value": "string"}}]}}\n'
+    "Rules:\n"
+    "- Do not list the news outlet that published the article, or its reporters and editors, as an "
+    "organization or person (for example Kompas.com, Kontan, Detik, CNBC Indonesia, Antara, Tribunnews, "
+    "Liputan6, Beritasatu, jpnn.com), including in a byline, a dateline or a 'Baca juga' line. List an "
+    "outlet only when the story is about that outlet.\n"
+    '- "event_type" must be exactly one of: ' + ", ".join(EVENT_TYPES) + '. Use "other" when none fits.\n\n'
     "Article:\n{article_text}"
 )
+
+
+def normalize_event_type(value) -> Optional[str]:
+    """The closed-list event_type, or None when the model gave none. A value outside the
+    list (the model's own wording) is stored as "other", not as a one-off string."""
+    text = str(value or "").strip().lower().replace(" ", "_").replace("-", "_")
+    if not text:
+        return None
+    return text if text in EVENT_TYPES else "other"
 
 ARTICLE_CHARS = 3000   # how much of an article the prompt carries
 
@@ -338,7 +363,7 @@ class KnowledgeExtractor:
     # ── Extraction processing ────────────────────────────────────────────────
 
     def _process_extraction(self, extraction: dict, article_meta: dict, session) -> None:
-        event_type   = extraction.get("event_type") or None
+        event_type   = normalize_event_type(extraction.get("event_type"))
         article_text = article_meta["extracted_text"]
 
         for person in self._valid_dicts(extraction.get("persons")):

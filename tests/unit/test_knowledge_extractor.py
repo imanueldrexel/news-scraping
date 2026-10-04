@@ -357,3 +357,56 @@ class TestQuotaStop:
         import newscrawler.core.knowledge_extractor as ke
         monkeypatch.setattr(ke, "GEMINI_DAILY_CALL_LIMIT", 20)
         assert KnowledgeExtractor(MagicMock()).daily_limit == 20
+
+
+class TestEventTypeAndOutletRules:
+    """SYS-76 (#228) / SYS-77 (#229): on 200 real articles 30% listed the publishing outlet as an
+    entity and event_type took 189 distinct values. The measured before/after is in
+    EXPERIMENTS.md (2026-10-04, 'SYS-76/77'); these pin the pieces the unit level can see."""
+
+    def test_the_prompt_lists_the_closed_event_types(self):
+        from newscrawler.core.knowledge_extractor import EVENT_TYPES, build_prompt
+        prompt = build_prompt("isi")
+        for value in EVENT_TYPES:
+            assert value in prompt
+        assert "other" in EVENT_TYPES and len(EVENT_TYPES) == len(set(EVENT_TYPES))
+
+    def test_the_prompt_forbids_the_outlet_and_its_reporters(self):
+        from newscrawler.core.knowledge_extractor import build_prompt
+        prompt = build_prompt("isi")
+        for outlet in ("Kompas.com", "Kontan", "Detik", "CNBC Indonesia", "Antara"):
+            assert outlet in prompt
+        assert "reporters and editors" in prompt and "byline" in prompt and "'Baca juga' line" in prompt
+        assert "only when the story is about that outlet" in prompt
+
+    def test_the_schema_keys_are_unchanged(self):
+        from newscrawler.core.knowledge_extractor import build_prompt
+        prompt = build_prompt("isi")
+        for key in ('"persons"', '"organizations"', '"locations"', '"event_type"', '"key_metrics"'):
+            assert key in prompt
+
+    @pytest.mark.parametrize("given,stored", [
+        ("policy_announcement", "policy_announcement"),
+        ("Policy Announcement", "policy_announcement"),
+        ("  LEGAL-CASE ", "legal_case"),
+        ("kecelakaan lalu lintas", "other"),
+        ("commodity price movement", "other"),
+        ("other", "other"),
+        ("", None), (None, None), ("   ", None),
+    ])
+    def test_normalize_event_type(self, given, stored):
+        from newscrawler.core.knowledge_extractor import normalize_event_type
+        assert normalize_event_type(given) == stored
+
+    def test_the_mention_stores_the_normalised_value(self):
+        ds = MagicMock()
+        ds.upsert_entity.return_value = 1
+        ds.get_l1_chunk_id_for_article.return_value = None
+        kx = _make(ds=ds)
+        meta = {"article_id": 1, "sitemap_id": 2, "posted_at": 20260101, "source": "S",
+                "extracted_text": "Prabowo di Jakarta"}
+        kx._process_extraction({"persons": [{"name": "Prabowo"}], "event_type": "Pelantikan Menteri"}, meta, MagicMock())
+        mention = ds.insert_entity_mention.call_args.args[0]
+        assert mention.event_type == "other"
+        kx._process_extraction({"persons": [{"name": "Prabowo"}], "event_type": "Politics Election"}, meta, MagicMock())
+        assert ds.insert_entity_mention.call_args.args[0].event_type == "politics_election"
