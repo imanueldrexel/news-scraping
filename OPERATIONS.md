@@ -172,10 +172,20 @@ Last run 2026-09-25 on `newsaggregator_20260925T140752Z.dump`: `pg_restore` rc 0
 | every 15 min | DB liveness (OPS-36) | `scripts/db_liveness.py` — registered 2026-10-04 as **"NewsAggregator DB Liveness"**; see "DB liveness (OPS-36)" |
 | after each crawl | Store consistency check (OPS-04, OPS-29) | runs inside `scripts/run_scheduled_crawl.py` after its worker has closed; writes `crawler_health/store-consistency-<date>.json` and puts anything to act on in the crawl's Telegram line. `scripts/check_store_consistency.py` by hand for the full table |
 | 07:00 | Morning crawl (OPS-19) | `scripts/run_scheduled_crawl.py` — registered 2026-09-25 as **"NewsAggregator Scheduled Crawl (morning)"** (owner decision); first unattended run 2026-09-26 07:00. `python __main__.py` remains the manual equivalent |
-| 06:45 | Knowledge extraction | task=extract_knowledge |
+| 21:00 | Knowledge extraction (SYS-39, OPS-20) | `scripts/run_scheduled_extraction.py --wait-for-crawl 90` — registered 2026-10-04 as **"NewsAggregator Knowledge Extraction"**; off-peak, 8 h limit; see "Scheduled knowledge extraction" |
 | 12:00 | Newsletter (OPS-38) | `scripts/run_scheduled_newsletter.py` — digests the previous day; registered 2026-10-04 as **"NewsAggregator Newsletter"** (owner decision), first run 2026-10-05 12:00; see "Scheduled newsletter (OPS-38)" |
 | 19:00 | Evening crawl (OPS-19) | `scripts/run_scheduled_crawl.py` — registered as **"NewsAggregator Scheduled Crawl (evening)"** |
-| 18:45 | Knowledge extraction | task=extract_knowledge |
+
+### Scheduled knowledge extraction (SYS-39, OPS-20) — registered 2026-10-04
+
+`venv\Scripts\python.exe scripts\run_scheduled_extraction.py [--wait-for-crawl MINUTES] [--dry-run]` runs `task=extract_knowledge` through the crawler service (so it writes the `crawl_log` row, OPS-11), then sends one Telegram line: `4800/4830 extracted · 3800000 in / 1480000 out tokens, $1.50 · pending 84000 -> 79200 · stopped: <reason>`. A stop at the day's dollar budget or at the provider's peak window is normal and exits 0; `STOPPED:` (five failed calls in a row, a per-day quota), `FAILED` (every call failed, or an exception) exit 1; exit 2 means a crawl held the run lock and `--wait-for-crawl` (the job passes 90) ran out. Run log: `logs/scheduled_extraction_<YYYY-MM-DD_HHMM>.log`, newest 28 kept.
+
+- **When:** 21:00 daily. The 19:00 crawl normally ends by 20:00 and the provider's peak window does not open until 08:00 WIB; Task Scheduler's 8 h limit ends a long run at 05:00, before the 07:00 crawl. Every article is its own transaction, so a killed run loses nothing.
+- **Size:** `KNOWLEDGE_MAX_PER_RUN=20000`, 4 workers (~0.8 articles/s, ~2,900/h). A normal day is ~4,000 articles (~55 min, ~$1.3).
+- **Backlog:** 84,606 articles; about 4 nights at the limits above. `KNOWLEDGE_DAILY_COST_LIMIT_USD=8` in `.env` is sized for those nights (~$27 in all, the owner's figure); **lower it to 3 once `pending` in the Telegram line stops falling by thousands** (a normal day costs ~$1.3, so $3 is a runaway guard).
+- **First real run (2026-10-04 21:31 WIB, by hand):** 30-article smoke test $0.0097, then a 6,000-article run at $0.327 per 1,000, finance topics first; the KB went from 54 entities / 32 mentions to thousands (`kb_query --ticker ANTM --days 30`: 33 mentions across 17 portals).
+- **Watch:** `crawl_log` rows `task='extract_knowledge'` (`article_count` and the note), `api_usage_log` (`cost_usd` per day), the parse-failure warnings in the run log (SYS-78 raised the reply cap to 3,000 tokens), and `pending` falling.
+- **Pause it:** `Disable-ScheduledTask -TaskName "NewsAggregator Knowledge Extraction"`. To change provider: `KNOWLEDGE_LLM_PROVIDER` in `.env` (empty = Gemini, held to 20 calls a day).
 
 ### Scheduled newsletter (OPS-38) — registered 2026-10-04
 
