@@ -352,7 +352,7 @@ M = [
  ('ops20_call_not_counted', 'newscrawler/core/summarizer.py',
   '        _count(self._usage, self.name)\n        return _answer(response.choices[0].message.content)', '        return _answer(response.choices[0].message.content)'),
  ('ops20_quota_name_lost', 'newscrawler/core/summarizer.py',
-  'raise QuotaExhausted(str(e), quota_name(e)) from e\n        _count(self._usage, self.name)\n        return _answer(response.text)', 'raise QuotaExhausted(str(e)) from e\n        _count(self._usage, self.name)\n        return _answer(response.text)'),
+  '            if is_quota_error(e):\n                raise QuotaExhausted(str(e), quota_name(e)) from e\n            raise SummarizerError(f"{type(e).__name__}: {e}") from e\n        _count(self._usage, self.name)\n        return _answer(response.text)', '            if is_quota_error(e):\n                raise QuotaExhausted(str(e)) from e\n            raise SummarizerError(f"{type(e).__name__}: {e}") from e\n        _count(self._usage, self.name)\n        return _answer(response.text)'),
  ('ops20_default_prefers_gemini', 'newscrawler/core/summarizer.py',
   '    if provider in ("", "openai") and OPENAI_API_KEY:', '    if provider in ("", "openai") and OPENAI_API_KEY and provider:'),
  ('ops20_quota_warned_every_call', 'newscrawler/core/knowledge_extractor.py',
