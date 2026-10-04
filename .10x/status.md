@@ -44,3 +44,5 @@
 - Tests: unit 1,827 passed, integration 156 passed, 11 new/retargeted mutants killed.
 
 - PM 2026-10-04: advised DeepSeek/SumoPod for the Knowledge Extractor after the SYS-39 bake-off; token estimate in decisions/product-manager/knowledge-extraction-provider.md.
+
+- PM 2026-10-04: handed SYS-39 (extract all news on DeepSeek, peak guard) to SDE; see handoff.md.

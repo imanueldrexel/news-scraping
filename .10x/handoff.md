@@ -1,26 +1,30 @@
 # Current Handoff
 
-## From: SDE (dev) -> To: QA
+## From: Product Manager -> To: SDE
 **Date:** 2026-10-04
-**Phase:** Implementation (fixes) -> Verification
+**Phase:** Requirements -> Implementation (SYS-39 #125)
 
 ### Context
-QA's four findings are fixed (detail: `decisions/sde/p1-p2-newsletter-fixes.md`, section "QA feedback fixed"). Ready for QA: #219 SYS-71, #220 SYS-72, #221 DBT-51, #222 DBT-52, and re-labelled #216 SYS-68, #215 SYS-67, #204 SYS-63. #136 OPS-20 is NOT labelled (needs the owner's provider choice).
-Commits: 02a4312 (DBT-52), 2cf4f47 (SYS-71), a5f9001 + 186acea (SYS-72), ae58c86 (DBT-51), ddc76b1 (mutants), plus the EXPERIMENTS commit.
+Owner decision: knowledge extraction covers ALL news, on DeepSeek via SumoPod (pending the SYS-39 bake-off). Source of truth: `decisions/product-manager/knowledge-extraction-provider.md`; the requirement is also commented on #125.
 
-### What to test
-- `tests/unit` 1,827 passed, `tests/integration` 156 passed (dev run). Mutants: `qa_mutation_runner.py sys71_* dbt51_* sys72_* sys63_baca_juga_dropped` all KILLED; write your own for the `_DAILY` regex and the retry bound.
-- SYS-72: re-run your four probes; also compare old vs new `is_boilerplate_line` over stored lines (my comparison found 81 losses my percentages hid).
-- #204: the 19:00 crawl is the first run of the final cleaner; re-run the per-source residue table on its rows (<= 2%).
-- Digest: `digests/2026-10-03.md` (94/94 summaries). A stray partial-day row `2026-10-04` (236 articles) exists in `newsletter_digests` plus `digests/2026-10-04.md`: `task=newsletter` with no date digests today.
+### Requirements (priority order)
+1. **P1 Measure first:** token counts from the provider response (input/output per article) into `api_usage_log`; replace the PM estimate (~1,050 tokens/article, ~4.3M tokens/day, ~$1.2/day off-peak) with real numbers.
+2. **P1 Bake-off:** 200-article stratified fixture, DeepSeek vs the Gemini reference; entity agreement >= 0.85 (persons/orgs/locations), event_type agreement, parse-failure rate, 429 rate under load. Thinking disabled for the provider.
+3. **P1 Implement behind `KnowledgeExtractor`** (strategy chosen by env var), keeping the OPS-09 transient-vs-deterministic error boundary and SYS-19 attempt tracking. `GEMINI_DAILY_CALL_LIMIT` (20) must stop gating DeepSeek calls; replace with a token/cost guard.
+4. **P1 Peak-hours guard:** skip peak blocks (UTC weekdays 01:00-04:00 and 06:00-10:00) unless forced. Pricing: input $0.15/$0.30, output $0.60/$1.20 per 1M tokens (off-peak/peak); weekends all off-peak.
+5. **P2 Catch-up ordering:** finance topics first, then everything else. Backlog is 84,606 articles (~$25 off-peak): run on a weekend after SumoPod rate limits are checked.
+
+### Out of scope
+Extraction schema, entity normaliser, newsletter, embeddings. Do not label #136 ready-for-qa until the owner confirms the provider choice on it.
 
 ### Open Questions
-- Owner: delete the stray 2026-10-04 digest row/file, or keep it? (Whether a later run for the same date replaces the row is untested.)
-- Owner: OPS-20 provider choice; SYS-73 repair approval (dry run first).
+- SumoPod rate limits and what its daily-limit 429 body looks like (unverified, see SYS-71).
+- Who reads the KB (`kb_query`, RAG)? Only affects reporting, not scope.
 
 ---
 
 ## Handoff History
+- 2026-10-04 SDE -> QA (still pending QA): SYS-71 #219, SYS-72 #220, DBT-51 #221, DBT-52 #222 ready-for-qa, #216/#215/#204 re-labelled; #204 needs the 19:00 crawl; stray partial-day 2026-10-04 digest row awaits the owner. Full text: `decisions/sde/p1-p2-newsletter-fixes.md`, section "QA feedback fixed".
 - 2026-10-04 QA -> SDE: fix SYS-71 first, then SYS-72, DBT-51, DBT-52; owner approved task=newsletter, SYS-67 as scoped, SYS-63 repair after SYS-72.
 
 - 2026-10-04 planning -> SDE: P1/P2 fixes + newsletter (spec + ADR-001, ADR-002).
