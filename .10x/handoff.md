@@ -1,19 +1,18 @@
 # Current Handoff
 
-> This file tracks the context passed from one role to the next. Each role overwrites the "Current Handoff" section when passing work forward. Previous handoffs are preserved in the History section below.
-
-## From: brainstorming (10x-team) → To: QA
+## From: planning -> To: SDE (dev)
 **Date:** 2026-10-04
-**Phase:** Brainstorming → Verification
+**Phase:** Planning -> Implementation
 
 ### Context
-Owner approved the QA verification design (`.10x/specs/2026-10-04-qa-verification-pass-design.md`). Verify the 9 `status: ready-for-qa` tickets: SYS-66 #213, SYS-70 #218, SRC-57 #206, OPS-35 #207, SYS-64 #208, OPS-37 #210, OPS-36 #209, SYS-40 #126, SYS-20 #41. Dev's evidence is in `HANDOFF_2026-10-03_night.md` and in a comment on each ticket.
+Owner: fix all P1/P2 bugs, show the newsletter, produce quality code; summaries on the DeepSeek endpoint. Read `specs/2026-10-04-p1-p2-newsletter-fixes-design.md` and `adrs/001-*.md`. Order: OPS-20+SYS-68, newsletter run, SYS-67, SYS-63. Dev never closes tickets: comment Done-when evidence and label `status: ready-for-qa`.
 
 ### Open Questions
-- Owner approval needed before the one-off TEMPO sitemap task (writes one `crawl_log` row).
-- Owner: register the OPS-36 liveness job and approve the drill.
+- Owner approval before running `task=newsletter` (writes `digests/` file + one `newsletter_digests` row).
+- SYS-63 stored-row repair is a separate owner decision.
 
 ---
 
 ## Handoff History
-- 2026-10-04 init-project → first active role: state initialized, no work yet.
+- 2026-10-04 brainstorming -> QA: verification of 9 ready-for-qa tickets (baseline done, see decisions/qa). QA pass is paused while dev work runs; scheduled-run evidence still pending.
+- 2026-10-04 init-project -> first active role: state initialized.

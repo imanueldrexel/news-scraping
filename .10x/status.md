@@ -1,8 +1,8 @@
 # Project Status
 
 ## Project: NewsAggregator
-**Current Phase:** Verification (QA pass 2026-10-04; brainstorming + spec approved)
-**Last Updated:** 2026-10-04 by 10x-team (QA)
+**Current Phase:** Implementation (dev): P1/P2 fixes + newsletter. Design approved by owner choice of DeepSeek; spec + ADR-001 written.
+**Last Updated:** 2026-10-04 by 10x-team (dev)
 **Health:** On Track
 
 ## Progress
@@ -26,3 +26,10 @@
 ## Risks
 - 2026-10-04 07:00 crawl is the first run of the bot UA, host pacing and retry changes across the fleet.
 - Gemini free tier is 20 requests/day (OPS-20); gates extraction, audit and newsletter.
+
+## Dev plan 2026-10-04 (spec: specs/2026-10-04-p1-p2-newsletter-fixes-design.md, ADR-001)
+- [ ] OPS-20 #136 + SYS-68 #216 summarizer, accounting, docs
+- [ ] Newsletter result for owner (needs DB-write approval)
+- [ ] SYS-67 #215 clustering (measure, then fix)
+- [ ] SYS-63 #204 boilerplate cleaner
+- Not code: SRC-56 #205, SRC-03 #14
