@@ -32,8 +32,9 @@ class TestDateOnTheTask:
 
     def test_the_date_asked_for_is_the_date_digested(self):
         svc = MagicMock()
-        CrawlerAPI(svc).crawl_websites_in_batch([], task="newsletter", target_date=date(2026, 10, 3))
-        svc.generate_newsletter.assert_called_once_with(date(2026, 10, 3))
+        # a date that is never "yesterday", so dropping the argument cannot pass by coincidence
+        CrawlerAPI(svc).crawl_websites_in_batch([], task="newsletter", target_date=date(2026, 9, 1))
+        svc.generate_newsletter.assert_called_once_with(date(2026, 9, 1))
 
     def test_the_default_is_a_finished_day(self):
         assert default_newsletter_date() < date.today()
