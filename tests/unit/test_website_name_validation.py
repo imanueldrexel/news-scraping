@@ -106,4 +106,4 @@ class TestLoadAllSitemapsUsesBoundParameters:
         with patch.object(lambda_handler, "init_crawler") as init:
             lambda_handler.process_event({"task": "sitemap", "website": "KOMPAS, DETIK"}, None)
         init.return_value.crawl_websites_in_batch.assert_called_once_with(
-            website_names=["KOMPAS", "DETIK"], task="sitemap")
+            website_names=["KOMPAS", "DETIK"], task="sitemap", target_date=None)

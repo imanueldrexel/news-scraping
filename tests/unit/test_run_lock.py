@@ -234,6 +234,7 @@ WRITE_PATHS = [
     ("backfill_missing_articles", ["--website", "VIVA"]),
     ("backfill_orphan_chunks", ["--website", "VIVA"]),
     ("backfill_pending_embeddings", ["--website", "VIVA"]),
+    ("run_scheduled_newsletter", []),
 ]
 
 

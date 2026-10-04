@@ -64,7 +64,8 @@ class TestProcessEventValidatesBeforeTheModelLoad:
         api = MagicMock()
         with patch.object(lambda_handler, "init_crawler", return_value=api):
             lambda_handler.process_event({"task": "sitemap", "website": "KOMPAS, CNBC"}, None)
-        api.crawl_websites_in_batch.assert_called_once_with(website_names=["KOMPAS", "CNBC"], task="sitemap")
+        api.crawl_websites_in_batch.assert_called_once_with(website_names=["KOMPAS", "CNBC"], task="sitemap",
+                                                         target_date=None)
 
 
 class TestRefusesUnderTheRunLock:

@@ -1,4 +1,5 @@
 import logging
+from datetime import date, timedelta
 from typing import List
 
 from newscrawler.core.crawler_dict_list import CRAWLER_DICT
@@ -21,11 +22,16 @@ WEBSITE_AGNOSTIC_TASKS = ("extract_knowledge", "newsletter")
 FAISS_WRITING_TASKS = ("full_text", "all")
 
 
+def default_newsletter_date() -> date:
+    """OPS-38: the previous full day (local time, WIB on the production machine)."""
+    return date.today() - timedelta(days=1)
+
+
 class CrawlerAPI:
     def __init__(self, crawler_service: CrawlerService):
         self.crawler_service = crawler_service
 
-    def crawl_website(self, website_name: str, task: str):
+    def crawl_website(self, website_name: str, task: str, target_date=None):
         if task == "sitemap":
             self.crawler_service.crawl_sitemaps(website_name=website_name)
         elif task == "full_text":
@@ -47,17 +53,20 @@ class CrawlerAPI:
             # website-agnostic: processes all pending articles across all sources
             self.crawler_service.extract_knowledge()
         elif task == "newsletter":
-            # website-agnostic: generates today's digest
-            self.crawler_service.generate_newsletter()
+            # website-agnostic. OPS-38: the digest of a finished day -- the one asked
+            # for, else yesterday. Today's would be a partial day.
+            self.crawler_service.generate_newsletter(target_date or default_newsletter_date())
         else:
             # Backstop: crawl_websites_in_batch already validates task up front, but
             # this method can be called directly too, and a silent no-op here is
             # exactly the SYS-21 bug -- fail loudly instead.
             raise ValueError(f"Unknown task {task!r}; must be one of {VALID_TASKS}")
 
-    def crawl_websites_in_batch(self, website_names: List[str], task: str):
+    def crawl_websites_in_batch(self, website_names: List[str], task: str, target_date=None):
         if task not in VALID_TASKS:
             raise ValueError(f"Unknown task {task!r}; must be one of {VALID_TASKS}")
+        if target_date is not None and task != "newsletter":
+            raise ValueError(f"a date only applies to task 'newsletter', not {task!r}")
 
         if task not in WEBSITE_AGNOSTIC_TASKS:
             # SYS-30: the third silent input after SYS-21's two. lambda_handler maps
@@ -78,7 +87,7 @@ class CrawlerAPI:
 
         if task in WEBSITE_AGNOSTIC_TASKS:
             logger.info(f"Running task '{task}' (website-agnostic)...")
-            self.crawl_website(website_name="", task=task)
+            self.crawl_website(website_name="", task=task, target_date=target_date)
             return
 
         # One source must not take the rest of the run down with it (SYS-12). The

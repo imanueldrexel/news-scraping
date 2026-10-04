@@ -47,6 +47,15 @@ def process_event(event, context):
     else:
         websites = []  # extract_knowledge does not need a website list
 
+    # OPS-38 (#212): task=newsletter takes the day to digest ("date": "YYYY-MM-DD");
+    # without one it digests yesterday. Parsed here, before the ~2 min crawler build.
+    target_date = None
+    if event.get("date"):
+        from datetime import date
+        target_date = date.fromisoformat(str(event["date"]))
+        if task != "newsletter":
+            raise ValueError(f"a date only applies to task 'newsletter', not {task!r}")
+
     # DBT-43 (#183): a manual crawl that embeds must not start while the
     # scheduled crawl holds FAISS: it would load, fetch and embed for hours and
     # then be refused at its flush (OPS-26 while the lock is held, SYS-53's
@@ -58,7 +67,7 @@ def process_event(event, context):
 
     scraper_api = init_crawler()
     try:
-        scraper_api.crawl_websites_in_batch(website_names=websites, task=task)
+        scraper_api.crawl_websites_in_batch(website_names=websites, task=task, target_date=target_date)
     except Exception:
         # SYS-06: this used to catch BaseException, log at INFO, and swallow it,
         # so a scheduler always saw exit 0 no matter what happened. Narrowing to

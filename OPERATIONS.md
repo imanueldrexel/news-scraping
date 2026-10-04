@@ -90,7 +90,7 @@ Processes up to 50 unextracted articles per run. Safe to run repeatedly.
 ```python
 lambda_handler.process_event({"task": "newsletter"}, None)
 ```
-Generates today's digest to `digests/YYYY-MM-DD.md`.
+Generates the digest of **yesterday** (OPS-38) to `digests/YYYY-MM-DD.md`: the digest is of a finished day, and today's would be a partial one. Pass `{"task": "newsletter", "date": "2026-10-03"}` for another day (`date` is refused for any other task, and a malformed one fails before the crawler is built). The scheduled form is `scripts/run_scheduled_newsletter.py` (below).
 
 To regenerate a specific past date, call directly:
 ```python
@@ -162,9 +162,24 @@ Last run 2026-09-25 on `newsaggregator_20260925T140752Z.dump`: `pg_restore` rc 0
 | after each crawl | Store consistency check (OPS-04, OPS-29) | runs inside `scripts/run_scheduled_crawl.py` after its worker has closed; writes `crawler_health/store-consistency-<date>.json` and puts anything to act on in the crawl's Telegram line. `scripts/check_store_consistency.py` by hand for the full table |
 | 07:00 | Morning crawl (OPS-19) | `scripts/run_scheduled_crawl.py` — registered 2026-09-25 as **"NewsAggregator Scheduled Crawl (morning)"** (owner decision); first unattended run 2026-09-26 07:00. `python __main__.py` remains the manual equivalent |
 | 06:45 | Knowledge extraction | task=extract_knowledge |
-| 07:00 | Newsletter | task=newsletter |
+| 12:00 | Newsletter (OPS-38) | `scripts/run_scheduled_newsletter.py` — digests the previous day; **not registered yet** (owner's go), see "Scheduled newsletter (OPS-38)" |
 | 19:00 | Evening crawl (OPS-19) | `scripts/run_scheduled_crawl.py` — registered as **"NewsAggregator Scheduled Crawl (evening)"** |
 | 18:45 | Knowledge extraction | task=extract_knowledge |
+
+### Scheduled newsletter (OPS-38) — not registered yet
+
+`venv\Scripts\python.exe scripts\run_scheduled_newsletter.py [--date YYYY-MM-DD] [--dry-run]` builds the digest of the previous day (or `--date`; today and later are refused), through `crawler_service.generate_newsletter`, so it writes the `newsletter_digests` row, the `digests/<date>.md` file and a `crawl_log` row (`website='ALL'`, `task='newsletter'`, OPS-11). It then sends one Telegram line:
+
+- `2026-10-03: 2052 articles, 320 clusters · 94/94 summaries · digests/2026-10-03.md` — a clean digest.
+- `DEGRADED 2026-10-03: ... · <why>` — summaries are mostly headlines (SYS-68: the provider's daily quota, or five failed calls in a row). Exit 0; the file says the same in its footer.
+- `EMPTY <date>: no articles for the day` — exit 1; the crawls did not run or saved nothing.
+- `FAILED <date>: <Exception>: <text> · log <path>` — exit 1.
+
+Exit 2 = refused by the run lock (OPS-26): a scheduled crawl holds FAISS in memory, so the run says so in its log and does nothing (no database, no Telegram line; Task Scheduler's "Last Run Result" is the only trace). Run log: `logs/scheduled_newsletter_<YYYY-MM-DD_HHMM>.log`, newest 28 kept.
+
+**Why 12:00 and not the ticket's 06:30.** A day's digest is built from that day's `sitemaps.posted_at`. The 19:00 crawl runs for up to 4 h, but what is published after it starts is fetched by the 07:00 crawl, which can run until 11:00. A 06:30 digest of yesterday would miss those hours for good. 12:00 clears the longest allowed morning crawl. Register it with the command in the script's docstring (the same two battery settings as OPS-01 and OPS-19, plus `-MultipleInstances IgnoreNew`) once the owner approves; then check `Get-ScheduledTask -TaskName "NewsAggregator Newsletter" | Get-ScheduledTaskInfo`.
+
+`task=newsletter` through `process_event` is the manual equivalent and is **not** guarded by the run lock (it writes no FAISS): it reads Postgres and the embedding model. The summaries' daily call count is in `api_usage_log` under the summarizer's model name; with DeepSeek there is no daily cap to fit, and `GEMINI_DAILY_CALL_LIMIT` (20) applies only if `NEWSLETTER_LLM_PROVIDER=gemini`.
 
 ### Scheduled crawl (OPS-19) — registered 2026-09-25
 
@@ -339,7 +354,7 @@ FROM newsletter_digests
 ORDER BY digest_date DESC
 LIMIT 7;
 ```
-If today's digest is missing after 07:30 WIB, run newsletter task manually.
+If yesterday's digest is missing after 12:30 WIB (once the OPS-38 job is registered), run `scripts/run_scheduled_newsletter.py` by hand and read the newest `logs/scheduled_newsletter_*.log`.
 
 ### Check dead-link accumulation (SYS-09)
 ```sql
