@@ -3,7 +3,7 @@ Knowledge Base query CLI.
 
 Usage:
     python -m newscrawler.tools.kb_query --entity "Bank Central Asia" --days 30
-    python -m newscrawler.tools.kb_query --ticker BBCA --event-type earnings
+    python -m newscrawler.tools.kb_query --ticker BBCA --event-type earnings_report
     python -m newscrawler.tools.kb_query --entity "Perry Warjiyo" --from 2026-01-01
     python -m newscrawler.tools.kb_query --ticker BBCA --format json --output out.json
     python -m newscrawler.tools.kb_query --ticker BBCA --format csv --output out.csv
@@ -17,6 +17,7 @@ from datetime import date, datetime
 from io import StringIO
 from typing import Optional
 
+from newscrawler.core.knowledge_extractor import EVENT_TYPES
 from newscrawler.infrastructure.datasource.dataflow.write.sqlalchemy.sql_alchemy_knowledge_data_source import (
     SQLAlchemyKnowledgeDataSource,
 )
@@ -32,7 +33,7 @@ SOURCE_AUTHORITY = {
 }
 
 
-def _parse_args():
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Query the NewsAggregator Knowledge Base",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -47,13 +48,18 @@ def _parse_args():
                         help="Start date YYYY-MM-DD")
     parser.add_argument("--to",         dest="to_date",   type=str,
                         help="End date YYYY-MM-DD (default: today)")
-    parser.add_argument("--event-type", type=str,
-                        help="Filter by event type (e.g. earnings, policy)")
+    parser.add_argument("--event-type", type=str.lower, choices=EVENT_TYPES, metavar="EVENT_TYPE",
+                        help="Filter by event type, exactly one of: " + ", ".join(EVENT_TYPES)
+                             + " (mentions extracted before 2026-10-04 carry free-text values)")
     parser.add_argument("--format",     type=str,
                         choices=["table", "json", "csv"], default="table")
     parser.add_argument("--output",     type=str,
                         help="Output file path (default: stdout)")
-    return parser.parse_args()
+    return parser
+
+
+def _parse_args():
+    return build_parser().parse_args()
 
 
 def _parse_date(s: Optional[str]) -> Optional[date]:
