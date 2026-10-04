@@ -18,6 +18,13 @@ REAL_BOILERPLATE = [
     ("WARTAEKONOMI", "Baca Juga: DJP Kantongi Rp817,61 Miliar dari Penindakan Wajib Pajak Sektor Baja"),
     ("ANTARANEWS", "Baca juga: Menhub menyerahkan status tersangka masinis KA Bromo Anggrek ke aparat"),
     ("MEDIAINDONESIA", "Baca juga : Kemkomdigi Evaluasi Perlindungan Sisa Kuota Internet Tiga Operator Seluler"),
+    ("MEDIAINDONESIA", "Baca juga : SoliDEO Festival 2026 Diikuti 129 Sekolah Bersatu dalam Semangat 'Victory in Diversity'."),
+    ("BERITASATU", "Baca Selengkapnya: Wantimpres Bantu Prabowo Ambil Kebijakan Lebih Terarah dan Terukur"),
+    ("LIPUTAN6", "Berita selengkapnya baca di sini"),
+    ("DETIK", "Lihat juga Video: Harga Bitcoin Sentuh Rp 1,8 M, Apa Penyebabnya?"),
+    ("DETIK", "Lihat juga Video Warga Irak Rayakan Kepergian Pasukan AS dari Negaranya"),
+    ("DETIK", "Baca selengkapnya di detikFinance ."),
+    ("KOMPAS", "Baca selengkapnya melalui tautan ini ."),
     ("PIKIRANRAKYAT", "Baca Juga: Ditjen Pas Mundur Usai Temuan Hunian Mewah dan Dugaan Pungli di Lapas Cibinong"),
     ("DETIK", "SCROLL TO CONTINUE WITH CONTENT"),
     ("TVONENEWS", "ADVERTISEMENT"),
@@ -55,7 +62,43 @@ PROSE = [
     "Advertisement belanja perusahaan naik 12 persen sepanjang kuartal ketiga.",
     # initials are lowercase editor tags; an upper-case pair is an abbreviation
     "(AS/NATO)",
+    # SYS-72 (#220): QA's four probes -- sentences that begin with a chrome word
+    "Lihat juga data BPS yang menunjukkan inflasi turun.",
+    "Baca juga data BPS yang menunjukkan inflasi turun.",
+    "Cek harga emas hari ini di Google News",
+    "Berita selengkapnya dapat dibaca di situs resmi kementerian.",
+    "(yoy/qoq)",
+    "(and/or)",
 ]
+
+
+class TestSys72ProseThatLooksLikeChrome:
+    """SYS-72 (#220): the cleaner's own comments promised these survive; QA showed they did not."""
+
+    @pytest.mark.parametrize("tail", ["(and/or)", "(yoy/qoq)", "(mom/ytd)"])
+    def test_a_closing_abbreviation_pair_is_not_an_editor_tag(self, tail):
+        assert clean_body_paragraphs([f"Pemerintah akan menaikkan tarif. {tail}"]) == [f"Pemerintah akan menaikkan tarif. {tail}"]
+
+    def test_a_pair_after_a_word_not_a_sentence_end_is_not_cut(self):
+        assert clean_body_paragraphs(["Harga naik 5% (yoy/qoq)"]) == ["Harga naik 5% (yoy/qoq)"]
+
+    @pytest.mark.parametrize("body,expected", [
+        ("Isi berita selesai.\n(mae/mae)", "Isi berita selesai."),
+        ("Isi berita selesai. (ega/ega)", "Isi berita selesai."),
+        ("Terdakwa dituntut tiga tahun. (rea/rir)", "Terdakwa dituntut tiga tahun."),
+    ])
+    def test_a_real_editor_tag_after_a_sentence_end_is_still_cut(self, body, expected):
+        assert clean_body_paragraphs([body]) == [expected]
+
+    def test_a_sentence_between_related_lines_is_kept_and_the_lines_go(self):
+        paragraph = ("Baca Juga: Pemerintah Gelontorkan Bantuan Pangan di Kuartal IV\n"
+                     "Lihat juga data BPS yang menunjukkan inflasi turun.\n"
+                     "Lihat Juga :EDUKASI KEUANGAN Financial Check-up Tengah Tahun |")
+        assert clean_body_paragraphs([paragraph]) == ["Lihat juga data BPS yang menunjukkan inflasi turun."]
+
+    @pytest.mark.parametrize("line", ["Baca selengkapnya di sini .", "Baca selengkapnya >>>", "Baca selengkapnya ."])
+    def test_the_read_more_stub_shapes_seen_in_stored_bodies_still_go(self, line):
+        assert is_boilerplate_line(line)
 
 
 @pytest.mark.parametrize("source,line", REAL_BOILERPLATE)

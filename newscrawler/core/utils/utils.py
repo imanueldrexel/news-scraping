@@ -59,32 +59,55 @@ def is_cascaded(paragraphs) -> bool:
 # widgets: 68-100% of the saved articles of 12 sources. The injected headline
 # is a different story, so knowledge extraction, the topic probe (body[:500]),
 # the L2 chunks and the newsletter's L1 clusters all read it as this article's.
-# Every pattern is anchored at the start of a line (prose that merely mentions
-# "Google News" survives) and matches what real stored bodies contain.
+# Every pattern is anchored at the start of a line and matches the SHAPE real
+# stored bodies contain, not just a first word (SYS-72 #220: "Lihat juga data BPS
+# yang menunjukkan inflasi turun." is a sentence and survives).
+#
+# A related-link line is the keyword alone, or the keyword, a colon / bar and a
+# headline: "Baca juga : <headline>", "Lihat Juga :EDUKASI ... |". The colon or bar
+# is what tells them apart: a sentence that merely begins "Baca juga data BPS ..."
+# has none. A headline is one short line (some outlets end it with a full stop).
+_RELATED_HEADLINE = r"(?:\s*[:|]\s*(?=.{0,250}$).*)?"
+# A promo asks the reader to follow the outlet: it starts with an imperative verb
+# and names the outlet's own feed or channel ("Ikuti kami di Google News", "Cek
+# Berita dan Artikel yang lain di Google News"). "Cek harga emas hari ini di Google
+# News" is a sentence about gold prices and survives.
+_PROMO_OBJECT = r"(?:berita|artikel|informasi|info|kabar|kami|kita|saluran|channel|update|terbaru|terkini)"
 _BOILERPLATE_LINE = re.compile(
     r"^(?:"
-    r"baca\s+(?:juga|selengkapnya)\b.*"                  # KONTAN, ANTARA, MEDIAINDONESIA, BERITASATU ("BACA JUGA")
-    r"|lihat\s+juga\b.*"                                  # DETIK, CNN ("Lihat Juga :EDUKASI KEUANGAN ...")
+    rf"baca\s+juga{_RELATED_HEADLINE}"                    # KONTAN, ANTARA, MEDIAINDONESIA, BERITASATU ("BACA JUGA")
+    rf"|lihat\s+juga{_RELATED_HEADLINE}"                  # DETIK, CNN ("Lihat Juga :EDUKASI KEUANGAN ...")
+    r"|lihat\s+juga\s+video\b(?=.{0,250}$).*"             # DETIK ("Lihat juga Video: <headline>", colon optional)
+    rf"|baca\s+selengkapnya(?:\s+(?:di\s+(?:sini|detik\w+)|melalui\s+tautan\s+ini))?\s*[.>]*{_RELATED_HEADLINE}"   # "Baca selengkapnya di sini ." / ">>>" / ": <headline>"
     r"|advertisement"                                     # VIVA, TVONE, LIPUTAN6, MERDEKA
     r"|scroll\s+to\s+continue(?:\s+with\s+content)?"      # DETIK
     r"|gulir\s+untuk\s+lanjut\s+baca"                     # VIVA, TVONE
-    r"|berita\s+selengkapnya\b.*"                         # DETIK, CNBC tail
-    r"|(?:ikuti|cek|dapatkan|klik|follow|temukan)\b.*\b(?:google\s+news|whatsapp\s+channel|saluran\s+whatsapp)\b.*"
+    r"|berita\s+selengkapnya(?:\s+(?:baca\s+di\s+sini|tentang\b.{0,80}))?"   # DETIK, CNBC tail, LIPUTAN6
+    rf"|(?=.{{0,220}}$)(?:ikuti|cek|dapatkan|klik|follow|temukan)\b(?=.{{0,120}}\b{_PROMO_OBJECT}\b)"
+    r".*\b(?:google\s+news|whatsapp\s+channel|saluran\s+whatsapp)\b.*"
     r")\s*[:|]?\s*$",
     re.IGNORECASE,
 )
 # Unmistakable widget text, dropped wherever it sits in a line.
 _BOILERPLATE_ANYWHERE = re.compile(r"\[gambas:|tautan\s+telah\s+disalin", re.IGNORECASE)
-# Editor initials: "(fsd/fsd)" alone on a line, or closing the body. Lowercase
-# only, so "(AS/NATO)" and "(yoy/qoq)" mid-sentence are never touched.
-_EDITOR_INITIALS = r"\(\s*[a-z]{2,5}\s*/\s*[a-z]{2,5}\s*\)"
+# Editor initials: "(fsd/fsd)" alone on a line, or closing the body after a
+# sentence end. Lowercase only, so "(AS/NATO)" is never touched; and a pair that
+# is a finance or English abbreviation ("yoy/qoq", "and/or") is not initials
+# whatever it follows (SYS-72).
+_EDITOR_INITIALS = r"\(\s*([a-z]{2,5})\s*/\s*([a-z]{2,5})\s*\)"
+_NOT_INITIALS = frozenset({"yoy", "qoq", "mom", "mtm", "ytd", "ytm", "and", "or", "dan", "atau", "his", "her", "he", "she"})
 _INITIALS_LINE = re.compile(rf"^{_EDITOR_INITIALS}$")
-_INITIALS_TAIL = re.compile(rf"\s*{_EDITOR_INITIALS}\s*$")
+_INITIALS_TAIL = re.compile(rf"(?:(?<=[.!?:\"'\u201d\u2019])|(?<=\n))\s*{_EDITOR_INITIALS}\s*$")
+
+
+def _is_initials(match) -> bool:
+    return bool(match) and not ({match.group(1), match.group(2)} & _NOT_INITIALS)
 
 
 def is_boilerplate_line(line: str) -> bool:
     line = line.strip()
-    return bool(_BOILERPLATE_LINE.match(line) or _BOILERPLATE_ANYWHERE.search(line) or _INITIALS_LINE.match(line))
+    return bool(_BOILERPLATE_LINE.match(line) or _BOILERPLATE_ANYWHERE.search(line)
+                or _is_initials(_INITIALS_LINE.match(line)))
 
 
 def clean_body_paragraphs(body):
@@ -112,6 +135,6 @@ def clean_body_paragraphs(body):
             cleaned.append(text)
     if cleaned:
         tail = _INITIALS_TAIL.search(cleaned[-1])
-        if tail and cleaned[-1][:tail.start()].strip():
+        if _is_initials(tail) and cleaned[-1][:tail.start()].strip():
             cleaned[-1] = cleaned[-1][:tail.start()]
     return "\n\n".join(cleaned) if isinstance(body, str) else cleaned
