@@ -14,6 +14,9 @@
 ### In Progress
 - QA: baseline done (unit 1,643 / integration 156 / 140 mutants, 0 survivors). Per-ticket checks next; scheduled-run evidence waits for the 07:00 crawl.
 
+### QA audit 2026-10-04 (dev commits 74d2ca5..826730c)
+- Unit 1,789 pass; 10/11 QA mutants killed. Nothing closed (no ready-for-qa handoff yet). Blocking: SYS-71 #219 (P2). Also SYS-72 #220, DBT-51 #221, DBT-52 #222 (P3). Report: reviews/2026-10-04-qa-report.md
+
 ### Pending
 - Per-ticket verdicts (close / send back / stay ready-for-qa)
 - `HANDOFF_2026-10-04.md` for dev

@@ -8,3 +8,4 @@
 
 ## Active features
 - [qa-pass-2026-10-04](qa-pass-2026-10-04.md) â€” verify the 9 ready-for-qa tickets (spec: `.10x/specs/2026-10-04-qa-verification-pass-design.md`)
+- [p1-p2-newsletter-fixes](p1-p2-newsletter-fixes.md) — audit of OPS-20/SYS-68/SYS-67/SYS-63: nothing closed; SYS-71 P2 blocks, 3 P3s filed (2026-10-04)
