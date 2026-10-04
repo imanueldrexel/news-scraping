@@ -108,3 +108,38 @@ class TestMigrate:
              caplog.at_level(logging.WARNING):
             mod.main()
         assert not any("migrate_posted_at.sql" in r.message for r in caplog.records)
+
+
+class TestApplyPending:
+    """DBT-22 (#73): the function the integration suite's session fixture calls."""
+
+    def test_it_applies_only_what_is_unrecorded_in_order_one_commit_each(self):
+        mod = _load()
+        done = mod.MIGRATIONS[:-2]
+        conn, cursor = _mock_conn(already_applied=done)
+        applied = mod.apply_pending(conn)
+        assert applied == mod.MIGRATIONS[-2:]
+        inserts = [c[1] for c in conn._executed if c[0].strip().upper().startswith("INSERT")]
+        assert inserts == [(m,) for m in mod.MIGRATIONS[-2:]]
+        assert conn.commit.call_count >= 2 + 1       # the table bootstrap, then one per migration
+
+    def test_it_runs_each_migrations_sql(self):
+        mod = _load()
+        conn, cursor = _mock_conn(already_applied=mod.MIGRATIONS[:-1])
+        mod.apply_pending(conn)
+        sql_text = open(os.path.join(os.path.dirname(_SCRIPT), mod.MIGRATIONS[-1]), encoding="utf-8").read()
+        assert any(c[0] == sql_text for c in conn._executed)
+
+    def test_nothing_pending_runs_nothing(self):
+        mod = _load()
+        conn, cursor = _mock_conn(already_applied=mod.MIGRATIONS)
+        assert mod.apply_pending(conn) == []
+        assert [c for c in conn._executed if c[0].strip().upper().startswith("INSERT")] == []
+
+    def test_seeding_records_without_running_the_sql(self):
+        mod = _load()
+        conn, cursor = _mock_conn(already_applied=[])
+        assert mod.apply_pending(conn, seed_existing=True) == mod.MIGRATIONS
+        ran = [c[0] for c in conn._executed
+               if not c[0].strip().upper().startswith(("INSERT", "SELECT", "CREATE TABLE IF NOT EXISTS SCHEMA"))]
+        assert ran == []

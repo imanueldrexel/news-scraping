@@ -101,6 +101,27 @@ def _already_applied(conn) -> set:
         return {row[0] for row in cur.fetchall()}
 
 
+def apply_pending(conn, seed_existing: bool = False) -> list:
+    """Apply (or, with seed_existing, only record) every listed migration the
+    database has not recorded, in order, one commit each. Returns the names.
+    The integration suite's session fixture calls this on newsaggregator_test
+    (DBT-22), so a new migration reaches the test DB without a manual step."""
+    _ensure_schema_migrations_table(conn)
+    applied = _already_applied(conn)
+    pending = [m for m in MIGRATIONS if m not in applied]
+    for name in pending:
+        with conn.cursor() as cur:
+            if seed_existing:
+                logger.info("Marking %s as already applied (not run)", name)
+            else:
+                logger.info("Applying %s ...", name)
+                sql = open(os.path.join(SCRIPTS_DIR, name), encoding="utf-8").read()
+                cur.execute(sql)
+            cur.execute("INSERT INTO schema_migrations (name) VALUES (%s)", (name,))
+        conn.commit()
+    return pending
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--dry-run", action="store_true", help="Show what would be applied, change nothing")
@@ -133,16 +154,7 @@ def main() -> int:
             logger.info("[dry-run] Not applying anything.")
             return 0
 
-        for name in pending:
-            with conn.cursor() as cur:
-                if args.seed_existing:
-                    logger.info("Marking %s as already applied (not run)", name)
-                else:
-                    logger.info("Applying %s ...", name)
-                    sql = open(os.path.join(SCRIPTS_DIR, name), encoding="utf-8").read()
-                    cur.execute(sql)
-                cur.execute("INSERT INTO schema_migrations (name) VALUES (%s)", (name,))
-            conn.commit()
+        apply_pending(conn, seed_existing=args.seed_existing)
 
         logger.info("Done.")
         return 0

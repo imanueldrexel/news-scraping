@@ -21,6 +21,19 @@ except ImportError:
     psycopg2 = None
 
 
+def _apply_pending_migrations(conn):
+    """scripts/migrate.py's apply_pending on this connection (the test DB, checked by the caller)."""
+    import importlib.util
+    path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+                        "scripts", "migrate.py")
+    spec = importlib.util.spec_from_file_location("migrate_for_tests", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    applied = module.apply_pending(conn)
+    if applied:
+        print(f"[integration conftest] applied to newsaggregator_test: {', '.join(applied)}")
+
+
 @pytest.fixture(scope="session", autouse=True)
 def _clean_test_db_at_session_start():
     """Start every `pytest tests/integration` run from an empty test DB.
@@ -56,6 +69,11 @@ def _clean_test_db_at_session_start():
                     f"refusing to truncate {db_name!r} -- integration tests must "
                     "run against newsaggregator_test only"
                 )
+        # DBT-22 (#73): the test DB is disposable, so apply what it is missing instead of
+        # only asserting it (test_schema's assertion stays as the backstop). DBT-09's
+        # migration was once applied to newsaggregator and not here, and the suite went red.
+        _apply_pending_migrations(conn)
+        with conn.cursor() as cur:
             cur.execute(
                 "TRUNCATE chunks, entity_mentions, entity_aliases, entities, "
                 "articles, api_usage_log, crawl_log, sitemaps "

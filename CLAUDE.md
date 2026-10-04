@@ -100,6 +100,8 @@ psql -U postgres -d newsaggregator -f scripts/migrate_chunks_article_id.sql   # 
 psql -U postgres -d newsaggregator -f scripts/migrate_api_usage_tokens.sql   # SYS-39: api_usage_log.input_tokens/output_tokens/cost_usd (the extractor's usage insert names them; apply before any extraction or newsletter run on this code)
 ```
 
+**A ticket that adds a `scripts/migrate_*.sql` file is not done until `scripts/migrate.py` has been run against both `newsaggregator` and `newsaggregator_test` and the closing comment quotes the result of `tests/integration`, not only `tests/unit` (DBT-22).** The integration suite's session fixture applies pending migrations to `newsaggregator_test` itself (`apply_pending` in `scripts/migrate.py`), so a new file registered in `MIGRATIONS` reaches the test DB on the next run; the production DB is never touched by it and needs the owner-approved step (backup first).
+
 Run `tests/unit` / `tests/integration` explicitly rather than bare `pytest` (the three legacy `tests/test_*.py` files at the top level predate the split). `pytest.ini` sets a 120 s per-test timeout via `pytest-timeout` (DBT-25) — a test that hangs terminates the run with exit 1 and a stack dump instead of sitting forever; if a legitimately slow test trips it, raise the value there rather than removing it.
 
 `.pre-commit-config.yaml` (black, flake8 `--max-line-length=120`, bandit) exists but pins Python 3.7-era hooks and is not wired up in the venv; don't rely on it.
