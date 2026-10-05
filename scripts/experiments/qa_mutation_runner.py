@@ -657,7 +657,7 @@ M = [
   'kept = [p for p in poin if words(p) <= LIMITS["poin"]][:MAX_POIN]',
   'kept = [" ".join(p.split()[:LIMITS["poin"]]) for p in poin][:MAX_POIN]'),
  ('sys82_poin_count_unchecked', 'newscrawler/core/story_summary.py',
-  '    if len(poin) > MAX_POIN:', '    if False:'),
+  'problems = [f"poin ada {len(poin)}, maks {MAX_POIN}"] if len(poin) > MAX_POIN else []', 'problems = []'),
  ('sys82_index_range_unchecked', 'newscrawler/core/story_summary.py',
   '    if any(not 0 <= i < n for i in value):', '    if False:'),
  ('sys82_every_article_once_unchecked', 'newscrawler/core/story_summary.py',
