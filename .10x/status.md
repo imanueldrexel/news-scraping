@@ -84,3 +84,21 @@
 - [x] Four decisions recorded in `decisions/cto/newsletter-5min-edition.md`: no non-finance quota (general briefing, finance first); judul ask 10 accept 12; the day's 6 largest stories guaranteed; word-overlap echo guard. SYS-82's 90% first-try target retired; cost criterion = newsletter <= $0.05/day.
 - [x] Built in the same session (owner: "build it now"): commit 5fe7859; unit 2,302 passed.
 - [x] Replay v5: after-retry 100 / 98.9 / 99.0%, 833-994 words, 6 largest stories 6/6 each day, no repeat after the echo refinement (776e6e9). 67 newsletter mutants killed. SYS-82 #239 and SYS-83 #240 ready-for-qa: all 9 tickets with QA.
+
+## QA 2026-10-05 (night): newsletter 5-minute edition (tracker #244)
+- **Closed:** SYS-81 #237, OPS-41 #238, SYS-84 #241, SYS-85 #245.
+- **Sent back:** SYS-80 #236. The v5 re-render of 2026-10-04 again links "10 Saham Paling Babak Belur" under a Haji Isam headline, with a FORU bullet from it. The Done-when names exactly this link.
+- **Held:**
+  - SYS-82 #239: waits on the owner's hand-check of 20 stories.
+  - SYS-83 #240: waits on the owner's phone read and the first scheduled run, and needs SYS-86 fixed.
+  - OPS-42 #242: waits on the owner's phone confirmation.
+  - OPS-43 #243: needs 3 scheduled 12:00 runs, the first on 2026-10-06.
+- **Filed:**
+  - SYS-86 #246 (P2): the echo guard hides distinct events.
+  - SYS-87 #247 (P3): the number guard ignores the decimal position.
+  - OPS-44 #248 (P3): a failed PDF upload leaves the reader promised a PDF.
+  - SYS-88 #249 (P3): HTML entities in 311 headlines.
+  - SYS-89 #250 (enhancement): the edition repeats the previous day's.
+  - DBT-56 #251, DBT-57 #252, DBT-58 #253 (P3): test gaps found by mutants.
+- **Release readiness:** the 2026-10-06 12:00 run can ship. Nothing blocks delivery, and the archive is unchanged in scope. Tracker #244 cannot close until SYS-86 and SYS-80 are fixed and the 7-edition success criteria are met.
+- **Tests:** unit 2,303 passed; integration 183 passed. QA's own set: 44 passed, 5 failing on SYS-86/87. QA mutants: 49/57 killed (5 real gaps filed, 3 equivalent). Report: `reviews/2026-10-05-qa-report.md`.

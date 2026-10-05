@@ -1,6 +1,37 @@
 # Current Handoff
 
-## From: CTO (+ SDE build) -> To: QA — newsletter edition decisions
+## From: QA -> To: SDE (fixes), QA of 2026-10-06+ (scheduled runs), owner
+**Date:** 2026-10-05 (night)
+**Read first:**
+- `.10x/reviews/2026-10-05-qa-report.md`;
+- `.10x/decisions/qa/newsletter-5min-edition.md`;
+- QA's test set and probes: `scripts/experiments/qa_newsletter_244/`.
+
+### Verdicts
+- **Closed:** SYS-81 #237, OPS-41 #238, SYS-84 #241, SYS-85 #245.
+- **Sent back:** SYS-80 #236. The v5 re-render shows the "10 Saham" link and a FORU bullet under the Haji Isam headline (DB: the articles share no subject).
+- **Held:** SYS-82 #239 (owner hand-check), SYS-83 #240 (owner phone read, scheduled run, SYS-86), OPS-42 #242 (owner phone), OPS-43 #243 (3 scheduled runs).
+
+### For SDE, in order
+1. **SYS-86 #246 (P2), echo guard.** Hiding distinct events breaks the "≤ 1 wrong hide" criterion. Re-measure on untuned days with `probe_echo_real.py`.
+2. **SYS-80 #236.** Make the `terkait` outcome robust, or agree a scripted, measurable Done-when with the PM.
+3. **SYS-87 #247, OPS-44 #248, SYS-88 #249 (P3).** Also the test gaps **DBT-56 #251, DBT-57 #252, DBT-58 #253**, each closed by killing its named mutant in `scripts/experiments/qa_newsletter_244/qa_mutants_244.py`. SYS-88's backfill needs the owner's approval for a production write.
+- **SYS-89 #250** is an enhancement for the PM to scope.
+- When fixed, these turn green: QA tests `TestSYS83EchoGuard` and `test_decimal_shift_is_a_different_number`.
+
+### For QA, 2026-10-06 12:00 (first scheduled edition)
+- **Files:** both files in `digests/`, `_edition` in the `newsletter_digests` row.
+- **Hidden lines:** judge every `echoes_hidden` line (SYS-86).
+- **Telegram order:** operator line, then the message, then `-ringkas.pdf`; no full digest. Quote `logs/scheduled_newsletter_*.log` on OPS-43.
+- **Checks:** run `scripts/experiments/qa_newsletter_244/check_real.py` adapted to `digests/`. Compare with the previous day's edition for SYS-89.
+
+### Risks
+- **SYS-86:** a wrong hide silently removes a distinct story from the delivered edition. It stays in the archive.
+- **Unreplayed outputs:** the editor's and the summarizer's judgements vary run to run. The scheduled editions are the first unreplayed output.
+
+---
+
+## Previous: From CTO (+ SDE build) -> To: QA — newsletter edition decisions
 **Date:** 2026-10-05 (evening)
 **Read first:** `.10x/decisions/cto/newsletter-5min-edition.md` (decisions, success criteria, review point); then the SDE handoff below.
 
@@ -75,6 +106,8 @@ SYS-74, SYS-41, SRC-34, SRC-47/42/40/39, SRC-58, OPS-39, DBT-01. Lower `KNOWLEDG
 ---
 
 ## Handoff History
+- 2026-10-05 (night) QA -> SDE/QA/owner: tracker #244 verified; 4 closed, SYS-80 sent back, 4 held, 8 filed (this file, top).
+- 2026-10-05 (evening) CTO -> QA: edition decisions built and replayed (this file, second).
 - 2026-10-05 SDE -> QA/owner: newsletter 5-minute edition built and replayed (this file, top).
 - 2026-10-05 PM -> Architect/SDE: newsletter 5-minute edition, tracker #244 (this file, top).
 - 2026-10-04 night QA/CTO/PM -> QA: P1/P2 pass (this file).
