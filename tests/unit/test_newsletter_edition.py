@@ -61,6 +61,16 @@ class TestCandidates:
             [(1, "Portal m1"), (2, "Portal m2"), (3, "Portal m3"), (4, "Portal p1")]
         assert len(cands) == 11 and "Portal m4" not in [c.cluster["headline"] for c in cands]
 
+    def test_a_small_third_story_is_a_candidate_and_a_fourth_is_not(self):
+        """DBT-57 (#252): in DAY the 3rd Pasar story is also one of the day's 6 largest, so it would stay a
+        candidate as "guaranteed" whatever the per-section count. Here neither c (3rd) nor d (4th) is."""
+        cands = ne.candidates(_sections([("markets", [("a", 20), ("b", 19), ("c", 2), ("d", 1)]),
+                                         ("macro_policy", [("e", 18), ("f", 17)]),
+                                         ("corporate", [("g", 16), ("h", 15)])]))
+        names = [c.cluster["headline"] for c in cands]
+        assert names == ["Portal a", "Portal b", "Portal c", "Portal e", "Portal f", "Portal g", "Portal h"]
+        assert not cands[2].guaranteed
+
     def test_the_prompt_lists_summarized_candidates_with_section_portals_and_inti(self, cands):
         cands[0].cluster["story"] = None
         prompt = ne.build_prompt(cands, D)
@@ -248,6 +258,17 @@ class TestRenderAndBudget:
     def test_reader_words_skip_link_targets_and_separators(self):
         assert ne.reader_words("### [Judul satu](http://a.b/c-d-e)\n**Diberitakan 3 portal** · [Baca →](http://x)") == 6
 
+    def test_the_budget_is_the_tickets_1200_words(self):
+        """DBT-57 (#252): the trimming tests patch the budget; this pins SYS-83's number."""
+        assert ne.WORD_BUDGET == 1200
+
+    def test_a_judul_with_square_brackets_keeps_its_title_a_link(self):
+        """DBT-57 (#252): "[" or "]" in a judul would end the markdown link label early."""
+        sections = _sections([("markets", [("m1", 5)])])
+        sections[0]["clusters"][0]["story"] = StorySummary("Saham [PACK] naik 133,88%", "Inti.", [], "", "S.", [0], [])
+        md = ne.render(ne.candidates(sections), ne.Choice([1], [(1, "Satu.")]), D, 10, 3, 1)[0]
+        assert "### [Saham (PACK) naik 133,88%](http://x/m1)" in md
+
 
 class TestTheDaysLargestStories:
     """CTO/owner decision 2026-10-05: the day's 6 largest stories are always candidates and, when
@@ -327,6 +348,49 @@ class TestEchoGuard:
         words = ne.content_words("Pemerintah salurkan bantuan. Harga naik di Jakarta, kata KPK.")
         assert words["pemerintah"] is False and words["harga"] is False
         assert words["jakarta"] is True and words["kpk"] is True and "di" not in words
+
+    # SYS-86 (#246): QA's pairs. Each top story is a v5 replay's judul + inti verbatim; each Sekilas line is a
+    # distinct event of the same day. The first rule hid all four.
+    DISTINCT = [
+        (("Prabowo perintahkan audit forensik keuangan haji BPKH",
+          "Presiden Prabowo Subianto memerintahkan audit forensik tata kelola keuangan haji yang dikelola BPKH, "
+          "menurut Wamenhaj Dahnil Anzar Simanjuntak."),
+         ("Presiden Prabowo berhentikan sementara Wagub Babel Hellyana",
+          "Presiden Prabowo Subianto memberhentikan sementara Wagub Bangka Belitung Hellyana.")),
+        (("Pemerintah salurkan BSU Rp900.000 ke 13,3 juta pekerja",
+          "Pemerintah menyalurkan Bantuan Subsidi Upah Rp900.000 per pekerja untuk periode Oktober-Desember 2026 "
+          "dengan anggaran Rp12 triliun."),
+         ("Penjualan rumah subsidi turun, pengembang minta bantuan pemerintah",
+          "Penjualan rumah subsidi anjlok, pengembang minta bantuan pemerintah.")),
+        (("LPS bayar klaim simpanan Rp243,02 miliar nasabah empat BPR Jabar",
+          "LPS membayarkan Rp243,02 miliar klaim penjaminan simpanan nasabah empat BPR/BPRS di Jawa Barat yang "
+          "izin usahanya dicabut."),
+         ("Proyek data center AI Jatiluhur dihentikan sementara karena izin belum rampung",
+          "Gubernur Jawa Barat hentikan proyek data center di Jatiluhur karena izin belum lengkap.")),
+        (("Proyek data center AI Rp3,5 triliun di Jatiluhur disetop",
+          "Gubernur Jawa Barat Dedi Mulyadi menghentikan sementara proyek data center AI BDx Data Centers senilai "
+          "Rp3,5 triliun di Jatiluhur, Purwakarta."),
+         ("EJIF 2026 hasilkan komitmen investasi Rp2,4 triliun di Jatim",
+          "EJIF 2026 di Jawa Timur hasilkan komitmen investasi senilai Rp2,4 triliun.")),
+    ]
+
+    @pytest.mark.parametrize("top,other", DISTINCT, ids=["prabowo", "subsidi", "jawa-barat", "jawa-timur"])
+    def test_one_person_or_place_in_common_is_not_a_repeat(self, top, other):
+        assert not ne.echoes(_story_cand(2, "x", *other), _story_cand(1, "x", *top))
+
+    def test_the_true_repeats_are_still_hidden(self):
+        """2026-09-28's Trump/Iran pair and 2026-10-03's Komdigi sisa-kuota pair, as QA wrote them."""
+        trump = _story_cand(1, "international", "Trump tolak proposal damai Iran, harga minyak dunia naik",
+                            "Presiden AS Donald Trump menolak proposal damai Iran sehingga harga minyak dunia naik.")
+        assert ne.echoes(_story_cand(2, "international", "Iran tegaskan diplomasi, Trump tolak proposal damai",
+                                     "Trump menolak proposal damai Iran meski Teheran tegaskan jalur diplomasi."), trump)
+
+    def test_a_shared_name_needs_two_shared_event_words(self):
+        top = _story_cand(1, "x", "KPK periksa Bobby Rizaldi", "KPK memeriksa Bobby Rizaldi soal suap.")
+        one = _story_cand(2, "x", "KPK geledah kantor BPN Jatim", "KPK menggeledah kantor BPN soal suap.")
+        two = _story_cand(3, "x", "KPK periksa saksi suap BPN", "KPK periksa saksi suap BPN Jatim.")
+        assert not ne.echoes(one, top)            # KPK + suap: one event word
+        assert ne.echoes(two, top)                # KPK + periksa, suap
 
     def test_an_echo_is_hidden_counted_and_its_story_still_counts_as_shown(self):
         cands = [self.TRUMP, _story_cand(2, "international", "Iran tegaskan jalur diplomasi",

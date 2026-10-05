@@ -26,6 +26,7 @@ from datetime import date
 from typing import Dict, List, NamedTuple, Optional, Sequence, Tuple
 
 from newscrawler.core import newsletter_copy as copy
+from newscrawler.core import story_words
 from newscrawler.core.filter_rubric import TOPICS_FINANCE
 from newscrawler.core.story_summary import RETRY, Rejected, unsupported_number, words
 from newscrawler.core.summarizer import QuotaExhausted, SummarizerError
@@ -47,15 +48,11 @@ EDITION_SUFFIX = "-ringkas"
 # CTO/owner decision 2026-10-05 (.10x/decisions/cto/newsletter-5min-edition.md):
 # the day's GUARANTEED_TOP largest stories (by portal count) are always candidates and,
 # when not a top story, always get a Sekilas line; and a Sekilas line that repeats a top
-# story (ECHO_MIN_SHARED content words, one of them a name) is hidden.
+# story is hidden (`echoes`).
 GUARANTEED_TOP = 6
-ECHO_MIN_SHARED = 3            # ... with a name among them
-ECHO_MIN_SHARED_UNNAMED = 4    # ... or this many with none: a name that opens both sentences is not
-                               # recognised ("Komdigi ..."; 10-03's sisa-kuota story twice, v5 replay)
-_STOPWORDS = frozenset(
-    "yang dan di ke dari untuk dengan pada ini itu akan dalam oleh atau juga sebagai karena hingga saat usai "
-    "setelah tidak tak bisa ada para lebih jadi menjadi bagi serta agar namun telah sudah masih baru kata "
-    "sebut menyebut menurut hari tahun bulan pekan senin selasa rabu kamis jumat sabtu minggu".split())
+ECHO_MIN_EVENT_WORDS = 2       # shared content words that are not names: what happened, not only who
+ECHO_MIN_EVENT_WORDS_UNNAMED = 4   # ... when no name is shared: a name that opens both sentences is not
+                                   # recognised ("Komdigi ..."; 10-03's sisa-kuota story twice, v5 replay)
 
 PROMPT = (
     "Kamu pemimpin redaksi briefing berita harian berbahasa Indonesia untuk pembaca yang mengikuti ekonomi\n"
@@ -366,39 +363,31 @@ class SekilasLine(NamedTuple):
     guaranteed: bool = False    # one of the day's largest stories: never trimmed by the word budget
 
 
-_WORD = re.compile(r"[^\W\d_][\w-]*", re.UNICODE)
-
-
-def content_words(text: str) -> Dict[str, bool]:
-    """{lower-cased word: is it a name} for the words that carry content: no
-    stopwords, no bare numbers, and a name is an acronym (KPK, BI) or a
-    capitalised word that does not open a sentence."""
-    out: Dict[str, bool] = {}
-    for m in _WORD.finditer(text):
-        word = m.group(0)
-        low = word.lower()
-        if low in _STOPWORDS or (len(word) < 3 and not word.isupper()):
-            continue
-        opens_sentence = not text[:m.start()].rstrip() or text[:m.start()].rstrip()[-1] in ".!?"
-        name = (word.isupper() and len(word) >= 2) or (word[0].isupper() and not opens_sentence)
-        out[low] = out.get(low, False) or name
-    return out
+content_words = story_words.content_words    # QA's echo probes (scripts/experiments/qa_newsletter_244) read it here
 
 
 def echoes(candidate: Candidate, top: Candidate) -> bool:
-    """True when `candidate` repeats the top story `top`: their texts share at
-    least ECHO_MIN_SHARED content words and one of them is a name ("Trump
-    tolak proposal damai Iran" / "Iran tegaskan diplomasi, Trump tolak
-    proposal damai": 5 shared), or ECHO_MIN_SHARED_UNNAMED words without one.
-    Over the three replayed editions (77 Sekilas lines x 24 top stories) the
-    only pair sharing 3+ words was a true repeat. Pairwise only: it hides one
-    Sekilas line and never merges stories, so SYS-67's finding (shared words
-    cannot group a section's clusters) does not apply."""
-    mine = content_words(f"{candidate.story.judul}. {candidate.story.sekilas}")
-    theirs = content_words(f"{top.story.judul}. {top.story.inti}")
+    """True when `candidate` repeats the top story `top`. Their texts share
+    content words (`story_words`) of two kinds: names -- a name in both texts --
+    and the rest, which say what happened. A repeat shares at least
+    ECHO_MIN_EVENT_WORDS of the rest and a name ("Trump tolak proposal damai
+    Iran" / "Iran tegaskan diplomasi, Trump tolak proposal damai": Trump, and
+    tolak/proposal/damai/Iran), or ECHO_MIN_EVENT_WORDS_UNNAMED of the rest
+    without one.
+
+    A shared name alone is never enough: two stories about one person or
+    place ("Presiden Prabowo Subianto ...", "Gubernur Jawa Barat ...") are
+    different events unless they also share what happened (SYS-86: the first
+    rule counted any capitalised word, so one shared title and name hid a
+    distinct story). Pairwise only: it hides one Sekilas line and never merges
+    stories, so SYS-67's finding (shared words cannot group a section's
+    clusters) does not apply."""
+    mine = story_words.content_words(f"{candidate.story.judul}. {candidate.story.sekilas}")
+    theirs = story_words.content_words(f"{top.story.judul}. {top.story.inti}")
     shared = set(mine) & set(theirs)
-    named = any(mine[w] or theirs[w] for w in shared)
-    return len(shared) >= ECHO_MIN_SHARED_UNNAMED or (len(shared) >= ECHO_MIN_SHARED and named)
+    named = {w for w in shared if mine[w] and theirs[w]}
+    events = len(shared - named)
+    return events >= ECHO_MIN_EVENT_WORDS_UNNAMED or (events >= ECHO_MIN_EVENT_WORDS and bool(named))
 
 
 def _sekilas(cands: Sequence[Candidate], choice: Choice) -> Tuple[List[SekilasLine], List[int]]:
