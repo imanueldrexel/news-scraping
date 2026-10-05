@@ -44,6 +44,16 @@ FALLBACK_SIXTY = 4
 SEKILAS_PER_SECTION = 3
 WORD_BUDGET = 1200
 EDITION_SUFFIX = "-ringkas"
+# CTO/owner decision 2026-10-05 (.10x/decisions/cto/newsletter-5min-edition.md):
+# the day's GUARANTEED_TOP largest stories (by portal count) are always candidates and,
+# when not a top story, always get a Sekilas line; and a Sekilas line that repeats a top
+# story (ECHO_MIN_SHARED content words, one of them a name) is hidden.
+GUARANTEED_TOP = 6
+ECHO_MIN_SHARED = 3
+_STOPWORDS = frozenset(
+    "yang dan di ke dari untuk dengan pada ini itu akan dalam oleh atau juga sebagai karena hingga saat usai "
+    "setelah tidak tak bisa ada para lebih jadi menjadi bagi serta agar namun telah sudah masih baru kata "
+    "sebut menyebut menurut hari tahun bulan pekan senin selasa rabu kamis jumat sabtu minggu".split())
 
 PROMPT = (
     "Kamu pemimpin redaksi briefing berita harian berbahasa Indonesia untuk pembaca yang mengikuti ekonomi\n"
@@ -75,10 +85,12 @@ PROMPT = (
 @dataclass
 class Candidate:
     """A shown cluster of the full digest, as the editor sees it. `id` is its
-    1-based position: sections in SECTION_ORDER, clusters in rank order."""
+    1-based position: sections in SECTION_ORDER, clusters in rank order.
+    `guaranteed`: one of the day's GUARANTEED_TOP largest stories."""
     id: int
     topic: str
     cluster: dict
+    guaranteed: bool = False
 
     @property
     def story(self):
@@ -117,12 +129,14 @@ class Edition:
     editor_fallback: bool
     editor_rejections: List[str]  # each refused or failed editor answer's reason, in order
     sixty_trimmed: int = 0
+    echoes_hidden: List[str] = field(default_factory=list)   # Sekilas lines hidden as repeats of a top story
 
     def stats(self) -> dict:
         """The `_edition` entry of newsletter_digests.categories."""
         return {"built": True, "words": self.words, "utama": self.utama, "sekilas": self.sekilas,
                 "unsummarized": self.unsummarized, "editor_fallback": self.editor_fallback,
-                "editor_rejections": list(self.editor_rejections), "sixty_trimmed": self.sixty_trimmed}
+                "editor_rejections": list(self.editor_rejections), "sixty_trimmed": self.sixty_trimmed,
+                "echoes_hidden": list(self.echoes_hidden)}
 
 
 def edition_path(digest_path: str) -> str:
@@ -132,10 +146,17 @@ def edition_path(digest_path: str) -> str:
 
 
 def candidates(sections: Sequence[dict]) -> List[Candidate]:
+    """Each section's top CANDIDATES_PER_SECTION shown clusters, plus any of the
+    day's GUARANTEED_TOP largest (by portal count; ties in section and rank
+    order) that rank lower in a crowded section -- 2026-09-28's IHSG close, 14
+    portals, was 4th in Pasar behind three 18-19-portal stories."""
+    shown = [c for section in sections for c in section["clusters"]]
+    top = {id(c) for c in sorted(shown, key=lambda c: -len(c["sources"]))[:GUARANTEED_TOP]}
     out = []
     for section in sections:
-        for cluster in section["clusters"][:CANDIDATES_PER_SECTION]:
-            out.append(Candidate(len(out) + 1, section["topic"], cluster))
+        for rank, cluster in enumerate(section["clusters"]):
+            if rank < CANDIDATES_PER_SECTION or id(cluster) in top:
+                out.append(Candidate(len(out) + 1, section["topic"], cluster, guaranteed=id(cluster) in top))
     return out
 
 
@@ -339,47 +360,89 @@ def _md(text: str) -> str:
 
 class SekilasLine(NamedTuple):
     line: str
-    id: int                 # the candidate's id
+    id: int                     # the candidate's id
+    guaranteed: bool = False    # one of the day's largest stories: never trimmed by the word budget
 
 
-def _sekilas(cands: Sequence[Candidate], choice: Choice) -> List[SekilasLine]:
-    """A line for every summarized candidate that is neither a top story nor
-    the same event as one, one per duplicate group, at most
-    SEKILAS_PER_SECTION per section, in section order. A story without a
-    summary is left to the full digest: its headline is a portal's, unchecked,
-    and the editor never saw it, so it could repeat a top story (the
-    2026-10-04 replay showed "Kapolri Mutasi Sejumlah Perwira" under the
-    Kapolri top story)."""
+_WORD = re.compile(r"[^\W\d_][\w-]*", re.UNICODE)
+
+
+def content_words(text: str) -> Dict[str, bool]:
+    """{lower-cased word: is it a name} for the words that carry content: no
+    stopwords, no bare numbers, and a name is an acronym (KPK, BI) or a
+    capitalised word that does not open a sentence."""
+    out: Dict[str, bool] = {}
+    for m in _WORD.finditer(text):
+        word = m.group(0)
+        low = word.lower()
+        if low in _STOPWORDS or (len(word) < 3 and not word.isupper()):
+            continue
+        opens_sentence = not text[:m.start()].rstrip() or text[:m.start()].rstrip()[-1] in ".!?"
+        name = (word.isupper() and len(word) >= 2) or (word[0].isupper() and not opens_sentence)
+        out[low] = out.get(low, False) or name
+    return out
+
+
+def echoes(candidate: Candidate, top: Candidate) -> bool:
+    """True when `candidate` repeats the top story `top`: their texts share at
+    least ECHO_MIN_SHARED content words and one of them is a name ("Trump
+    tolak proposal damai Iran" / "Iran tegaskan diplomasi, Trump tolak
+    proposal damai": 5 shared). Pairwise only: it hides one Sekilas line and
+    never merges stories, so SYS-67's finding (shared words cannot group a
+    section's clusters) does not apply."""
+    mine = content_words(f"{candidate.story.judul}. {candidate.story.sekilas}")
+    theirs = content_words(f"{top.story.judul}. {top.story.inti}")
+    shared = set(mine) & set(theirs)
+    return len(shared) >= ECHO_MIN_SHARED and any(mine[w] or theirs[w] for w in shared)
+
+
+def _sekilas(cands: Sequence[Candidate], choice: Choice) -> Tuple[List[SekilasLine], List[int]]:
+    """(lines, ids hidden as echoes of a top story). A line for every summarized
+    candidate that is neither a top story nor the same event as one -- by the
+    editor's `duplikat` or by `echoes` -- one per duplicate group, at most
+    SEKILAS_PER_SECTION per section unless it is one of the day's largest
+    stories, in section order. A story without a summary is left to the full
+    digest: its headline is a portal's, unchecked, and the editor never saw it,
+    so it could repeat a top story (the 2026-10-04 replay showed "Kapolri
+    Mutasi Sejumlah Perwira" under the Kapolri top story)."""
+    by_id = {c.id: c for c in cands}
+    tops = [by_id[i] for i in choice.utama]
     utama_groups = {_group_of(i, choice.groups) for i in choice.utama}
-    seen_groups, per_section, lines = set(), {}, []
+    seen_groups, per_section, lines, echoed = set(), {}, [], []
     for c in cands:
         group = _group_of(c.id, choice.groups)
         if not c.summarized or c.id in choice.utama or group in utama_groups or group in seen_groups:
             continue
-        if per_section.get(c.topic, 0) >= SEKILAS_PER_SECTION:
+        if not c.guaranteed and per_section.get(c.topic, 0) >= SEKILAS_PER_SECTION:
+            continue
+        if any(echoes(c, top) for top in tops):
+            echoed.append(c.id)
             continue
         seen_groups.add(group)
         per_section[c.topic] = per_section.get(c.topic, 0) + 1
-        lines.append(SekilasLine(f"- **{copy.SECTION_SHORT.get(c.topic, c.topic)} ·** {c.story.sekilas}", c.id))
-    return lines
+        lines.append(SekilasLine(f"- **{copy.SECTION_SHORT.get(c.topic, c.topic)} ·** {c.story.sekilas}", c.id,
+                                 c.guaranteed))
+    return lines, echoed
 
 
 def render(cands: Sequence[Candidate], choice: Choice, digest_date: date, article_count: int, outlet_count: int,
            digest_stories: int) -> Tuple[str, int, List[SekilasLine]]:
-    """(markdown, words, sekilas lines kept). Sekilas lines are dropped from the
-    bottom while the edition is over WORD_BUDGET; top stories never are."""
+    """(markdown, words, sekilas lines kept). While the edition is over
+    WORD_BUDGET the lowest Sekilas line that is not one of the day's largest
+    stories is dropped; top stories and guaranteed lines never are."""
     by_id = {c.id: c for c in cands}
-    sekilas = _sekilas(cands, choice)
+    sekilas = _sekilas(cands, choice)[0]
     unsummarized = sum(1 for c in cands if not c.summarized)
     while True:
         markdown = _markdown(by_id, choice, sekilas, unsummarized, digest_date, article_count, outlet_count,
                              digest_stories)
         count = reader_words(markdown)
-        if count <= WORD_BUDGET or not sekilas:
+        droppable = [k for k, s in enumerate(sekilas) if not s.guaranteed]
+        if count <= WORD_BUDGET or not droppable:
             if count > WORD_BUDGET:
-                logger.warning(f"Edition is {count} words with no Sekilas left (budget {WORD_BUDGET}).")
+                logger.warning(f"Edition is {count} words with nothing left to trim (budget {WORD_BUDGET}).")
             return markdown, count, sekilas
-        sekilas = sekilas[:-1]
+        sekilas = sekilas[:droppable[-1]] + sekilas[droppable[-1] + 1:]
 
 
 def _markdown(by_id, choice: Choice, sekilas, unsummarized: int, digest_date: date, article_count: int,
@@ -407,8 +470,12 @@ def build(summarizer, sections: Sequence[dict], digest_date: date, article_count
     choice, fallback, reasons = choose(summarizer, cands, digest_date, no_call_reason)
     digest_stories = sum(len(s["clusters"]) for s in sections)
     markdown, count, sekilas = render(cands, choice, digest_date, article_count, outlet_count, digest_stories)
+    by_id = {c.id: c for c in cands}
+    echoed = [by_id[i].story.sekilas for i in _sekilas(cands, choice)[1]]
+    if echoed:
+        logger.info(f"Sekilas lines hidden as repeats of a top story: {echoed}")
     return Edition(markdown, count, len(choice.utama), len(sekilas), sum(1 for c in cands if not c.summarized),
-                   fallback, reasons, choice.sixty_trimmed)
+                   fallback, reasons, choice.sixty_trimmed, echoed)
 
 
 def briefing(markdown: str) -> Tuple[List[str], int]:

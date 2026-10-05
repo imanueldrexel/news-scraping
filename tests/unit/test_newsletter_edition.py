@@ -34,8 +34,9 @@ def _sections(spec):
             for topic, clusters in spec]
 
 
-# ids: m1=1 m2=2 m3=3 | p1=4 p2=5 | c1=6 | g1=7 g2=8 | l1=9 l2=10 | i1=11   (m4 is a 4th: no candidate)
-DAY = [("markets", [("m1", 11), ("m2", 6), ("m3", 4), ("m4", 9)]),
+# ids: m1=1 m2=2 m3=3 | p1=4 p2=5 | c1=6 | g1=7 g2=8 | l1=9 l2=10 | i1=11
+# (m4 is 4th in Pasar and not among the day's 6 largest: no candidate)
+DAY = [("markets", [("m1", 11), ("m2", 6), ("m3", 4), ("m4", 1)]),
        ("macro_policy", [("p1", 8), ("p2", 3)]),
        ("corporate", [("c1", 5)]),
        ("politics_government", [("g1", 7), ("g2", 2)]),
@@ -221,7 +222,7 @@ class TestRenderAndBudget:
     def test_a_story_without_a_summary_stays_in_the_archive_and_the_edition_says_so(self):
         cands = ne.candidates(_sections([("markets", [("m1", 5), ("m2", (4, False)), ("m3", 3)])]))
         md, _, sekilas = ne.render(cands, ne.Choice([1], [(1, "Satu.")]), D, 10, 3, 3)
-        assert sekilas == [ne.SekilasLine("- **Pasar ·** Sekilas m3.", 3)]
+        assert sekilas == [ne.SekilasLine("- **Pasar ·** Sekilas m3.", 3, guaranteed=True)]   # 3 stories: all top 6
         assert "Portal m2" not in md
         assert "> Sebagian ringkasan tidak tersedia hari ini; 1 berita hanya ada di edisi lengkap." in md
 
@@ -237,13 +238,92 @@ class TestRenderAndBudget:
         assert words <= ne.WORD_BUDGET and kept == full[:len(kept)] and len(kept) < len(full)
         assert md.count("### ") == 6
 
-    def test_over_budget_with_no_sekilas_left_keeps_the_top_stories(self, cands, monkeypatch):
+    def test_over_budget_keeps_the_top_stories_and_the_days_largest(self, cands, monkeypatch):
+        """CTO decision 2026-10-05: a Sekilas line of one of the day's 6 largest stories is never trimmed."""
         monkeypatch.setattr(ne, "WORD_BUDGET", 10)
         md, words, kept = ne.render(cands, ne.Choice([1, 4, 7, 2, 9, 6], [(1, "a.")]), D, 10, 3, 11)
-        assert kept == [] and md.count("### ") == 6 and "## Sekilas" not in md
+        assert md.count("### ") == 6
+        assert [s.id for s in kept] == [3] and kept[0].guaranteed      # m3 (4 portals) is among the 6 largest
 
     def test_reader_words_skip_link_targets_and_separators(self):
         assert ne.reader_words("### [Judul satu](http://a.b/c-d-e)\n**Diberitakan 3 portal** · [Baca →](http://x)") == 6
+
+
+class TestTheDaysLargestStories:
+    """CTO/owner decision 2026-10-05: the day's 6 largest stories are always candidates and, when
+    not a top story, always get a Sekilas line. 2026-09-28: the IHSG close (14 portals) was 4th in
+    Pasar behind three 18-19-portal stories and never reached the editor."""
+
+    CROWDED = [("markets", [("emas", 19), ("rupiah", 19), ("bei", 18), ("ihsg", 14), ("goto", 7)]),
+               ("macro_policy", [("bi", 15), ("halal", 8), ("bpjs", 8), ("wamenkeu", 7)]),
+               ("law_crime", [("kpk", 6), ("lapas", 5), ("tawuran", 3)])]
+
+    def test_a_large_story_ranked_low_in_its_section_is_a_candidate(self):
+        cands = ne.candidates(_sections(self.CROWDED))
+        names = [(c.cluster["headline"], c.guaranteed) for c in cands]
+        assert ("Portal ihsg", True) in names                       # 4th in Pasar, 14 portals: one of the 6 largest
+        assert not [n for n, _ in names if n in ("Portal goto", "Portal wamenkeu")]   # 5th / 4th, not in the 6
+        assert sum(c.guaranteed for c in cands) == 6
+
+    def test_it_gets_a_sekilas_line_past_the_per_section_cap(self):
+        cands = ne.candidates(_sections(self.CROWDED))
+        ids = {c.cluster["headline"]: c.id for c in cands}
+        choice = ne.Choice([ids["Portal bi"], ids["Portal kpk"]], [(ids["Portal bi"], "a.")])
+        lines = [s.line for s in ne.render(cands, choice, D, 10, 3, 12)[2]]
+        assert [l for l in lines if l.startswith("- **Pasar")] == [
+            "- **Pasar ·** Sekilas emas.", "- **Pasar ·** Sekilas rupiah.", "- **Pasar ·** Sekilas bei.",
+            "- **Pasar ·** Sekilas ihsg."]                           # 4 lines: the cap is 3, ihsg is guaranteed
+
+    def test_the_budget_trims_other_lines_first(self, monkeypatch):
+        cands = ne.candidates(_sections(self.CROWDED))
+        ids = {c.cluster["headline"]: c.id for c in cands}
+        choice = ne.Choice([ids["Portal bi"], ids["Portal kpk"]], [(ids["Portal bi"], "a.")])
+        full = ne.render(cands, choice, D, 10, 3, 12)
+        monkeypatch.setattr(ne, "WORD_BUDGET", full[1] - 4)
+        kept = ne.render(cands, choice, D, 10, 3, 12)[2]
+        dropped = {s.id for s in full[2]} - {s.id for s in kept}
+        assert dropped and not any(s.guaranteed for s in full[2] if s.id in dropped)
+
+
+def _story_cand(cid, topic, judul, text, portals=5):
+    cluster = _cluster(str(cid), portals)
+    cluster["story"] = StorySummary(judul, text, [], "", text, [0], [])
+    return ne.Candidate(cid, topic, cluster)
+
+
+class TestEchoGuard:
+    """CTO/owner decision 2026-10-05: a Sekilas line that repeats a top story is hidden.
+    2026-09-28 showed the Trump/Iran proposal as a top story and again in Sekilas."""
+
+    TRUMP = _story_cand(1, "international", "Trump tolak proposal damai Iran, harga minyak dunia naik",
+                        "Presiden AS Donald Trump menolak proposal damai Iran; harga minyak naik.")
+
+    @pytest.mark.parametrize("judul,sekilas,hidden", [
+        ("Iran tegaskan jalur diplomasi", "Iran tegaskan diplomasi, Trump tolak proposal damai dan prediksi perundingan.",
+         True),
+        ("Netanyahu kunjungi UEA", "Netanyahu dilaporkan berkunjung diam-diam ke Abu Dhabi.", False),
+        ("Harga minyak dunia naik", "Harga minyak naik dua persen.", False),          # shared words, no name shared
+    ])
+    def test_pairs(self, judul, sekilas, hidden):
+        assert ne.echoes(_story_cand(2, "international", judul, sekilas), self.TRUMP) is hidden
+
+    def test_two_cases_of_one_institution_are_not_echoes(self):
+        """SYS-67's KPK pair: one name in common is not enough."""
+        a = _story_cand(1, "law_crime", "KPK periksa Bobby Rizaldi soal BPK Muara Enim", "KPK memeriksa Bobby Rizaldi.")
+        b = _story_cand(2, "law_crime", "KPK beber setoran uang haram ke Kanwil BPN Jatim", "KPK membeberkan setoran.")
+        assert not ne.echoes(b, a)
+
+    def test_sentence_openers_are_not_names(self):
+        words = ne.content_words("Pemerintah salurkan bantuan. Harga naik di Jakarta, kata KPK.")
+        assert words["pemerintah"] is False and words["harga"] is False
+        assert words["jakarta"] is True and words["kpk"] is True and "di" not in words
+
+    def test_an_echo_is_hidden_counted_and_its_story_still_counts_as_shown(self):
+        cands = [self.TRUMP, _story_cand(2, "international", "Iran tegaskan jalur diplomasi",
+                                         "Iran tegaskan diplomasi, Trump tolak proposal damai."),
+                 _story_cand(3, "international", "Netanyahu kunjungi UEA", "Netanyahu berkunjung ke Abu Dhabi.")]
+        lines, echoed = ne._sekilas(cands, ne.Choice([1], [(1, "a.")]))
+        assert [s.id for s in lines] == [3] and echoed == [2]
 
 
 class TestBuildAndBriefing:

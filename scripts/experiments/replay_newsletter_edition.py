@@ -64,8 +64,8 @@ class Capture:
     """What the edition was built from: the sections, the candidates and the editor's choice."""
 
     def __init__(self):
-        self.sections = self.cands = self.choice = None
-        real_candidates, real_choose = ne.candidates, ne.choose
+        self.sections = self.cands = self.choice = self.kept = None
+        real_candidates, real_choose, real_render = ne.candidates, ne.choose, ne.render
 
         def candidates(sections):
             self.sections = sections
@@ -77,16 +77,21 @@ class Capture:
             self.choice = result[0]
             return result
 
-        ne.candidates, ne.choose = candidates, choose
+        def render(*args, **kwargs):
+            result = real_render(*args, **kwargs)
+            self.kept = result[2]                              # the Sekilas lines the budget kept
+            return result
 
-    def coverage(self, kept_sekilas: int) -> dict:
-        """Of the 6 shown clusters with the most portals, how many the edition shows."""
+        ne.candidates, ne.choose, ne.render = candidates, choose, render
+
+    def coverage(self) -> dict:
+        """Of the 6 shown clusters with the most portals, how many the edition shows (as a
+        top story, a kept Sekilas line, or through a twin: the editor's duplikat or an echo)."""
         clusters = [c for s in self.sections for c in s["clusters"]]
         top6 = sorted(clusters, key=lambda c: -len(c["sources"]))[:6]
         id_of = {id(c.cluster): c.id for c in self.cands}
-        shown = set(self.choice.utama)
-        # the word budget drops Sekilas lines from the bottom, so the kept ones are the first
-        shown |= {s.id for s in ne._sekilas(self.cands, self.choice)[:kept_sekilas]}
+        shown = set(self.choice.utama) | {s.id for s in self.kept}
+        shown |= set(ne._sekilas(self.cands, self.choice)[1])  # hidden as an echo of a top story
         for group in self.choice.groups:                      # a folded duplicate is shown through its twin
             if group & shown:
                 shown |= group
@@ -180,7 +185,7 @@ def main(argv=None) -> int:
     if path.edition:
         pdfs.append(render_edition_pdf(path.edition))
         pages["edition_phone"] = len(PdfReader(pdfs[1]).pages)
-        result["coverage"] = capture.coverage(e["sekilas"])
+        result["coverage"] = capture.coverage()
     result["pdf_pages"] = pages
     result["checks"] = document_checks([str(path)] + ([path.edition] if path.edition else []), pdfs)
     print("REPLAY " + json.dumps(result, ensure_ascii=False))

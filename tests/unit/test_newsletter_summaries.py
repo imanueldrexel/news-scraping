@@ -175,7 +175,7 @@ class TestRefusedAnswers:
         assert path.note is None
 
     def test_two_refusals_fall_back_to_the_headlines_and_are_counted(self, monkeypatch, tmp_path):
-        too_long = lambda p: story_answer(p, judul=" ".join(["kata"] * 11))
+        too_long = lambda p: story_answer(p, judul=" ".join(["kata"] * 13))
         invented = lambda p: story_answer(p, inti="Laba naik 99 persen.")
         s = FakeNewsroom(story=[too_long, invented])
         gen, ds = _gen(monkeypatch, s)

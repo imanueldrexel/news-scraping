@@ -68,7 +68,13 @@ class TestParse:
     def test_a_malformed_answer_is_a_json_refusal(self, answer):
         assert _reason(answer) == "json"
 
-    @pytest.mark.parametrize("field,limit", [("judul", 10), ("inti", 25), ("mengapa_penting", 20), ("sekilas", 15)])
+    def test_the_judul_is_asked_for_10_words_and_refused_above_12(self):
+        """CTO/owner decision 2026-10-05: ask 10, accept 12."""
+        assert f"judul: maks {ss.JUDUL_ASKED} kata" in ss.PROMPT and ss.JUDUL_ASKED == 10
+        assert ss.parse(_answer(judul=" ".join(["kata"] * 12)), 2, SOURCE).judul.count("kata") == 12
+        assert _reason(_answer(judul=" ".join(["kata"] * 13))) == "length"
+
+    @pytest.mark.parametrize("field,limit", [("judul", 12), ("inti", 25), ("mengapa_penting", 20), ("sekilas", 15)])
     def test_each_field_over_its_word_limit(self, field, limit):
         at_limit = " ".join(["kata"] * limit)
         assert getattr(ss.parse(_answer(**{field: at_limit}), 2, SOURCE), field) == at_limit
@@ -82,8 +88,8 @@ class TestParse:
 
     def test_every_broken_limit_is_named_at_once(self):
         with pytest.raises(ss.Rejected) as e:
-            ss.parse(_answer(judul=" ".join(["kata"] * 11), poin=["a.", " ".join(["b"] * 21)]), 2, SOURCE)
-        assert "judul 11 kata, maks 10" in e.value.detail and "poin ke-2 21 kata, maks 20" in e.value.detail
+            ss.parse(_answer(judul=" ".join(["kata"] * 13), poin=["a.", " ".join(["b"] * 21)]), 2, SOURCE)
+        assert "judul 13 kata, maks 12" in e.value.detail and "poin ke-2 21 kata, maks 20" in e.value.detail
         assert 'persingkat: "b b b' in e.value.detail             # the retry sees what to shorten
 
     def test_on_the_retry_a_long_point_is_dropped_whole_never_cut(self):
@@ -95,7 +101,7 @@ class TestParse:
 
     def test_on_the_retry_every_other_field_still_must_fit(self):
         with pytest.raises(ss.Rejected):
-            ss.parse(_answer(judul=" ".join(["kata"] * 11)), 2, SOURCE, drop_long_poin=True)
+            ss.parse(_answer(judul=" ".join(["kata"] * 13)), 2, SOURCE, drop_long_poin=True)
         assert ss.parse(_answer(), 2, SOURCE).dropped_poin == 0
 
     def test_a_number_not_in_the_articles(self):

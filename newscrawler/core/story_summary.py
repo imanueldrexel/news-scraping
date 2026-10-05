@@ -40,7 +40,12 @@ logger.setLevel(logging.INFO)
 
 MAX_ARTICLES = 6
 ARTICLE_CHARS = 800
-LIMITS = {"judul": 10, "inti": 25, "poin": 20, "mengapa_penting": 20, "sekilas": 15}
+# The refusal thresholds. The prompt asks for the same numbers except the judul: it asks for
+# "maks 10 kata" and a judul is refused only above 12 (CTO/owner decision 2026-10-05: 6 of 7
+# second refusals on 2026-09-28 were a judul of 11-12 words, one of them the day's BI-rate
+# story; asking for 12 would make the model aim at 12 and overshoot).
+LIMITS = {"judul": 12, "inti": 25, "poin": 20, "mengapa_penting": 20, "sekilas": 15}
+JUDUL_ASKED = 10
 MAX_POIN = 2
 REASONS = ("json", "length", "number")
 
