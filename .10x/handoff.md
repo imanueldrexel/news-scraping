@@ -1,6 +1,36 @@
 # Current Handoff
 
-## From: QA -> To: SDE (fixes), QA of 2026-10-06+ (scheduled runs), owner
+## From: SDE -> To: QA (verify), owner (two decisions)
+**Date:** 2026-10-05 (night)
+**Read first:**
+- `.10x/decisions/sde/newsletter-5min-edition.md`, section "QA's findings fixed".
+- EXPERIMENTS.md, "2026-10-05 (night) — SDE fixes of QA's tracker #244 findings".
+
+### Ready for QA (Done-when evidence on each ticket)
+- SYS-86 #246, SYS-80 #236, SYS-87 #247, OPS-44 #248.
+- DBT-56 #251, DBT-57 #252, DBT-58 #253, DBT-59 #254 (found here).
+- SYS-88 #249: the code only. Its backfill is not applied, and the Done-when's "query returns 0" needs it.
+
+### Owner
+1. **SumoPod key budget ($5.00) exhausted at ~23:00.** Raise it before 2026-10-06 12:00, or that newsletter has no summaries: headline lists, no edition, and "Edisi 5 menit tidak tersedia". The 21:00 extraction also stops at the first call until the budget is raised.
+2. **Approve SYS-88's production write.** It runs `scripts/unescape_stored_headlines.py --apply` and changes 2,410 `sitemaps.headline` rows. A backup is written first, and `--restore` undoes it.
+
+### What to test
+- Unit / integration suites; the mutants in `qa_mutation_runner.py` (`sys86_*`, `sys80_*`, `sys87_*`, `sys88_*`, `ops44_*`, `dbt5*`).
+- Re-measure offline from the dumps:
+  - `check_story_subjects.py --dir digests/preview/replay-v7 --dates 2026-10-03 2026-10-04`;
+  - `probe_echo_guard.py --dir digests/preview/replay-v6 --dates ... --all-pairs`.
+- v7's 09-24 is partial; 09-25 and 09-28 are invalid (budget).
+- QA's own set (`scripts/experiments/qa_newsletter_244/`) passes 49/49. Two of QA's mutants in `qa_mutants_244.py` no longer match the code (`run_pdf_ok_always`, `run_message_skipped_on_fail`): `_deliver` changed for OPS-44. Equivalents are in `qa_mutation_runner.py` (`ops44_*`, `ops43_pdf_never_sent`).
+
+### Risks
+- **SYS-86 is exactly at its limit:** 1 wrong hide on 5 untuned days. The 7 scheduled editions are the real test.
+- **SYS-80 demotion:** a related article the check cannot match (a spelling variant) loses its link and portal on the retry. This can lower a story's portal count, and so its rank in the edition.
+- **Numbers held to `terkait`:** when the model wrongly marks a related article `tidak_terkait` and uses its number, the story can fall back. That happened to 2 stories on ~10 replayed days.
+
+---
+
+## Previous: From QA -> To: SDE (fixes), QA of 2026-10-06+ (scheduled runs), owner
 **Date:** 2026-10-05 (night)
 **Read first:**
 - `.10x/reviews/2026-10-05-qa-report.md`;
@@ -106,6 +136,7 @@ SYS-74, SYS-41, SRC-34, SRC-47/42/40/39, SRC-58, OPS-39, DBT-01. Lower `KNOWLEDG
 ---
 
 ## Handoff History
+- 2026-10-05 (night) SDE -> QA/owner: QA's #244 findings fixed; 8 ready-for-qa, SYS-88 backfill and the SumoPod budget await the owner (this file, top).
 - 2026-10-05 (night) QA -> SDE/QA/owner: tracker #244 verified; 4 closed, SYS-80 sent back, 4 held, 8 filed (this file, top).
 - 2026-10-05 (evening) CTO -> QA: edition decisions built and replayed (this file, second).
 - 2026-10-05 SDE -> QA/owner: newsletter 5-minute edition built and replayed (this file, top).

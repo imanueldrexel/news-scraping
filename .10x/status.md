@@ -2,7 +2,7 @@
 
 ## Project: NewsAggregator
 **Current Phase:** Implementation (dev): P1/P2 fixes + newsletter. Design approved by owner choice of DeepSeek; spec + ADR-001 written.
-**Last Updated:** 2026-10-04 by 10x-team (sde)
+**Last Updated:** 2026-10-05 (night) by sde
 **Health:** On Track
 
 ## Progress
@@ -102,3 +102,11 @@
   - DBT-56 #251, DBT-57 #252, DBT-58 #253 (P3): test gaps found by mutants.
 - **Release readiness:** the 2026-10-06 12:00 run can ship. Nothing blocks delivery, and the archive is unchanged in scope. Tracker #244 cannot close until SYS-86 and SYS-80 are fixed and the 7-edition success criteria are met.
 - **Tests:** unit 2,303 passed; integration 183 passed. QA's own set: 44 passed, 5 failing on SYS-86/87. QA mutants: 49/57 killed (5 real gaps filed, 3 equivalent). Report: `reviews/2026-10-05-qa-report.md`.
+
+## SDE 2026-10-05 (night): QA's tracker #244 findings fixed
+- [x] SYS-86 #246 echo guard (468b75d, 41a3ab6): story_words; event words + a shared name; a one-sided name is never an event word; Title Case judul marks no names. Untuned days (09-24 partial, 09-25, 09-29, 09-30, 10-02): 1 wrong hide (dana pensiun), at the Done-when limit.
+- [x] SYS-80 #236 (79c4586, c161ec3): subject check (a name or 2 judul words), refused on the first answer and demoted on the retry; numbers held to `terkait`. 10-04 re-render: no "10 Saham", no TVONENEWS link. After retry on the valid v7 days: 100% / 98.9%.
+- [x] SYS-87 #247 numbers by value; OPS-44 #248 follow-up "PDF tidak tersedia"; DBT-56/57/58 tests; DBT-59 #254 (found: vacuous test) fixed.
+- [~] SYS-88 #249 code done (ingest, page title, newsletter read path); backfill script dry run 2,410 rows; **apply awaits the owner**.
+- Tests: unit 2,387 passed; integration 183 passed; 112 newsletter mutants (see ticket comments).
+- **Blocker for 2026-10-06 12:00: the SumoPod key's $5.00 budget was exhausted ~23:00.** The 21:00 extraction stopped (6,081/6,090, $2.04); the newsletter will get no summaries (headline lists, no edition) unless the owner raises the key's budget. The replays of this session spent part of it (~15 replayed days, roughly $0.2-0.3).

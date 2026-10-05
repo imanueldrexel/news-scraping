@@ -46,6 +46,23 @@ first try 62 / 59 / 46% (target 90, missed); after retry 96.7 / 100 / 92.7% (tar
 ## Deviations / open
 - `response_format=json_object` (optional in SYS-82) not sent: 0-1 json refusals per day made it unnecessary.
 
+## QA's findings fixed (2026-10-05 night; commits 468b75d..41a3ab6)
+QA report: `.10x/reviews/2026-10-05-qa-report.md`. Evidence and numbers: EXPERIMENTS.md "2026-10-05 (night) — SDE fixes of QA's tracker #244 findings".
+
+| Ticket | What was built | Decision made here |
+|---|---|---|
+| SYS-86 #246 | `core/story_words.py`: one definition of content words and names (no titles, months, number units, digit tokens, currency prefixes, legal forms, single letters, roman numerals). `echoes()`: >= 2 shared event words (a name in neither text) + a name in both, or >= 4 event words. A Title Case judul marks no names. | A word that is a name in either text says who, not what (10-01's Wamenkeu/Kapolri wrong hide). Final rule: 1 wrong hide (09-25 dana pensiun) on 5 untuned days, at the Done-when limit; not tuned further. |
+| SYS-80 #236 | `story_summary.off_subject`: every `terkait` article must name a summary name, or share >= 2 judul words. First answer: refused (`subject`). Retry: a stray is demoted to `tidak_terkait` (`_summaries.strays_demoted`). Number guard reads only the `terkait` text; so does the edition's 60-second guard. | The first version refused on both tries: 13 lost stories on 6 days (09-28 at 92.7%). Demotion trades a portal for a story, never the summary. |
+| SYS-87 #247 | `values()`: Indonesian notation first, English where Indonesian cannot read it or both can; `guard_text` without the outlet name. | "1.500" is 1500 only; "1,500" is 1,5 or 1500. A digit glued to letters (Liputan6.com in the body) still counts: a residual, not fixed. |
+| OPS-44 #248 | A PDF the message promised and that does not arrive is followed by "PDF tidak tersedia hari ini." | Follow-up message, not a reorder (keeps OPS-43's order). Also covers the full digest's render failing after its message (same defect). |
+| SYS-88 #249 | `utils.unescape_headline` at `_get_sitemap`, `_get_page_title`, and the newsletter's read path; `scripts/unescape_stored_headlines.py` (dry run: 2,410 rows). | Backfill **not applied**: needs the owner's approval for the production write. |
+| DBT-56/57/58 | The tests QA's mutants asked for. | — |
+| DBT-59 #254 (found here) | The "unseen article counts as a portal" test patched `MAX_ARTICLES`, which `pick_articles` binds as a default argument; it passed on the fallback. Fixed. | — |
+
+Mutants: 112 newsletter mutants in `qa_mutation_runner.py` (re-pointed where code moved). Tooling: `replay_newsletter_edition.py` writes `<date>-stories.json`; `check_story_subjects.py`, `probe_echo_guard.py` re-measure offline.
+
+**The replay round was cut short by the SumoPod key budget ($5.00, exhausted ~23:00 2026-10-05).** That key also serves the 21:00 extraction (stopped at 6,081/6,090) and the 12:00 newsletter. Valid v7 days: 10-03, 10-04 only; the after-retry share with the final SYS-80 code is measured on those two (100%, 98.9%).
+
 ## Tech debt
 - `notify_telegram.send_html` duplicates `send_document`'s retry loop (kept separate so the OPS-40 mutants' patterns stay valid).
 - `newsletter_pdf.build_edition_story` recognises the 60-second box and the lead story by the copy strings (`SIXTY_SECONDS`, `TOP_STORIES`): a wording change in newsletter_copy moves both together, but a hand-written edition with other headings renders as plain bands.
