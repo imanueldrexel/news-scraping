@@ -107,6 +107,6 @@
 - [x] SYS-86 #246 echo guard (468b75d, 41a3ab6): story_words; event words + a shared name; a one-sided name is never an event word; Title Case judul marks no names. Untuned days (09-24 partial, 09-25, 09-29, 09-30, 10-02): 1 wrong hide (dana pensiun), at the Done-when limit.
 - [x] SYS-80 #236 (79c4586, c161ec3): subject check (a name or 2 judul words), refused on the first answer and demoted on the retry; numbers held to `terkait`. 10-04 re-render: no "10 Saham", no TVONENEWS link. After retry on the valid v7 days: 100% / 98.9%.
 - [x] SYS-87 #247 numbers by value; OPS-44 #248 follow-up "PDF tidak tersedia"; DBT-56/57/58 tests; DBT-59 #254 (found: vacuous test) fixed.
-- [~] SYS-88 #249 code done (ingest, page title, newsletter read path); backfill script dry run 2,410 rows; **apply awaits the owner**.
+- [x] SYS-88 #249 code done (ingest, page title, newsletter read path); backfill applied 2026-10-06 05:59 with the owner's approval: 2,410 rows, entity query 0, backup `backups/sys88_headlines_20261006_055952.json`. Ready for QA.
 - Tests: unit 2,387 passed; integration 183 passed; 112 newsletter mutants (see ticket comments).
 - **Blocker for 2026-10-06 12:00: the SumoPod prepaid balance ran out ~23:00** (owner 2026-10-06: not topped up; resolved by a top-up, no code change). The 21:00 extraction stopped (6,081/6,090, $2.04); the newsletter will get no summaries (headline lists, no edition) unless the balance is topped up first. The replays of this session spent part of it (~15 replayed days, roughly $0.2-0.3).

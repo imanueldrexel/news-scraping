@@ -7,7 +7,7 @@
 - [sys-39-knowledge-extraction](sys-39-knowledge-extraction.md) — provider/cost/peak guards built (ADR-003); 0.85 gate and prod migration need the owner; not closed
 - [body-cleaner-and-repair](body-cleaner-and-repair.md) — SYS-75 fixed (ready-for-qa); SYS-73 dry run done, apply path waits for the owner; DBT-50 ready-for-qa
 
-- [newsletter-5min-edition](newsletter-5min-edition.md) — tracker #244: SYS-80..85, OPS-41..43 built 2026-10-05 (structured summaries + guards, editor pass, copy module, phone PDF, Telegram message); replayed on 3 days; SYS-82/SYS-83 targets partly missed, owner decisions listed. QA's findings fixed the same night (SYS-86/80/87/88, OPS-44, DBT-56..59); SYS-88's backfill awaits the owner
+- [newsletter-5min-edition](newsletter-5min-edition.md) — tracker #244: SYS-80..85, OPS-41..43 built 2026-10-05 (structured summaries + guards, editor pass, copy module, phone PDF, Telegram message); replayed on 3 days; SYS-82/SYS-83 targets partly missed, owner decisions listed. QA's findings fixed the same night (SYS-86/80/87/88, OPS-44, DBT-56..59); SYS-88's backfill applied 2026-10-06
 
 ## Cross-cutting SDE notes
 - PowerShell does not pipe a here-string into `git commit -F -`; write the message to a scratch file and pass its path.

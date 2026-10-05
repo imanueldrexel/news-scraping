@@ -9,11 +9,11 @@
 ### Ready for QA (Done-when evidence on each ticket)
 - SYS-86 #246, SYS-80 #236, SYS-87 #247, OPS-44 #248.
 - DBT-56 #251, DBT-57 #252, DBT-58 #253, DBT-59 #254 (found here).
-- SYS-88 #249: the code only. Its backfill is not applied, and the Done-when's "query returns 0" needs it.
+- SYS-88 #249: code, and the backfill applied 2026-10-06 05:59 (owner approved): 2,410 rows, the Done-when's query returns 0; undo with `--restore backups/sys88_headlines_20261006_055952.json`.
 
 ### Owner
 1. **SumoPod prepaid balance ran out at ~23:00** (owner: not topped up). Top it up before 2026-10-06 12:00, or that newsletter has no summaries: headline lists, no edition, and "Edisi 5 menit tidak tersedia". The 21:00 extraction also stops at the first calls until it is topped up.
-2. **Approve SYS-88's production write.** It runs `scripts/unescape_stored_headlines.py --apply` and changes 2,410 `sitemaps.headline` rows. A backup is written first, and `--restore` undoes it.
+2. ~~Approve SYS-88's production write~~: approved and applied 2026-10-06 05:59.
 
 ### What to test
 - Unit / integration suites; the mutants in `qa_mutation_runner.py` (`sys86_*`, `sys80_*`, `sys87_*`, `sys88_*`, `ops44_*`, `dbt5*`).
