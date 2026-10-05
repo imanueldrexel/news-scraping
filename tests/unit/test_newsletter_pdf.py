@@ -10,7 +10,7 @@ import re
 import pytest
 from pypdf import PdfReader
 
-from newscrawler.core.newsletter_pdf import inline, render_digest_pdf, strip_emoji
+from newscrawler.core.newsletter_pdf import inline, render_digest_pdf, render_edition_pdf, strip_emoji
 
 DIGEST = """# Rangkuman Berita — 4 October 2026
 
@@ -109,6 +109,26 @@ class TestContent:
     def test_markup_characters_in_a_story_are_text_not_markup(self, pdf):
         text = _squash(_read(pdf)[0])
         assert "Laba PT A & B naik <10% dibanding tahun lalu, kata analis." in text
+
+    @pytest.mark.parametrize("edition", [True, False], ids=["edition", "digest"])
+    def test_text_that_reads_as_markup_is_printed_verbatim(self, tmp_path, edition):
+        """DBT-58 (#253): "<" before a letter, or a tag, in a story's text is not reportlab markup. Unescaped,
+        "harga <Rp1.000" raises "parse ended with 1 unclosed tags" and the reader gets no PDF. ("<10%" and
+        "A & B" above are tolerated by the parser, so they did not show it.)"""
+        md = ("# Rangkuman Berita\n\n## Berita Utama\n\n"
+              "### [Saham S&P <b>naik harga <Rp1.000](https://x.example/a?b=1&c=2)\n\n"
+              "Tarif PPN 12% <b>naik untuk barang <Rp1.000 & jasa.\n\n"
+              "- Poin dengan <i>miring dan <Rp500.\n\n"
+              "**Diberitakan 3 portal** · [Baca di S&P <Global> →](https://x.example/a?b=1&c=2)\n")
+        path = tmp_path / ("2026-10-04-ringkas.md" if edition else "2026-10-04.md")
+        path.write_text(md, encoding="utf-8")
+        render = render_edition_pdf if edition else render_digest_pdf
+        text, uris = _read(render(str(path)))
+        text = _squash(text)
+        for line in ("Saham S&P <b>naik harga <Rp1.000", "Tarif PPN 12% <b>naik untuk barang <Rp1.000 & jasa.",
+                     "Poin dengan <i>miring dan <Rp500.", "Baca di S&P <Global>"):
+            assert line in text, line
+        assert "https://x.example/a?b=1&c=2" in uris
 
     def test_a_line_the_grammar_does_not_know_is_printed_not_dropped(self, tmp_path):
         md = tmp_path / "d.md"
