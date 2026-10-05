@@ -181,7 +181,7 @@ SOURCE_AUTHORITY = {
     "KOMPAS":       0.80,
     "TEMPO":        0.75,
     "DETIK":        0.70,
-    "ANTARA":       0.70,
+    "ANTARANEWS":   0.70,     # SYS-85: the stored source name ("ANTARA" never matched)
 }
 
 # SYS-40 (#126): the digest shows at most this many clusters per topic

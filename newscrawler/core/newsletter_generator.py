@@ -1,9 +1,11 @@
 import logging
 import os
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import date, datetime
-from typing import Callable, List, Optional
+from typing import Callable, List, Optional, Tuple
 
+from newscrawler.core import newsletter_copy as copy
+from newscrawler.core import newsletter_edition, story_summary
 from newscrawler.core.constants import (
     DIGESTS_DIR,
     EMBEDDING_MODEL_HF,
@@ -27,29 +29,8 @@ logger.setLevel(logging.INFO)
 SECTION_ORDER: List[str] = TOPICS_FINANCE + TOPICS_NEWS
 FALLBACK_TOPIC = "other_news"   # an article with no (or an unknown) topic
 SUMMARIES_KEY = "_summaries"    # newsletter_digests.categories: summary counts, not a topic (SYS-68)
-SECTION_TITLES = {
-    "markets":             "📈 Pasar",
-    "macro_policy":        "📊 Kebijakan & Makroekonomi",
-    "corporate":           "🏭 Korporasi",
-    "commodities_energy":  "🛢️ Komoditas & Energi",
-    "consumer":            "🛒 Konsumen & Bisnis",
-    "politics_government": "🏛️ Politik & Pemerintahan",
-    "law_crime":           "⚖️ Hukum & Kriminal",
-    "disaster_accident":   "🚨 Bencana & Kecelakaan",
-    "international":       "🌏 Internasional",
-    "tech_science":        "🔬 Teknologi & Sains",
-    "health_education":    "🏥 Kesehatan & Pendidikan",
-    "other_news":          "📰 Berita Lainnya",
-}
-
-_SUMMARIZE_PROMPT = (
-    "Buat rangkuman berita berikut dalam 3-5 poin dalam bahasa yang sama dengan artikel.\n"
-    "Fokus pada: apa yang terjadi, siapa yang terlibat, angka-angka penting.\n"
-    "Jika artikel membahas peristiwa yang berbeda, rangkum hanya peristiwa yang paling banyak dibahas "
-    "dan abaikan artikel yang tidak berkaitan.\n"
-    "Gunakan format bullet point dengan tanda '-'.\n\n"
-    "Artikel:\n{articles}"
-)
+EDITION_KEY = "_edition"        # ... and the 5-minute edition's stats (SYS-83), not a topic either
+SECTION_TITLES = copy.SECTION_TITLES   # SYS-84: the reader's strings live in newsletter_copy
 
 _MAX_LINKS = 3           # "Artikel terkait" links per cluster
 _LINK_LABEL_CHARS = 70   # headline characters in a link label
@@ -67,14 +48,21 @@ _STOP_REASONS = {
 @dataclass
 class SummaryStats:
     """SYS-68 (#216): how many of the shown clusters got a real summary. The
-    rest carry their top headlines, which is a different product -- the digest
-    footer, the newsletter_digests row and the log must all say so."""
+    rest carry their top headlines, which is a different product -- the
+    newsletter_digests row, the log and the operator's note must all say so
+    (and, SYS-84, the reader's notice at the top of the digest).
+
+    SYS-82 (#239): `first_try` is how many were accepted without a retry, and
+    `rejections` counts every refused answer by reason (json / length / number),
+    including the refusals a retry then repaired."""
     total: int = 0
     summarized: int = 0
     provider: Optional[str] = None
     stopped: Optional[str] = None      # a key of _STOP_REASONS once the calls stopped
     groups_ok: int = 0                 # SYS-67: sections whose clusters were grouped by story
     groups_failed: int = 0             # ... and those where the grouping failed (shown as ranked)
+    first_try: int = 0
+    rejections: dict = field(default_factory=lambda: {reason: 0 for reason in story_summary.REASONS})
 
     @property
     def fallback(self) -> int:
@@ -84,13 +72,16 @@ class SummaryStats:
     def share(self) -> float:
         return self.summarized / self.total if self.total else 1.0
 
-    def footer(self) -> str:
+    def describe(self) -> str:
+        """The operator's line (log, crawl_log note, Telegram): never the reader's document (SYS-84)."""
         line = f"Ringkasan AI: {self.summarized}/{self.total}"
         if self.provider:
             line += f" ({self.provider})"
         if self.fallback:
             reason = _STOP_REASONS.get(self.stopped, "sebagian ringkasan gagal")
             line += f" — {reason}; sisanya hanya daftar judul"
+        if any(self.rejections.values()):
+            line += " | ditolak " + ", ".join(f"{reason} {n}" for reason, n in self.rejections.items() if n)
         if self.groups_failed:
             line += f" | pengelompokan cerita gagal di {self.groups_failed} bagian"
         return line
@@ -101,12 +92,14 @@ class SummaryStats:
 
 class DigestPath(str):
     """The digest's path, carrying `note`: what a caller must tell the operator
-    about a degraded digest (None when every summary is real). Behaves as the
-    plain path everywhere else."""
+    about a degraded digest (None when every summary is real), and `edition`:
+    the 5-minute edition's path (SYS-83; None when it was not built). Behaves
+    as the plain path everywhere else."""
 
-    def __new__(cls, path: str, note: Optional[str] = None):
+    def __new__(cls, path: str, note: Optional[str] = None, edition: Optional[str] = None):
         obj = super().__new__(cls, path)
         obj.note = note
+        obj.edition = edition
         return obj
 
 
@@ -170,6 +163,13 @@ class NewsletterGenerator:
             f.write(md_content)
         logger.info(f"Digest written to {file_path}")
 
+        # SYS-83: the 5-minute edition, a second file; the digest above is the archive.
+        edition_stats, edition_file = self._write_edition(target_date, sections, articles, stats, file_path)
+        if edition_file is None:
+            missing = f"5-minute edition not built: {edition_stats.get('reason')}"
+            logger.error(missing)
+            note = f"{note}; {missing}" if note else missing
+
         # SYS-40: the digest's composition per topic, queryable from the row.
         composition = {
             sec["topic"]: {"articles": sec["article_count"], "clusters": sec["cluster_count"],
@@ -177,6 +177,7 @@ class NewsletterGenerator:
             for sec in sections
         }
         composition[SUMMARIES_KEY] = stats.as_dict()   # SYS-68: not a topic; readers skip "_" keys
+        composition[EDITION_KEY] = edition_stats
         cluster_count = sum(sec["cluster_count"] for sec in sections)
         generation_ms = _now_ms() - start_ms
         self.ds.save_digest(
@@ -190,8 +191,34 @@ class NewsletterGenerator:
         )
         logger.info(f"Newsletter generated in {generation_ms}ms: "
                     f"{cluster_count} clusters in {len(sections)} sections, {len(articles)} articles. "
-                    f"{stats.footer()}")
-        return DigestPath(file_path, note)
+                    f"{stats.describe()} | edition {edition_stats}")
+        return DigestPath(file_path, note, edition_file)
+
+    def _write_edition(self, target_date: date, sections: list, articles: list, stats: "SummaryStats",
+                       digest_path: str) -> Tuple[dict, Optional[str]]:
+        """(the `_edition` stats, the edition's path or None). A failure here
+        never costs the digest: it is logged and reported, and a stale edition
+        file of the same date is removed so it cannot be sent as today's."""
+        path = newsletter_edition.edition_path(digest_path)
+        # once the calls stopped (quota, outage), the editor is not asked either
+        editor = None if stats.stopped else self._summarizer
+        try:
+            edition = newsletter_edition.build(editor, sections, target_date, len(articles),
+                                               len(self._unique_sources(articles)))
+            if edition is None:
+                result = {"built": False, "reason": "no summarized story"}
+            else:
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write(edition.markdown)
+                logger.info(f"Edition written to {path} ({edition.words} words, {edition.utama} top stories, "
+                            f"{edition.sekilas} Sekilas lines, editor fallback: {edition.editor_fallback})")
+                return edition.stats(), path
+        except Exception as e:  # noqa: BLE001 -- the archive digest is already written and must be saved
+            logger.exception("5-minute edition failed")
+            result = {"built": False, "reason": f"{type(e).__name__}: {e}"[:300]}
+        if os.path.exists(path):
+            os.remove(path)
+        return result, None
 
     # ── Sections ──
 
@@ -302,21 +329,38 @@ class NewsletterGenerator:
         """What a cluster shows when no real summary was produced."""
         return "\n".join(f"- {a['headline']}" for a in self._top_articles(articles))
 
-    def summarize_cluster(self, articles: list) -> str:
-        """The summarizer's answer for one cluster. Raises QuotaExhausted or
-        SummarizerError; the caller decides what a failure costs."""
-        article_texts = "\n\n".join(
-            f"[{a['source']}] {a['headline']}\n{a['l1_text'][:500]}"
-            for a in self._top_articles(articles)
-        )
-        return self._summarizer.summarize(_SUMMARIZE_PROMPT.format(articles=article_texts))
+    def summarize_cluster(self, cluster: dict, rejections: list) -> Optional[story_summary.StorySummary]:
+        """SYS-82 (#239): the cluster's structured summary, or None when the
+        model's answer was refused twice (each refusal's reason is appended to
+        `rejections`). An accepted summary is applied to the cluster (SYS-80).
+        Raises QuotaExhausted or SummarizerError; the caller decides what a
+        failure costs."""
+        shown = story_summary.pick_articles(cluster["articles"])
+        cluster["source_text"] = story_summary.source_text(shown)   # the edition's number guard reads it
+        story = story_summary.summarize_story(self._summarizer, shown, rejections)
+        if story is not None:
+            self._apply_story(cluster, shown, story)
+        return story
+
+    def _apply_story(self, cluster: dict, shown: list, story: story_summary.StorySummary) -> None:
+        """SYS-80 (#236): the story is what the model summarized, so its headline
+        and links come only from the articles it marked `terkait`, and an
+        article it marked `tidak_terkait` no longer counts as a portal that
+        carried the story. Articles it did not see stay as clustered."""
+        unrelated = {id(shown[i]) for i in story.tidak_terkait}
+        related = [shown[i] for i in story.terkait]
+        cluster["story"] = story
+        cluster["headline"] = self._pick_cluster_headline(related)
+        cluster["sources"] = self._unique_sources([a for a in cluster["articles"] if id(a) not in unrelated])
+        cluster["links"] = self._top_links(related)
 
     def _summarize_sections(self, sections: list) -> SummaryStats:
         """SYS-68 (#216): summarize every shown cluster, counting the real
         summaries. A quota error stops the calls at once (the provider refuses
         all of them today); NEWSLETTER_MAX_CONSECUTIVE_SUMMARY_ERRORS failures
-        in a row stop them too (an outage). Every cluster without a summary
-        shows its headlines, and the stats say how many."""
+        in a row stop them too (an outage). A refused answer (SYS-82) is not an
+        outage: the provider answered. Every cluster without a summary shows
+        its headlines, and the stats say how many."""
         stats = SummaryStats(provider=getattr(self._summarizer, "name", None))
         if self._summarizer is None:
             stats.stopped = "no_provider"
@@ -326,12 +370,11 @@ class NewsletterGenerator:
         stats.total = len(clusters)
         consecutive_errors = 0
         for cluster in clusters:
+            story, rejections = None, []
             if not stats.stopped:
                 try:
-                    cluster["summary"] = self.summarize_cluster(cluster["articles"])
-                    stats.summarized += 1
+                    story = self.summarize_cluster(cluster, rejections)
                     consecutive_errors = 0
-                    continue
                 except QuotaExhausted as e:
                     stats.stopped = "quota"
                     quota = f" ({e.quota})" if e.quota else ""
@@ -341,7 +384,17 @@ class NewsletterGenerator:
                     logger.warning(f"Summarization failed ({consecutive_errors} in a row): {e}. Using headlines.")
                     if consecutive_errors >= NEWSLETTER_MAX_CONSECUTIVE_SUMMARY_ERRORS:
                         stats.stopped = "errors"
-            cluster["summary"] = self.headline_summary(cluster["articles"])
+            for reason in rejections:
+                stats.rejections[reason] += 1
+            if story is not None:
+                stats.summarized += 1
+                stats.first_try += not rejections
+                continue
+            if len(rejections) == 2:
+                logger.warning(f"Summary refused twice ({', '.join(rejections)}); showing the headlines of "
+                               f"{cluster['headline']!r}.")
+            cluster["story"] = None
+            cluster["fallback"] = self.headline_summary(cluster["articles"])
         return stats
 
     def _diversify(self, sections: list, stats: SummaryStats) -> None:
@@ -384,7 +437,7 @@ class NewsletterGenerator:
         operator needs, also logged at ERROR (SYS-68)."""
         if stats.total == 0 or stats.share >= NEWSLETTER_MIN_SUMMARY_SHARE:
             return None
-        note = f"digest degraded: {stats.footer()}"
+        note = f"digest degraded: {stats.describe()}"
         logger.error(note)
         return note
 
@@ -463,64 +516,76 @@ class NewsletterGenerator:
 
     @staticmethod
     def _link_label(link: dict) -> str:
-        """`SOURCE: headline`, the headline cut at a word. Every article of a
-        digest is from the digest's own day, so a date says nothing (SYS-69)."""
+        """`Outlet: headline`, the headline cut at a word. Every article of a
+        digest is from the digest's own day, so a date says nothing (SYS-69).
+        The outlet is its brand name, not the source enum (SYS-84)."""
         headline = " ".join(link["headline"].replace("[", "(").replace("]", ")").split())
         if len(headline) > _LINK_LABEL_CHARS:
             headline = headline[:_LINK_LABEL_CHARS].rsplit(" ", 1)[0].rstrip(" ,;:-") + "…"
-        return f"{link['source']}: {headline}" if headline else link["source"]
+        outlet = copy.outlet(link["source"])
+        return f"{outlet}: {headline}" if headline else outlet
+
+    def _render_cluster(self, cluster: dict) -> List[str]:
+        """SYS-82: `### judul`, the `inti` sentence, the `poin` bullets and
+        'Mengapa penting' when the story has a summary; the portal headline and
+        its headline list when it fell back. Then who reported it and the links."""
+        story = cluster.get("story")
+        if story is not None:
+            lines = [f"### {story.judul}", "", story.inti, ""] + [f"- {p}" for p in story.poin]
+            if story.poin:
+                lines.append("")
+            if story.mengapa_penting:
+                lines.append(f"**{copy.WHY_IT_MATTERS}** {story.mengapa_penting}")
+        else:
+            lines = [f"### {cluster['headline']}", "",
+                     cluster.get("fallback") or self.headline_summary(cluster["articles"]), ""]
+        outlets = [copy.outlet(s) for s in cluster["sources"]]
+        lines.append(f"**{copy.REPORTED_BY.format(n=len(outlets))}:** {' · '.join(outlets)}")
+        link_parts = [f"[{self._link_label(l)}]({l['link']})" for l in cluster["links"]]
+        if link_parts:
+            lines.append(f"**{copy.RELATED}** {' · '.join(link_parts)}")
+        return lines + [""]
 
     def _render_markdown(self, target_date: date, sections: list, all_articles: list,
                          stats: Optional[SummaryStats] = None) -> str:
-        lines = []
-        date_str = target_date.strftime("%-d %B %Y") if os.name != "nt" else \
-                   target_date.strftime("%d %B %Y").lstrip("0")
-        lines.append(f"# Rangkuman Berita — {date_str}")
-        lines.append(f"\n> Dibuat otomatis dari portal berita Indonesia | "
-                     f"{datetime.now().strftime('%H:%M')} WIB\n")
-        lines.append("---\n")
-
+        """The full digest (the archive). SYS-84: the reader's wording, a
+        notice at the top when some stories have no summary, and a footer that
+        says what the digest is made from and that AI wrote it -- the pipeline's
+        telemetry is the operator's (stats.describe()), not the reader's."""
+        lines = [f"# {copy.TITLE}", "", f"> {copy.DATELINE_FULL.format(tanggal=copy.tanggal(target_date))}", ""]
+        if stats is not None and stats.fallback:
+            lines += [f"> {copy.degraded(stats.fallback)}", ""]
+        lines += ["---", ""]
         for section in sections:
-            lines.append(f"## {SECTION_TITLES[section['topic']]}\n")
+            lines += [f"## {SECTION_TITLES[section['topic']]}", ""]
             for cluster in section["clusters"]:
-                lines.append(f"### {cluster['headline']}\n")
-                lines.append(cluster.get("summary") or "")
-                lines.append("")
-                sources_str = " · ".join(cluster["sources"])
-                lines.append(f"**Sumber ({len(cluster['sources'])} portal):** {sources_str}")
-                link_parts = [f"[{self._link_label(l)}]({l['link']})"
-                              for l in cluster["links"]]
-                if link_parts:
-                    lines.append(f"**Artikel terkait:** {' · '.join(link_parts)}")
-                lines.append("")
+                lines += self._render_cluster(cluster)
             if section["more"]:
-                lines.append(f"*…dan {section['more']} berita lainnya di bagian ini.*")
-            lines.append("\n---\n")
-
-        cluster_count = sum(sec["cluster_count"] for sec in sections)
-        footer = (f"*Total artikel hari ini: {len(all_articles)} | "
-                  f"Cluster teridentifikasi: {cluster_count} | "
-                  f"Dihasilkan: {datetime.now().strftime('%H:%M')} WIB")
-        if stats is not None:
-            footer += f" | {stats.footer()}"
-        lines.append(footer + "*")
+                lines.append(f"*{copy.MORE_IN_SECTION.format(n=copy.angka(section['more']))}*")
+            lines += ["", "---", ""]
+        lines.append(f"*{copy.footer(len(all_articles), len(self._unique_sources(all_articles)))}*")
         return "\n".join(lines) + "\n"
 
-    def _write_empty_digest(self, target_date: date, start_ms: int) -> Optional[str]:
+    def _write_empty_digest(self, target_date: date, start_ms: int) -> "DigestPath":
+        """SYS-84: an empty day says what it usually means (a collection
+        problem), in the reader's words. No edition is built for it."""
         os.makedirs(DIGESTS_DIR, exist_ok=True)
         file_name = target_date.strftime("%Y-%m-%d.md")
         file_path = os.path.join(DIGESTS_DIR, file_name)
-        date_str  = target_date.isoformat()
         with open(file_path, "w", encoding="utf-8") as f:
-            f.write(f"# Rangkuman Berita — {date_str}\n\n"
-                    f"> Tidak ada artikel hari ini.\n")
+            f.write(f"# {copy.TITLE}\n\n"
+                    f"> {copy.DATELINE_FULL.format(tanggal=copy.tanggal(target_date))}\n\n"
+                    f"{copy.empty_day(target_date)}\n")
+        stale_edition = newsletter_edition.edition_path(file_path)
+        if os.path.exists(stale_edition):
+            os.remove(stale_edition)
         generation_ms = _now_ms() - start_ms
         self.ds.save_digest(
             digest_date=target_date, file_path=file_path,
             cluster_count=0, article_count=0, categories={},
             source_ids=[], generation_ms=generation_ms,
         )
-        return file_path
+        return DigestPath(file_path)
 
 
 def _now_ms() -> int:

@@ -5,7 +5,9 @@ OPS-38 (#212): the scheduled newsletter entry point.
 `task=newsletter` had no scheduled job, so `digests/` held two hand-run files.
 This runs it once a day for the previous full day, then reports in Telegram
 what the digest is: its path, articles, clusters and how many summaries are
-real (SYS-68), or that it FAILED, was DEGRADED or EMPTY.
+real (SYS-68), or that it FAILED, was DEGRADED or EMPTY. Then the reader's
+delivery (OPS-43): a message with the 5-minute edition's 60-second block and
+the edition as a phone PDF; the full digest stays in digests/ as the archive.
 
     python scripts/run_scheduled_newsletter.py                  # yesterday
     python scripts/run_scheduled_newsletter.py --date 2026-10-03
@@ -55,6 +57,7 @@ logger.setLevel(logging.INFO)
 
 LOG_DIR = os.getenv("SCHEDULE_LOG_DIR", os.path.join(REPO_ROOT, "logs"))
 LOG_KEEP = int(os.getenv("SCHEDULE_NEWSLETTER_LOG_KEEP", "28"))
+MESSAGE_MAX_CHARS = 4096   # Telegram's limit for one message
 
 
 def default_date(today=None) -> date:
@@ -160,25 +163,110 @@ def _run(target_date, log_path) -> int:
     logger.info("SUMMARY: %s", line)
     _notify(line + (" · log %s" % log_path if log_path else ""))
     if row is not None and row.article_count:
-        _send_pdf(target_date, str(path))
+        _deliver(target_date, str(path), getattr(path, "edition", None), row)
     return 1 if row is not None and not row.article_count else 0
 
 
-def _send_pdf(target_date, markdown_path) -> bool:
-    """OPS-40 (#235): the digest as a PDF in Telegram. The digest was built, so a
-    PDF that cannot be rendered or sent is a WARNING and a Telegram line, never a
-    different exit code."""
+def _deliver(target_date, digest_path, edition_path, row) -> None:
+    """OPS-43 (#243): what the reader gets. Normally a message with the edition's
+    60-second block, then the edition's phone PDF; the full digest stays in
+    digests/ (the archive) and is not sent. Without an edition: a message that
+    says so (and why some stories have no summary, when that is the reason) and
+    the full digest's PDF, as before OPS-43. Each step's failure is reported
+    and never stops the next one or changes the exit code."""
+    if edition_path:
+        pdf_path = _render_pdf(target_date, edition_path, edition=True)
+        try:
+            from newscrawler.core.newsletter_edition import briefing
+            with open(edition_path, encoding="utf-8") as f:
+                sentences, top = briefing(f.read())
+        except Exception as e:  # noqa: BLE001
+            logger.warning("edition %s unreadable for the message: %s: %s", edition_path, type(e).__name__, e)
+            sentences, top = [], 0
+        _send_message(edition_message(target_date, sentences, top, pdf_ok=pdf_path is not None))
+    else:
+        _send_message(no_edition_message(target_date, row))
+        pdf_path = _render_pdf(target_date, digest_path, edition=False)
+    if pdf_path is not None:
+        _send_pdf_file(target_date, pdf_path)
+
+
+def edition_message(target_date, sentences, top_count, pdf_ok=True) -> str:
+    """The reader's Telegram message (HTML, content escaped): header, the 60-second
+    sentences as bullets, and where the rest is. Kept under Telegram's 4,096
+    characters by dropping sentences from the end (5 sentences of <= 18 words
+    never come near it)."""
+    from html import escape
+
+    from newscrawler.core import newsletter_copy as copy
+    header = copy.MESSAGE_HEADER.format(title="<b>%s</b>" % escape(copy.TITLE),
+                                        tanggal=escape(copy.tanggal_pendek(target_date)))
+    last = copy.MESSAGE_OPEN_PDF.format(n=top_count) if pdf_ok else copy.MESSAGE_NO_PDF
+    sentences = list(sentences)
+    while True:
+        text = "\n".join([header, ""] + ["• %s" % escape(s, quote=False) for s in sentences] + ["", escape(last)])
+        if len(text) <= MESSAGE_MAX_CHARS or not sentences:
+            return text
+        sentences.pop()
+
+
+def no_edition_message(target_date, row) -> str:
+    """The message when the 5-minute edition was not built: it says so, plus
+    SYS-84's notice when some stories have no summary; the full digest's PDF follows."""
+    from html import escape
+
+    from newscrawler.core import newsletter_copy as copy
+    header = copy.CAPTION.format(title="<b>%s</b>" % escape(copy.TITLE),
+                                 tanggal=escape(copy.tanggal_pendek(target_date)))
+    lines = [header, "", escape(copy.MESSAGE_NO_EDITION)]
+    categories = row.categories if isinstance(getattr(row, "categories", None), dict) else {}
+    counts = categories.get("_summaries") or {}
+    missing = (counts.get("total") or 0) - (counts.get("summarized") or 0)
+    if missing > 0:
+        lines.append(escape(copy.degraded(missing)))
+    return "\n".join(lines)
+
+
+def _render_pdf(target_date, markdown_path, edition):
+    """The PDF's path -- the phone layout for the edition (OPS-42), A4 for the
+    full digest (OPS-40) -- or None after reporting why it could not be made."""
     try:
-        from newscrawler.core.newsletter_pdf import render_digest_pdf
-        pdf_path = render_digest_pdf(markdown_path)
+        from newscrawler.core import newsletter_pdf
+        render = newsletter_pdf.render_edition_pdf if edition else newsletter_pdf.render_digest_pdf
+        return render(markdown_path)
     except Exception as e:  # noqa: BLE001
         logger.exception("newsletter PDF could not be rendered")
         _notify("PDF %s not made: %s: %s" % (target_date, type(e).__name__, str(e)[:200]))
-        return False
+        return None
+
+
+def _send_message(text) -> bool:
+    """The reader's message; a failure is reported to the operator, never raised."""
+    try:
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        from notify_telegram import send_html
+        ok = send_html(text)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Telegram message failed: %s: %s", type(e).__name__, e)
+        ok = False
+    if ok:
+        logger.info("Reader message sent")
+    else:
+        logger.warning("Reader message not delivered")
+        _notify("reader message not delivered to Telegram")
+    return ok
+
+
+def _send_pdf_file(target_date, pdf_path) -> bool:
+    """OPS-40 (#235): the PDF in Telegram, captioned with the date in Indonesian
+    (SYS-81). The newsletter was built, so a PDF that cannot be sent is a
+    WARNING and a Telegram line, never a different exit code."""
     try:
         sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
         from notify_telegram import send_document
-        ok = send_document(pdf_path, "Rangkuman Berita %s" % target_date)
+
+        from newscrawler.core.newsletter_copy import caption
+        ok = send_document(pdf_path, caption(target_date))
     except Exception as e:  # noqa: BLE001
         logger.warning("Telegram document failed: %s: %s", type(e).__name__, e)
         ok = False

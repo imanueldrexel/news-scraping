@@ -14,6 +14,7 @@ import pytest
 import newscrawler.core.newsletter_generator as ng
 import newscrawler.core.story_grouping as sg
 from newscrawler.core.summarizer import QuotaExhausted, SummarizerError
+from tests.unit.newsletter_fakes import prompt_kind, story_answer
 
 SECTION = [
     ["Komisi XIII DPR Cecar Dirjenpas Soal Hunian Mewah Lapas Cibinong", "6 Kesimpulan Hasil Rapat DPR dan Ditjenpas"],
@@ -34,19 +35,26 @@ def _clusters(headline_groups=SECTION):
 
 
 class FakeSummarizer:
+    """Answers the grouping prompt with `group_answer`, a summary prompt with a
+    valid SYS-82 answer and the editor prompt with what is not JSON (the edition
+    then takes its deterministic fallback)."""
     name = "fake-model"
 
-    def __init__(self, group_answer=REAL_ANSWER, summary="- ringkasan"):
+    def __init__(self, group_answer=REAL_ANSWER):
         self.group_answer = group_answer
-        self.summary = summary
         self.prompts = []
 
     def summarize(self, prompt):
         self.prompts.append(prompt)
-        answer = self.group_answer if "Balas HANYA dengan JSON" in prompt else self.summary
+        kind = prompt_kind(prompt)
+        answer = {"group": self.group_answer, "story": None, "editor": "bukan json"}[kind]
         if isinstance(answer, Exception):
             raise answer
-        return answer
+        return story_answer(prompt) if kind == "story" else answer
+
+
+def _grouping(prompts):
+    return [p for p in prompts if prompt_kind(p) == "group"]
 
 
 class TestParseGroups:
@@ -174,13 +182,13 @@ class TestGeneratorShowsAStoryAtMostTwice:
         assert len(scandal) == 2, headings
         assert "Remaja Makassar" in text and "Kejagung Tahan" in text and "Kanwil BPN" in text
         assert "dan 3 berita lainnya" in text                     # 8 clusters, 5 shown
-        grouping_calls = [p for p in s.prompts if "Balas HANYA dengan JSON" in p]
+        grouping_calls = _grouping(s.prompts)
         assert len(grouping_calls) == 1                           # one call for the section, before the summaries
         assert s.prompts.index(grouping_calls[0]) == 0
-        # a cluster that mixes two cases is summarized by the event most of its articles are about
-        summary_prompts = [p for p in s.prompts if "Balas HANYA dengan JSON" not in p]
+        # a cluster that mixes two cases is summarized by the event most of its articles are about (SYS-82)
+        summary_prompts = [p for p in s.prompts if prompt_kind(p) == "story"]
         assert len(summary_prompts) == 5
-        assert all("rangkum hanya peristiwa yang paling banyak dibahas" in p for p in summary_prompts)
+        assert all("Tentukan SATU peristiwa yang dibahas paling banyak artikel" in p for p in summary_prompts)
 
     def test_the_more_line_counts_hidden_clusters_and_articles_in_no_cluster(self, monkeypatch, tmp_path):
         """DBT-51 (#221): after grouping, 'dan N berita lainnya' is the clusters the story
@@ -215,8 +223,10 @@ class TestGeneratorShowsAStoryAtMostTwice:
         path = self._run(gen, ds, monkeypatch, tmp_path)
         text = open(path, encoding="utf-8").read()
         assert text.count("### ") == 5                            # the five best, as before
-        assert "pengelompokan cerita gagal di 1 bagian" in text
-        assert ds.save_digest.call_args.kwargs["categories"][ng.SUMMARIES_KEY]["groups_failed"] == 1
+        stats = ds.save_digest.call_args.kwargs["categories"][ng.SUMMARIES_KEY]
+        assert stats["groups_failed"] == 1
+        # the operator's line says so (since SYS-84 the reader's document carries no telemetry)
+        assert "pengelompokan cerita gagal di 1 bagian" in ng.SummaryStats(**stats).describe()
 
     def test_quota_while_grouping_stops_every_call(self, monkeypatch, tmp_path, caplog):
         s = FakeSummarizer(group_answer=QuotaExhausted("429", "PerDay"))
@@ -224,7 +234,7 @@ class TestGeneratorShowsAStoryAtMostTwice:
         with caplog.at_level(logging.WARNING, logger=ng.logger.name):
             path = self._run(gen, ds, monkeypatch, tmp_path)
         assert len(s.prompts) == 1                                # the grouping call was the only call
-        assert "kuota harian habis" in open(path, encoding="utf-8").read()
+        assert "kuota harian habis" in path.note
         assert any("while grouping stories" in r.message for r in caplog.records)
 
     def test_zero_turns_the_grouping_off(self, monkeypatch, tmp_path):
@@ -232,21 +242,21 @@ class TestGeneratorShowsAStoryAtMostTwice:
         gen, ds = self._generator(monkeypatch, s)
         monkeypatch.setattr(ng, "NEWSLETTER_MAX_CLUSTERS_PER_STORY", 0)
         self._run(gen, ds, monkeypatch, tmp_path)
-        assert not [p for p in s.prompts if "Balas HANYA dengan JSON" in p]
+        assert not _grouping(s.prompts)
 
     def test_consecutive_grouping_failures_stop_the_calls(self, monkeypatch, tmp_path):
         monkeypatch.setattr(ng, "NEWSLETTER_MAX_CONSECUTIVE_SUMMARY_ERRORS", 1)
         s = FakeSummarizer(group_answer=SummarizerError("down"))
         gen, ds = self._generator(monkeypatch, s)
         path = self._run(gen, ds, monkeypatch, tmp_path)
-        assert len(s.prompts) == 1 and "layanan gagal berulang" in open(path, encoding="utf-8").read()
+        assert len(s.prompts) == 1 and "layanan gagal berulang" in path.note
 
     def test_a_section_with_no_more_clusters_than_one_story_may_take_needs_no_call(self, monkeypatch, tmp_path):
         s = FakeSummarizer()
         gen, ds = self._generator(monkeypatch, s)
         monkeypatch.setattr(ng, "NEWSLETTER_MAX_CLUSTERS_PER_STORY", 8)
         self._run(gen, ds, monkeypatch, tmp_path)
-        assert not [p for p in s.prompts if "Balas HANYA dengan JSON" in p]
+        assert not _grouping(s.prompts)
 
     def test_the_raw_answer_never_reaches_the_digest(self, monkeypatch, tmp_path):
         gen, ds = self._generator(monkeypatch, FakeSummarizer())

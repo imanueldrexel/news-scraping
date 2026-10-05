@@ -357,3 +357,46 @@ class TestSendDocument:
             r.post.return_value = MagicMock(status_code=500, text="x")
             mod.send_document(pdf)
         assert not os.path.exists(_outbox["path"])
+
+
+class TestSendHtml:
+    """OPS-43 (#243): the reader's message goes out in Telegram HTML; it never raises."""
+
+    @pytest.fixture
+    def mod(self):
+        m = _load()
+        m.TELEGRAM_BOT_TOKEN = "123:secret"
+        m.TELEGRAM_CHAT_ID = "42"
+        return m
+
+    def test_the_text_is_sent_as_html_to_the_chat(self, mod):
+        with patch.object(mod, "requests") as r:
+            r.post.return_value = MagicMock(status_code=200)
+            assert mod.send_html("<b>Rangkuman Berita</b>") is True
+        assert r.post.call_args[0][0].endswith("/sendMessage")
+        assert r.post.call_args[1]["json"] == {"chat_id": "42", "text": "<b>Rangkuman Berita</b>",
+                                               "parse_mode": "HTML", "disable_web_page_preview": True}
+
+    def test_missing_config_or_an_over_long_text_returns_false_without_a_request(self, mod):
+        with patch.object(mod, "requests") as r:
+            assert mod.send_html("x" * (mod.MESSAGE_MAX_CHARS + 1)) is False
+            mod.TELEGRAM_CHAT_ID = None
+            assert mod.send_html("ok") is False
+            r.post.assert_not_called()
+
+    def test_a_transient_failure_is_retried_and_a_refusal_is_not(self, mod, _outbox):
+        with patch.object(mod, "requests") as r:
+            r.post.side_effect = [MagicMock(status_code=429, text="slow down"), MagicMock(status_code=200)]
+            assert mod.send_html("x") is True
+        assert r.post.call_count == 2
+        with patch.object(mod, "requests") as r:
+            r.post.return_value = MagicMock(status_code=400, text="can't parse entities")
+            assert mod.send_html("x") is False
+        assert r.post.call_count == 1
+
+    def test_a_failed_message_is_not_queued_and_never_logs_the_token(self, mod, _outbox, caplog):
+        with patch.object(mod, "requests") as r:
+            r.post.side_effect = OSError("HTTPSConnectionPool: /bot123:secret/sendMessage timed out")
+            assert mod.send_html("x") is False
+        assert not os.path.exists(_outbox["path"])
+        assert "secret" not in caplog.text and "bot<redacted>" in caplog.text

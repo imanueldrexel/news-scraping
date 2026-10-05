@@ -50,22 +50,23 @@ class TestTopLinks:
 
 
 class TestLinkLabel:
-    def test_a_label_is_source_and_headline(self):
+    def test_a_label_is_the_outlets_brand_name_and_the_headline(self):
+        """SYS-84: the reader sees 'Kontan', not the source enum 'KONTAN'."""
         link = {"source": "KONTAN", "headline": "Rupiah menguat"}
-        assert ng.NewsletterGenerator._link_label(link) == "KONTAN: Rupiah menguat"
+        assert ng.NewsletterGenerator._link_label(link) == "Kontan: Rupiah menguat"
 
     def test_a_long_headline_is_cut_at_a_word(self):
         link = {"source": "KONTAN", "headline": "kata " * 40}
         label = ng.NewsletterGenerator._link_label(link)
-        assert label.endswith("kata…") and len(label) <= len("KONTAN: ") + ng._LINK_LABEL_CHARS + 1
+        assert label.endswith("kata…") and len(label) <= len("Kontan: ") + ng._LINK_LABEL_CHARS + 1
 
     def test_brackets_in_a_headline_cannot_break_the_markdown_link(self):
         link = {"source": "KONTAN", "headline": "[Update] IHSG [naik]"}
         label = ng.NewsletterGenerator._link_label(link)
         assert "[" not in label and "]" not in label
 
-    def test_an_empty_headline_leaves_the_source(self):
-        assert ng.NewsletterGenerator._link_label({"source": "KONTAN", "headline": "  "}) == "KONTAN"
+    def test_an_empty_headline_leaves_the_outlet(self):
+        assert ng.NewsletterGenerator._link_label({"source": "KONTAN", "headline": "  "}) == "Kontan"
 
 
 class TestRendered:
@@ -77,5 +78,5 @@ class TestRendered:
         md = gen._render_markdown(date(2026, 9, 28), [section], arts)
         line = next(l for l in md.splitlines() if l.startswith("**Artikel terkait:**"))
         assert line.count("](http") == 3
-        assert "[KONTAN: Rupiah menguat](http://x/1)" in line
+        assert "[Kontan: Rupiah menguat](http://x/1)" in line
         assert "28 September 2026" not in line

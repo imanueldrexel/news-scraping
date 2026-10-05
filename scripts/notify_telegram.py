@@ -249,6 +249,50 @@ def send_document(path: str, caption: str = "") -> bool:
     return ok
 
 
+# Telegram refuses a message longer than this (characters, after entity parsing).
+MESSAGE_MAX_CHARS = 4096
+
+
+def _post_html(text: str):
+    """One sendMessage attempt in HTML parse mode. (ok, retryable, reason); never raises."""
+    try:
+        response = requests.post(
+            f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+            json={"chat_id": TELEGRAM_CHAT_ID, "text": text, "parse_mode": "HTML",
+                  "disable_web_page_preview": True},
+            timeout=10,
+        )
+    except Exception as e:  # noqa: BLE001
+        return False, True, f"{type(e).__name__}: {redact(e)}"
+    if response.status_code == 200:
+        return True, False, ""
+    retryable = response.status_code == 429 or response.status_code >= 500
+    return False, retryable, f"Telegram API returned {response.status_code}: {redact(response.text[:500])}"
+
+
+def send_html(text: str) -> bool:
+    """OPS-43 (#243): a reader's message (the newsletter's 60-second block),
+    `text` already in Telegram HTML with its content escaped. True on success,
+    False on any failure -- never raises. Retried like a document and, like a
+    document, never queued in the outbox: yesterday's briefing delivered late,
+    before some other alert, would only confuse."""
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        logger.error("TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID not set -- message not sent")
+        return False
+    if len(text) > MESSAGE_MAX_CHARS:
+        logger.error(f"message is {len(text)} characters, over Telegram's {MESSAGE_MAX_CHARS}: not sent")
+        return False
+    ok, retryable, reason = _post_html(text)
+    for delay in RETRY_DELAYS:
+        if ok or not retryable:
+            break
+        time.sleep(delay)
+        ok, retryable, reason = _post_html(text)
+    if not ok:
+        logger.error(f"Failed to send Telegram message: {reason}")
+    return ok
+
+
 def main(argv=None) -> int:
     """The command-line test (OPERATIONS.md, step 5). The operator is checking
     the setup now, so a failure is reported now and never queued: delivered
