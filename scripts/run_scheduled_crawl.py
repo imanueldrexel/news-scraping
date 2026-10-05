@@ -298,6 +298,37 @@ def run_one(worker, website, task, timeout=SOURCE_TIMEOUT):
         return "failed", "%s: %s" % (type(e).__name__, str(e)[:200])
 
 
+# SYS-79 (#234): reasons that clear on their own. A source that failed with one of these is tried once more
+# after the phase; a 403, a 404 or a parse error is not (it would fail the same way).
+TRANSIENT_MARKERS = ("NameResolutionError", "ConnectionError", "ConnectionReset", "Connection aborted",
+                     "RemoteDisconnected", "timed out", "Timeout", "HTTP 5", "HTTP 429")
+RETRY_PAUSE_S = int(os.getenv("SCHEDULE_RETRY_PAUSE_S", "20"))
+
+
+def is_transient_failure(status, detail) -> bool:
+    """A source that FAILED (not timed out or killed: its process is gone) for a reason that clears on its own."""
+    return status == "failed" and any(marker in (detail or "") for marker in TRANSIENT_MARKERS)
+
+
+def retry_transient_failures(results, rerun, may_start):
+    """SYS-79: retry, once each, the sources of one phase that failed transiently.
+
+    `results`: {source: (status, detail)}, updated in place. `rerun(source)` -> (status, detail).
+    `may_start(source)` -> False when the run budget no longer allows another source. A source that
+    recovers counts as ok; one that fails again keeps the retry's reason. Returns {source: first reason}
+    for the recovered ones, so the summary can tell a blip from a broken source."""
+    recovered = {}
+    for source in [s for s, (status, detail) in results.items() if is_transient_failure(status, detail)]:
+        if not may_start(source):
+            continue
+        first_reason = results[source][1]
+        status, detail = rerun(source)
+        results[source] = (status, detail)
+        if status == "ok":
+            recovered[source] = first_reason
+    return recovered
+
+
 def db_now(session):
     """The database's clock. crawl_log.started_at is stamped by the DB's NOW(), so
     a window compared against it has to come from the same clock."""
@@ -538,6 +569,7 @@ def _run(args, log_path=None) -> int:
     from newscrawler.tools.run_lock import RunLock
     phase_results = {}
     stopped, not_run = "", []
+    retry_note = ""
     # OPS-26: held until the worker, which keeps FAISS in memory, is closed.
     with RunLock(**({"path": RUN_LOCK_PATH} if RUN_LOCK_PATH else {})):
         logger.info("building the crawler in its worker process (models + FAISS; this is the slow part)...")
@@ -578,6 +610,27 @@ def _run(args, log_path=None) -> int:
                         stopped = ("STOPPED: the crawler could not start %d times in a row (%s)"
                                    % (failed_starts, detail[len("crawler could not start: "):][:200]))
                         logger.error("%s; the remaining sources are not run", stopped)
+                if phase == "sitemap" and not stopped and any(is_transient_failure(*r) for r in results.values()):
+                    time.sleep(RETRY_PAUSE_S)
+
+                    def rerun(website):
+                        logger.info("retrying %s/sitemap once (it failed: %s)", website, results[website][1])
+                        with client.get_session() as session:
+                            since = db_now(session)
+                        status, detail = run_one(worker, website, "sitemap", timeout=timeout_for(website, args.timeout))
+                        if status not in ("ok", "init_failed") and not worker.alive:
+                            with client.get_session() as session:
+                                _close_abandoned_log_rows(session, website, "sitemap", since,
+                                                          abandon_reason(status, detail, log_path))
+                        logger.info("[sitemap retry] %s -> %s%s", website, status, " (%s)" % detail if detail else "")
+                        return status, detail
+                    recovered = retry_transient_failures(
+                        results, rerun,
+                        lambda website: not over_budget(time.monotonic() - run_started, timeout_for(website, args.timeout)))
+                    if recovered:
+                        retry_note = "recovered on retry: " + ", ".join(sorted(recovered))
+                        logger.warning("%s (first reasons: %s)", retry_note,
+                                       "; ".join("%s: %s" % (k, v[:80]) for k, v in sorted(recovered.items())))
                 phase_results[phase] = results
         finally:
             worker.close()
@@ -611,7 +664,7 @@ def _run(args, log_path=None) -> int:
         store = "store check FAILED: %s: %s" % (type(e).__name__, str(e)[:200])
 
     line = summary_line(phase_results, deltas, zero_savers, skipped,
-                        extra=(stopped, budget_note, store, "log %s" % log_path if log_path else ""))
+                        extra=(stopped, budget_note, retry_note, store, "log %s" % log_path if log_path else ""))
     logger.info("SUMMARY: %s", line)
     _notify(line)
 

@@ -693,3 +693,134 @@ class TestStarvationOrder:
         monkeypatch.setattr(rc, "RUN_BUDGET", 1000)
         seen = harness(argv=("--phase", "full_text", "--timeout", "900"))
         assert "full_text projected 2700s > budget 1000s" in seen["notified"][-1]
+
+
+class _FlakyWorker(_ScriptedWorker):
+    """Like _ScriptedWorker, but `sequences[(site, task)]` is a list of outcomes played in order,
+    the last one repeating: a source that fails once and then works."""
+
+    def __init__(self, sequences):
+        super().__init__({})
+        self.sequences = {k: list(v) for k, v in sequences.items()}
+
+    def run(self, website, task, timeout):
+        if not self.alive:
+            self.start()
+        self.calls.append((website, task))
+        queue = self.sequences.get((website, task), [("ok", "")])
+        status, detail = queue.pop(0) if len(queue) > 1 else queue[0]
+        return status, detail
+
+
+DNS = ("failed", "SitemapIndexUnavailable: sitemap index did not load: NameResolutionError after 3 retries")
+
+
+class TestIsTransientFailure:
+    """SYS-79 (#234): which failures are worth one more try."""
+
+    @pytest.mark.parametrize("detail", [
+        "SitemapIndexUnavailable: sitemap index did not load: NameResolutionError after 3 retries",
+        "SitemapIndexUnavailable: sitemap index did not load: HTTP 503",
+        "SitemapIndexUnavailable: sitemap index did not load: HTTP 500",
+        "OSError: Connection aborted.",
+        "ConnectionError: reset by peer",
+        "ReadTimeout: HTTPSConnectionPool timed out",
+        "SitemapIndexUnavailable: sitemap index did not load: HTTP 429",
+    ])
+    def test_a_failure_that_clears_on_its_own(self, detail):
+        assert rc.is_transient_failure("failed", detail)
+
+    @pytest.mark.parametrize("detail", [
+        "SitemapIndexUnavailable: sitemap index did not load: HTTP 403",
+        "SitemapIndexUnavailable: sitemap index did not load: HTTP 404",
+        "AttributeError: 'NoneType' object has no attribute 'find_all'",
+        "ValueError: unknown website",
+        "",
+    ])
+    def test_a_failure_that_would_repeat(self, detail):
+        assert not rc.is_transient_failure("failed", detail)
+
+    @pytest.mark.parametrize("status", ["timeout", "init_failed", "ok"])
+    def test_only_a_failed_source_is_retried(self, status):
+        assert not rc.is_transient_failure(status, "NameResolutionError after 3 retries")
+
+
+class TestRetryTransientFailures:
+    def test_a_recovered_source_is_ok_and_reported_with_its_first_reason(self):
+        results = {"A": ("failed", "NameResolutionError x"), "B": ("ok", ""), "C": ("failed", "HTTP 403")}
+        reran = []
+        recovered = rc.retry_transient_failures(results, lambda s: reran.append(s) or ("ok", ""), lambda s: True)
+        assert reran == ["A"] and recovered == {"A": "NameResolutionError x"}
+        assert results == {"A": ("ok", ""), "B": ("ok", ""), "C": ("failed", "HTTP 403")}
+
+    def test_a_source_that_fails_again_stays_failed_with_the_new_reason(self):
+        results = {"A": ("failed", "NameResolutionError x")}
+        recovered = rc.retry_transient_failures(results, lambda s: ("failed", "HTTP 503"), lambda s: True)
+        assert recovered == {} and results == {"A": ("failed", "HTTP 503")}
+
+    def test_each_source_is_tried_once_only(self):
+        calls = []
+        rc.retry_transient_failures({"A": ("failed", "NameResolutionError x")},
+                                    lambda s: calls.append(s) or ("failed", "NameResolutionError y"), lambda s: True)
+        assert calls == ["A"]
+
+    def test_the_budget_can_forbid_a_retry(self):
+        results = {"A": ("failed", "NameResolutionError x")}
+        assert rc.retry_transient_failures(results, lambda s: pytest.fail("started"), lambda s: False) == {}
+        assert results["A"][0] == "failed"
+
+
+class TestSitemapRetryInTheRun:
+    """SYS-79: the 2026-10-05 07:00 crawl lost ANTARANEWS, BERITASATU, CNBC and CNN to a DNS outage of
+    about 90 seconds at its start; the run never tried them again."""
+
+    @pytest.fixture(autouse=True)
+    def _no_pause(self, monkeypatch):
+        self.pauses = []
+        monkeypatch.setattr(rc.time, "sleep", self.pauses.append)
+
+    def test_sources_that_failed_on_dns_are_retried_and_the_summary_says_so(self, harness):
+        worker = _FlakyWorker({("KOMPAS", "sitemap"): [DNS, ("ok", "")], ("CNBC", "sitemap"): [DNS, ("ok", "")]})
+        seen = harness(worker=worker)
+        assert seen["rc"] == 0
+        assert worker.calls == [("KOMPAS", "sitemap"), ("TEMPO", "sitemap"), ("CNBC", "sitemap"),
+                                ("KOMPAS", "sitemap"), ("CNBC", "sitemap")], "TEMPO was fine and is not retried"
+        summary = seen["notified"][-1]
+        assert "FAILED" not in summary and "recovered on retry: CNBC, KOMPAS" in summary
+        assert self.pauses == [rc.RETRY_PAUSE_S], "one pause before the retries"
+
+    def test_a_403_is_not_retried_and_stays_failed(self, harness):
+        worker = _FlakyWorker({("CNBC", "sitemap"): [("failed", "SitemapIndexUnavailable: sitemap index did not load: HTTP 403")]})
+        seen = harness(worker=worker)
+        assert seen["rc"] == 1 and "FAILED: CNBC" in seen["notified"][-1]
+        assert worker.calls.count(("CNBC", "sitemap")) == 1 and self.pauses == []
+
+    def test_a_source_that_fails_twice_is_failed_and_not_reported_as_recovered(self, harness):
+        worker = _FlakyWorker({("CNBC", "sitemap"): [DNS]})
+        seen = harness(worker=worker)
+        assert seen["rc"] == 1 and "FAILED: CNBC" in seen["notified"][-1]
+        assert "recovered on retry" not in seen["notified"][-1]
+        assert worker.calls.count(("CNBC", "sitemap")) == 2
+
+    def test_a_timeout_is_not_retried(self, harness):
+        worker = _FlakyWorker({("CNBC", "sitemap"): [("timeout", "killed after 1200s")]})
+        seen = harness(worker=worker)
+        assert worker.calls.count(("CNBC", "sitemap")) == 1 and "FAILED: CNBC" in seen["notified"][-1]
+
+    def test_no_retry_starts_past_the_run_budget(self, harness, monkeypatch):
+        checks = []
+        monkeypatch.setattr(rc, "over_budget", lambda elapsed, timeout, budget=None: checks.append(1) or len(checks) > 2)
+        worker = _FlakyWorker({("KOMPAS", "sitemap"): [DNS, ("ok", "")]})
+        seen = harness(worker=worker)
+        assert worker.calls.count(("KOMPAS", "sitemap")) == 1 and "FAILED: KOMPAS" in seen["notified"][-1]
+
+    def test_a_healthy_run_pauses_and_retries_nothing(self, harness):
+        worker = _FlakyWorker({})
+        seen = harness(worker=worker)
+        assert seen["rc"] == 0 and len(worker.calls) == 3 and self.pauses == []
+        assert "recovered on retry" not in seen["notified"][-1]
+
+    def test_the_full_text_phase_is_not_retried(self, harness):
+        worker = _FlakyWorker({("CNBC", "full_text"): [("failed", "OSError: Connection aborted.")]})
+        seen = harness(worker=worker, argv=("--phase", "both"))
+        assert worker.calls.count(("CNBC", "full_text")) == 1 and "FAILED: CNBC" in seen["notified"][-1]
