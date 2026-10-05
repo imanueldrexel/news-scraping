@@ -61,7 +61,7 @@ QA report: `.10x/reviews/2026-10-05-qa-report.md`. Evidence and numbers: EXPERIM
 
 Mutants: 112 newsletter mutants in `qa_mutation_runner.py` (re-pointed where code moved). Tooling: `replay_newsletter_edition.py` writes `<date>-stories.json`; `check_story_subjects.py`, `probe_echo_guard.py` re-measure offline.
 
-**The replay round was cut short by the SumoPod key budget ($5.00, exhausted ~23:00 2026-10-05).** That key also serves the 21:00 extraction (stopped at 6,081/6,090) and the 12:00 newsletter. Valid v7 days: 10-03, 10-04 only; the after-retry share with the final SYS-80 code is measured on those two (100%, 98.9%).
+**The replay round was cut short when the SumoPod prepaid balance ran out (~23:00 2026-10-05; owner: not topped up).** That account also serves the 21:00 extraction (stopped at 6,081/6,090) and the 12:00 newsletter. Valid v7 days: 10-03, 10-04 only; the after-retry share with the final SYS-80 code is measured on those two (100%, 98.9%).
 
 ## Tech debt
 - `notify_telegram.send_html` duplicates `send_document`'s retry loop (kept separate so the OPS-40 mutants' patterns stay valid).

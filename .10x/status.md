@@ -109,4 +109,4 @@
 - [x] SYS-87 #247 numbers by value; OPS-44 #248 follow-up "PDF tidak tersedia"; DBT-56/57/58 tests; DBT-59 #254 (found: vacuous test) fixed.
 - [~] SYS-88 #249 code done (ingest, page title, newsletter read path); backfill script dry run 2,410 rows; **apply awaits the owner**.
 - Tests: unit 2,387 passed; integration 183 passed; 112 newsletter mutants (see ticket comments).
-- **Blocker for 2026-10-06 12:00: the SumoPod key's $5.00 budget was exhausted ~23:00.** The 21:00 extraction stopped (6,081/6,090, $2.04); the newsletter will get no summaries (headline lists, no edition) unless the owner raises the key's budget. The replays of this session spent part of it (~15 replayed days, roughly $0.2-0.3).
+- **Blocker for 2026-10-06 12:00: the SumoPod prepaid balance ran out ~23:00** (owner 2026-10-06: not topped up; resolved by a top-up, no code change). The 21:00 extraction stopped (6,081/6,090, $2.04); the newsletter will get no summaries (headline lists, no edition) unless the balance is topped up first. The replays of this session spent part of it (~15 replayed days, roughly $0.2-0.3).

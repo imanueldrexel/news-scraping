@@ -12,7 +12,7 @@
 - SYS-88 #249: the code only. Its backfill is not applied, and the Done-when's "query returns 0" needs it.
 
 ### Owner
-1. **SumoPod key budget ($5.00) exhausted at ~23:00.** Raise it before 2026-10-06 12:00, or that newsletter has no summaries: headline lists, no edition, and "Edisi 5 menit tidak tersedia". The 21:00 extraction also stops at the first call until the budget is raised.
+1. **SumoPod prepaid balance ran out at ~23:00** (owner: not topped up). Top it up before 2026-10-06 12:00, or that newsletter has no summaries: headline lists, no edition, and "Edisi 5 menit tidak tersedia". The 21:00 extraction also stops at the first calls until it is topped up.
 2. **Approve SYS-88's production write.** It runs `scripts/unescape_stored_headlines.py --apply` and changes 2,410 `sitemaps.headline` rows. A backup is written first, and `--restore` undoes it.
 
 ### What to test
@@ -136,7 +136,7 @@ SYS-74, SYS-41, SRC-34, SRC-47/42/40/39, SRC-58, OPS-39, DBT-01. Lower `KNOWLEDG
 ---
 
 ## Handoff History
-- 2026-10-05 (night) SDE -> QA/owner: QA's #244 findings fixed; 8 ready-for-qa, SYS-88 backfill and the SumoPod budget await the owner (this file, top).
+- 2026-10-05 (night) SDE -> QA/owner: QA's #244 findings fixed; 8 ready-for-qa, SYS-88 backfill and the SumoPod top-up await the owner (this file, top).
 - 2026-10-05 (night) QA -> SDE/QA/owner: tracker #244 verified; 4 closed, SYS-80 sent back, 4 held, 8 filed (this file, top).
 - 2026-10-05 (evening) CTO -> QA: edition decisions built and replayed (this file, second).
 - 2026-10-05 SDE -> QA/owner: newsletter 5-minute edition built and replayed (this file, top).
