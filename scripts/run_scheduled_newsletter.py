@@ -159,7 +159,35 @@ def _run(target_date, log_path) -> int:
     line = summary_line(target_date, path, row, getattr(path, "note", None))
     logger.info("SUMMARY: %s", line)
     _notify(line + (" · log %s" % log_path if log_path else ""))
+    if row is not None and row.article_count:
+        _send_pdf(target_date, str(path))
     return 1 if row is not None and not row.article_count else 0
+
+
+def _send_pdf(target_date, markdown_path) -> bool:
+    """OPS-40 (#235): the digest as a PDF in Telegram. The digest was built, so a
+    PDF that cannot be rendered or sent is a WARNING and a Telegram line, never a
+    different exit code."""
+    try:
+        from newscrawler.core.newsletter_pdf import render_digest_pdf
+        pdf_path = render_digest_pdf(markdown_path)
+    except Exception as e:  # noqa: BLE001
+        logger.exception("newsletter PDF could not be rendered")
+        _notify("PDF %s not made: %s: %s" % (target_date, type(e).__name__, str(e)[:200]))
+        return False
+    try:
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        from notify_telegram import send_document
+        ok = send_document(pdf_path, "Rangkuman Berita %s" % target_date)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Telegram document failed: %s: %s", type(e).__name__, e)
+        ok = False
+    if ok:
+        logger.info("PDF sent: %s", pdf_path)
+    else:
+        logger.warning("PDF %s built but not delivered", pdf_path)
+        _notify("PDF %s built but not delivered to Telegram: %s" % (target_date, pdf_path))
+    return ok
 
 
 def _notify(message: str) -> None:

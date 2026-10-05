@@ -123,9 +123,64 @@ class TestScript:
         assert script.main(["--date", "2026-10-03"]) == 2
 
 
+DIGEST_MD = "# t" + chr(10) * 2 + "### s" + chr(10) * 2 + "- b" + chr(10)
+
+
+class TestPdfStep:
+    """OPS-40 (#235): after the summary, the digest goes to Telegram as a PDF."""
+
+    def test_a_digest_with_articles_is_sent_as_a_pdf(self, script, monkeypatch):
+        sent = _wire(script, monkeypatch, SimpleNamespace(file_path="d.md", article_count=5, cluster_count=2,
+                                                          categories={}))
+        assert script.main(["--date", "2026-10-03"]) == 0
+        assert sent.pdfs == [(date(2026, 10, 3), "digests/2026-10-03.md")]
+
+    def test_an_empty_day_sends_no_pdf(self, script, monkeypatch):
+        sent = _wire(script, monkeypatch, SimpleNamespace(file_path="d.md", article_count=0, cluster_count=0,
+                                                          categories={}))
+        script.main(["--date", "2026-10-03"])
+        assert sent.pdfs == []
+
+    def test_a_pdf_that_cannot_be_rendered_is_reported_and_the_exit_code_stays_0(self, script, monkeypatch):
+        notes = []
+        monkeypatch.setattr(script, "_notify", notes.append)
+        monkeypatch.setattr("newscrawler.core.newsletter_pdf.render_digest_pdf",
+                            lambda path: (_ for _ in ()).throw(OSError("disk full")))
+        assert script._send_pdf(date(2026, 10, 3), "digests/2026-10-03.md") is False
+        assert len(notes) == 1 and "PDF 2026-10-03 not made" in notes[0] and "disk full" in notes[0]
+
+    def test_a_pdf_that_is_not_delivered_is_reported(self, script, monkeypatch, tmp_path):
+        notes = []
+        md = tmp_path / "2026-10-03.md"
+        md.write_text(DIGEST_MD, encoding="utf-8")
+        monkeypatch.setattr(script, "_notify", notes.append)
+        monkeypatch.syspath_prepend(os.path.dirname(SCRIPT))
+        import notify_telegram
+        monkeypatch.setattr(notify_telegram, "send_document", lambda path, caption="": False)
+        assert script._send_pdf(date(2026, 10, 3), str(md)) is False
+        assert os.path.exists(str(tmp_path / "2026-10-03.pdf"))
+        assert len(notes) == 1 and "built but not delivered" in notes[0]
+
+    def test_a_delivered_pdf_sends_the_file_with_the_date_as_caption(self, script, monkeypatch, tmp_path):
+        md = tmp_path / "2026-10-03.md"
+        md.write_text(DIGEST_MD, encoding="utf-8")
+        monkeypatch.setattr(script, "_notify", lambda m: pytest.fail("notified on success: %s" % m))
+        monkeypatch.syspath_prepend(os.path.dirname(SCRIPT))
+        import notify_telegram
+        calls = []
+        monkeypatch.setattr(notify_telegram, "send_document", lambda path, caption="": calls.append((path, caption)) or True)
+        assert script._send_pdf(date(2026, 10, 3), str(md)) is True
+        assert calls == [(str(tmp_path / "2026-10-03.pdf"), "Rangkuman Berita 2026-10-03")]
+
+
+class _Sent(list):
+    pdfs = None
+
+
 def _wire(script, monkeypatch, row, note=None, fail=None):
-    """Fake the crawler, the DB row, the lock and Telegram; return the messages sent."""
-    sent = []
+    """Fake the crawler, the DB row, the lock and Telegram; return the messages sent
+    (`.pdfs`: the PDF steps requested)."""
+    sent = _Sent()
     service = MagicMock()
     if fail:
         service.generate_newsletter.side_effect = fail
@@ -141,4 +196,7 @@ def _wire(script, monkeypatch, row, note=None, fail=None):
     monkeypatch.setattr(script, "digest_row", lambda session, d: row)
     monkeypatch.setattr(script, "open_run_log", lambda d: (None, None))
     monkeypatch.setattr(script, "_notify", lambda message: sent.append("Newsletter " + message))
+    sent_pdfs = []
+    monkeypatch.setattr(script, "_send_pdf", lambda d, path: sent_pdfs.append((d, path)))
+    sent.pdfs = sent_pdfs
     return sent

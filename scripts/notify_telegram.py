@@ -198,6 +198,57 @@ def send(message: str, queue_on_failure: bool = True) -> bool:
     return ok
 
 
+# Telegram refuses a bot upload above 50 MB; a digest PDF is a few hundred KB.
+DOCUMENT_MAX_BYTES = 50 * 1024 * 1024
+DOCUMENT_TIMEOUT_S = 60
+
+
+def _post_document(path: str, caption: str):
+    """One upload attempt. (ok, retryable, reason); never raises."""
+    try:
+        with open(path, "rb") as f:
+            response = requests.post(
+                f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendDocument",
+                data={"chat_id": TELEGRAM_CHAT_ID, "caption": caption[:1000]},
+                files={"document": (os.path.basename(path), f)},
+                timeout=DOCUMENT_TIMEOUT_S,
+            )
+    except Exception as e:  # noqa: BLE001
+        return False, True, f"{type(e).__name__}: {redact(e)}"
+    if response.status_code == 200:
+        return True, False, ""
+    retryable = response.status_code == 429 or response.status_code >= 500
+    return False, retryable, f"Telegram API returned {response.status_code}: {redact(response.text[:500])}"
+
+
+def send_document(path: str, caption: str = "") -> bool:
+    """OPS-40 (#235): sends the file at `path` to TELEGRAM_CHAT_ID. True on success,
+    False on any failure (missing config or file, too large, network, non-200) --
+    never raises. A failure that may pass is retried after RETRY_DELAYS. Unlike
+    `send`, a file is not queued in the outbox: the caller keeps the file and can
+    send it again, and a delayed copy of yesterday's PDF would only confuse."""
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        logger.error("TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID not set -- document %s not sent", path)
+        return False
+    try:
+        size = os.path.getsize(path)
+    except OSError as e:
+        logger.error(f"document {path} cannot be read ({type(e).__name__}): not sent")
+        return False
+    if size > DOCUMENT_MAX_BYTES:
+        logger.error(f"document {path} is {size} bytes, over Telegram's {DOCUMENT_MAX_BYTES}-byte limit: not sent")
+        return False
+    ok, retryable, reason = _post_document(path, caption)
+    for delay in RETRY_DELAYS:
+        if ok or not retryable:
+            break
+        time.sleep(delay)
+        ok, retryable, reason = _post_document(path, caption)
+    if not ok:
+        logger.error(f"Failed to send Telegram document: {reason}")
+    return ok
+
+
 def main(argv=None) -> int:
     """The command-line test (OPERATIONS.md, step 5). The operator is checking
     the setup now, so a failure is reported now and never queued: delivered

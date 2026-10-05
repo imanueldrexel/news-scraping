@@ -158,6 +158,7 @@ package/*
 /NEWS_L2.commit/
 /crawler_health/*.json
 /digests/*.md
+/digests/*.pdf
 /backups/*.json
 # OPS-23: full-database dumps (scripts/backup_db.py) -- never commit data
 /backups/pg_dump/

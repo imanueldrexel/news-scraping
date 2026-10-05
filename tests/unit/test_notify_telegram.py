@@ -294,3 +294,66 @@ class TestAMissingConfigIsQueuedNotDropped:
         with caplog.at_level("ERROR"):
             assert mod.send("alert") is False
         assert any("alert LOST" in r.getMessage() for r in caplog.records)
+
+
+class TestSendDocument:
+    """OPS-40 (#235): the digest PDF goes out through sendDocument; it never raises."""
+
+    @pytest.fixture
+    def mod(self):
+        m = _load()
+        m.TELEGRAM_BOT_TOKEN = "123:secret"
+        m.TELEGRAM_CHAT_ID = "42"
+        return m
+
+    @pytest.fixture
+    def pdf(self, tmp_path):
+        p = tmp_path / "d.pdf"
+        p.write_bytes(b"%PDF-1.4 test")
+        return str(p)
+
+    def test_the_file_and_caption_are_uploaded_to_the_chat(self, mod, pdf):
+        with patch.object(mod, "requests") as r:
+            r.post.return_value = MagicMock(status_code=200)
+            assert mod.send_document(pdf, "Rangkuman Berita 2026-10-04") is True
+        url = r.post.call_args[0][0]
+        assert url.endswith("/sendDocument") and "123:secret" in url
+        assert r.post.call_args[1]["data"] == {"chat_id": "42", "caption": "Rangkuman Berita 2026-10-04"}
+        assert r.post.call_args[1]["files"]["document"][0] == "d.pdf"
+
+    def test_missing_config_or_file_returns_false_without_a_request(self, mod, pdf, tmp_path):
+        with patch.object(mod, "requests") as r:
+            assert mod.send_document(str(tmp_path / "gone.pdf")) is False
+            mod.TELEGRAM_BOT_TOKEN = None
+            assert mod.send_document(pdf) is False
+            r.post.assert_not_called()
+
+    def test_a_file_over_the_limit_is_refused_before_the_upload(self, mod, pdf, monkeypatch):
+        monkeypatch.setattr(mod, "DOCUMENT_MAX_BYTES", 5)
+        with patch.object(mod, "requests") as r:
+            assert mod.send_document(pdf) is False
+            r.post.assert_not_called()
+
+    def test_a_transient_failure_is_retried_and_can_succeed(self, mod, pdf, _outbox):
+        with patch.object(mod, "requests") as r:
+            r.post.side_effect = [MagicMock(status_code=502, text="bad gateway"), MagicMock(status_code=200)]
+            assert mod.send_document(pdf) is True
+        assert r.post.call_count == 2 and _outbox["slept"] == [mod.RETRY_DELAYS[0]]
+
+    def test_a_refusal_is_not_retried(self, mod, pdf):
+        with patch.object(mod, "requests") as r:
+            r.post.return_value = MagicMock(status_code=400, text="chat not found")
+            assert mod.send_document(pdf) is False
+        assert r.post.call_count == 1
+
+    def test_a_network_error_never_raises_and_never_logs_the_token(self, mod, pdf, caplog):
+        with patch.object(mod, "requests") as r:
+            r.post.side_effect = OSError("HTTPSConnectionPool: /bot123:secret/sendDocument timed out")
+            assert mod.send_document(pdf) is False
+        assert "secret" not in caplog.text and "bot<redacted>" in caplog.text
+
+    def test_a_failed_file_is_not_queued_in_the_outbox(self, mod, pdf, _outbox):
+        with patch.object(mod, "requests") as r:
+            r.post.return_value = MagicMock(status_code=500, text="x")
+            mod.send_document(pdf)
+        assert not os.path.exists(_outbox["path"])
