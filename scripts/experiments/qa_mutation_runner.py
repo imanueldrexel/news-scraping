@@ -718,7 +718,7 @@ M = [
  ('sys83_fallback_without_non_finance', 'newscrawler/core/newsletter_edition.py',
   '_pick(pool, FALLBACK_UTAMA, required_non_finance(cands, groups), groups)', '_pick(pool, FALLBACK_UTAMA, 0, groups)'),
  ('sys83_word_budget_ignored', 'newscrawler/core/newsletter_edition.py',
-  '        if count <= WORD_BUDGET or not sekilas:', '        if True:'),
+  '        if count <= WORD_BUDGET or not droppable:', '        if True:'),
  ('sys83_duplicate_in_sekilas', 'newscrawler/core/newsletter_edition.py',
   '        if not c.summarized or c.id in choice.utama or group in utama_groups or group in seen_groups:',
   '        if not c.summarized or c.id in choice.utama:'),
