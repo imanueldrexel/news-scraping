@@ -1,6 +1,24 @@
 # Current Handoff
 
-## From: QA (+ CTO/PM decisions, dev fixes) -> To: QA of the next days, and the owner
+## From: PM -> To: Architect / SDE (newsletter 5-minute edition)
+**Date:** 2026-10-05
+**Read first:** `.10x/decisions/product-manager/newsletter-5min-edition.md`; tracker #244.
+
+### Requirements, in build order (each ticket's Done-when is the acceptance criterion)
+1. SYS-81 #237 (bug P3): Indonesian, locale-independent dates. OPS-41 #238 (bug P3): PDF keeps a whole story per page.
+2. SYS-82 #239 (P0): structured per-story summary (prompt in the ticket) + guards: JSON, word limits, number guard, retry then fallback. Fixes SYS-80 #236 (bug P2) via `terkait`.
+3. SYS-84 #241 (P1): reader-facing copy table, outlet brand names, AI disclosure, degraded notice at the top.
+4. SYS-83 #240 (P0): editor pass (prompt in the ticket), finance-first with >= 2 non-finance, 60-second block, Sekilas, <= 1,200 words, `digests/YYYY-MM-DD-ringkas.md`; full digest unchanged as archive.
+5. OPS-42 #242 (P1): phone-first PDF of the edition. OPS-43 #243 (P1): Telegram message + edition PDF; the full digest is not sent.
+
+### Constraints
+- No schema change (edition stats under `_edition` in `newsletter_digests.categories`). Clustering (SYS-40/65/67) is out of scope.
+- The replay on 2026-09-28 / 10-03 / 10-04 is part of SYS-82 and SYS-83's Done-when; log it in EXPERIMENTS.md. The owner hand-checks 20 stories and times one edition on the phone.
+- Dev marks `status: ready-for-qa`; QA closes, and checks the tracker's success criteria on the first 3-7 scheduled editions.
+
+---
+
+## Previous: From QA (+ CTO/PM decisions, dev fixes) -> To: QA of the next days, and the owner
 **Date:** 2026-10-04 (night)
 **Report:** `.10x/reviews/2026-10-04-night-qa-report.md`; decisions `.10x/decisions/{cto,product-manager,qa}/night-2026-10-04-*.md`; ADR-004.
 
@@ -23,6 +41,7 @@ SYS-74, SYS-41, SRC-34, SRC-47/42/40/39, SRC-58, OPS-39, DBT-01. Lower `KNOWLEDG
 ---
 
 ## Handoff History
+- 2026-10-05 PM -> Architect/SDE: newsletter 5-minute edition, tracker #244 (this file, top).
 - 2026-10-04 night QA/CTO/PM -> QA: P1/P2 pass (this file).
 - 2026-10-04 PM -> SDE: SYS-39 (extract all news on DeepSeek, peak guard). Picked up and built (see above).
 
