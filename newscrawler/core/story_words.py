@@ -65,6 +65,25 @@ def content_words(text: str) -> Dict[str, bool]:
     return out
 
 
+def title_case(text: str) -> bool:
+    """True for a Title Case Heading -- every word of four letters or more
+    capitalised -- whose capitals say nothing about names. An Indonesian
+    sentence-case judul has a lowercase verb ("dikelola", "luncurkan"); the
+    model still copies a portal's Title Case headline for ~1 judul in 13
+    (replay 2026-10-05: "Netanyahu Pidato di PBB, Puluhan Delegasi Walk Out")."""
+    long_words = [w for w in WORD.findall(text) if len(w) >= 4]
+    return len(long_words) >= 3 and all(w[0].isupper() for w in long_words)
+
+
+def story_content_words(judul: str, body: str) -> Dict[str, bool]:
+    """content_words of a story's judul and a sentence of it (inti or sekilas),
+    the judul's capitals ignored when it is in Title Case."""
+    out = content_words(body)
+    for word, is_name in content_words(judul).items():
+        out[word] = out.get(word, False) or (is_name and not title_case(judul))
+    return out
+
+
 def names(text: str) -> Set[str]:
     """The content words of `text` that are names there, lower-cased, and the
     parts of a hyphenated one ("AS-Iran" gives as-iran, as, iran: an article

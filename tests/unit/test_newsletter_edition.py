@@ -394,6 +394,26 @@ class TestEchoGuard:
                             "Pengembang minta pemerintah tambah kuota rumah subsidi bagi pekerja.")
         assert not ne.echoes(other, top)
 
+    def test_a_name_opening_a_sentence_is_still_not_an_event_word(self):
+        """Replay 2026-10-05, 2026-10-01 (untuned): the Wamenkeu inauguration was hidden under the Kapolri one --
+        "Prabowo" opens the Sekilas line, so it counted as a shared event word next to "melantik"."""
+        top = _story_cand(1, "x", "Suyudi Ario Seto dilantik jadi Kapolri gantikan Listyo Sigit",
+                          "Presiden Prabowo melantik Suyudi Ario Seto sebagai Kapolri dan Wahyu Hadiningrat sebagai "
+                          "Wakapolri di Istana Negara, Kamis (1/10/2026).")
+        other = _story_cand(2, "x", "Prabowo lantik Luky Alfirman dan Nurkholisoh Ibnu Aman sebagai Wamenkeu",
+                            "Prabowo melantik dua Wamenkeu baru di Istana pada Kamis (1/10/2026).")
+        assert not ne.echoes(other, top)
+
+    def test_a_title_case_judul_does_not_hide_a_repeat(self):
+        """Replay 2026-10-05, 2026-09-25: the model wrote this judul in Title Case, so every word read as a name and
+        the walk-out shown twice shared no event word."""
+        top = _story_cand(1, "x", "Delegasi Indonesia walk out saat Netanyahu berpidato di PBB",
+                          "Delegasi Indonesia meninggalkan aula Sidang Majelis Umum PBB Ke-81 saat PM Israel Benjamin "
+                          "Netanyahu berpidato, Kamis (24/9/2026).")
+        other = _story_cand(2, "x", "Netanyahu Pidato di PBB, Puluhan Delegasi Walk Out",
+                            "Netanyahu berpidato di PBB, puluhan delegasi walk out sebagai protes.")
+        assert ne.echoes(other, top)
+
     def test_a_shared_name_needs_two_shared_event_words(self):
         top = _story_cand(1, "x", "KPK periksa Bobby Rizaldi", "KPK memeriksa Bobby Rizaldi soal suap.")
         one = _story_cand(2, "x", "KPK geledah kantor BPN Jatim", "KPK menggeledah kantor BPN soal suap.")

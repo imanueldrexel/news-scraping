@@ -44,6 +44,24 @@ class TestContentWords:
         assert sw.content_words("Iran menolak. Trump menolak proposal Iran.")["iran"] is True
 
 
+class TestTitleCase:
+    @pytest.mark.parametrize("judul,title", [
+        ("Netanyahu Pidato di PBB, Puluhan Delegasi Walk Out", True),
+        ("Rupiah Melemah ke Rp17.916, Ekonom Minta BI Perkuat Intervensi", True),
+        ("KNMP Tongke-Tongke dikelola KKP, Kemenkop, Kemenkeu, dan BP BUMN", False),   # name-dense, sentence case
+        ("Kementerian UMKM luncurkan Program Laksmi 2026 di Jawa Timur", False),
+        ("BI Tahan Suku", False),                                                      # too short to tell
+    ])
+    def test_title_case(self, judul, title):
+        assert sw.title_case(judul) is title
+
+    def test_a_title_case_judul_gives_no_names_but_its_sentence_still_does(self):
+        words = sw.story_content_words("Netanyahu Pidato di PBB, Delegasi Walk Out",
+                                       "Netanyahu berpidato di PBB, kata Israel.")
+        assert words["pidato"] is False and words["pbb"] is True and words["israel"] is True
+        assert sw.story_content_words("Netanyahu pidato di PBB", "Ia berpidato.")["pbb"] is True
+
+
 class TestVocabulary:
     def test_every_word_lower_cased_and_the_parts_of_a_hyphenated_one(self):
         assert sw.vocabulary("BI menahan BI-Rate, kata Bank Indonesia.") >= {"bi", "bi-rate", "rate", "bank", "kata"}

@@ -716,7 +716,8 @@ M = [
   'or (word[0].isupper() and not opens_sentence)', 'or word[0].isupper()'),
  # ── SDE 2026-10-05 night: QA's findings on tracker #244 ──
  ('sys86_first_name_rule', 'newscrawler/core/newsletter_edition.py',
-  '    named = {w for w in shared if mine[w] and theirs[w]}\n    events = len(shared - named)\n'
+  '    named = {w for w in shared if mine[w] and theirs[w]}\n'
+  '    events = len({w for w in shared if not mine[w] and not theirs[w]})\n'
   '    return events >= ECHO_MIN_EVENT_WORDS_UNNAMED or (events >= ECHO_MIN_EVENT_WORDS and bool(named))',
   '    named = any(mine[w] or theirs[w] for w in shared)\n    events = len(shared)\n'
   '    return events >= 4 or (events >= 3 and named)'),
@@ -765,6 +766,14 @@ M = [
  ('sys86_hyphen_name_parts_dropped', 'newscrawler/core/story_words.py',
   '    return out | {part for word in out if "-" in word for part in word.split("-")',
   '    return out | {part for word in () for part in word.split("-")'),
+ ('sys86_one_sided_name_is_an_event', 'newscrawler/core/newsletter_edition.py',
+  '    events = len({w for w in shared if not mine[w] and not theirs[w]})', '    events = len(shared - named)'),
+ ('sys86_title_case_judul_gives_names', 'newscrawler/core/story_words.py',
+  '        out[word] = out.get(word, False) or (is_name and not title_case(judul))',
+  '        out[word] = out.get(word, False) or is_name'),
+ ('sys86_title_case_any_capital', 'newscrawler/core/story_words.py',
+  '    return len(long_words) >= 3 and all(w[0].isupper() for w in long_words)',
+  '    return len(long_words) >= 3 and any(w[0].isupper() for w in long_words)'),
  ('dbt59_unseen_articles_not_portals', 'newscrawler/core/newsletter_generator.py',
   'self._unique_sources([a for a in cluster["articles"] if id(a) not in unrelated])',
   'self._unique_sources(related)'),

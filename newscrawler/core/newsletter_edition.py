@@ -369,24 +369,27 @@ content_words = story_words.content_words    # QA's echo probes (scripts/experim
 def echoes(candidate: Candidate, top: Candidate) -> bool:
     """True when `candidate` repeats the top story `top`. Their texts share
     content words (`story_words`) of two kinds: names -- a name in both texts --
-    and the rest, which say what happened. A repeat shares at least
-    ECHO_MIN_EVENT_WORDS of the rest and a name ("Trump tolak proposal damai
-    Iran" / "Iran tegaskan diplomasi, Trump tolak proposal damai": Trump, and
-    tolak/proposal/damai/Iran), or ECHO_MIN_EVENT_WORDS_UNNAMED of the rest
-    without one.
+    and event words, which say what happened -- a name in neither. A repeat
+    shares at least ECHO_MIN_EVENT_WORDS event words and a name ("Trump tolak
+    proposal damai Iran" / "Iran tegaskan diplomasi, Trump tolak proposal
+    damai": Trump and Iran, and tolak/proposal/damai), or
+    ECHO_MIN_EVENT_WORDS_UNNAMED event words without one.
 
     A shared name alone is never enough: two stories about one person or
     place ("Presiden Prabowo Subianto ...", "Gubernur Jawa Barat ...") are
     different events unless they also share what happened (SYS-86: the first
     rule counted any capitalised word, so one shared title and name hid a
-    distinct story). Pairwise only: it hides one Sekilas line and never merges
-    stories, so SYS-67's finding (shared words cannot group a section's
-    clusters) does not apply."""
-    mine = story_words.content_words(f"{candidate.story.judul}. {candidate.story.sekilas}")
-    theirs = story_words.content_words(f"{top.story.judul}. {top.story.inti}")
+    distinct story). And a word that is a name in one text says who, not what,
+    in the other too: "Prabowo" opening "Prabowo melantik dua Wamenkeu ..." is
+    not an event word shared with "Presiden Prabowo melantik Suyudi ..."
+    (replay 2026-10-05, 10-01: that pair was hidden). Pairwise only: it hides
+    one Sekilas line and never merges stories, so SYS-67's finding (shared
+    words cannot group a section's clusters) does not apply."""
+    mine = story_words.story_content_words(candidate.story.judul, candidate.story.sekilas)
+    theirs = story_words.story_content_words(top.story.judul, top.story.inti)
     shared = set(mine) & set(theirs)
     named = {w for w in shared if mine[w] and theirs[w]}
-    events = len(shared - named)
+    events = len({w for w in shared if not mine[w] and not theirs[w]})
     return events >= ECHO_MIN_EVENT_WORDS_UNNAMED or (events >= ECHO_MIN_EVENT_WORDS and bool(named))
 
 
