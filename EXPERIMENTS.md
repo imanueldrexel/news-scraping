@@ -1849,7 +1849,7 @@ SINDONEWS   old 12 new 12 | lost [] | gained []   links identical: True
 
 ### 2026-10-05 (evening) — replay v5 after the CTO/owner decisions: every edition target met on all three days
 - **Question / hypothesis:** with the owner-aligned changes (judul ask 10 / accept 12; the day's 6 largest stories guaranteed a place; a Sekilas line repeating a top story hidden), do the three replayed days meet the edition's criteria: >= 95% summaries after the retry, <= 1,200 words, >= 5 of the 6 largest stories shown, no event shown twice?
-- **Method:** `scripts/experiments/replay_newsletter_edition.py --date <d> --old <old digest>` on commit 5fe7859 (as in the four-run entry below); duplicates read by eye from the edition files; the guard's word overlap measured over all 77 Sekilas lines x 24 top stories with `content_words` (throwaway scan: for each Sekilas line and top story, `set(content_words(line)) & set(content_words(judul + inti))`, printed when >= 3).
+- **Method:** `scripts/experiments/replay_newsletter_edition.py --date <d> --old <old digest>` on commit 5fe7859 (as in the four-run entry above); duplicates read by eye from the edition files; the guard's word overlap measured over all 77 Sekilas lines x 24 top stories with `content_words` (throwaway scan: for each Sekilas line and top story, `set(content_words(line)) & set(content_words(judul + inti))`, printed when >= 3).
 - **Result:**
 
   | | 2026-10-04 | 2026-10-03 | 2026-09-28 |
