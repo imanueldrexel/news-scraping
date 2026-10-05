@@ -1846,3 +1846,20 @@ SINDONEWS   old 12 new 12 | lost [] | gained []   links identical: True
   Remaining second refusals are a `judul` of 11-12 words against the limit of 10 (numbers count: "Saham GOTO anjlok 14 persen ke Rp43 di hari pertama aturan BEI"), 6 of 7 on 09-28. The two number refusals in 278 stories: 10-04's crypto story put "84.777" in its judul where the CNBC article says "US$84.777,58" (checked in `chunks.text_content`: the model rounded, which the prompt forbids -- a correct catch, not a false reject); 09-28's PHE carbon-storage story had a "2" in inti and sekilas that its articles do not have (probably "CO2"; not checked). No number outside its articles reached a document. 09-28's coverage misses: the BI-rate story (15 portals) was refused twice on its judul and so is not in the edition; the IHSG close (14 portals) ranks 4th in Pasar behind three 18-19-portal stories, and SYS-83 takes the top 3 per section.
 - **Conclusion / do not repeat:** deepseek-v4-flash overshoots word limits by 1-3 words on ~40% of first answers whatever the prompt says ("Batas kata mutlak", "tulis 10-18 kata" changed nothing measurable); build the retry and a whole-item drop for optional fields, do not expect wording to fix it. It also writes one 60-second sentence per top story regardless of the prompt; trimming to 5 is the fix. The >= 90% first-try target is not reachable with these limits on this model; the cost is ~35-60 retry calls/day (~$0.01). Open for the owner: a 12-word judul would turn most remaining fallbacks into summaries. The 6-page target is not reachable at 11.5 pt with ~900 words (about 110-130 words per page); 7 pages is the owner-accepted layout.
 - **Links:** tracker #244; SYS-82 #239, SYS-83 #240, OPS-42 #242, SYS-80 #236, SYS-81 #237, SYS-84 #241, OPS-41 #238; commits 654a81e, 5dacec7, a90067e, 81f7483; `.10x/decisions/sde/newsletter-5min-edition.md`
+
+### 2026-10-05 (evening) — replay v5 after the CTO/owner decisions: every edition target met on all three days
+- **Question / hypothesis:** with the owner-aligned changes (judul ask 10 / accept 12; the day's 6 largest stories guaranteed a place; a Sekilas line repeating a top story hidden), do the three replayed days meet the edition's criteria: >= 95% summaries after the retry, <= 1,200 words, >= 5 of the 6 largest stories shown, no event shown twice?
+- **Method:** `scripts/experiments/replay_newsletter_edition.py --date <d> --old <old digest>` on commit 5fe7859 (as in the four-run entry below); duplicates read by eye from the edition files; the guard's word overlap measured over all 77 Sekilas lines x 24 top stories with `content_words` (throwaway scan: for each Sekilas line and top story, `set(content_words(line)) & set(content_words(judul + inti))`, printed when >= 3).
+- **Result:**
+
+  | | 2026-10-04 | 2026-10-03 | 2026-09-28 |
+  |---|---|---|---|
+  | summaries after the retry (first try) | 100% (61%) | 98.9% (66%) | 99.0% (56%) |
+  | edition words | 833 | 966 | 994 |
+  | 6 largest stories shown | 6 | 6 | 6 |
+  | phone pages | 7 | 8 | 8 |
+  | events shown twice | 0 | 1 (Komdigi sisa kuota) | 0 |
+
+  09-28's BI-rate story (lost on a 12-word judul before) is now a top story and the IHSG close (4th in Pasar) is in Sekilas. The one repeat, 10-03, shares 4 content words (komdigi, kuota, internet, sisa) with its top story, but "Komdigi" opens both sentences so the name rule missed it; it was the only pair sharing >= 3 words across all three editions. The guard now also hides a line with >= 4 shared words and no name (776e6e9).
+- **Conclusion / do not repeat:** accepting a 12-word judul turned 09-28's after-retry share from 92.7% to 99.0%; the top-6 guarantee fixed coverage without touching the editor. A name test based on capitals misses names that open a sentence (common in Indonesian headlines); a plain word-count threshold covers it.
+- **Links:** SYS-82 #239, SYS-83 #240, tracker #244; `.10x/decisions/cto/newsletter-5min-edition.md`; commits 5fe7859, 776e6e9
