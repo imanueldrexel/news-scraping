@@ -104,6 +104,7 @@ class Choice:
     utama: List[int]
     sixty: List[Tuple[int, str]]
     groups: List[set] = field(default_factory=list)
+    sixty_trimmed: int = 0        # 60-second sentences past SIXTY_MAX that were left out (whole)
 
 
 @dataclass
@@ -115,12 +116,13 @@ class Edition:
     unsummarized: int             # candidates left out because they have no summary
     editor_fallback: bool
     editor_rejections: List[str]  # each refused or failed editor answer's reason, in order
+    sixty_trimmed: int = 0
 
     def stats(self) -> dict:
         """The `_edition` entry of newsletter_digests.categories."""
         return {"built": True, "words": self.words, "utama": self.utama, "sekilas": self.sekilas,
                 "unsummarized": self.unsummarized, "editor_fallback": self.editor_fallback,
-                "editor_rejections": list(self.editor_rejections)}
+                "editor_rejections": list(self.editor_rejections), "sixty_trimmed": self.sixty_trimmed}
 
 
 def edition_path(digest_path: str) -> str:
@@ -240,6 +242,13 @@ def parse_editor(answer: Optional[str], cands: Sequence[Candidate]) -> Choice:
         raise Rejected("json", '"ringkas_60_detik" harus daftar {"id": ..., "kalimat": "..."}')
     sixty = [(s.get("id"), " ".join(s["kalimat"].split())) for s in sixty_raw]
     _ids([i for i, _ in sixty], known, "ringkas_60_detik")
+    # The replays (2026-10-05) answered one sentence per top story, 8 of them, in 6 of 6 first answers,
+    # even with the prompt saying "3-5 kalimat SAJA". The first SIXTY_MAX are kept whole (the model
+    # orders them like `utama`, most important first); nothing is cut, and the count is reported.
+    trimmed = max(0, len(sixty) - SIXTY_MAX)
+    if trimmed:
+        logger.info(f"Editor wrote {len(sixty)} 60-second sentences; keeping the first {SIXTY_MAX}.")
+        sixty = sixty[:SIXTY_MAX]
 
     if len(set(utama)) != len(utama):
         raise Rejected("rules", "utama memuat id yang sama dua kali")
@@ -269,7 +278,7 @@ def parse_editor(answer: Optional[str], cands: Sequence[Candidate]) -> Choice:
         bad = unsupported_number(sentence, by_id[cid].cluster.get("source_text", ""))
         if bad:
             raise Rejected("number", f'angka "{bad}" di kalimat untuk id {cid} tidak ada di artikelnya')
-    return Choice(utama, sixty, groups)
+    return Choice(utama, sixty, groups, trimmed)
 
 
 def choose(summarizer, cands: Sequence[Candidate], digest_date: date,
@@ -399,7 +408,7 @@ def build(summarizer, sections: Sequence[dict], digest_date: date, article_count
     digest_stories = sum(len(s["clusters"]) for s in sections)
     markdown, count, sekilas = render(cands, choice, digest_date, article_count, outlet_count, digest_stories)
     return Edition(markdown, count, len(choice.utama), len(sekilas), sum(1 for c in cands if not c.summarized),
-                   fallback, reasons)
+                   fallback, reasons, choice.sixty_trimmed)
 
 
 def briefing(markdown: str) -> Tuple[List[str], int]:

@@ -86,7 +86,6 @@ class TestParseEditor:
         (_editor(utama=(1, 4, 7, 2, 9, 6), duplikat=[(1, 2)]), "rules"),    # one event twice
         (_editor(utama=(1, 4, 7, 2, 9, 9)), "rules"),                       # an id twice
         (_editor(sixty=[{"id": 1, "kalimat": "a."}, {"id": 4, "kalimat": "b."}]), "rules"),       # 2 sentences
-        (_editor(sixty=[{"id": i, "kalimat": "a."} for i in (1, 4, 7, 2, 9, 6)]), "rules"),       # 6 sentences
         (_editor(sixty=[{"id": 1, "kalimat": "a."}, {"id": 1, "kalimat": "b."}, {"id": 4, "kalimat": "c."}]),
          "rules"),                                                           # two about one story
         (_editor(sixty=[{"id": 1, "kalimat": "a."}, {"id": 4, "kalimat": "b."}, {"id": 3, "kalimat": "c."}]),
@@ -101,6 +100,19 @@ class TestParseEditor:
         with pytest.raises(ne.Rejected) as e:
             ne.parse_editor(answer, cands)
         assert e.value.reason == reason
+
+    def test_more_than_five_sentences_keep_the_first_five_whole(self, cands):
+        """Replays 2026-10-05: 6 of 6 first answers had one sentence per top story (8)."""
+        sixty = [{"id": i, "kalimat": "Kalimat tentang berita ini."} for i in (1, 4, 7, 2, 9, 6)]
+        choice = ne.parse_editor(_editor(sixty=sixty), cands)
+        assert [i for i, _ in choice.sixty] == [1, 4, 7, 2, 9] and choice.sixty_trimmed == 1
+
+    def test_a_trimmed_sentence_is_not_checked_but_a_kept_one_is(self, cands):
+        bad_first = [{"id": 1, "kalimat": "Laba Rp9.999."}] + [{"id": i, "kalimat": "a."} for i in (4, 7, 2, 9, 6)]
+        with pytest.raises(ne.Rejected):
+            ne.parse_editor(_editor(sixty=bad_first), cands)
+        bad_sixth = [{"id": i, "kalimat": "a."} for i in (1, 4, 7, 2, 9)] + [{"id": 6, "kalimat": "Laba Rp9.999."}]
+        assert ne.parse_editor(_editor(sixty=bad_sixth), cands).sixty_trimmed == 1
 
     def test_a_number_from_that_storys_articles_passes(self, cands):
         sixty = [{"id": 1, "kalimat": "Emas Rp2.574.000 pada 2026."}, {"id": 4, "kalimat": "b."},

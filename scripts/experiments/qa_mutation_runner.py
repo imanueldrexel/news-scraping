@@ -689,6 +689,8 @@ M = [
  ('sys83_sixty_number_guard_dropped', 'newscrawler/core/newsletter_edition.py',
   '        bad = unsupported_number(sentence, by_id[cid].cluster.get("source_text", ""))\n        if bad:',
   '        bad = unsupported_number(sentence, by_id[cid].cluster.get("source_text", ""))\n        if False:'),
+ ('sys83_sixty_not_trimmed', 'newscrawler/core/newsletter_edition.py',
+  '        sixty = sixty[:SIXTY_MAX]', '        pass'),
  ('sys83_sixty_length_unchecked', 'newscrawler/core/newsletter_edition.py',
   '        if words(sentence) > SIXTY_WORDS:', '        if False:'),
  ('sys83_fallback_without_non_finance', 'newscrawler/core/newsletter_edition.py',
