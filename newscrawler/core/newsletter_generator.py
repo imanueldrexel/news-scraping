@@ -63,6 +63,7 @@ class SummaryStats:
     groups_failed: int = 0             # ... and those where the grouping failed (shown as ranked)
     first_try: int = 0
     rejections: dict = field(default_factory=lambda: {reason: 0 for reason in story_summary.REASONS})
+    poin_dropped: int = 0              # poin over their limit removed whole on a retry (never cut)
 
     @property
     def fallback(self) -> int:
@@ -82,6 +83,8 @@ class SummaryStats:
             line += f" — {reason}; sisanya hanya daftar judul"
         if any(self.rejections.values()):
             line += " | ditolak " + ", ".join(f"{reason} {n}" for reason, n in self.rejections.items() if n)
+        if self.poin_dropped:
+            line += f" | {self.poin_dropped} poin terlalu panjang dibuang"
         if self.groups_failed:
             line += f" | pengelompokan cerita gagal di {self.groups_failed} bagian"
         return line
@@ -200,11 +203,12 @@ class NewsletterGenerator:
         never costs the digest: it is logged and reported, and a stale edition
         file of the same date is removed so it cannot be sent as today's."""
         path = newsletter_edition.edition_path(digest_path)
-        # once the calls stopped (quota, outage), the editor is not asked either
+        # once the calls stopped (quota, outage, no provider), the editor is not asked either
         editor = None if stats.stopped else self._summarizer
         try:
             edition = newsletter_edition.build(editor, sections, target_date, len(articles),
-                                               len(self._unique_sources(articles)))
+                                               len(self._unique_sources(articles)),
+                                               no_call_reason=stats.stopped or "no_provider")
             if edition is None:
                 result = {"built": False, "reason": "no summarized story"}
             else:
@@ -389,6 +393,7 @@ class NewsletterGenerator:
             if story is not None:
                 stats.summarized += 1
                 stats.first_try += not rejections
+                stats.poin_dropped += story.dropped_poin
                 continue
             if len(rejections) == 2:
                 logger.warning(f"Summary refused twice ({', '.join(rejections)}); showing the headlines of "

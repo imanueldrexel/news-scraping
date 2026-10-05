@@ -27,12 +27,16 @@ be judged and is kept, as the clusterer grouped it (it still counts towards the
 portal count, never towards a link).
 """
 import json
+import logging
 import re
 from dataclasses import dataclass
 from typing import List, Optional, Sequence
 
 from newscrawler.core import newsletter_copy as copy
 from newscrawler.core.constants import SOURCE_AUTHORITY
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 MAX_ARTICLES = 6
 ARTICLE_CHARS = 800
@@ -79,6 +83,7 @@ PROMPT = (
     "- poin: 0-2 kalimat, masing-masing maks 20 kata.\n"
     "- mengapa_penting: maks 20 kata, HANYA dampak yang disebut artikel atau narasumbernya; \"\" jika tidak ada.\n"
     "- sekilas: 1 kalimat, maks 15 kata, untuk daftar singkat.\n"
+    "Batas kata di atas mutlak: jawaban yang melebihinya ditolak. Hitung kata setiap poin; tulis 10-18 kata.\n"
     "\n"
     "CONTOH JAWABAN\n"
     "{{\"judul\": \"Harga emas Antam bertahan di Rp2.574.000 per gram\",\n"
@@ -113,6 +118,7 @@ class StorySummary:
     sekilas: str
     terkait: List[int]
     tidak_terkait: List[int]
+    dropped_poin: int = 0     # poin over their limit dropped whole on the retry (never cut)
 
 
 def _authority(article: dict) -> float:
@@ -222,11 +228,16 @@ def _indexes(data: dict, key: str, n: int) -> List[int]:
     return value
 
 
-def parse(answer: Optional[str], n: int, source: str) -> StorySummary:
+def parse(answer: Optional[str], n: int, source: str, drop_long_poin: bool = False) -> StorySummary:
     """The answer as a StorySummary, or Rejected. `n` is the number of articles
     shown, `source` their text (the only place a number may come from).
     `poin`, `mengapa_penting` and `tidak_terkait` may be left out (empty);
-    every other field is required."""
+    every other field is required.
+
+    drop_long_poin (the retry): a poin over its word limit, or past the second,
+    is removed whole instead of refusing the answer -- poin are optional ("Nol poin boleh") and
+    nothing is ever cut mid-sentence. The 2026-10-03/04 replays: 133 of 133
+    refusals were `length`, nearly all a poin of 21-28 words (EXPERIMENTS.md)."""
     data = _json_object(answer)
     judul, inti, sekilas = _text(data, "judul"), _text(data, "inti"), _text(data, "sekilas")
     mengapa = _text(data, "mengapa_penting", required=False)
@@ -236,6 +247,8 @@ def parse(answer: Optional[str], n: int, source: str) -> StorySummary:
     if not isinstance(poin, list) or any(not isinstance(p, str) for p in poin):
         raise Rejected("json", '"poin" harus daftar kalimat')
     poin = [" ".join(p.split()) for p in poin if p.strip()]
+    kept = [p for p in poin if words(p) <= LIMITS["poin"]][:MAX_POIN] if drop_long_poin else poin
+    dropped, poin = len(poin) - len(kept), kept
     terkait, tidak = _indexes(data, "terkait", n), _indexes(data, "tidak_terkait", n)
     if not terkait:
         raise Rejected("json", '"terkait" tidak boleh kosong')
@@ -243,18 +256,24 @@ def parse(answer: Optional[str], n: int, source: str) -> StorySummary:
         raise Rejected("json", f"setiap nomor artikel 0-{n - 1} harus muncul tepat sekali di terkait atau "
                                "tidak_terkait")
 
-    if len(poin) > MAX_POIN:
-        raise Rejected("length", f"poin ada {len(poin)}, maks {MAX_POIN}")
+    # Every broken limit (then every unsupported number) is named at once, so the
+    # one retry can repair them all instead of fixing one field and failing on the next.
+    problems = [f"poin ada {len(poin)}, maks {MAX_POIN}"] if len(poin) > MAX_POIN else []
     fields = [("judul", judul), ("inti", inti), ("mengapa_penting", mengapa), ("sekilas", sekilas)]
-    fields += [("poin", p) for p in poin]
+    fields += [(f"poin ke-{k}", p) for k, p in enumerate(poin, 1)]
     for key, value in fields:
-        if words(value) > LIMITS[key]:
-            raise Rejected("length", f"{key} {words(value)} kata, maks {LIMITS[key]}")
+        limit = LIMITS[key.split()[0]]
+        if words(value) > limit:
+            problems.append(f"{key} {words(value)} kata, maks {limit} -- persingkat: \"{value}\"")
+    if problems:
+        raise Rejected("length", "; ".join(problems))
     for key, value in fields:
         bad = unsupported_number(value, source)
         if bad:
-            raise Rejected("number", f'angka "{bad}" di {key} tidak ada di artikel')
-    return StorySummary(judul, inti, poin, mengapa, sekilas, terkait, tidak)
+            problems.append(f'angka "{bad}" di {key} tidak ada di artikel')
+    if problems:
+        raise Rejected("number", "; ".join(problems))
+    return StorySummary(judul, inti, poin, mengapa, sekilas, terkait, tidak, dropped)
 
 
 def summarize_story(summarizer, shown: Sequence[dict], rejections: list) -> Optional[StorySummary]:
@@ -268,8 +287,11 @@ def summarize_story(summarizer, shown: Sequence[dict], rejections: list) -> Opti
         return parse(summarizer.summarize(prompt), len(shown), source)
     except Rejected as first:
         rejections.append(first.reason)
+        logger.info(f"Summary refused, asking again ({first}) -- {shown[0]['headline'][:80]!r}")
         try:
-            return parse(summarizer.summarize(prompt + RETRY.format(detail=first.detail)), len(shown), source)
+            return parse(summarizer.summarize(prompt + RETRY.format(detail=first.detail)), len(shown), source,
+                         drop_long_poin=True)
         except Rejected as second:
             rejections.append(second.reason)
+            logger.info(f"Summary refused again ({second}) -- {shown[0]['headline'][:80]!r}")
             return None

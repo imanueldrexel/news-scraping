@@ -204,11 +204,16 @@ class TestRenderAndBudget:
         assert not any("m3" in l for l in lines)
         assert any("g2" in l for l in lines) and not any("i1" in l for l in lines)
 
-    def test_a_story_without_a_summary_is_a_headline_in_sekilas_and_the_edition_says_so(self):
-        cands = ne.candidates(_sections([("markets", [("m1", 5), ("m2", (4, False))])]))
-        md, _, sekilas = ne.render(cands, ne.Choice([1], [(1, "Satu.")]), D, 10, 3, 2)
-        assert sekilas == [ne.SekilasLine("- **Pasar ·** Portal m2", True, 2)]
-        assert "> Sebagian ringkasan tidak tersedia hari ini. 1 berita hanya ditampilkan judulnya." in md
+    def test_a_story_without_a_summary_stays_in_the_archive_and_the_edition_says_so(self):
+        cands = ne.candidates(_sections([("markets", [("m1", 5), ("m2", (4, False)), ("m3", 3)])]))
+        md, _, sekilas = ne.render(cands, ne.Choice([1], [(1, "Satu.")]), D, 10, 3, 3)
+        assert sekilas == [ne.SekilasLine("- **Pasar ·** Sekilas m3.", 3)]
+        assert "Portal m2" not in md
+        assert "> Sebagian ringkasan tidak tersedia hari ini; 1 berita hanya ada di edisi lengkap." in md
+
+    def test_no_notice_when_every_candidate_has_a_summary(self, cands):
+        md = ne.render(cands, ne.Choice([1, 4, 7, 2, 9, 6], [(1, "Satu.")]), D, 10, 3, 11)[0]
+        assert "Sebagian ringkasan" not in md
 
     def test_the_word_budget_drops_sekilas_from_the_bottom_never_a_top_story(self, cands, monkeypatch):
         choice = ne.Choice([1, 4, 7, 2, 9, 6], [(1, "Satu."), (4, "Dua."), (7, "Tiga.")])
@@ -297,4 +302,4 @@ class TestInTheGenerator:
         s = FakeNewsroom(story=[lambda p: FakeNewsroom().summarize(p), QuotaExhausted("429")])
         path, ds = _generate(monkeypatch, tmp_path, s)
         assert s.prompts["editor"] == []
-        assert ds.save_digest.call_args.kwargs["categories"][ng.EDITION_KEY]["editor_rejections"] == ["no_provider"]
+        assert ds.save_digest.call_args.kwargs["categories"][ng.EDITION_KEY]["editor_rejections"] == ["quota"]

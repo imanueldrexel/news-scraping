@@ -80,6 +80,24 @@ class TestParse:
     def test_more_than_two_points(self):
         assert _reason(_answer(poin=["satu.", "dua.", "tiga."])) == "length"
 
+    def test_every_broken_limit_is_named_at_once(self):
+        with pytest.raises(ss.Rejected) as e:
+            ss.parse(_answer(judul=" ".join(["kata"] * 11), poin=["a.", " ".join(["b"] * 21)]), 2, SOURCE)
+        assert "judul 11 kata, maks 10" in e.value.detail and "poin ke-2 21 kata, maks 20" in e.value.detail
+        assert 'persingkat: "b b b' in e.value.detail             # the retry sees what to shorten
+
+    def test_on_the_retry_a_long_point_is_dropped_whole_never_cut(self):
+        long = " ".join(["kata"] * 23)
+        story = ss.parse(_answer(poin=[long, "Poin pendek."]), 2, SOURCE, drop_long_poin=True)
+        assert (story.poin, story.dropped_poin) == (["Poin pendek."], 1)
+        story = ss.parse(_answer(poin=["satu.", "dua.", "tiga."]), 2, SOURCE, drop_long_poin=True)
+        assert (story.poin, story.dropped_poin) == (["satu.", "dua."], 1)
+
+    def test_on_the_retry_every_other_field_still_must_fit(self):
+        with pytest.raises(ss.Rejected):
+            ss.parse(_answer(judul=" ".join(["kata"] * 11)), 2, SOURCE, drop_long_poin=True)
+        assert ss.parse(_answer(), 2, SOURCE).dropped_poin == 0
+
     def test_a_number_not_in_the_articles(self):
         assert _reason(_answer(inti="Harga emas naik ke Rp2.600.000 per gram.")) == "number"
 

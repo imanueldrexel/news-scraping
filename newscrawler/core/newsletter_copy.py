@@ -143,6 +143,9 @@ FOOTER = ("Disarikan dari {articles} artikel di {outlets} portal. "
           "Ringkasan ditulis AI dan bisa keliru; cek artikel aslinya untuk detail.")
 FOOTER_FULL_EDITION = "Edisi lengkap memuat {n} berita."     # the edition's pointer to the archive
 DEGRADED = "Sebagian ringkasan tidak tersedia hari ini. {n} berita hanya ditampilkan judulnya."
+# The edition shows no story without a summary (its headline is a portal's, unchecked, and the
+# editor never saw it), so its notice says where those stories are instead.
+DEGRADED_EDITION = "Sebagian ringkasan tidak tersedia hari ini; {n} berita hanya ada di edisi lengkap."
 EMPTY_DAY = ("Tidak ada berita yang terkumpul untuk {tanggal}. "
              "Ini biasanya tanda gangguan pengumpulan, bukan hari tanpa berita.")
 
@@ -160,6 +163,10 @@ def footer(articles: int, outlets: int) -> str:
 
 def degraded(n: int) -> str:
     return DEGRADED.format(n=angka(n))
+
+
+def degraded_edition(n: int) -> str:
+    return DEGRADED_EDITION.format(n=angka(n))
 
 
 def empty_day(d: date) -> str:

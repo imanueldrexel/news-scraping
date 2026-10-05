@@ -111,14 +111,14 @@ class Edition:
     words: int
     utama: int
     sekilas: int
-    headline_only: int            # Sekilas lines that are a fallback story's portal headline
+    unsummarized: int             # candidates left out because they have no summary
     editor_fallback: bool
     editor_rejections: List[str]  # each refused or failed editor answer's reason, in order
 
     def stats(self) -> dict:
         """The `_edition` entry of newsletter_digests.categories."""
         return {"built": True, "words": self.words, "utama": self.utama, "sekilas": self.sekilas,
-                "headline_only": self.headline_only, "editor_fallback": self.editor_fallback,
+                "unsummarized": self.unsummarized, "editor_fallback": self.editor_fallback,
                 "editor_rejections": list(self.editor_rejections)}
 
 
@@ -271,12 +271,14 @@ def parse_editor(answer: Optional[str], cands: Sequence[Candidate]) -> Choice:
     return Choice(utama, sixty, groups)
 
 
-def choose(summarizer, cands: Sequence[Candidate], digest_date: date) -> Tuple[Choice, bool, List[str]]:
+def choose(summarizer, cands: Sequence[Candidate], digest_date: date,
+           no_call_reason: str = "no_provider") -> Tuple[Choice, bool, List[str]]:
     """(choice, fallback used, reasons). One editor call, one retry with the
-    reason; a daily quota stops at once. No summarizer: the fallback, no call."""
+    reason; a daily quota stops at once. No summarizer: the fallback, no call,
+    and `no_call_reason` says why (no provider, or the summaries' calls stopped)."""
     reasons: List[str] = []
     if summarizer is None:
-        return deterministic(cands), True, ["no_provider"]
+        return deterministic(cands), True, [no_call_reason]
     prompt = build_prompt(cands, digest_date)
     ask = prompt
     for _ in (1, 2):
@@ -327,26 +329,28 @@ def _md(text: str) -> str:
 
 class SekilasLine(NamedTuple):
     line: str
-    headline_only: bool     # a story without a summary: its portal headline
     id: int                 # the candidate's id
 
 
 def _sekilas(cands: Sequence[Candidate], choice: Choice) -> List[SekilasLine]:
-    """A line for every candidate that is neither a top story nor the same
-    event as one, one per duplicate group, at most SEKILAS_PER_SECTION per
-    section, in section order. A story without a summary shows its portal headline."""
+    """A line for every summarized candidate that is neither a top story nor
+    the same event as one, one per duplicate group, at most
+    SEKILAS_PER_SECTION per section, in section order. A story without a
+    summary is left to the full digest: its headline is a portal's, unchecked,
+    and the editor never saw it, so it could repeat a top story (the
+    2026-10-04 replay showed "Kapolri Mutasi Sejumlah Perwira" under the
+    Kapolri top story)."""
     utama_groups = {_group_of(i, choice.groups) for i in choice.utama}
     seen_groups, per_section, lines = set(), {}, []
     for c in cands:
         group = _group_of(c.id, choice.groups)
-        if c.id in choice.utama or group in utama_groups or group in seen_groups:
+        if not c.summarized or c.id in choice.utama or group in utama_groups or group in seen_groups:
             continue
         if per_section.get(c.topic, 0) >= SEKILAS_PER_SECTION:
             continue
         seen_groups.add(group)
         per_section[c.topic] = per_section.get(c.topic, 0) + 1
-        text = c.story.sekilas if c.summarized else c.cluster["headline"]
-        lines.append(SekilasLine(f"- **{copy.SECTION_SHORT.get(c.topic, c.topic)} ·** {text}", not c.summarized, c.id))
+        lines.append(SekilasLine(f"- **{copy.SECTION_SHORT.get(c.topic, c.topic)} ·** {c.story.sekilas}", c.id))
     return lines
 
 
@@ -356,8 +360,10 @@ def render(cands: Sequence[Candidate], choice: Choice, digest_date: date, articl
     bottom while the edition is over WORD_BUDGET; top stories never are."""
     by_id = {c.id: c for c in cands}
     sekilas = _sekilas(cands, choice)
+    unsummarized = sum(1 for c in cands if not c.summarized)
     while True:
-        markdown = _markdown(by_id, choice, sekilas, digest_date, article_count, outlet_count, digest_stories)
+        markdown = _markdown(by_id, choice, sekilas, unsummarized, digest_date, article_count, outlet_count,
+                             digest_stories)
         count = reader_words(markdown)
         if count <= WORD_BUDGET or not sekilas:
             if count > WORD_BUDGET:
@@ -366,12 +372,11 @@ def render(cands: Sequence[Candidate], choice: Choice, digest_date: date, articl
         sekilas = sekilas[:-1]
 
 
-def _markdown(by_id, choice: Choice, sekilas, digest_date: date, article_count: int, outlet_count: int,
-              digest_stories: int) -> str:
+def _markdown(by_id, choice: Choice, sekilas, unsummarized: int, digest_date: date, article_count: int,
+              outlet_count: int, digest_stories: int) -> str:
     lines = [f"# {copy.TITLE}", "", f"> {copy.DATELINE_EDITION.format(tanggal=copy.tanggal(digest_date))}", ""]
-    headline_only = sum(1 for s in sekilas if s.headline_only)
-    if headline_only:
-        lines += [f"> {copy.degraded(headline_only)}", ""]
+    if unsummarized:      # candidates left out for want of a summary (SYS-84's notice, worded for the edition)
+        lines += [f"> {copy.degraded_edition(unsummarized)}", ""]
     lines += [f"## {copy.SIXTY_SECONDS}", ""] + [f"- {sentence}" for _, sentence in choice.sixty] + [""]
     lines += [f"## {copy.TOP_STORIES}", ""]
     for cid in choice.utama:
@@ -384,15 +389,15 @@ def _markdown(by_id, choice: Choice, sekilas, digest_date: date, article_count: 
 
 
 def build(summarizer, sections: Sequence[dict], digest_date: date, article_count: int,
-          outlet_count: int) -> Optional[Edition]:
+          outlet_count: int, no_call_reason: str = "no_provider") -> Optional[Edition]:
     """The edition, or None when no shown story has a summary (nothing to edit)."""
     cands = candidates(sections)
     if not any(c.summarized for c in cands):
         return None          # the caller reports it (the operator's note, at ERROR)
-    choice, fallback, reasons = choose(summarizer, cands, digest_date)
+    choice, fallback, reasons = choose(summarizer, cands, digest_date, no_call_reason)
     digest_stories = sum(len(s["clusters"]) for s in sections)
     markdown, count, sekilas = render(cands, choice, digest_date, article_count, outlet_count, digest_stories)
-    return Edition(markdown, count, len(choice.utama), len(sekilas), sum(1 for s in sekilas if s.headline_only),
+    return Edition(markdown, count, len(choice.utama), len(sekilas), sum(1 for c in cands if not c.summarized),
                    fallback, reasons)
 
 

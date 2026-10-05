@@ -3,7 +3,10 @@
 Reads the day's articles, clusters and summarizes them exactly as `task=newsletter`
 does (same generator, same summarizer), but `save_digest` is a no-op and the
 summaries are not counted in api_usage_log, so nothing is written to Postgres.
-The markdown goes to --out-dir (default digests/preview), not digests/.
+The markdown (the full digest and, since SYS-83, the 5-minute edition
+`<date>-ringkas.md`) goes to --out-dir (default digests/preview), not digests/.
+For the tickets' replay numbers and both PDFs, use
+scripts/experiments/replay_newsletter_edition.py.
 
     venv\\Scripts\\python.exe scripts\\preview_newsletter.py --date 2026-10-03
 
@@ -54,6 +57,8 @@ def main(argv=None) -> int:
     generator = newsletter_generator.NewsletterGenerator(ReadOnlyNewsletterDataSource(SQLAlchemyClient()))
     path = generator.generate(date.fromisoformat(args.date))
     print(path)
+    if getattr(path, "edition", None):
+        print(path.edition)              # SYS-83: the 5-minute edition beside the full digest
     if getattr(path, "note", None):
         print(f"NOTE: {path.note}", file=sys.stderr)
     return 0

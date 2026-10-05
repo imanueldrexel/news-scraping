@@ -72,8 +72,8 @@ class Capture:
             self.cands = real_candidates(sections)
             return self.cands
 
-        def choose(summarizer, cands, digest_date):
-            result = real_choose(summarizer, cands, digest_date)
+        def choose(*args, **kwargs):
+            result = real_choose(*args, **kwargs)
             self.choice = result[0]
             return result
 
@@ -96,13 +96,57 @@ class Capture:
                            for c in top6 if id_of.get(id(c)) not in shown]}
 
 
+_ENGLISH_MONTHS = re.compile(r"\b(January|February|March|May|June|July|August|October|December)\b")
+_ISO_DATE = re.compile(r"\b\d{4}-\d{2}-\d{2}\b")
+_PAGE_STARTS = ("Diberitakan", "Artikel terkait", "Sumber (", "Baca di")
+
+
+def document_checks(markdown_paths, pdf_paths) -> dict:
+    """SYS-81/SYS-84/OPS-41's Done-when on real files: what a reader sees has no
+    English month, ISO date, source enum or telemetry; no PDF page starts with a
+    source/link line or ends on a section heading."""
+    from pypdf import PdfReader
+
+    from newscrawler.core.newsletter_copy import OUTLET_NAMES, SECTION_NAMES
+    found = {"english_month": [], "iso_date": [], "internal_source": [], "telemetry": [], "page_starts_with_meta": [],
+             "page_ends_on_section": []}
+    for path in markdown_paths:
+        prose = re.sub(r"\]\([^)]*\)", "]", open(path, encoding="utf-8").read())   # URLs are not reader text
+        found["english_month"] += _ENGLISH_MONTHS.findall(prose)
+        found["iso_date"] += _ISO_DATE.findall(prose)
+        no_brands = prose
+        for brand in sorted(OUTLET_NAMES.values(), key=len, reverse=True):   # "CNN Indonesia" contains "CNN"
+            no_brands = no_brands.replace(brand, " ")
+        found["internal_source"] += [s for s in OUTLET_NAMES if re.search(rf"\b{s}\b", no_brands)]
+        # ("WIB" is not on the list: articles say "pukul 05.55 WIB"; the old footer's time is caught by "Total artikel")
+        found["telemetry"] += [t for t in ("Ringkasan AI", "Cluster", "deepseek", "Total artikel") if t in prose]
+    sections = {n.upper() for n in SECTION_NAMES.values()} | set(SECTION_NAMES.values()) | {"BERITA UTAMA", "SEKILAS"}
+    for pdf in pdf_paths:
+        for number, page in enumerate(PdfReader(pdf).pages, 1):
+            lines = [l.strip() for l in page.extract_text().splitlines()
+                     if l.strip() and not l.strip().startswith("Rangkuman Berita ·")]
+            if lines and lines[0].startswith(_PAGE_STARTS):
+                found["page_starts_with_meta"].append(f"{os.path.basename(pdf)} p{number}: {lines[0][:60]}")
+            if lines and lines[-1] in sections:
+                found["page_ends_on_section"].append(f"{os.path.basename(pdf)} p{number}: {lines[-1]}")
+    return found
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--date", required=True, help="YYYY-MM-DD, the articles' publication day")
     parser.add_argument("--old", help="an old digest of the same day, for the words-per-story comparison")
     parser.add_argument("--out-dir", default=os.path.join(ROOT, "digests", "preview", "replay"))
+    parser.add_argument("--check-only", action="store_true",
+                        help="no LLM, no DB: only the document checks on the files already in --out-dir")
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    if args.check_only:
+        base = os.path.join(args.out_dir, args.date)
+        mds = [p for p in (base + ".md", base + ne.EDITION_SUFFIX + ".md") if os.path.exists(p)]
+        pdfs = [os.path.splitext(p)[0] + ".pdf" for p in mds if os.path.exists(os.path.splitext(p)[0] + ".pdf")]
+        print("CHECKS " + json.dumps(document_checks(mds, pdfs), ensure_ascii=False))
+        return 0
 
     os.makedirs(args.out_dir, exist_ok=True)
     ng.DIGESTS_DIR = args.out_dir
@@ -131,11 +175,14 @@ def main(argv=None) -> int:
     }
     pages = {"digest_a4": None, "edition_phone": None}
     from pypdf import PdfReader
-    pages["digest_a4"] = len(PdfReader(render_digest_pdf(str(path))).pages)
+    pdfs = [render_digest_pdf(str(path))]
+    pages["digest_a4"] = len(PdfReader(pdfs[0]).pages)
     if path.edition:
-        pages["edition_phone"] = len(PdfReader(render_edition_pdf(path.edition)).pages)
+        pdfs.append(render_edition_pdf(path.edition))
+        pages["edition_phone"] = len(PdfReader(pdfs[1]).pages)
         result["coverage"] = capture.coverage(e["sekilas"])
     result["pdf_pages"] = pages
+    result["checks"] = document_checks([str(path)] + ([path.edition] if path.edition else []), pdfs)
     print("REPLAY " + json.dumps(result, ensure_ascii=False))
     return 0
 

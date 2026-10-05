@@ -69,7 +69,7 @@ class TestSummaryAccounting:
         assert not [r for r in caplog.records if r.levelno >= logging.ERROR]
         assert _stats(ds) == {"total": 5, "summarized": 5, "provider": "fake-model", "stopped": None,
                               "groups_ok": 0, "groups_failed": 0, "first_try": 5,
-                              "rejections": {"json": 0, "length": 0, "number": 0}}
+                              "rejections": {"json": 0, "length": 0, "number": 0}, "poin_dropped": 0}
 
     def test_quota_on_the_first_call_stops_the_calls_and_says_so(self, monkeypatch, tmp_path, caplog):
         """SYS-68's Done-when: exactly one API call, 0/N reported, an ERROR, a note."""
@@ -185,6 +185,17 @@ class TestRefusedAnswers:
         assert stats["rejections"] == {"json": 0, "length": 1, "number": 1}
         text = open(path, encoding="utf-8").read()
         assert "### h1" in text and "- h1" in text and "99 persen" not in text
+
+    def test_a_point_still_too_long_on_the_retry_is_dropped_and_counted(self, monkeypatch, tmp_path):
+        long_point = lambda p: story_answer(p, poin=[" ".join(["kata"] * 23), "Poin pendek."])
+        s = FakeNewsroom(story=[long_point, long_point])
+        gen, ds = _gen(monkeypatch, s)
+        path = _run(gen, ds, monkeypatch, tmp_path, _day(1))
+        stats = _stats(ds)
+        assert (stats["summarized"], stats["poin_dropped"], stats["rejections"]["length"]) == (1, 1, 1)
+        text = open(path, encoding="utf-8").read()
+        assert "- Poin pendek." in text and "kata kata kata" not in text
+        assert "1 poin terlalu panjang dibuang" in ng.SummaryStats(**stats).describe()
 
     def test_refusals_are_not_an_outage(self, monkeypatch, tmp_path):
         monkeypatch.setattr(ng, "NEWSLETTER_MAX_CONSECUTIVE_SUMMARY_ERRORS", 1)
