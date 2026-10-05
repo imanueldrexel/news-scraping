@@ -15,6 +15,22 @@ def preprocess_text(text):
     return text
 
 
+def unescape_headline(text):
+    """SYS-88 (#249): a headline as a reader writes it. Sitemaps hand some titles
+    over HTML-escaped ("Jatim &amp; Kalsel", in CDATA the parser does not
+    decode), and some twice ("&amp;amp;", DETIK), so unescape until nothing
+    changes (bounded: an entity takes at most a few rounds). None stays None."""
+    if not text:
+        return text
+    import html
+    for _ in range(5):
+        decoded = html.unescape(text)
+        if decoded == text:
+            break
+        text = decoded
+    return text.replace("\xa0", " ")
+
+
 def own_paragraph_text(p_tag, separator: str = " ") -> str:
     """SRC-54 (#177): the text of one <p>, without the text of any <p> nested in it.
 

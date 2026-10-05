@@ -13,7 +13,7 @@ import pydantic
 
 from newscrawler.core.constants import VERBOSE, PARALLELIZE, MAX_WORKER, MIN_ARTICLE_CHARS
 from newscrawler.core.page_loader.throttle import NOT_FETCHED_REASON, ThrottleGuard
-from newscrawler.core.utils.utils import clean_body_paragraphs
+from newscrawler.core.utils.utils import clean_body_paragraphs, unescape_headline
 from newscrawler.core.page_loader.page_loader import PageLoader
 from newscrawler.core.page_loader.requests_page_loader import RequestsPageLoader
 from newscrawler.domain.dtos.dataflow.details.news_details_dto import NewsDetailsDTO
@@ -518,9 +518,9 @@ class Crawler:
             # news:title either, so fall back to a slug derived from the URL
             # rather than lose the row -- _get_news_details prefers a real
             # page title over this placeholder when one is available.
-            data_field_dict["headline"] = articles_data.get("headline") or Crawler._derive_headline_from_url(
-                articles_data.get("link")
-            )
+            # SYS-88: unescaped here, the one door every crawler's entries go through.
+            data_field_dict["headline"] = unescape_headline(articles_data.get("headline")) or \
+                Crawler._derive_headline_from_url(articles_data.get("link"))
             data_field_dict["keywords"] = articles_data.get("keywords")
             data_field_dict["timestamp"] = articles_data.get("timestamp")
             data_field_dict["category"] = articles_data.get("category")
@@ -800,10 +800,10 @@ class Crawler:
         itself."""
         og_title = soup.find("meta", property="og:title")
         if og_title and og_title.get("content"):
-            return og_title["content"].strip()
+            return unescape_headline(og_title["content"].strip())
         title_tag = soup.find("title")
         if title_tag and title_tag.get_text(strip=True):
-            return title_tag.get_text(" ").strip()
+            return unescape_headline(title_tag.get_text(" ").strip())
         return None
 
     @staticmethod

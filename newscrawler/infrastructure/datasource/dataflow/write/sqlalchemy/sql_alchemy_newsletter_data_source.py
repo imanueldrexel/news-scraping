@@ -4,6 +4,7 @@ from typing import List, Optional
 
 from sqlalchemy import text
 
+from newscrawler.core.utils.utils import unescape_headline
 from newscrawler.infrastructure.network.clients.sqlalchemy_client import SQLAlchemyClient
 
 logger = logging.getLogger(__name__)
@@ -35,7 +36,7 @@ class SQLAlchemyNewsletterDataSource:
         return [
             {
                 "sitemap_id": row.sitemap_id,
-                "headline":   row.headline or "",
+                "headline":   unescape_headline(row.headline or ""),     # SYS-88: rows stored before the fix
                 "source":     row.sources  or "",
                 "category":   row.category or "",
                 "link":       row.link     or "",
