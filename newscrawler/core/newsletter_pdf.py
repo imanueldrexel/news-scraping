@@ -9,10 +9,13 @@ turns it into blocks; `build_story` (A4 archive) and `build_edition_story`
 line the grammar does not know is printed as a paragraph, never dropped. Emoji
 (the section headings carry them) have no glyph in the text font and are removed.
 
-Page breaks (OPS-41 #238): a whole story -- heading, summary, bullets, source and
-link lines -- is one KeepTogether, so it moves to the next page whole (only a
-story longer than a page is split), and a section heading shares a KeepTogether
-with whatever follows it, so it never sits alone at a page foot.
+Page breaks (OPS-41 #238): in the A4 digest a whole story -- heading, summary,
+bullets, source and link lines -- is one KeepTogether, so it moves to the next
+page whole (only a story longer than a page is split), and a section heading
+shares a KeepTogether with whatever follows it, so it never sits alone at a page
+foot. On the phone page a story may continue on the next page, but only after
+its title and first sentence, and never leaving its 'Baca di' line alone
+(owner decision 2026-10-05, `_flow_phone_story`).
 """
 import os
 import re
@@ -251,7 +254,7 @@ def build_story(markdown: str):
 
 # ── Phone edition (OPS-42) ───────────────────────────────────────────────────
 
-PHONE_PAGE = (105 * mm, 190 * mm)
+PHONE_PAGE = (105 * mm, 228 * mm)    # a phone's ~9:19.5 (owner decision 2026-10-05; the ticket said 190 mm)
 PHONE_MARGIN = 10 * mm
 PHONE_BODY_SIZE = 11.5
 BAND_BG = "#e6eef8"
@@ -318,6 +321,21 @@ def _edition_story(block: Block, s: dict, lead: bool) -> list:
     return flowables
 
 
+def _flow_phone_story(out: "_Flow", flowables: list) -> None:
+    """Owner decision 2026-10-05 (OPS-42): on the phone page a top story may run
+    on to the next page -- keeping each whole left one story per page and a
+    12-page edition -- but never from a bare heading or into a bare link: the
+    title stays with the first sentence (and with a section band before it),
+    and the 'Baca di' line stays with the line before it. A short story is one
+    block, as before."""
+    if len(flowables) <= 4:
+        out.keep(flowables)
+        return
+    out.keep(flowables[:2])
+    out.free(flowables[2:-2])
+    out.keep(flowables[-2:])
+
+
 def build_edition_story(markdown: str):
     """The phone flowables of one 5-minute edition."""
     s = _phone_styles()
@@ -341,10 +359,14 @@ def build_edition_story(markdown: str):
             out.keep([Spacer(1, 4), box, Spacer(1, 4)])
             section = ""
         elif block.kind == "story":
-            out.keep(_edition_story(block, s, lead=first_in_section and section == copy.TOP_STORIES))
+            _flow_phone_story(out, _edition_story(block, s, lead=first_in_section and section == copy.TOP_STORIES))
             first_in_section = False
         elif block.kind == "bullets":
-            out.keep([_bullet_list(block.items, s["glance"], bullet_size=8)])
+            # one line at a time, so a long Sekilas list fills the page it starts on;
+            # the first line keeps the band above it company
+            lines = [_bullet_list([item], s["glance"], bullet_size=8) for item in block.items]
+            out.keep(lines[:1])
+            out.free(lines[1:])
         elif block.kind == "title":
             out.free([Paragraph(inline(block.text), s["title"])])
         elif block.kind == "quote":

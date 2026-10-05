@@ -66,6 +66,8 @@ class TestCandidates:
         assert "10 kandidat berita Minggu, 4 Oktober 2026" in prompt
         assert "4 | Kebijakan & Makroekonomi | 8 | Judul p1 | Inti p1 senilai Rp2.574.000." in prompt
         assert "| Judul m1 |" not in prompt
+        # replay 2026-10-05: with "one sentence per top story" read literally, 3 of 3 first answers had 8
+        assert "3-5 kalimat SAJA (bukan satu kalimat untuk setiap berita utama)" in prompt
 
 
 class TestParseEditor:

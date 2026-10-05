@@ -299,10 +299,23 @@ class TestPhoneEdition:
         from reportlab.lib.units import mm
         from newscrawler.core.newsletter_pdf import PHONE_PAGE, _phone_styles
         box = PdfReader(edition_pdf).pages[0].mediabox
-        assert (round(float(box.width) / mm), round(float(box.height) / mm)) == (105, 190) == \
+        # 105 x 228 mm, a phone's ~9:19.5 (owner decision 2026-10-05; the ticket's 190 mm gave a 12-page edition)
+        assert (round(float(box.width) / mm), round(float(box.height) / mm)) == (105, 228) == \
             (round(PHONE_PAGE[0] / mm), round(PHONE_PAGE[1] / mm))
         body = _phone_styles()["body"]
         assert (body.fontSize, body.leading) == (11.5, 16)
+
+    def test_a_short_story_is_still_one_block(self):
+        from reportlab.platypus.flowables import KeepTogether
+        from newscrawler.core.newsletter_pdf import build_edition_story
+        md = "## Berita Utama\n\n### [Judul](https://x.co)\n\nInti.\n\n**Diberitakan 2 portal** · [Baca di Kontan →](https://x.co)\n"
+        (group,) = [f for f in build_edition_story(md) if isinstance(f, KeepTogether)]
+        assert _plain(group)[0] == "BERITA UTAMA" and _plain(group)[-1] == "Baca di Kontan →"
+
+    def test_the_maximal_edition_is_denser_than_one_story_per_page(self, edition_pdf):
+        """8 top stories at every word limit and 15 Sekilas lines: 11 pages when a story could not
+        break (the first layout); the real 2026-10-04 edition is 7 (EXPERIMENTS.md, OPS-42)."""
+        assert len(PdfReader(edition_pdf).pages) <= 8
 
     def test_no_page_is_only_a_footer(self, edition_pdf):
         """Whole stories move to the next page; that must never leave a page with nothing on it.
@@ -321,10 +334,11 @@ class TestPhoneEdition:
     def test_the_title_link_is_not_marked_by_colour_alone(self):
         from newscrawler.core.newsletter_pdf import LINK_COLOR, TEXT_COLOR, build_edition_story
         from reportlab.platypus.flowables import KeepTogether
-        (group,) = [f for f in build_edition_story(EDITION)
-                    if isinstance(f, KeepTogether) and any("nomor 1 yang" in t for t in _plain(f))]
-        title = group._content[0]
-        (read,) = [f for f in group._content if hasattr(f, "getPlainText") and "Baca di" in f.getPlainText()]
+        groups = [f for f in build_edition_story(EDITION) if isinstance(f, KeepTogether)]
+        (head,) = [g for g in groups if any("nomor 1 yang" in t for t in _plain(g))]
+        (tail,) = [g for g in groups if any("artikel berita 1" in t for t in _plain(g))]
+        title = head._content[0]
+        (read,) = [f for f in tail._content if hasattr(f, "getPlainText") and "Baca di" in f.getPlainText()]
         assert 'color="%s"' % TEXT_COLOR in title.text and LINK_COLOR not in title.text
         assert 'color="%s"' % LINK_COLOR in read.text and "→" in read.getPlainText()
 
@@ -339,15 +353,19 @@ class TestPhoneEdition:
         assert "BERITA UTAMA" in text and "SEKILAS" in text and "Hukum · Sekilas berita nomor 14" in text
         assert "Rangkuman Berita · Minggu, 4 Okt 2026 · 1/" in text
 
-    def test_every_story_is_one_keep_together_and_the_first_is_the_lead(self):
+    def test_a_story_breaks_only_after_its_first_sentence_and_never_strands_its_link(self):
+        """Owner decision 2026-10-05: a phone story may continue on the next page, but its title
+        keeps its first sentence and the 'Baca di' line keeps the line before it."""
         from reportlab.platypus.flowables import KeepTogether
         from newscrawler.core.newsletter_pdf import build_edition_story
         flow = build_edition_story(EDITION)
         groups = [f for f in flow if isinstance(f, KeepTogether)]
         for i in range(8):
-            (group,) = [g for g in groups if any("nomor %d yang" % i in t for t in _plain(g))]
-            texts = _plain(group)
-            assert any("Baca di Kontan" in t for t in texts) and any(t.startswith("Mengapa penting") for t in texts)
+            (head,) = [g for g in groups if any("nomor %d yang" % i in t for t in _plain(g))]
+            assert any(t.startswith("Inti berita nomor %d" % i) for t in _plain(head))
+            (tail,) = [g for g in groups if any("Baca di" in t for t in _plain(g)) and
+                       any("artikel berita %d" % i in t for t in _plain(g))]
+            assert [t for t in _plain(tail) if t.startswith("Mengapa penting")]
         lead = [g for g in groups if any("nomor 0 yang" in t for t in _plain(g))][0]
         assert _plain(lead)[0] == "BERITA UTAMA"                    # the band stays with the first story
         titles = [f for g in groups for f in g._content if hasattr(f, "style") and "nomor" in f.getPlainText()
