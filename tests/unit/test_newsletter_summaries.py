@@ -69,7 +69,7 @@ class TestSummaryAccounting:
         assert not [r for r in caplog.records if r.levelno >= logging.ERROR]
         assert _stats(ds) == {"total": 5, "summarized": 5, "provider": "fake-model", "stopped": None,
                               "groups_ok": 0, "groups_failed": 0, "first_try": 5,
-                              "rejections": {"json": 0, "length": 0, "number": 0}, "poin_dropped": 0}
+                              "rejections": {"json": 0, "length": 0, "number": 0, "subject": 0}, "poin_dropped": 0}
 
     def test_quota_on_the_first_call_stops_the_calls_and_says_so(self, monkeypatch, tmp_path, caplog):
         """SYS-68's Done-when: exactly one API call, 0/N reported, an ERROR, a note."""
@@ -169,7 +169,7 @@ class TestRefusedAnswers:
         path = _run(gen, ds, monkeypatch, tmp_path, _day(2))
         stats = _stats(ds)
         assert (stats["summarized"], stats["first_try"]) == (2, 1)
-        assert stats["rejections"] == {"json": 1, "length": 0, "number": 0}
+        assert stats["rejections"] == {"json": 1, "length": 0, "number": 0, "subject": 0}
         assert "ditolak json 1" in ng.SummaryStats(**stats).describe()
         assert "Jawaban sebelumnya ditolak" in s.prompts["story"][1]
         assert path.note is None
@@ -182,7 +182,7 @@ class TestRefusedAnswers:
         path = _run(gen, ds, monkeypatch, tmp_path, _day(1))
         stats = _stats(ds)
         assert (stats["summarized"], stats["total"]) == (0, 1)
-        assert stats["rejections"] == {"json": 0, "length": 1, "number": 1}
+        assert stats["rejections"] == {"json": 0, "length": 1, "number": 1, "subject": 0}
         text = open(path, encoding="utf-8").read()
         assert "### h1" in text and "- h1" in text and "99 persen" not in text
 

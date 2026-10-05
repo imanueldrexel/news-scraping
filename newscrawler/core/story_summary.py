@@ -13,12 +13,13 @@ bullets from another), and no way to check a number. The model now answers JSON:
     tidak_terkait    indexes of the articles about something else
 
 and `parse` refuses an answer that breaks a rule: not JSON or the wrong shape
-("json"), a field over its word limit ("length" -- never cut mid-sentence), or a
-number that is not in the articles ("number": digit runs compared with their
-separators removed, so "Rp2.574.000" matches "Rp 2.574.000" but "13,3 juta" does
-not match "13.300.000"; the prompt says to copy numbers verbatim). A refused
-answer is asked again once, with the reason; a second refusal is the caller's
-fallback (the story's headline list).
+("json"), a field over its word limit ("length" -- never cut mid-sentence), a
+number that is not in the `terkait` articles ("number": compared by value, so
+"Rp2.574.000" matches "Rp 2.574.000" and "2,574,000", but "Rp1,5" does not match
+"Rp15" and "13,3 juta" does not match "13.300.000"; the prompt says to copy
+numbers verbatim), or a `terkait` article that does not name the summary's
+subject ("subject", SYS-80). A refused answer is asked again once, with the
+reason; a second refusal is the caller's fallback (the story's headline list).
 
 Which articles the model sees: one per outlet first, most authoritative outlets
 first, then the remaining articles, up to MAX_ARTICLES. The links and the lead
@@ -30,9 +31,10 @@ import json
 import logging
 import re
 from dataclasses import dataclass
-from typing import List, Optional, Sequence
+from typing import Dict, List, Optional, Sequence, Set, Tuple, Union
 
 from newscrawler.core import newsletter_copy as copy
+from newscrawler.core import story_words
 from newscrawler.core.constants import SOURCE_AUTHORITY
 
 logger = logging.getLogger(__name__)
@@ -47,7 +49,7 @@ ARTICLE_CHARS = 800
 LIMITS = {"judul": 12, "inti": 25, "poin": 20, "mengapa_penting": 20, "sekilas": 15}
 JUDUL_ASKED = 10
 MAX_POIN = 2
-REASONS = ("json", "length", "number")
+REASONS = ("json", "length", "number", "subject")
 
 # The example answer is from a past digest (2026-10-04), never from the day being summarised.
 PROMPT = (
@@ -142,14 +144,20 @@ def pick_articles(articles: Sequence[dict], limit: int = MAX_ARTICLES) -> list:
 
 
 def article_text(article: dict) -> str:
-    """What the model reads of one article -- outlet, headline, opening -- and so
-    the only text its numbers may come from ("Liputan6" is in it too)."""
-    return f"{copy.outlet(article['source'])} — {article['headline']}\n{(article.get('l1_text') or '')[:ARTICLE_CHARS]}"
+    """What the model reads of one article: outlet, headline, opening."""
+    return f"{copy.outlet(article['source'])} — {guard_text(article)}"
 
 
-def source_text(shown: Sequence[dict]) -> str:
-    """The number guard's corpus: every shown article's text, without the prompt's own [i] indexes."""
-    return "\n\n".join(article_text(a) for a in shown)
+def guard_text(article: dict) -> str:
+    """What the guards read of one article: its headline and opening, as the
+    model reads them, without the outlet's name (SYS-87: "Liputan6" is not
+    article text, so its 6 is not a number the article states)."""
+    return f"{article['headline']}\n{(article.get('l1_text') or '')[:ARTICLE_CHARS]}"
+
+
+def source_text(articles: Sequence[dict]) -> str:
+    """The number guard's corpus over `articles` (the prompt's own [i] indexes and example are not in it)."""
+    return "\n\n".join(guard_text(a) for a in articles)
 
 
 def build_prompt(shown: Sequence[dict]) -> str:
@@ -167,9 +175,33 @@ def words(text: str) -> int:
     return len(text.split())
 
 
-def numbers(text: str) -> List[str]:
-    """Every number in `text` as its digits alone: '2.574.000' -> '2574000', '0,46' -> '046'."""
-    return [re.sub(r"[.,]", "", m) for m in _NUMBER.findall(text)]
+def _canonical(whole: str, fraction: str = "") -> str:
+    whole, fraction = whole.lstrip("0") or "0", fraction.rstrip("0")
+    return f"{whole},{fraction}" if fraction else whole
+
+
+def values(number: str) -> Set[str]:
+    """The values a written number can stand for, canonical ('2.574.000' ->
+    {'2574000'}, '1,50' -> {'1,5'}), so separators may differ but the decimal
+    position may not (SYS-87: 'Rp1,5 triliun' is not 'Rp15 triliun').
+    Indonesian notation first ('.' thousands, ',' decimal). The English one is
+    read where Indonesian cannot be ('2,574,000', '1.5') and also where both
+    can ('1,500': 1,5 or 1500); '1.500' is 1500 only, as Indonesian prose writes it."""
+    separators = re.findall(r"[.,]", number)
+    if not separators:
+        return {_canonical(number)}
+    if len(set(separators)) == 2:                       # 2.574,5 / 2,574.5: the last one is the decimal point
+        point = max(number.rfind("."), number.rfind(","))
+        return {_canonical(re.sub(r"[.,]", "", number[:point]), number[point + 1:])}
+    parts = number.split(separators[0])
+    if len(parts) > 2:                                  # 2.574.000 / 2,574,000: thousands
+        return {_canonical("".join(parts))}
+    whole, fraction = parts
+    if len(fraction) != 3 or not whole.strip("0"):      # 1,5 / 133,88 / 1.5 / 0,125: a decimal
+        return {_canonical(whole, fraction)}
+    if separators[0] == ".":
+        return {_canonical(whole + fraction)}
+    return {_canonical(whole + fraction), _canonical(whole, fraction)}
 
 
 def _date_in(day: int, month: int, source: str) -> bool:
@@ -186,16 +218,32 @@ def _date_in(day: int, month: int, source: str) -> bool:
 
 def unsupported_number(text: str, source: str) -> Optional[str]:
     """The first number in `text` that the source does not contain, or None.
-    A short date (4/10) passes when the source names that date in any form."""
-    available = set(numbers(source))
+    Numbers are compared by value (`values`). A short date (4/10) passes when
+    the source names that date in any form."""
+    available = {value for number in _NUMBER.findall(source) for value in values(number)}
     for match in _SHORT_DATE.finditer(text):
         if not _date_in(int(match.group(1)), int(match.group(2)), source):
             return match.group(0)
     rest = _SHORT_DATE.sub(" ", text)
-    for raw in _NUMBER.findall(rest):
-        if re.sub(r"[.,]", "", raw) not in available:
-            return raw
+    for number in _NUMBER.findall(rest):
+        if not values(number) & available:
+            return number
     return None
+
+
+def off_subject(summary: str, related: Dict[int, str]) -> Tuple[List[str], List[int]]:
+    """(anchors, strays) for SYS-80 (#236). The anchors are the summary's names
+    (`story_words.names`) that a related article mentions; a stray is a related
+    article that mentions none of them -- it is not about the story's subject
+    (2026-10-04: "10 Saham Paling Babak Belur, FORU Paling Parah" marked
+    `terkait` under "Saham Haji Isam beragam", supplying a FORU bullet; it names
+    neither Haji Isam nor PACK). No anchor, no check: a summary without a name
+    an article states ("Harga emas naik") cannot be held to one."""
+    vocabulary = {i: story_words.vocabulary(text) for i, text in related.items()}
+    anchors = sorted(w for w in story_words.names(summary) if any(w in v for v in vocabulary.values()))
+    if not anchors:
+        return [], []
+    return anchors, [i for i, v in vocabulary.items() if not any(w in v for w in anchors)]
 
 
 def _json_object(answer: Optional[str]) -> dict:
@@ -233,9 +281,13 @@ def _indexes(data: dict, key: str, n: int) -> List[int]:
     return value
 
 
-def parse(answer: Optional[str], n: int, source: str, drop_long_poin: bool = False) -> StorySummary:
+def parse(answer: Optional[str], n: int, sources: Union[str, Sequence[str]],
+          drop_long_poin: bool = False) -> StorySummary:
     """The answer as a StorySummary, or Rejected. `n` is the number of articles
-    shown, `source` their text (the only place a number may come from).
+    shown and `sources` their `guard_text`s, one per article (a string is the
+    one article's text). Only the articles marked `terkait` are the summary's
+    source: its numbers must be in them, and each of them must name the
+    summary's subject (`off_subject`, reason "subject").
     `poin`, `mengapa_penting` and `tidak_terkait` may be left out (empty);
     every other field is required.
 
@@ -243,6 +295,9 @@ def parse(answer: Optional[str], n: int, source: str, drop_long_poin: bool = Fal
     is removed whole instead of refusing the answer -- poin are optional ("Nol poin boleh") and
     nothing is ever cut mid-sentence. The 2026-10-03/04 replays: 133 of 133
     refusals were `length`, nearly all a poin of 21-28 words (EXPERIMENTS.md)."""
+    texts = [sources] if isinstance(sources, str) else list(sources)
+    if len(texts) != n:
+        raise ValueError(f"{len(texts)} article texts for {n} articles")
     data = _json_object(answer)
     judul, inti, sekilas = _text(data, "judul"), _text(data, "inti"), _text(data, "sekilas")
     mengapa = _text(data, "mengapa_penting", required=False)
@@ -272,12 +327,17 @@ def parse(answer: Optional[str], n: int, source: str, drop_long_poin: bool = Fal
             problems.append(f"{key} {words(value)} kata, maks {limit} -- persingkat: \"{value}\"")
     if problems:
         raise Rejected("length", "; ".join(problems))
+    source = "\n\n".join(texts[i] for i in terkait)
     for key, value in fields:
         bad = unsupported_number(value, source)
         if bad:
-            problems.append(f'angka "{bad}" di {key} tidak ada di artikel')
+            problems.append(f'angka "{bad}" di {key} tidak ada di artikel yang terkait')
+    numbers_ok = not problems
+    anchors, strays = off_subject(f"{judul}. {inti}", {i: texts[i] for i in terkait})
+    problems += [f'artikel [{i}] tidak menyebut {", ".join(anchors)}: jika membahas peristiwa lain, pindahkan ke '
+                 f'"tidak_terkait" dan jangan memakai faktanya' for i in strays]
     if problems:
-        raise Rejected("number", "; ".join(problems))
+        raise Rejected("number" if not numbers_ok else "subject", "; ".join(problems))
     return StorySummary(judul, inti, poin, mengapa, sekilas, terkait, tidak, dropped)
 
 
@@ -286,15 +346,15 @@ def summarize_story(summarizer, shown: Sequence[dict], rejections: list) -> Opti
     refusal's reason is appended to `rejections` as it happens (so a failed
     second call still leaves the first counted). None after two refusals.
     The summarizer's own errors (QuotaExhausted, SummarizerError) pass through."""
-    source = source_text(shown)
+    sources = [guard_text(a) for a in shown]
     prompt = build_prompt(shown)
     try:
-        return parse(summarizer.summarize(prompt), len(shown), source)
+        return parse(summarizer.summarize(prompt), len(shown), sources)
     except Rejected as first:
         rejections.append(first.reason)
         logger.info(f"Summary refused, asking again ({first}) -- {shown[0]['headline'][:80]!r}")
         try:
-            return parse(summarizer.summarize(prompt + RETRY.format(detail=first.detail)), len(shown), source,
+            return parse(summarizer.summarize(prompt + RETRY.format(detail=first.detail)), len(shown), sources,
                          drop_long_poin=True)
         except Rejected as second:
             rejections.append(second.reason)

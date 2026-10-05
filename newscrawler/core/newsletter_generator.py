@@ -340,7 +340,6 @@ class NewsletterGenerator:
         Raises QuotaExhausted or SummarizerError; the caller decides what a
         failure costs."""
         shown = story_summary.pick_articles(cluster["articles"])
-        cluster["source_text"] = story_summary.source_text(shown)   # the edition's number guard reads it
         story = story_summary.summarize_story(self._summarizer, shown, rejections)
         if story is not None:
             self._apply_story(cluster, shown, story)
@@ -350,10 +349,12 @@ class NewsletterGenerator:
         """SYS-80 (#236): the story is what the model summarized, so its headline
         and links come only from the articles it marked `terkait`, and an
         article it marked `tidak_terkait` no longer counts as a portal that
-        carried the story. Articles it did not see stay as clustered."""
+        carried the story. Articles it did not see stay as clustered. The
+        edition's number guard reads the same `terkait` text the summary's did."""
         unrelated = {id(shown[i]) for i in story.tidak_terkait}
         related = [shown[i] for i in story.terkait]
         cluster["story"] = story
+        cluster["source_text"] = story_summary.source_text(related)
         cluster["headline"] = self._pick_cluster_headline(related)
         cluster["sources"] = self._unique_sources([a for a in cluster["articles"] if id(a) not in unrelated])
         cluster["links"] = self._top_links(related)

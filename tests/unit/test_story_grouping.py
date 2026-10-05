@@ -140,9 +140,10 @@ class TestPickShown:
         assert sg.pick_shown(ranked, [list(range(8))], per_story=0, cap=8) == ranked
 
 
-def _article(i, topic, headline):
+def _article(i, topic, headline, subject=""):
+    """`subject`: the story's lead headline, which its articles' text names (SYS-80's subject check)."""
     return {"sitemap_id": i, "headline": headline, "source": "KOMPAS", "category": "news", "link": f"http://x/{i}",
-            "posted_at": 20260928, "topic": topic, "l1_text": f"text {i}"}
+            "posted_at": 20260928, "topic": topic, "l1_text": f"{subject} text {i}".strip()}
 
 
 class TestGeneratorShowsAStoryAtMostTwice:
@@ -162,7 +163,7 @@ class TestGeneratorShowsAStoryAtMostTwice:
         articles, labels = [], []
         for c, group in enumerate(SECTION):
             for k, headline in enumerate(group):
-                articles.append(_article(10 * c + k, "law_crime", headline))
+                articles.append(_article(10 * c + k, "law_crime", headline, subject=group[0]))
                 labels.append(c)
         # clusters are ranked by size x sources: give the first cluster the most articles
         monkeypatch.setattr(gen, "_cluster", lambda vectors: list(labels))
@@ -198,7 +199,7 @@ class TestGeneratorShowsAStoryAtMostTwice:
         articles, labels = [], []
         for c, group in enumerate(SECTION):
             for k, headline in enumerate(group):
-                articles.append(_article(10 * c + k, "law_crime", headline))
+                articles.append(_article(10 * c + k, "law_crime", headline, subject=group[0]))
                 labels.append(c)
         for i, headline in enumerate(["Sidang Perdana Kasus Pungli Terminal", "Polisi Tangkap Pengedar Narkoba"]):
             articles.append(_article(900 + i, "law_crime", headline))
