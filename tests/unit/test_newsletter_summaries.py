@@ -69,7 +69,8 @@ class TestSummaryAccounting:
         assert not [r for r in caplog.records if r.levelno >= logging.ERROR]
         assert _stats(ds) == {"total": 5, "summarized": 5, "provider": "fake-model", "stopped": None,
                               "groups_ok": 0, "groups_failed": 0, "first_try": 5,
-                              "rejections": {"json": 0, "length": 0, "number": 0, "subject": 0}, "poin_dropped": 0}
+                              "rejections": {"json": 0, "length": 0, "number": 0, "subject": 0}, "poin_dropped": 0,
+                              "strays_demoted": 0}
 
     def test_quota_on_the_first_call_stops_the_calls_and_says_so(self, monkeypatch, tmp_path, caplog):
         """SYS-68's Done-when: exactly one API call, 0/N reported, an ERROR, a note."""

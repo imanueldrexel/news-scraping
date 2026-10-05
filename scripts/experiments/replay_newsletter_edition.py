@@ -12,6 +12,9 @@ the tickets' Done-when numbers:
     coverage    of the day's 6 largest stories by portal count, how many the edition shows
                 (a top story, a Sekilas line, or a duplicate the editor folded into one)
     pdf_pages   the edition's phone PDF and the digest's A4 PDF
+    stories     <out-dir>/<date>-stories.json: every summary call (articles shown, refused answers
+                with their reason, the accepted summary) and the edition's candidates, choice and
+                hidden lines -- what check_story_subjects.py and probe_echo_guard.py read
 
     venv\\Scripts\\python.exe scripts\\experiments\\replay_newsletter_edition.py --date 2026-10-04 ^
         --old digests\\2026-10-04.md
@@ -37,6 +40,7 @@ load_dotenv(os.path.join(ROOT, ".env"))
 
 import newscrawler.core.newsletter_edition as ne  # noqa: E402
 import newscrawler.core.newsletter_generator as ng  # noqa: E402
+import newscrawler.core.story_summary as ss  # noqa: E402
 from newscrawler.core.newsletter_pdf import render_digest_pdf, render_edition_pdf  # noqa: E402
 from newscrawler.infrastructure.network.clients.sqlalchemy_client import SQLAlchemyClient  # noqa: E402
 from preview_newsletter import ReadOnlyNewsletterDataSource  # noqa: E402
@@ -61,11 +65,30 @@ def words_per_story(markdown: str) -> float:
 
 
 class Capture:
-    """What the edition was built from: the sections, the candidates and the editor's choice."""
+    """What the edition was built from: the sections, the candidates and the editor's choice;
+    and, per summary call, the articles shown, every refused answer and the accepted summary."""
 
     def __init__(self):
         self.sections = self.cands = self.choice = self.kept = None
+        self.calls = []                    # one per summarize_story: shown, refusals, story
         real_candidates, real_choose, real_render = ne.candidates, ne.choose, ne.render
+        real_summarize, real_parse = ss.summarize_story, ss.parse
+
+        def summarize_story(summarizer, shown, rejections):
+            self.calls.append({"shown": shown, "refusals": [], "story": None})
+            story = real_summarize(summarizer, shown, rejections)
+            self.calls[-1]["story"] = story
+            return story
+
+        def parse(*args, **kwargs):
+            try:
+                return real_parse(*args, **kwargs)
+            except ss.Rejected as r:
+                self.calls[-1]["refusals"].append({"reason": r.reason, "detail": r.detail,
+                                                   "answer": (args[0] if args else kwargs.get("answer")) or ""})
+                raise
+
+        ss.summarize_story, ss.parse = summarize_story, parse
 
         def candidates(sections):
             self.sections = sections
@@ -99,6 +122,23 @@ class Capture:
         return {"top6_portals": [len(c["sources"]) for c in top6], "covered": len(covered),
                 "missed": [c.get("story").judul if c.get("story") else c["headline"]
                            for c in top6 if id_of.get(id(c)) not in shown]}
+
+    def stories(self) -> dict:
+        """The day as data, for the offline checks (SYS-80's subjects, SYS-86's echo guard):
+        every summary call, and the edition's candidates, choice, kept and hidden lines."""
+        def story(s):
+            return None if s is None else {k: getattr(s, k) for k in (
+                "judul", "inti", "poin", "mengapa_penting", "sekilas", "terkait", "tidak_terkait", "demoted")}
+        out = {"calls": [{"shown": [{"source": a["source"], "headline": a["headline"], "link": a.get("link"),
+                                     "guard_text": ss.guard_text(a)} for a in c["shown"]],
+                          "refusals": c["refusals"], "story": story(c["story"])} for c in self.calls]}
+        if self.cands is not None and self.choice is not None:
+            out["candidates"] = [{"id": c.id, "topic": c.topic, "portals": c.portals, "guaranteed": c.guaranteed,
+                                  "story": story(c.story)} for c in self.cands]
+            out["choice"] = {"utama": self.choice.utama, "groups": [sorted(g) for g in self.choice.groups]}
+            out["kept"] = [s.id for s in self.kept or []]
+            out["echoes_hidden"] = ne._sekilas(self.cands, self.choice)[1]
+        return out
 
 
 _ENGLISH_MONTHS = re.compile(r"\b(January|February|March|May|June|July|August|October|December)\b")
@@ -188,6 +228,10 @@ def main(argv=None) -> int:
         result["coverage"] = capture.coverage()
     result["pdf_pages"] = pages
     result["checks"] = document_checks([str(path)] + ([path.edition] if path.edition else []), pdfs)
+    stories_path = os.path.join(args.out_dir, f"{args.date}-stories.json")
+    with open(stories_path, "w", encoding="utf-8") as f:
+        json.dump(capture.stories(), f, ensure_ascii=False, indent=1)
+    result["stories"] = stories_path
     print("REPLAY " + json.dumps(result, ensure_ascii=False))
     return 0
 

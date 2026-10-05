@@ -27,20 +27,23 @@ STOPWORDS = frozenset(
     "yang dan di ke dari untuk dengan pada ini itu akan dalam oleh atau juga sebagai karena hingga saat usai "
     "setelah tidak tak bisa ada para lebih jadi menjadi bagi serta agar namun telah sudah masih baru kata "
     "sebut menyebut menurut hari tahun bulan pekan senin selasa rabu kamis jumat sabtu minggu "
-    "soal tentang terkait terhadap atas bahwa antara sejak per".split())
+    "soal tentang terkait terhadap atas bahwa antara sejak per paling "
+    "the of and".split())                       # "The Fed": an English article is not a name
 TITLES = frozenset(
     "presiden wapres wakil menteri menko wamen gubernur wagub bupati wabup wali walikota ketua kepala direktur "
-    "dirut komisaris sekretaris sekjen jenderal juru bicara jubir plt pj".split())
+    "dirut komisaris sekretaris sekjen jenderal juru bicara jubir plt pj "
+    "pt tbk persero".split())                   # a legal form names a kind of company, not which one
 UNITS = frozenset("ribu juta miliar triliun persen senilai sebesar sekitar".split())
 MONTHS = frozenset(m.lower() for m in copy.MONTHS + copy.MONTHS_SHORT)
 _NOT_CONTENT = STOPWORDS | TITLES | UNITS | MONTHS
 
 WORD = re.compile(r"[^\W\d_][\w-]*", re.UNICODE)
+_ROMAN = re.compile(r"(?=[IVX]{2,}$)X{0,3}(IX|IV|V?I{0,3})$")    # "Komisi VIII", "Paket IV": an ordinal
 
 
 def _is_content(word: str, text: str, end: int) -> bool:
     low = word.lower()
-    if len(word) < 3 and not word.isupper():
+    if len(word) < 2 or (len(word) < 3 and not word.isupper()) or _ROMAN.match(word):
         return False
     if any(ch.isdigit() for ch in word) or text[end:end + 1] == "$":
         return False
@@ -63,8 +66,12 @@ def content_words(text: str) -> Dict[str, bool]:
 
 
 def names(text: str) -> Set[str]:
-    """The content words of `text` that are names there, lower-cased."""
-    return {word for word, is_name in content_words(text).items() if is_name}
+    """The content words of `text` that are names there, lower-cased, and the
+    parts of a hyphenated one ("AS-Iran" gives as-iran, as, iran: an article
+    may write "AS dan Iran")."""
+    out = {word for word, is_name in content_words(text).items() if is_name}
+    return out | {part for word in out if "-" in word for part in word.split("-")
+                  if len(part) >= 2 and part not in _NOT_CONTENT}
 
 
 def vocabulary(text: str) -> Set[str]:

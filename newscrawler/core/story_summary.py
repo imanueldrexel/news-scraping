@@ -49,6 +49,7 @@ ARTICLE_CHARS = 800
 LIMITS = {"judul": 12, "inti": 25, "poin": 20, "mengapa_penting": 20, "sekilas": 15}
 JUDUL_ASKED = 10
 MAX_POIN = 2
+ANCHOR_MIN_JUDUL_WORDS = 2     # SYS-80: or a name; see off_subject
 REASONS = ("json", "length", "number", "subject")
 
 # The example answer is from a past digest (2026-10-04), never from the day being summarised.
@@ -126,6 +127,7 @@ class StorySummary:
     terkait: List[int]
     tidak_terkait: List[int]
     dropped_poin: int = 0     # poin over their limit dropped whole on the retry (never cut)
+    demoted: int = 0          # terkait articles off the subject moved to tidak_terkait on the retry (SYS-80)
 
 
 def _authority(article: dict) -> float:
@@ -231,19 +233,26 @@ def unsupported_number(text: str, source: str) -> Optional[str]:
     return None
 
 
-def off_subject(summary: str, related: Dict[int, str]) -> Tuple[List[str], List[int]]:
+def off_subject(judul: str, inti: str, related: Dict[int, str]) -> Tuple[List[str], List[int]]:
     """(anchors, strays) for SYS-80 (#236). The anchors are the summary's names
-    (`story_words.names`) that a related article mentions; a stray is a related
-    article that mentions none of them -- it is not about the story's subject
-    (2026-10-04: "10 Saham Paling Babak Belur, FORU Paling Parah" marked
-    `terkait` under "Saham Haji Isam beragam", supplying a FORU bullet; it names
-    neither Haji Isam nor PACK). No anchor, no check: a summary without a name
-    an article states ("Harga emas naik") cannot be held to one."""
+    (`story_words.names` of judul + inti) that a related article mentions. A
+    stray is a related article that mentions none of them and fewer than
+    ANCHOR_MIN_JUDUL_WORDS of the judul's content words: it is not about the
+    story's subject (2026-10-04: "10 Saham Paling Babak Belur, FORU Paling
+    Parah" marked `terkait` under "Saham Haji Isam beragam", supplying a FORU
+    bullet; it names neither Haji Isam nor PACK, and shares only "saham" with
+    the judul). The judul's words let an article that names the subject in
+    other words pass ("short selling" without "BEI"; "Perancis" for
+    "Prancis"; replay 2026-10-05: names alone flagged ~15 related articles in
+    22 refusals). No anchor, no check: a summary without a name an article
+    states ("Harga emas naik") cannot be held to one."""
     vocabulary = {i: story_words.vocabulary(text) for i, text in related.items()}
-    anchors = sorted(w for w in story_words.names(summary) if any(w in v for v in vocabulary.values()))
+    anchors = sorted(w for w in story_words.names(f"{judul}. {inti}") if any(w in v for v in vocabulary.values()))
     if not anchors:
         return [], []
-    return anchors, [i for i, v in vocabulary.items() if not any(w in v for w in anchors)]
+    judul_words = set(story_words.content_words(judul))
+    return anchors, [i for i, v in vocabulary.items()
+                     if not v.intersection(anchors) and len(judul_words & v) < ANCHOR_MIN_JUDUL_WORDS]
 
 
 def _json_object(answer: Optional[str]) -> dict:
@@ -282,7 +291,7 @@ def _indexes(data: dict, key: str, n: int) -> List[int]:
 
 
 def parse(answer: Optional[str], n: int, sources: Union[str, Sequence[str]],
-          drop_long_poin: bool = False) -> StorySummary:
+          drop_long_poin: bool = False, demote_strays: bool = False) -> StorySummary:
     """The answer as a StorySummary, or Rejected. `n` is the number of articles
     shown and `sources` their `guard_text`s, one per article (a string is the
     one article's text). Only the articles marked `terkait` are the summary's
@@ -294,7 +303,16 @@ def parse(answer: Optional[str], n: int, sources: Union[str, Sequence[str]],
     drop_long_poin (the retry): a poin over its word limit, or past the second,
     is removed whole instead of refusing the answer -- poin are optional ("Nol poin boleh") and
     nothing is ever cut mid-sentence. The 2026-10-03/04 replays: 133 of 133
-    refusals were `length`, nearly all a poin of 21-28 words (EXPERIMENTS.md)."""
+    refusals were `length`, nearly all a poin of 21-28 words (EXPERIMENTS.md).
+
+    demote_strays (the retry): an article still off the subject is moved to
+    `tidak_terkait` instead of refusing the answer -- it loses its link and its
+    portal, and the number guard then holds the summary to the articles left.
+    The model keeps an article it was told about when the article is in fact
+    about the story (a spelling the check cannot match), and refusing then
+    would lose the whole summary for a portal count (replay 2026-10-05: 13
+    stories). A fact it took from a truly unrelated article fails the number
+    guard, and the story falls back."""
     texts = [sources] if isinstance(sources, str) else list(sources)
     if len(texts) != n:
         raise ValueError(f"{len(texts)} article texts for {n} articles")
@@ -327,18 +345,21 @@ def parse(answer: Optional[str], n: int, sources: Union[str, Sequence[str]],
             problems.append(f"{key} {words(value)} kata, maks {limit} -- persingkat: \"{value}\"")
     if problems:
         raise Rejected("length", "; ".join(problems))
+    anchors, strays = off_subject(judul, inti, {i: texts[i] for i in terkait})
+    demoted = 0
+    if strays and demote_strays:
+        terkait, tidak, demoted, strays = [i for i in terkait if i not in strays], tidak + strays, len(strays), []
     source = "\n\n".join(texts[i] for i in terkait)
     for key, value in fields:
         bad = unsupported_number(value, source)
         if bad:
             problems.append(f'angka "{bad}" di {key} tidak ada di artikel yang terkait')
     numbers_ok = not problems
-    anchors, strays = off_subject(f"{judul}. {inti}", {i: texts[i] for i in terkait})
     problems += [f'artikel [{i}] tidak menyebut {", ".join(anchors)}: jika membahas peristiwa lain, pindahkan ke '
                  f'"tidak_terkait" dan jangan memakai faktanya' for i in strays]
     if problems:
         raise Rejected("number" if not numbers_ok else "subject", "; ".join(problems))
-    return StorySummary(judul, inti, poin, mengapa, sekilas, terkait, tidak, dropped)
+    return StorySummary(judul, inti, poin, mengapa, sekilas, terkait, tidak, dropped, demoted)
 
 
 def summarize_story(summarizer, shown: Sequence[dict], rejections: list) -> Optional[StorySummary]:
@@ -355,7 +376,7 @@ def summarize_story(summarizer, shown: Sequence[dict], rejections: list) -> Opti
         logger.info(f"Summary refused, asking again ({first}) -- {shown[0]['headline'][:80]!r}")
         try:
             return parse(summarizer.summarize(prompt + RETRY.format(detail=first.detail)), len(shown), sources,
-                         drop_long_poin=True)
+                         drop_long_poin=True, demote_strays=True)
         except Rejected as second:
             rejections.append(second.reason)
             logger.info(f"Summary refused again ({second}) -- {shown[0]['headline'][:80]!r}")

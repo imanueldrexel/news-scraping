@@ -385,6 +385,15 @@ class TestEchoGuard:
         assert ne.echoes(_story_cand(2, "international", "Iran tegaskan diplomasi, Trump tolak proposal damai",
                                      "Trump menolak proposal damai Iran meski Teheran tegaskan jalur diplomasi."), trump)
 
+    def test_a_word_capitalised_in_one_text_only_is_not_a_shared_name(self):
+        """"Bantuan Subsidi Upah" is a programme's name; "rumah subsidi" is not. Counted as a name, subsidi
+        plus two plain words (pemerintah, pekerja) would hide the housing story under the BSU one."""
+        top = _story_cand(1, "x", "Bantuan Subsidi Upah cair",
+                          "Pemerintah mencairkan Bantuan Subsidi Upah bagi pekerja.")
+        other = _story_cand(2, "x", "Penjualan rumah subsidi turun",
+                            "Pengembang minta pemerintah tambah kuota rumah subsidi bagi pekerja.")
+        assert not ne.echoes(other, top)
+
     def test_a_shared_name_needs_two_shared_event_words(self):
         top = _story_cand(1, "x", "KPK periksa Bobby Rizaldi", "KPK memeriksa Bobby Rizaldi soal suap.")
         one = _story_cand(2, "x", "KPK geledah kantor BPN Jatim", "KPK menggeledah kantor BPN soal suap.")

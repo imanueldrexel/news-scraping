@@ -227,9 +227,33 @@ class TestOnlyTheRelatedArticlesAreTheSource:
         texts = ["harga emas naik tipis", "emas naik pagi ini"]
         answer = json.dumps({"judul": "Harga emas naik tipis", "inti": "Harga emas naik tipis pagi ini.",
                              "sekilas": "Emas naik.", "terkait": [0, 1]})
-        assert ss.off_subject("Harga emas naik tipis. Harga emas naik tipis pagi ini.", dict(enumerate(texts))) == \
+        assert ss.off_subject("Harga emas naik tipis", "Harga emas naik tipis pagi ini.", dict(enumerate(texts))) == \
             ([], [])
         assert ss.parse(answer, 2, texts).terkait == [0, 1]
+
+    def test_two_words_of_the_judul_also_anchor_an_article(self):
+        """Replay 2026-10-05 (09-28): DETIK's short-selling piece never says "BEI" but is the same event."""
+        texts = ["BEI Buka Short Selling 1 Oktober\nBursa Efek Indonesia (BEI) membuka short selling.",
+                 "Short Selling Berlaku 1 Oktober, Investor Wajib Punya Rp 50 Juta\nInvestor bisa short selling."]
+        assert ss.off_subject("BEI buka short selling 1 Oktober", "BEI membuka short selling.",
+                              dict(enumerate(texts))) == (["bei"], [])
+        # one judul word is not enough: the "10 Saham" list shares only "saham" with the Haji Isam judul
+        mixed = json.loads(self.MIXED)
+        assert ss.off_subject(mixed["judul"], mixed["inti"], dict(enumerate(self.HAJI_ISAM)))[1] == [1]
+
+    def test_on_the_retry_a_stray_is_moved_out_instead_of_refused(self):
+        """The model kept the article it was told about: on the retry it leaves the story (its link and portal),
+        and the number guard holds the summary to the articles left."""
+        data = json.loads(self.MIXED)
+        data["poin"] = []
+        story = ss.parse(json.dumps(data), 2, self.HAJI_ISAM, drop_long_poin=True, demote_strays=True)
+        assert (story.terkait, story.tidak_terkait, story.demoted) == ([0], [1], 1)
+
+    def test_on_the_retry_a_fact_from_the_stray_still_fails(self):
+        """The FORU bullet's numbers are only in the moved article: the answer is refused (the story falls back)."""
+        with pytest.raises(ss.Rejected) as e:
+            ss.parse(self.MIXED, 2, self.HAJI_ISAM, drop_long_poin=True, demote_strays=True)
+        assert e.value.reason == "number" and "artikel [1]" not in e.value.detail
 
     def test_one_text_per_shown_article(self):
         with pytest.raises(ValueError):
@@ -322,8 +346,8 @@ HAJI_ISAM = [_a(1, "INVESTORID", "Haji Isam Punya Gerbong Saham di Bursa, Siapa 
              _a(4, "KUMPARAN", "Minat IPO Turun Sepanjang 2026")]
 
 
-def _generate(monkeypatch, tmp_path, summarizer, arts):
-    ds = MagicMock()
+def _generate(monkeypatch, tmp_path, summarizer, arts, ds=None):
+    ds = ds or MagicMock()
     gen = ng.NewsletterGenerator(ds, summarizer=summarizer, embed_documents=lambda t: [[0.0]] * len(t))
     monkeypatch.setattr(ng, "NEWSLETTER_MIN_CLUSTER_SIZE", 2)
     monkeypatch.setattr(ng, "DIGESTS_DIR", str(tmp_path))
@@ -362,12 +386,21 @@ class TestTerkaitDecidesTheStory:
         assert "**Diberitakan 2 portal** · [Baca di CNBC Indonesia →](http://x/2)" in edition
 
     def test_an_article_the_model_did_not_see_still_counts_as_a_portal(self, monkeypatch, tmp_path):
-        monkeypatch.setattr(ss, "MAX_ARTICLES", 2)          # KUMPARAN (authority 0.5) is not shown
-        seen = lambda p: story_answer(p, judul="Minat IPO turun", inti="Perusahaan yang IPO makin sepi.",
-                                      sekilas="Minat IPO turun.")
+        # DBT-59 (#254): `limit` is a default argument, bound at import -- patching MAX_ARTICLES did nothing,
+        # and the test passed on the fallback. Shown now: Investor.id and CNBC; not Warta Ekonomi, kumparan.
+        monkeypatch.setattr(ss.pick_articles, "__defaults__", (2,))
+
+        def seen(prompt):
+            arts = shown_articles(prompt)
+            assert len(arts) == 2
+            haji = [i for i, _, headline in arts if "Haji Isam" in headline]
+            return story_answer(prompt, judul="Minat IPO turun", inti="Perusahaan yang IPO makin sepi.",
+                                sekilas="Minat IPO turun.", terkait=[i for i, _, _ in arts if i not in haji],
+                                tidak_terkait=haji)
         _, text = _generate(monkeypatch, tmp_path, FakeNewsroom(story=[seen]), HAJI_ISAM)
-        assert "Diberitakan 4 portal" in text
-        assert "http://x/4" not in text                      # never a link: no one checked it
+        assert "### Minat IPO turun" in text                 # the summary, not the fallback
+        assert "Diberitakan 3 portal" in text                # CNBC, and the two the model did not see
+        assert "http://x/4" not in text and "http://x/3" not in text      # never a link: no one checked them
 
     def test_the_2026_10_04_mix_is_refused_and_repaired(self, monkeypatch, tmp_path):
         """The model marks the "10 Saham" list terkait under a Haji Isam judul (the v5 replay's answer):
@@ -390,6 +423,34 @@ class TestTerkaitDecidesTheStory:
         assert "### Saham Haji Isam beragam" in text
         assert "FORU" not in text and "10 Saham" not in text and "http://x/3)" not in text
         assert "**Diberitakan 1 portal:** Investor.id" in text
+
+    def test_a_stray_the_model_keeps_on_the_retry_leaves_the_story_not_the_summary(self, monkeypatch, tmp_path):
+        texts = TestOnlyTheRelatedArticlesAreTheSource.HAJI_ISAM
+        arts = [dict(_a(1, "INVESTORID", texts[0].split("\n")[0]), l1_text=texts[0].split("\n")[1]),
+                dict(_a(3, "WARTAEKONOMI", texts[1].split("\n")[0]), l1_text=texts[1].split("\n")[1])]
+        kept = dict(json.loads(TestOnlyTheRelatedArticlesAreTheSource.MIXED), poin=[], terkait=[0, 1], tidak_terkait=[])
+
+        def answer(prompt):
+            order = {headline[:8]: i for i, _, headline in shown_articles(prompt)}
+            return json.dumps(dict(kept, terkait=[order["Haji Isa"], order["10 Saham"]]))
+        s, ds = FakeNewsroom(story=[answer, answer]), MagicMock()
+        _, text = _generate(monkeypatch, tmp_path, s, arts, ds)
+        assert "### Saham Haji Isam beragam" in text and "10 Saham" not in text and "http://x/3)" not in text
+        assert "**Diberitakan 1 portal:** Investor.id" in text
+        stats = ds.save_digest.call_args.kwargs["categories"][ng.SUMMARIES_KEY]
+        assert stats["strays_demoted"] == 1 and stats["rejections"]["subject"] == 1 and stats["summarized"] == 1
+
+    def test_the_editions_number_guard_reads_only_the_related_articles(self):
+        """The 60-second sentence is checked against cluster["source_text"]: an unrelated article's numbers
+        (the FORU list's Rp163) are not a source for it."""
+        texts = TestOnlyTheRelatedArticlesAreTheSource.HAJI_ISAM
+        shown = [dict(_a(1, "INVESTORID", texts[0].split("\n")[0]), l1_text=texts[0].split("\n")[1]),
+                 dict(_a(3, "WARTAEKONOMI", texts[1].split("\n")[0]), l1_text=texts[1].split("\n")[1])]
+        cluster = {"articles": list(shown)}
+        story = ss.StorySummary("Saham Haji Isam beragam", "Saham Haji Isam beragam.", [], "", "S.", [0], [1])
+        ng.NewsletterGenerator(MagicMock(), summarizer=None)._apply_story(cluster, shown, story)
+        assert "PACK" in cluster["source_text"] and "FORU" not in cluster["source_text"]
+        assert ss.unsupported_number("FORU turun ke Rp163", cluster["source_text"]) == "163"
 
     def test_a_fallback_story_keeps_its_cluster_as_clustered(self, monkeypatch, tmp_path):
         _, text = _generate(monkeypatch, tmp_path, FakeNewsroom(story=["x", "x"]), HAJI_ISAM)

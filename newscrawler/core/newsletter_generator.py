@@ -64,6 +64,7 @@ class SummaryStats:
     first_try: int = 0
     rejections: dict = field(default_factory=lambda: {reason: 0 for reason in story_summary.REASONS})
     poin_dropped: int = 0              # poin over their limit removed whole on a retry (never cut)
+    strays_demoted: int = 0            # SYS-80: articles off the subject moved to tidak_terkait on a retry
 
     @property
     def fallback(self) -> int:
@@ -85,6 +86,8 @@ class SummaryStats:
             line += " | ditolak " + ", ".join(f"{reason} {n}" for reason, n in self.rejections.items() if n)
         if self.poin_dropped:
             line += f" | {self.poin_dropped} poin terlalu panjang dibuang"
+        if self.strays_demoted:
+            line += f" | {self.strays_demoted} artikel di luar subjek dikeluarkan"
         if self.groups_failed:
             line += f" | pengelompokan cerita gagal di {self.groups_failed} bagian"
         return line
@@ -395,6 +398,7 @@ class NewsletterGenerator:
                 stats.summarized += 1
                 stats.first_try += not rejections
                 stats.poin_dropped += story.dropped_poin
+                stats.strays_demoted += story.demoted
                 continue
             if len(rejections) == 2:
                 logger.warning(f"Summary refused twice ({', '.join(rejections)}); showing the headlines of "
