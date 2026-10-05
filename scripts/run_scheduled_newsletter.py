@@ -173,7 +173,15 @@ def _deliver(target_date, digest_path, edition_path, row) -> None:
     digests/ (the archive) and is not sent. Without an edition: a message that
     says so (and why some stories have no summary, when that is the reason) and
     the full digest's PDF, as before OPS-43. Each step's failure is reported
-    and never stops the next one or changes the exit code."""
+    and never stops the next one or changes the exit code.
+
+    OPS-44 (#248): a message that promised a PDF ("Buka PDF ...", "terlampir
+    edisi lengkapnya") is followed by "PDF tidak tersedia hari ini." when that
+    PDF is then not delivered -- its upload failed, or the digest's could not
+    be rendered after the message went out."""
+    from html import escape
+
+    from newscrawler.core import newsletter_copy as copy
     if edition_path:
         pdf_path = _render_pdf(target_date, edition_path, edition=True)
         try:
@@ -183,12 +191,15 @@ def _deliver(target_date, digest_path, edition_path, row) -> None:
         except Exception as e:  # noqa: BLE001
             logger.warning("edition %s unreadable for the message: %s: %s", edition_path, type(e).__name__, e)
             sentences, top = [], 0
-        _send_message(edition_message(target_date, sentences, top, pdf_ok=pdf_path is not None))
+        promised = pdf_path is not None              # else the message itself says there is no PDF
+        _send_message(edition_message(target_date, sentences, top, pdf_ok=promised))
     else:
         _send_message(no_edition_message(target_date, row))
+        promised = True
         pdf_path = _render_pdf(target_date, digest_path, edition=False)
-    if pdf_path is not None:
-        _send_pdf_file(target_date, pdf_path)
+    delivered = pdf_path is not None and _send_pdf_file(target_date, pdf_path)
+    if promised and not delivered:
+        _send_message(escape(copy.MESSAGE_NO_PDF))
 
 
 def edition_message(target_date, sentences, top_count, pdf_ok=True) -> str:

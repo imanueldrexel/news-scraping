@@ -268,6 +268,38 @@ class TestDelivery:
         script._deliver(date(2026, 10, 3), *files, ROW)
         assert len(notes) == 1 and "built but not delivered" in notes[0]
 
+    @pytest.mark.parametrize("edition", [True, False], ids=["edition", "full-digest"])
+    def test_a_promised_pdf_that_does_not_arrive_is_said_to_the_reader(self, script, monkeypatch, files, edition):
+        """OPS-44 (#248): the message promised a PDF; its upload then failed."""
+        tg = _Telegram(monkeypatch, document_ok=False)
+        notes = []
+        monkeypatch.setattr(script, "_notify", notes.append)
+        script._deliver(date(2026, 10, 3), files[0], files[1] if edition else None, ROW)
+        assert [s[0] for s in tg.sent] == ["message", "document", "message"]
+        assert tg.messages()[-1] == "PDF tidak tersedia hari ini."
+        assert len(notes) == 1 and "built but not delivered" in notes[0]       # the operator's line still goes
+
+    def test_a_digest_pdf_that_cannot_be_made_after_the_message_is_said_to_the_reader(self, script, monkeypatch,
+                                                                                    files):
+        tg = _Telegram(monkeypatch)
+        monkeypatch.setattr(script, "_notify", lambda note: None)
+        monkeypatch.setattr("newscrawler.core.newsletter_pdf.render_digest_pdf",
+                            lambda path: (_ for _ in ()).throw(OSError("disk full")))
+        script._deliver(date(2026, 10, 3), files[0], None, ROW)
+        assert "terlampir edisi lengkapnya" in tg.messages()[0]
+        assert tg.messages()[-1] == "PDF tidak tersedia hari ini." and tg.documents() == []
+
+    def test_a_delivered_pdf_or_one_the_message_never_promised_needs_no_follow_up(self, script, monkeypatch, files):
+        tg = _Telegram(monkeypatch)
+        script._deliver(date(2026, 10, 3), *files, ROW)
+        assert len(tg.messages()) == 1
+        tg = _Telegram(monkeypatch)
+        monkeypatch.setattr(script, "_notify", lambda note: None)
+        monkeypatch.setattr("newscrawler.core.newsletter_pdf.render_edition_pdf",
+                            lambda path: (_ for _ in ()).throw(OSError("disk full")))
+        script._deliver(date(2026, 10, 3), *files, ROW)
+        assert len(tg.messages()) == 1 and tg.messages()[0].endswith("PDF tidak tersedia hari ini.")
+
     def test_a_message_is_kept_under_telegrams_limit(self, script):
         text = script.edition_message(date(2026, 10, 3), ["kata " * 400] * 5, 7)
         assert len(text) <= 4096 and text.count("• ") < 5
