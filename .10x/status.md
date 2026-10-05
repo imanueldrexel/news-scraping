@@ -71,3 +71,11 @@
 - DBT-55 (#233) found and closed: 6 unit tests failed on Mondays (the weekly audit day). Tests: unit 2,087, integration 183.
 - PM 2026-10-05: newsletter 5-minute edition scoped (critique + UX copy + owner decisions); tracker #244, tickets SYS-80..84 (#236, #237, #239-#241), OPS-41..43 (#238, #242, #243). Not started; build order in decisions/product-manager/newsletter-5min-edition.md.
 - Still waiting for scheduled evidence: #136 and #125 (first 21:00 extraction, which also re-extracts the 2,530 reset articles), SRC-57, SYS-64, SYS-66, OPS-38. Backups of the repair: 55 GB in `backups/` (24 x 2.1 GB), prune after a few days.
+
+## SDE 2026-10-05: newsletter 5-minute edition (tracker #244)
+- [x] Built: SYS-80 #236, SYS-81 #237, OPS-41 #238, SYS-82 #239, SYS-83 #240, SYS-84 #241, OPS-42 #242, OPS-43 #243; SYS-85 #245 (found while building). Commits 654a81e, 5dacec7, a90067e, 81f7483.
+- [x] Replayed on 2026-10-04 / 10-03 / 09-28 (four runs; EXPERIMENTS.md 2026-10-05). Edition 869-949 words, 7 phone pages, document checks clean.
+- [x] Owner decision: phone page 105x228 mm, a story may continue after its title + first sentence (OPS-42's <= 6-page target replaced).
+- [ ] Missed targets, owner/PM: SYS-82 first-try 46-62% (target 90); after retry 92.7% on 09-28 (target 95); SYS-83 coverage 4/6 on 09-28 and one duplicate on 09-28. See decisions/sde/newsletter-5min-edition.md "Open".
+- [ ] Owner: hand-check 20 stories (SYS-82), read one edition on the phone (SYS-83, OPS-42). QA: three scheduled 12:00 runs (OPS-43).
+- Tests: unit 2,292 passed, integration 183 passed; newsletter mutants in qa_mutation_runner.py (results on the tickets).

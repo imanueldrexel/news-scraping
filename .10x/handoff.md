@@ -1,6 +1,31 @@
 # Current Handoff
 
-## From: PM -> To: Architect / SDE (newsletter 5-minute edition)
+## From: SDE -> To: QA (and the owner) — newsletter 5-minute edition
+**Date:** 2026-10-05 (evening)
+**Read first:** `.10x/decisions/sde/newsletter-5min-edition.md` (decisions, deviations, open items); EXPERIMENTS.md "2026-10-05 — SYS-82/SYS-83/OPS-42 replay"; tracker #244.
+
+### Built (commits 654a81e, 5dacec7, a90067e, 81f7483)
+`core/newsletter_copy.py` (SYS-81/84), `core/story_summary.py` (SYS-82/80), `core/newsletter_edition.py` (SYS-83), `core/newsletter_pdf.py` (OPS-41/42), `scripts/run_scheduled_newsletter.py` + `notify_telegram.send_html` (OPS-43), SOURCE_AUTHORITY key (SYS-85). Replay tool: `scripts/experiments/replay_newsletter_edition.py` (read-only DB, live LLM).
+
+### Labelled `status: ready-for-qa` (Done-when evidence on each ticket)
+SYS-80 #236, SYS-81 #237, OPS-41 #238, SYS-84 #241, OPS-42 #242 (Done-when changed by owner decision; owner phone read pending), OPS-43 #243 (needs three scheduled 12:00 runs), SYS-85 #245.
+
+### Not labelled — targets missed, owner/PM decision on the ticket
+- SYS-82 #239: first try 46-62% (target 90); after retry 96.7 / 100 / 92.7% (target 95). The model overshoots word limits by 1-3 words; most remaining fallbacks are a judul of 11-12 words. Options on the ticket.
+- SYS-83 #240: coverage 4/6 on 09-28 (target 5); one event shown twice on 09-28 (Trump/Iran), one borderline on 10-03. Finance-first is prompt-only (5/8 non-finance on 10-04).
+
+### What to test
+- `tests/unit` (2,292 passed) and `tests/integration` (183 passed); the newsletter mutants (`sys8x_*`, `ops4x_*` in `scripts/experiments/qa_mutation_runner.py`).
+- The first scheduled 12:00 run on this code (2026-10-06): both files in `digests/`, `_edition` in `newsletter_digests.categories`, Telegram = operator line + 60-second message + `-ringkas.pdf`; the full digest is NOT sent.
+- `replay_newsletter_edition.py --check-only --date <d>` on the scheduled files: no English month, ISO date, source enum, telemetry; no PDF page starting on a link line.
+
+### Risks
+- ~130 LLM calls/day instead of ~103 (retries); ~$0.01/day.
+- The phone PDF is 7 pages, not 6 (owner-accepted layout).
+
+---
+
+## Previous: From PM -> To: Architect / SDE (newsletter 5-minute edition)
 **Date:** 2026-10-05
 **Read first:** `.10x/decisions/product-manager/newsletter-5min-edition.md`; tracker #244.
 
@@ -41,6 +66,7 @@ SYS-74, SYS-41, SRC-34, SRC-47/42/40/39, SRC-58, OPS-39, DBT-01. Lower `KNOWLEDG
 ---
 
 ## Handoff History
+- 2026-10-05 SDE -> QA/owner: newsletter 5-minute edition built and replayed (this file, top).
 - 2026-10-05 PM -> Architect/SDE: newsletter 5-minute edition, tracker #244 (this file, top).
 - 2026-10-04 night QA/CTO/PM -> QA: P1/P2 pass (this file).
 - 2026-10-04 PM -> SDE: SYS-39 (extract all news on DeepSeek, peak guard). Picked up and built (see above).

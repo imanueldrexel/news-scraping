@@ -15,6 +15,11 @@ before and after.
 
     venv\Scripts\python.exe scripts\experiments\qa_mutation_runner.py            # all mutants
     venv\Scripts\python.exe scripts\experiments\qa_mutation_runner.py NAME ...   # a subset
+    $env:QA_MUTANT_TESTS = "tests/unit/test_newsletter_edition.py ..."             # fewer tests per mutant
+
+Never run it while a scheduled job imports the repo (crawl 07:00/19:00, newsletter 12:00, extraction
+21:00): their worker processes would load a mutant. Run it in a scratch worktree instead
+(`git worktree add <scratch>\mutwt HEAD`, then `mklink /J <scratch>\mutwt\venv <repo>\venv`).
 
 A pattern is applied only when it occurs exactly once (some files have mixed
 line endings; the CRLF form is tried when the LF form is not found).
@@ -744,6 +749,10 @@ M = [
   '"text": text, "parse_mode": "HTML",', '"text": text,'),
 ]
 only = sys.argv[1:]
+# The tests each mutant runs (default: all of tests/unit). QA_MUTANT_TESTS narrows it to the files that
+# guard the mutated code, e.g. the newsletter's -- a mutant those kill is killed by the whole suite too,
+# and a run takes seconds per mutant instead of ~2.5 minutes.
+TESTS = os.environ.get("QA_MUTANT_TESTS", "tests/unit").split()
 env = dict(os.environ, VECTOR_DB_NAME_L1=os.path.join(SCRATCH, "NOPE_L1"),
            VECTOR_DB_NAME_L2=os.path.join(SCRATCH, "NOPE_L2"), POSTGRES_DB_PORT="1",
            TELEGRAM_BOT_TOKEN="", PYTHONDONTWRITEBYTECODE="1")
@@ -757,7 +766,7 @@ for name, path, old, new in M:
         print(f"{name}: PATTERN NOT FOUND ({src.count(o)})", flush=True); continue
     open(p, "wb").write(src.replace(o, n).encode("utf-8"))
     try:
-        r = subprocess.run([r"venv\Scripts\python.exe", "-m", "pytest", "tests/unit", "-q", "-x", "-p", "no:cacheprovider",
+        r = subprocess.run([r"venv\Scripts\python.exe", "-m", "pytest", *TESTS, "-q", "-x", "-p", "no:cacheprovider",
                             "--no-header", "-rN", "--tb=no", "-W", "ignore"], capture_output=True, text=True, env=env, cwd=ROOT)
         tail = [l for l in r.stdout.splitlines() if l.strip()][-2:]
         print(f"{name}: {'KILLED' if r.returncode else 'SURVIVED'} rc={r.returncode} :: {' | '.join(tail)[:300]}", flush=True)
