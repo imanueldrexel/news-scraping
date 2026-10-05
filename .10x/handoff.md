@@ -1,6 +1,15 @@
 # Current Handoff
 
-## From: SDE -> To: QA (and the owner) — newsletter 5-minute edition
+## From: CTO (+ SDE build) -> To: QA — newsletter edition decisions
+**Date:** 2026-10-05 (evening)
+**Read first:** `.10x/decisions/cto/newsletter-5min-edition.md` (decisions, success criteria, review point); then the SDE handoff below.
+
+- Owner-aligned: no non-finance quota; judul ask 10 / accept 12; the day's 6 largest stories always shown (top story or an untrimmable Sekilas line); a Sekilas line repeating a top story is hidden (`_edition.echoes_hidden`). Built in 5fe7859.
+- QA success criteria (first 7 scheduled editions): <= 1,200 words; >= 95% summaries after the retry; >= 5 of the 6 largest stories shown each day; 0 events shown twice; review `echoes_hidden` (<= 1 wrong hide); newsletter cost <= $0.05/day. Review the decision after those 7 editions, or earlier if a criterion fails twice.
+
+---
+
+## Previous: From SDE -> To: QA (and the owner) — newsletter 5-minute edition
 **Date:** 2026-10-05 (evening)
 **Read first:** `.10x/decisions/sde/newsletter-5min-edition.md` (decisions, deviations, open items); EXPERIMENTS.md "2026-10-05 — SYS-82/SYS-83/OPS-42 replay"; tracker #244.
 

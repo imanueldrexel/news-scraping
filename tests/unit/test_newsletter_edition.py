@@ -302,10 +302,20 @@ class TestEchoGuard:
         ("Iran tegaskan jalur diplomasi", "Iran tegaskan diplomasi, Trump tolak proposal damai dan prediksi perundingan.",
          True),
         ("Netanyahu kunjungi UEA", "Netanyahu dilaporkan berkunjung diam-diam ke Abu Dhabi.", False),
-        ("Harga minyak dunia naik", "Harga minyak naik dua persen.", False),          # shared words, no name shared
+        ("Harga emas dunia naik tipis", "Harga emas dunia naik tipis pagi ini.", False),   # 3 shared, no name
     ])
     def test_pairs(self, judul, sekilas, hidden):
         assert ne.echoes(_story_cand(2, "international", judul, sekilas), self.TRUMP) is hidden
+
+    def test_four_shared_words_need_no_name(self):
+        """v5 replay, 2026-10-03: "Komdigi" opens every sentence, so it is not seen as a name."""
+        top = _story_cand(1, "tech_science", "Komdigi: banyak paket internet belum penuhi aturan kuota tak hangus",
+                          "Komdigi menilai banyak paket internet belum penuhi putusan MK soal sisa kuota tak hangus.")
+        repeat = _story_cand(2, "macro_policy", "Komdigi larang biaya tambahan untuk perlindungan sisa kuota",
+                             "Komdigi larang operator pungut biaya perlindungan sisa kuota internet.")
+        other = _story_cand(3, "tech_science", "Komdigi dan BSSN usut jual beli data pribadi ilegal",
+                            "Komdigi dan BSSN usut jual beli data pribadi.")
+        assert ne.echoes(repeat, top) and not ne.echoes(other, top)
 
     def test_two_cases_of_one_institution_are_not_echoes(self):
         """SYS-67's KPK pair: one name in common is not enough."""

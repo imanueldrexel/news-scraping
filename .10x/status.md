@@ -79,3 +79,8 @@
 - [ ] Missed targets, owner/PM: SYS-82 first-try 46-62% (target 90); after retry 92.7% on 09-28 (target 95); SYS-83 coverage 4/6 on 09-28 and one duplicate on 09-28. See decisions/sde/newsletter-5min-edition.md "Open".
 - [ ] Owner: hand-check 20 stories (SYS-82), read one edition on the phone (SYS-83, OPS-42). QA: three scheduled 12:00 runs (OPS-43).
 - Tests: unit 2,292 passed, integration 183 passed; newsletter mutants in qa_mutation_runner.py (results on the tickets).
+
+## CTO 2026-10-05 (evening): edition decisions, owner aligned
+- [x] Four decisions recorded in `decisions/cto/newsletter-5min-edition.md`: no non-finance quota (general briefing, finance first); judul ask 10 accept 12; the day's 6 largest stories guaranteed; word-overlap echo guard. SYS-82's 90% first-try target retired; cost criterion = newsletter <= $0.05/day.
+- [x] Built in the same session (owner: "build it now"): commit 5fe7859; unit 2,302 passed.
+- [ ] Replay v5 + mutants running; then SYS-82/SYS-83 evidence and labels.

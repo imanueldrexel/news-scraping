@@ -49,7 +49,9 @@ EDITION_SUFFIX = "-ringkas"
 # when not a top story, always get a Sekilas line; and a Sekilas line that repeats a top
 # story (ECHO_MIN_SHARED content words, one of them a name) is hidden.
 GUARANTEED_TOP = 6
-ECHO_MIN_SHARED = 3
+ECHO_MIN_SHARED = 3            # ... with a name among them
+ECHO_MIN_SHARED_UNNAMED = 4    # ... or this many with none: a name that opens both sentences is not
+                               # recognised ("Komdigi ..."; 10-03's sisa-kuota story twice, v5 replay)
 _STOPWORDS = frozenset(
     "yang dan di ke dari untuk dengan pada ini itu akan dalam oleh atau juga sebagai karena hingga saat usai "
     "setelah tidak tak bisa ada para lebih jadi menjadi bagi serta agar namun telah sudah masih baru kata "
@@ -387,13 +389,16 @@ def echoes(candidate: Candidate, top: Candidate) -> bool:
     """True when `candidate` repeats the top story `top`: their texts share at
     least ECHO_MIN_SHARED content words and one of them is a name ("Trump
     tolak proposal damai Iran" / "Iran tegaskan diplomasi, Trump tolak
-    proposal damai": 5 shared). Pairwise only: it hides one Sekilas line and
-    never merges stories, so SYS-67's finding (shared words cannot group a
-    section's clusters) does not apply."""
+    proposal damai": 5 shared), or ECHO_MIN_SHARED_UNNAMED words without one.
+    Over the three replayed editions (77 Sekilas lines x 24 top stories) the
+    only pair sharing 3+ words was a true repeat. Pairwise only: it hides one
+    Sekilas line and never merges stories, so SYS-67's finding (shared words
+    cannot group a section's clusters) does not apply."""
     mine = content_words(f"{candidate.story.judul}. {candidate.story.sekilas}")
     theirs = content_words(f"{top.story.judul}. {top.story.inti}")
     shared = set(mine) & set(theirs)
-    return len(shared) >= ECHO_MIN_SHARED and any(mine[w] or theirs[w] for w in shared)
+    named = any(mine[w] or theirs[w] for w in shared)
+    return len(shared) >= ECHO_MIN_SHARED_UNNAMED or (len(shared) >= ECHO_MIN_SHARED and named)
 
 
 def _sekilas(cands: Sequence[Candidate], choice: Choice) -> Tuple[List[SekilasLine], List[int]]:

@@ -23,4 +23,8 @@ Risks: guard over-firing (counted; QA reviews hidden lines); top-6 guarantee pus
 
 Success criteria (QA, first 7 scheduled editions): <= 1,200 words; >= 95% after retry; >= 5 of the 6 largest stories shown daily; 0 events shown twice; <= 1 wrong hide by the guard; newsletter cost <= $0.05/day. Review after those 7 editions, or sooner if a criterion fails twice.
 
+Refinement (CTO, same evening, within decision 4's intent): the v5 replay showed 10-03's "sisa kuota" story twice; "Komdigi" opens both sentences so it is not recognised as a name. The guard also hides a line sharing >= 4 content words with no name. Checked on all three replayed editions (77 Sekilas lines x 24 top stories): the only pair with >= 3 shared words was that true repeat, so no wrong hide.
+
+Result (v5 replay, 5fe7859): summaries after retry 100 / 98.9 / 99.0%; edition 833 / 966 / 994 words; the 6 largest stories shown 6 / 6 / 6; phone 7 / 8 / 8 pages; document checks clean; one repeat left (10-03 Komdigi), fixed by the refinement above. 66 + 1 mutants killed.
+
 Timing: ~3 h dev + one replay (~$0.05), built the same session (owner). The 2026-10-06 12:00 run may ship whichever build is committed by then.
