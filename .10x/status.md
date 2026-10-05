@@ -83,4 +83,4 @@
 ## CTO 2026-10-05 (evening): edition decisions, owner aligned
 - [x] Four decisions recorded in `decisions/cto/newsletter-5min-edition.md`: no non-finance quota (general briefing, finance first); judul ask 10 accept 12; the day's 6 largest stories guaranteed; word-overlap echo guard. SYS-82's 90% first-try target retired; cost criterion = newsletter <= $0.05/day.
 - [x] Built in the same session (owner: "build it now"): commit 5fe7859; unit 2,302 passed.
-- [ ] Replay v5 + mutants running; then SYS-82/SYS-83 evidence and labels.
+- [x] Replay v5: after-retry 100 / 98.9 / 99.0%, 833-994 words, 6 largest stories 6/6 each day, no repeat after the echo refinement (776e6e9). 67 newsletter mutants killed. SYS-82 #239 and SYS-83 #240 ready-for-qa: all 9 tickets with QA.
