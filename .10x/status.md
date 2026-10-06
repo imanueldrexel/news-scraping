@@ -118,3 +118,7 @@
 - [x] SYS-90 #255 (found): an int yyyymmdd was read as Unix seconds (193 articles with posted_at 19700823); fixed at the DTO, rows repaired (owner approved). Ready for QA.
 - [ ] SRC-47 #157: owner-deferred 2026-09-25; re-measured read-only for the owner's re-decision.
 - Tests: unit 2,434 passed; integration 187 passed; 21 new mutants killed.
+
+## Ops 2026-10-06 (night): SumoPod key unblocked
+- The key's own $5 "Max budget" (not the account balance) blocked every call 2026-10-05 ~23:00 -> 2026-10-06 22:28: the 10-06 12:00 newsletter went out as headlines only, and the 21:00 extraction did 0/8. The owner removed the cap ("the $5 budget is no more a constraint").
+- Catch-up (owner chose both): 2026-10-05 newsletter rebuilt 22:29-22:42, 92/92 summaries, edition 931 words / 8 top stories / 0 hidden lines, message and edition PDF sent; extraction catch-up started 22:42 (log scheduled_extraction_2026-10-06_2242.log).
