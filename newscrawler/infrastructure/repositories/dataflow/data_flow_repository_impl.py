@@ -7,7 +7,7 @@ from newscrawler.core.constants import KNOWLEDGE_BATCH_SIZE
 from newscrawler.core.knowledge_extractor import KnowledgeExtractor
 from newscrawler.domain.dtos.dataflow.details.chunk_dto import ChunkDTO
 from newscrawler.domain.dtos.dataflow.details.news_details_dto import NewsDetailsDTO
-from newscrawler.domain.dtos.dataflow.details.site_map_dto import SitemapDTO
+from newscrawler.domain.dtos.dataflow.details.site_map_dto import SitemapDTO, posted_at_datetime
 from newscrawler.domain.repositories.data_flow_repository.data_flow_repository import (
     DataFlowRepository,
 )
@@ -282,7 +282,7 @@ class DataFlowRepositoryImpl(DataFlowRepository):
             link=sitemap_model.link,
             sources=sitemap_model.sources,
             category=sitemap_model.category,
-            timestamp=sitemap_model.posted_at,
+            timestamp=posted_at_datetime(sitemap_model.posted_at),   # SYS-90: int yyyymmdd, not Unix seconds
             keywords=sitemap_model.keywords,
             sitemap_id=getattr(sitemap_model, "sitemap_id", None),  # Pass id if present
         )

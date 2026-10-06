@@ -915,6 +915,15 @@ M = [
  ('ops39_health_check_raises', 'scripts/run_scheduled_health_check.py',
   '    except Exception as e:\n        logger.warning(f"Could not check crawl_log for orphaned rows: {e}")\n        return None',
   '    except ImportError as e:\n        logger.warning(f"Could not check crawl_log for orphaned rows: {e}")\n        return None'),
+ # ── SYS-90 (#255) / DBT-01 (#20): SitemapDTO dates under pydantic 2, SDE 2026-10-06 ──
+ ('sys90_dto_validator_dropped', 'newscrawler/domain/dtos/dataflow/details/site_map_dto.py',
+  '        return posted_at_datetime(value)', '        return value'),
+ ('sys90_int_not_converted', 'newscrawler/domain/dtos/dataflow/details/site_map_dto.py',
+  '        return datetime.strptime(str(value), "%Y%m%d")', '        return value'),
+ ('sys90_any_int_is_a_date', 'newscrawler/domain/dtos/dataflow/details/site_map_dto.py',
+  'and 10000101 <= value <= 99991231:', ':'),
+ ('dbt01_timestamp_not_optional', 'newscrawler/domain/dtos/dataflow/details/site_map_dto.py',
+  '    timestamp: Optional[datetime] = None', '    timestamp: datetime = None'),
 ]
 only = sys.argv[1:]
 # The tests each mutant runs (default: all of tests/unit). QA_MUTANT_TESTS narrows it to the files that

@@ -45,7 +45,7 @@ Whenever you probe a site, test a hypothesis, try an approach that might not wor
 
 ## Environment & commands
 
-Windows, PowerShell. Python 3.9 venv at `venv/`. **Always use the venv interpreter**; `requirements.txt` is stale (missing langchain, faiss, google-genai, fastapi, …) — the venv is the source of truth for dependencies.
+Windows, PowerShell. Python 3.9 venv at `venv/`. **Always use the venv interpreter**; The venv is the source of truth for dependencies; `requirements.txt` is its `pip freeze` (DBT-01, regenerated 2026-10-06 — regenerate it after any install or upgrade).
 
 ```powershell
 # Tests (unit tests need no DB or network)

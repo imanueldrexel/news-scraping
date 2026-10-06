@@ -11,6 +11,7 @@ from newscrawler.infrastructure.datasource.dataflow.model.news_data_model import
 from newscrawler.infrastructure.datasource.dataflow.model.news_details_model import (
     NewsDetailsModel,
 )
+from newscrawler.domain.dtos.dataflow.details.site_map_dto import posted_at_datetime
 from newscrawler.infrastructure.datasource.dataflow.write.sqlalchemy.table import (
     SitemapTable,
     NewsArticlesTable,
@@ -254,15 +255,11 @@ class SQLAlchemySitemapDataSource:
                 "n_limit": int(n_limit),
             })
             for row in result:
-                # Convert posted_at from int (yyyyMMdd) to datetime
-                posted_at_dt = None
-                if row[3]:
-                    posted_at_dt = datetime.strptime(str(row[3]), "%Y%m%d")
                 news = NewsSitemapModel(
                     link=row[0],
                     sitemap_id=row[1],
                     headline=row[2],
-                    posted_at=posted_at_dt,  # Use the converted datetime
+                    posted_at=posted_at_datetime(row[3]),   # int yyyymmdd -> datetime
                     sources=row[4],
                     category=row[5],
                     keywords=row[6],
