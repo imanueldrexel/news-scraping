@@ -21,3 +21,4 @@
 - Mutants in a worktree without the MAX_PATH trap: `subst M: <scratchpad>`, `git worktree add <scratchpad>\mutwt HEAD`, `mklink /J M:\mutwt\venv <repo>\venv`, run from `M:\mutwt`. A narrowed `QA_MUTANT_TESTS` set reports false survivors for code guarded elsewhere (OPS-40's in `test_notify_telegram.py`): re-run every survivor on the full `tests/unit` before calling it a gap.
 - Replays spend the production SumoPod account (prepaid balance, shared with the 21:00 extraction and the 12:00 newsletter). Check the balance before a replay round, and never run one while the extraction is running.
 - A module constant used as a default argument (`pick_articles(limit=MAX_ARTICLES)`) cannot be monkeypatched by name: patch `__defaults__` (DBT-59).
+- [rag-search-redesign](rag-search-redesign.md) — tracker #272: all 11 built, ready-for-qa; 42 mutants; SYS-103 found

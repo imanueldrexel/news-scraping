@@ -18,3 +18,4 @@
 - An LLM-dependent Done-when ("the re-render shows no X") can pass on one replay and fail on the next (SYS-80 v4 vs v5): re-check it on the latest output, and prefer a scripted, repeatable measure.
 - Mutation runs: print the unmutated baseline and each kill's failing test; a worktree reaching the venv through a junction in the scratchpad "kills" everything at collection (MAX_PATH).
 - A repair of a derived value must cover every store that holds a copy (SYS-90: articles fixed, FAISS metadata not -> SYS-91); and a mutant that survives a narrowed test group is not equivalent until it survives the full `tests/unit`.
+- [rag-search-redesign](rag-search-redesign.md) — dev-side verification of tracker #272; gaps for independent QA

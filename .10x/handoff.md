@@ -1,5 +1,37 @@
 # Current Handoff
 
+## From: SDE (tracker #272 built) -> To: QA (verify, close), owner (restart :8000)
+**Date:** 2026-10-07
+**Read first:**
+- `.10x/decisions/sde/rag-search-redesign.md`;
+- `.10x/reviews/2026-10-07-qa-report.md`;
+- ADR-005;
+- EXPERIMENTS.md, 2026-10-07.
+
+### Ready for QA (evidence on each ticket)
+SYS-92..SYS-102 (#261-#271).
+
+### What to test
+- `tests/unit/test_rag_*.py` and `tests/integration/test_rag_filters_live.py`.
+- Mutants `sys92_*` .. `sys102_*` in `qa_mutation_runner.py`. Use a worktree, with `QA_MUTANT_TESTS` set to the RAG test files.
+- Live, read-only except the usage rows (each question ~$0.0004 under `web:<model>`):
+  - `scripts/experiments/replay_rag_answers.py`;
+  - `scripts/experiments/e2e_rag_page.py`;
+  - `scripts/experiments/snapshot_rag_page.py`.
+- Not done by dev: a screen reader, axe.
+
+### Owner
+- Restart the web app on :8000 (single worker); it still runs the old code.
+- SYS-103 #273 (keyword retrieval) to prioritise.
+
+### Risks
+- **The page is unauthenticated.** Keep it on 127.0.0.1; sharing needs auth plus a rate limit (security review).
+- **Server memory:** sessions and pending turns live in memory, so a restart between a question's two requests shows "kedaluwarsa".
+
+---
+
+## Previous (superseded)
+
 ## From: Architect/EM (design + planning) -> To: SDE (same session), owner (mockup)
 **Date:** 2026-10-07
 **Read first:** ADR-005; `.10x/decisions/{architect,senior-engineer,engineering-manager}/rag-search-redesign.md`.

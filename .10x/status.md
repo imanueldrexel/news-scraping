@@ -141,3 +141,21 @@
 - Owner decision: SYS-98 answers on DeepSeek via SumoPod (`RAG_LLM_PROVIDER=openai`).
 - ADR-005 accepted: answers through `Summarizer.complete()`, usage under `web:<model>` with its own daily cap, explicit answer states, two-step turns (sources first, then the answer), filters on DB metadata.
 - Plan: decisions/engineering-manager/rag-search-redesign.md (mockup first for SYS-102's approval, then steps 1-11).
+
+## Dev 2026-10-07: RAG search redesign built (tracker #272), phases 4-6 complete
+- **Built (all 11 `status: ready-for-qa`):**
+  - defects SYS-92..SYS-97 (#261-#266);
+  - the answer: SYS-98 (DeepSeek, owner) and SYS-99;
+  - copy, filters, look: SYS-100, SYS-101, SYS-102 (mockup approved by the owner).
+- **Commits:** ceb73cf, d2b48d4. **ADR:** ADR-005.
+- **Tests:**
+  - unit 2,609 passed; integration 193 passed; RAG mutants 42/42 killed;
+  - keyboard e2e 14/14 (headless Chrome over CDP).
+- **Live:**
+  - 10-question replay on DeepSeek, 10/10 clean, ~$0.0003-0.0004 per answer;
+  - 1 question on Gemini;
+  - warm-up 14.8 s; first retrieval 62 ms;
+  - 8 screenshots (375/1280, light/dark).
+- **Filed:** SYS-103 #273 (P3): FTS ANDs every question word, so it contributes 0-1 hits per question. Not started.
+- **Reviews:** `reviews/2026-10-07-qa-report.md`, `reviews/2026-10-07-security-review.md` (local-only sign-off).
+- **Owner:** restart the :8000 web app (one worker) to get the new page.
