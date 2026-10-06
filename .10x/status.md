@@ -136,3 +136,8 @@
   - enhancements: SYS-98 #267, SYS-99 #268, SYS-100 #269, SYS-101 #270, SYS-102 #271.
 - Build order and the full copy/prompt: decisions/product-manager/rag-search-redesign.md.
 - Owner decisions open: SYS-98 provider (PM recommends DeepSeek via the shared Summarizer); SYS-102 mockup approval.
+
+## Dev 2026-10-07: RAG search redesign (tracker #272), design + planning done
+- Owner decision: SYS-98 answers on DeepSeek via SumoPod (`RAG_LLM_PROVIDER=openai`).
+- ADR-005 accepted: answers through `Summarizer.complete()`, usage under `web:<model>` with its own daily cap, explicit answer states, two-step turns (sources first, then the answer), filters on DB metadata.
+- Plan: decisions/engineering-manager/rag-search-redesign.md (mockup first for SYS-102's approval, then steps 1-11).
