@@ -1,5 +1,25 @@
 # Current Handoff
 
+## From: Architect/EM (design + planning) -> To: SDE (same session), owner (mockup)
+**Date:** 2026-10-07
+**Read first:** ADR-005; `.10x/decisions/{architect,senior-engineer,engineering-manager}/rag-search-redesign.md`.
+- **Provider:** decided by the owner, DeepSeek (`RAG_LLM_PROVIDER=openai`).
+- **Build order:**
+  1. the mockup (the owner approves);
+  2. the copy table;
+  3. the summarizer's `complete()`;
+  4. answer parsing;
+  5. retrieval and filters;
+  6. answer states;
+  7. routes and turns;
+  8. templates and CSS;
+  9. the live replay;
+  10. docs and tickets.
+
+---
+
+## Previous (superseded)
+
 ## From: PM -> To: SDE (next top priority), QA (2026-10-07 scheduled runs, unchanged)
 **Date:** 2026-10-07
 **Read first:** `.10x/decisions/product-manager/rag-search-redesign.md`; tracker #272.
