@@ -129,3 +129,10 @@
 - **Filed (4):** SRC-59 #260 (P2, INVESTORID news sitemap 404), SYS-91 #257, DBT-60 #258, OPS-46 #259 (P3).
 - **Tests:** unit 2,434 / integration 187; mutants 84/84 killed (69 dev + 15 QA `qa1006_*`). Report: reviews/2026-10-06-qa-report.md.
 - **Integration tests leak into the real Telegram outbox (OPS-46):** QA deleted the 10 test lines its own run queued.
+
+## PM 2026-10-07: RAG search redesign is the next top priority (owner)
+- Tracker #272 (label `priority: next`, new label `area: web`). 11 tickets:
+  - bugs: SYS-92 #261 (P2), SYS-93 #262 (P2, security), SYS-94 #263 (P2), SYS-95 #264, SYS-96 #265, SYS-97 #266 (P3);
+  - enhancements: SYS-98 #267, SYS-99 #268, SYS-100 #269, SYS-101 #270, SYS-102 #271.
+- Build order and the full copy/prompt: decisions/product-manager/rag-search-redesign.md.
+- Owner decisions open: SYS-98 provider (PM recommends DeepSeek via the shared Summarizer); SYS-102 mockup approval.

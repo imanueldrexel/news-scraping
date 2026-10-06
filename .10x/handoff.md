@@ -1,5 +1,40 @@
 # Current Handoff
 
+## From: PM -> To: SDE (next top priority), QA (2026-10-07 scheduled runs, unchanged)
+**Date:** 2026-10-07
+**Read first:** `.10x/decisions/product-manager/rag-search-redesign.md`; tracker #272.
+
+### Next top priority (owner 2026-10-07): RAG search redesign
+**A. Defects, in this order:**
+1. SYS-93 #262: escape the answer.
+2. SYS-92 #261: topic filter.
+3. SYS-94 #263: answer states.
+4. SYS-95 #264: names and dates.
+5. SYS-96 #265: accessibility.
+6. SYS-97 #266: conversation thread.
+
+**B. The answer:**
+- SYS-98 #267: shared Summarizer. Ask the owner for the provider first; an ADR is required.
+- SYS-99 #268: prompt and citations.
+
+**C. Copy, filters, look:**
+- SYS-101 #270: copy table.
+- SYS-100 #269: filters.
+- SYS-102 #271: visual. The owner approves a mockup first.
+
+**Process:**
+- Issue-first and dev/QA roles as usual: dev labels `status: ready-for-qa`; QA closes.
+- The new label `area: web` covers `newscrawler/web/`.
+
+### Still for QA on 2026-10-07 (from the QA handoff below)
+- SRC-58 at the 07:00 crawl.
+- SRC-59 (INVESTORID) at 07:00.
+- The 12:00 newsletter for OPS-43.
+
+---
+
+## Previous (superseded)
+
 ## From: QA -> To: SDE (fixes), QA of 2026-10-07 (scheduled runs)
 **Date:** 2026-10-06 (night)
 **Read first:** `.10x/reviews/2026-10-06-qa-report.md`; `.10x/decisions/qa/qa-pass-2026-10-06-night.md`.
