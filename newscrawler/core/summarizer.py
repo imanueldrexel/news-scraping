@@ -9,11 +9,16 @@ failed; the next may succeed).
 A call is counted in `api_usage_log` under the model name only once the API
 answered (OPS-09's rule): a 429 or a timeout never produced a response and must
 not eat budget.
+
+`complete(prompt)` (SYS-98, ADR-005) is the same call without the counting: it
+returns the raw `Reply` with the tokens the provider reported, so a caller that
+keeps its own books (the RAG page, under `web:<model>` with dollars) can count
+it. `summarize` is `complete` + the count + the empty-answer check.
 """
 import logging
 import re
 import time
-from typing import Callable, Optional, Protocol
+from typing import Callable, NamedTuple, Optional, Protocol
 
 from newscrawler.core.constants import (
     GEMINI_API_KEY,
@@ -44,11 +49,23 @@ class QuotaExhausted(SummarizerError):
         self.quota = quota
 
 
+class Reply(NamedTuple):
+    """One answered call: the text as returned (possibly empty) and the tokens
+    the provider reported (0 when it reported none)."""
+    text: str
+    input_tokens: int = 0
+    output_tokens: int = 0
+
+
 class Summarizer(Protocol):
     name: str
+    priced: bool    # True: calls cost dollars (core.peak_hours prices); False: a free quota
 
     def summarize(self, prompt: str) -> str:
         """The model's answer. Raises QuotaExhausted or SummarizerError."""
+
+    def complete(self, prompt: str) -> Reply:
+        """The answer and its tokens, not counted. Raises QuotaExhausted or SummarizerError."""
 
 
 class UsageCounter(Protocol):
@@ -129,6 +146,13 @@ def call_guarded(call: Callable[[], object], sleep: Callable[[float], None] = ti
             sleep(wait)
 
 
+def _tokens(value) -> int:
+    try:
+        return max(0, int(value or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
 def _count(usage: Optional[UsageCounter], model_name: str) -> None:
     if usage is None:
         return
@@ -143,6 +167,7 @@ class OpenAICompatSummarizer:
     deepseek-v4-flash is a reasoning model: with thinking on it can spend the
     whole output budget on reasoning and return nothing (EXPERIMENTS, OPS-20),
     so it is switched off; an endpoint that does not know the field ignores it."""
+    priced = True
 
     def __init__(self, model_name: str, api_key: str, base_url: Optional[str] = None,
                  usage: Optional[UsageCounter] = None, client=None,
@@ -157,7 +182,7 @@ class OpenAICompatSummarizer:
             client = OpenAI(api_key=api_key, base_url=base_url, timeout=timeout_s)
         self._client = client
 
-    def summarize(self, prompt: str) -> str:
+    def complete(self, prompt: str) -> Reply:
         response = call_guarded(lambda: self._client.chat.completions.create(
             model=self.name,
             messages=[{"role": "user", "content": prompt}],
@@ -165,11 +190,19 @@ class OpenAICompatSummarizer:
             max_tokens=self._max_tokens,
             extra_body={"thinking": {"type": "disabled"}},
         ), self._sleep)
+        usage = getattr(response, "usage", None)
+        return Reply(response.choices[0].message.content or "", _tokens(getattr(usage, "prompt_tokens", 0)),
+                     _tokens(getattr(usage, "completion_tokens", 0)))
+
+    def summarize(self, prompt: str) -> str:
+        reply = self.complete(prompt)
         _count(self._usage, self.name)
-        return _answer(response.choices[0].message.content)
+        return _answer(reply.text)
 
 
 class GeminiSummarizer:
+    priced = False      # the free tier: a call quota, not dollars (OPS-20)
+
     def __init__(self, model_name: str, api_key: str, usage: Optional[UsageCounter] = None, client=None,
                  sleep=time.sleep):
         self.name = model_name
@@ -180,11 +213,18 @@ class GeminiSummarizer:
             client = genai.Client(api_key=api_key)
         self._client = client
 
-    def summarize(self, prompt: str) -> str:
+    def complete(self, prompt: str) -> Reply:
         response = call_guarded(
             lambda: self._client.models.generate_content(model=self.name, contents=prompt), self._sleep)
+        usage = getattr(response, "usage_metadata", None)
+        return Reply(response.text or "", _tokens(getattr(usage, "prompt_token_count", 0)),
+                     _tokens(getattr(usage, "candidates_token_count", 0))
+                     + _tokens(getattr(usage, "thoughts_token_count", 0)))
+
+    def summarize(self, prompt: str) -> str:
+        reply = self.complete(prompt)
         _count(self._usage, self.name)
-        return _answer(response.text)
+        return _answer(reply.text)
 
 
 def _answer(text: Optional[str]) -> str:
@@ -196,16 +236,20 @@ def _answer(text: Optional[str]) -> str:
     return text
 
 
-def build_summarizer(usage: Optional[UsageCounter] = None, provider: Optional[str] = None) -> Optional[Summarizer]:
+def build_summarizer(usage: Optional[UsageCounter] = None, provider: Optional[str] = None,
+                     setting: str = "NEWSLETTER_LLM_PROVIDER", **openai_options) -> Optional[Summarizer]:
     """The configured summarizer, or None when no credentials exist (the
     digest then lists headlines and says so). `provider` is
-    NEWSLETTER_LLM_PROVIDER: "openai", "gemini", or empty to prefer the
-    OpenAI-compatible endpoint when its key is set."""
+    NEWSLETTER_LLM_PROVIDER (or the variable named by `setting`, e.g.
+    RAG_LLM_PROVIDER): "openai", "gemini", or empty to prefer the
+    OpenAI-compatible endpoint when its key is set. A forced provider without
+    its key is None, never the other provider."""
     provider = (provider if provider is not None else NEWSLETTER_LLM_PROVIDER) or ""
     if provider not in ("", "openai", "gemini"):
-        raise ValueError(f"NEWSLETTER_LLM_PROVIDER must be openai, gemini or empty, not {provider!r}")
+        raise ValueError(f"{setting} must be openai, gemini or empty, not {provider!r}")
     if provider in ("", "openai") and OPENAI_API_KEY:
-        return OpenAICompatSummarizer(OPENAI_MODEL, OPENAI_API_KEY, OPENAI_BASE_URL, usage=usage)
+        # openai_options: timeout_s / max_tokens (the RAG page waits less than a digest run).
+        return OpenAICompatSummarizer(OPENAI_MODEL, OPENAI_API_KEY, OPENAI_BASE_URL, usage=usage, **openai_options)
     if provider in ("", "gemini") and GEMINI_API_KEY:
         return GeminiSummarizer(GEMINI_MODEL, GEMINI_API_KEY, usage=usage)
     return None

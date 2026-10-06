@@ -211,3 +211,20 @@ RAG_BM25_WEIGHT     = float(os.getenv("RAG_BM25_WEIGHT", 0.3))
 RAG_RECENCY_WEIGHT  = float(os.getenv("RAG_RECENCY_WEIGHT", 0.1))
 RAG_TOP_K           = int(os.getenv("RAG_TOP_K", 5))
 RAG_MIN_SEMANTIC_SCORE = float(os.getenv("RAG_MIN_SEMANTIC_SCORE", 0.60))
+# SYS-98 (#267, ADR-005): who writes the search page's answers. "openai" (the owner's
+# choice 2026-10-07: SumoPod's DeepSeek) or "gemini" (20 requests/day on the free tier).
+# A forced provider without its key means no answers (the page shows articles only),
+# never the other provider. Empty prefers the OpenAI-compatible endpoint, like the newsletter.
+RAG_LLM_PROVIDER = os.getenv("RAG_LLM_PROVIDER", "openai").strip().lower()
+# The page's own spend cap per day, in dollars of api_usage_log under `web:<model>`
+# (never the extraction's key). ~$0.001 per answer, so $1 is ~1,000 answers.
+RAG_DAILY_COST_LIMIT_USD = float(os.getenv("RAG_DAILY_COST_LIMIT_USD", 1.0))
+RAG_ANSWER_TIMEOUT_S = float(os.getenv("RAG_ANSWER_TIMEOUT_S", 30))
+RAG_ANSWER_MAX_TOKENS = int(os.getenv("RAG_ANSWER_MAX_TOKENS", 600))
+# SYS-92/SYS-100: with a topic / portal / date filter the FAISS search over-fetches this
+# many paragraphs before filtering on the database's metadata (a flat index costs the same).
+RAG_FILTERED_K = int(os.getenv("RAG_FILTERED_K", 200))
+RAG_QUESTION_MAX_CHARS = int(os.getenv("RAG_QUESTION_MAX_CHARS", 500))
+# SYS-102: load the embedding model and FAISS when the web app starts, so the first
+# question is not the slow one. 0 turns it off (the first request then loads them).
+RAG_WARM_AT_STARTUP = os.getenv("RAG_WARM_AT_STARTUP", "1").strip() not in ("0", "false", "no", "")

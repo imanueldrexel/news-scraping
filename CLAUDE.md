@@ -137,7 +137,21 @@ The article-crawl queue (`load_all_sitemaps`) = sitemaps with no `articles` row 
 
 - **Knowledge extraction** (`core/knowledge_extractor.py`, provider in `core/extraction_provider.py`, ADR-003 / SYS-39): an `ExtractionProvider` (`KNOWLEDGE_LLM_PROVIDER`: `openai` = SumoPod DeepSeek, `gemini` = the default until the owner confirms the switch on #136) extracts persons/orgs/locations/event_type per article, finance topics first, until the queue is empty; a run stops on the provider's peak window (`core/peak_hours.py`), the day's dollar budget (`api_usage_log.cost_usd`, `KNOWLEDGE_DAILY_COST_LIMIT_USD`), a per-day quota, or 5 failures in a row, and its `crawl_log` note carries tokens, cost and the stop reason. The OPS-09 line stays: `ProviderTransientError` (no response) never counts against an article. `EntityNormalizer` + `entity_aliases` map names to canonical entities, results go to `entities` / `entity_mentions`, and `articles.knowledge_extracted` is flipped. Calls, tokens and dollars are tracked per model and day in `api_usage_log`. It warns and does nothing when the chosen provider has no key.
 - **Newsletter** (`core/newsletter_generator.py`): the date's articles sectioned by `articles.topic` in `filter_rubric` order (finance topics first), average-linkage clustering of L1 embeddings **within** each topic (SYS-40 replaced DBSCAN, which chained), at most `NEWSLETTER_MAX_CLUSTERS_PER_TOPIC` clusters shown per section (ranked by size × sources, the rest counted) → summaries → `digests/YYYY-MM-DD.md` + `newsletter_digests` row whose `categories` is the per-topic composition (SYS-40). It embeds with the FAISS store's MiniLM (DBT-02). Since tracker #244 (2026-10-05) that digest is the **archive**; the delivered product is the 5-minute edition `digests/YYYY-MM-DD-ringkas.md`. Each story's summary is JSON from `core/story_summary.py` (SYS-82), refused when it breaks a word limit, carries a number its `terkait` articles lack (compared by value, SYS-87), or keeps an article `terkait` that names none of the summary's subjects (SYS-80); the headline/links/portal count come only from the `terkait` articles. `core/story_words.py` is the one definition of a story's content words and names (titles, months, number units and digit tokens are neither), read by that subject check and the edition's echo guard (SYS-86). `core/newsletter_edition.py` (SYS-83) picks the top stories with one editor call checked against the owner's quotas (deterministic fallback), and the 1,200-word budget trims Sekilas only. Every reader-facing string, date and outlet name lives in `core/newsletter_copy.py` (SYS-84/SYS-81): never `strftime("%B")`, never a source enum in the reader's text, no telemetry in the document. `core/newsletter_pdf.py` renders the A4 archive and the phone edition (OPS-41/42); the 12:00 job sends a 60-second message plus the edition PDF (OPS-43).
-- **RAG web UI** (`web/`): FastAPI + Jinja templates. `QueryProcessor` does hybrid retrieval — FAISS L2 semantic (L2 distance converted to cosine in `search_l2`), Postgres FTS on `chunks.fts_vector`, and recency, weighted by `RAG_*_WEIGHT` constants — then answers with Gemini.
+- **RAG web UI "Tanya Berita"** (`web/`, tracker #272, ADR-005): FastAPI + Jinja + htmx (vendored in `static/`). A question takes two requests:
+  - `retrieve`: hybrid FAISS L2 + Postgres FTS, merged per article.
+    - Headline, portal, date and `articles.topic` come from the DB, not FAISS metadata. A hit without an article row is dropped.
+    - Topic / portal / date filters are applied in the FTS SQL; the semantic search over-fetches `RAG_FILTERED_K` and filters after.
+    - Results are re-ranked and cut at the floor.
+    - The source cards render at once.
+  - `answer`: through the shared `Summarizer` (`RAG_LLM_PROVIDER`, DeepSeek by owner decision).
+    - It returns a state (`ok`/`unavailable`/`failed`/`no_hits`), never an error text.
+    - Usage is counted under `web:<model>` with tokens and dollars, capped by `RAG_DAILY_COST_LIMIT_USD`.
+    - The model's text is parsed into text/`[n]` segments (`web/answer.py`). A citation links only to a card that exists. The answer's numbers are checked against the cited articles.
+
+  Rules:
+  - Templates never use `| safe`.
+  - Every reader string lives in `core/web_copy.py`; tests enforce both.
+  - One uvicorn worker: sessions and pending turns are in memory.
 
 ### Site crawlers
 

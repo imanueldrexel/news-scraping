@@ -1,0 +1,27 @@
+{#- The answer of one turn, inside #answer-<turn_id>. The model's text arrives as segments and is
+    autoescaped like any other value: never `| safe` here (SYS-93). A citation links to a card that
+    exists; its href is built from the turn id and the card number, never from the model's text. -#}
+{% macro render(items) %}{% for s in items %}{% if s.kind == "cite" %}<a class="cite" href="#src-{{ turn_id }}-{{ s.n }}" aria-label="{{ copy.CITE_LABEL.format(n=s.n) }}">{{ s.text }}</a>{% else %}{{ s.text }}{% endif %}{% endfor %}{% endmacro %}
+{% if result.status == "ok" %}
+<div class="answer-body">
+  {% for block in result.blocks %}
+  {% if block.kind == "ul" %}
+  <ul>{% for item in block.items %}<li>{{ render(item) }}</li>{% endfor %}</ul>
+  {% else %}
+  <p>{{ render(block.items[0]) }}</p>
+  {% endif %}
+  {% endfor %}
+</div>
+{% if result.unverified %}<p class="notice" role="note">{{ copy.UNVERIFIED }}</p>{% endif %}
+<p class="disclosure">{{ copy.DISCLOSURE }}</p>
+{% elif result.status == "unavailable" %}
+<div class="notice" role="status"><p>{{ copy.UNAVAILABLE }}</p></div>
+{% elif result.status == "failed" %}
+<div class="notice" role="alert">
+  <p>{{ copy.FAILED }}</p>
+  <button type="button" class="btn btn-quiet" hx-post="/api/answer/{{ turn_id }}" hx-target="#answer-{{ turn_id }}"
+          hx-swap="innerHTML" hx-disabled-elt="this">{{ copy.RETRY }}</button>
+</div>
+{% else %}
+<div class="notice" role="status"><p>{{ copy.EXPIRED }}</p></div>
+{% endif %}

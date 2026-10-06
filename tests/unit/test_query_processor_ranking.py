@@ -14,10 +14,11 @@ def _qp():
     qp = QueryProcessor.__new__(QueryProcessor)
     qp.faiss_ds = MagicMock()
     qp.client = MagicMock()
-    qp._gemini = None  # answer generation disabled; we only assert on sources
+    qp.summarizer = None  # answer generation disabled; we only assert on sources
+    qp.usage = MagicMock()
     # neutralise DB-backed helpers
-    qp._fts_search = lambda q, k: []
-    qp._enrich_with_parent_context = lambda hits: hits
+    qp._fts_search = lambda q, k, filters, today: []
+    qp._attach_metadata = lambda hits: hits
     return qp
 
 
@@ -56,7 +57,7 @@ class TestRelevanceFloor:
         qp = _qp()
         low = RAG_MIN_SEMANTIC_SCORE - 0.2
         qp.faiss_ds.search_l2.return_value = []
-        qp._fts_search = lambda q, k: [
+        qp._fts_search = lambda q, k, filters, today: [
             {"sitemap_id": 12, "semantic_score": 0.0, "bm25_score": 0.5,
              "posted_at": "20260101", "title": "keyword hit", "text_content": "x"},
         ]

@@ -101,6 +101,18 @@ class TestWebRefresh:
         web_app._run_query(question="q")
         assert order == ["refresh", "query"]
 
+    def test_the_page_retrieval_refreshes_before_searching(self, web, monkeypatch):
+        # ADR-005: the page searches through _retrieve (step one of a turn), not _run_query.
+        web_app, ds = web
+        order = []
+        processor = MagicMock()
+        processor.retrieve.side_effect = lambda *a, **k: order.append("retrieve") or []
+        ds.refresh_stale.side_effect = lambda: order.append("refresh")
+        monkeypatch.setattr(web_app, "_get_processor", lambda: processor)
+        monkeypatch.setattr(web_app, "FAISS_RELOAD_CHECK_S", 0)
+        web_app._retrieve("q", None)
+        assert order == ["refresh", "retrieve"]
+
     def test_health_shows_what_this_process_searches(self, web):
         web_app, ds = web
         ds.vs_l1.index.ntotal, ds.vs_l2.index.ntotal = 5, 9

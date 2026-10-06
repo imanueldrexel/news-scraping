@@ -9,7 +9,7 @@
 | `POSTGRES_DB_USER` | `postgres` | DB user |
 | `POSTGRES_DB_PASS` | `postgres` | DB password |
 | `POSTGRES_DB_NAME` | `newsaggregator` | DB name |
-| `GEMINI_API_KEY` | — | **Required for extraction, newsletter, RAG** |
+| `GEMINI_API_KEY` | — | Gemini key: extraction and the newsletter when their provider is `gemini`; the search page only when `RAG_LLM_PROVIDER=gemini` |
 | `GEMINI_MODEL` | `gemini-1.5-flash` | Gemini model name |
 | `GEMINI_DAILY_CALL_LIMIT` | `20` | OPS-20 (#136): Gemini calls/day per model, counted in `api_usage_log`. **This project's free tier enforces 20/day/model**; knowledge extraction stops cleanly at the limit instead of spinning on 429s, and logs one WARNING naming the quota (`...PerDayPerProjectPerModel-FreeTier`) on the day's first 429. Raise it only after enabling billing |
 | `DAILY_API_CALL_LIMIT` | `1400` | OPS-20: budget of the OpenAI-compatible endpoint (labeller, drift audit) per model name in `api_usage_log`. Not Gemini's quota — see `GEMINI_DAILY_CALL_LIMIT` |
@@ -44,7 +44,13 @@
 | `FILTER_AUDIT_PER_SIDE` / `FILTER_AUDIT_BATCH` / `FILTER_AUDIT_MAX_CALLS` | `100` / `20` / `15` | OPS-18: saved + rejected rows judged per week, rows per LLM call, call cap |
 | `AUDIT_MIN_AGREEMENT_SAVED` / `_REJECTED` | `0.80` / `0.70` | OPS-18: judge agreement floors that alert; calibrated on the first run (healthy week: 0.87 / 0.78) |
 | `AUDIT_CELL_MIN_N` / `AUDIT_CELL_MIN_AGREEMENT` | `20` / `0.80` | OPS-18: a source x category with this many decisions alerts under this agreement |
-| `RAG_TOP_K` | `5` | Chunks used for RAG answer |
+| `RAG_TOP_K` | `5` | Articles (source cards) behind one search answer |
+| `RAG_LLM_PROVIDER` | `openai` | SYS-98 (#267, ADR-005): who writes the search page's answers. `openai` = SumoPod DeepSeek (`OPENAI_*`; owner decision 2026-10-07), `gemini` = Gemini (20/day free tier), empty = the newsletter's rule. A forced provider without its key: the page shows articles with "Ringkasan AI sedang tidak tersedia", never the other provider |
+| `RAG_DAILY_COST_LIMIT_USD` | `1.0` | SYS-98: the page's own spend per day, read from `api_usage_log` under `web:<model>` (never the extraction's key, so search never eats `KNOWLEDGE_DAILY_COST_LIMIT_USD`). ~$0.001 per answer; at the cap the page shows articles only until midnight |
+| `RAG_ANSWER_TIMEOUT_S` / `RAG_ANSWER_MAX_TOKENS` | `30` / `600` | SYS-98: per-answer timeout and output bound (OpenAI-compatible provider) |
+| `RAG_FILTERED_K` | `200` | SYS-92/SYS-100: paragraphs the semantic search fetches when a topic / portal / date filter is set, before filtering on the database's metadata (the keyword search filters in SQL) |
+| `RAG_QUESTION_MAX_CHARS` | `500` | Longest question the page accepts |
+| `RAG_WARM_AT_STARTUP` | `1` | SYS-102: load MiniLM and both FAISS indexes when the web app starts (a background thread; the log says `RAG warm-up done in Ns`). `0` = load on the first question |
 | `SITEMAP_RECRAWL_COOLDOWN_DAYS` | `7` | Days before a sitemap with no `articles` row is offered to the article crawl again |
 | `SITEMAP_MAX_FETCH_FAILURES` | `3` | SYS-09: runs that produced no article for a sitemap before `load_all_sitemaps` stops offering it; undo with `scripts/reset_fetch_failures.py` |
 | `SITEMAP_SOURCE_FAILURE_RATIO` | `1.0` | OPS-15: the fraction of a run's attempted sitemaps that must fail before the run is considered source-wide (`1.0` = only when every one failed). Both this **and** `SITEMAP_SOURCE_FAILURE_MIN` must be met |
@@ -120,7 +126,25 @@ gen.generate(target_date=date(2026, 5, 20))
 uvicorn newscrawler.web.app:app --port 8000
 # Open http://localhost:8000
 ```
-The UI loads NEWS_L1/NEWS_L2 on its first query. The crawler (another process) saves them after every source. Before a query, at most every `FAISS_RELOAD_CHECK_S` seconds (default 30), the UI compares the files' generation with the one it loaded and reloads a level that changed, so no restart is needed after a crawl (DBT-16, #51). `/api/health` shows both sides: `faiss_docs` is on disk, and `faiss_in_memory` (`loaded_at`, `docs`) is what this process searches. They differ only until the next query after a save.
+**Run it as one worker** (no `--workers N`): conversations and the turns between a question's two requests live in this process's memory (ADR-005).
+
+**How a question flows (ADR-005, tracker #272):**
+1. `POST /api/query/form` finds the articles and renders the question with its source cards.
+2. The answer placeholder then calls `POST /api/answer/{turn_id}`, which writes the answer through `RAG_LLM_PROVIDER`.
+3. The answer's state is one of:
+   - `ok`;
+   - `unavailable`: no key, a daily quota, or `RAG_DAILY_COST_LIMIT_USD` reached;
+   - `failed`: the reader gets "Coba lagi";
+   - no articles: no model call at all.
+4. The error itself goes to the log only. Each question logs `rag retrieve ms=… kept=… filters=…` and `rag answer status=… ms=… tokens=…/… cost=$…`.
+
+`POST /api/query` is the one-call JSON API: `{"query", "topic", "source", "rentang", "date_from", "date_to", "session_id"}` → `{"answer_status", "answer", "numbers_unverified", "sources", "session_id"}`.
+
+**The page's spend:** `SELECT * FROM api_usage_log WHERE api_name LIKE 'web:%' ORDER BY log_date DESC LIMIT 7;`
+
+**Replay check:** `scripts/experiments/replay_rag_answers.py --base http://127.0.0.1:8000 --out <dir>` asks 10 fixed questions and checks each answer: citations in range, at most 120 words, no Markdown, English months or internal names.
+
+The UI loads NEWS_L1/NEWS_L2 at start-up (`RAG_WARM_AT_STARTUP`). The crawler (another process) saves them after every source. Before a query, at most every `FAISS_RELOAD_CHECK_S` seconds (default 30), the UI compares the files' generation with the one it loaded and reloads a level that changed, so no restart is needed after a crawl (DBT-16, #51). `/api/health` shows both sides: `faiss_docs` is on disk, and `faiss_in_memory` (`loaded_at`, `docs`) is what this process searches. They differ only until the next query after a save.
 
 ### Knowledge Base CLI query (Phase 2)
 ```bash
@@ -678,6 +702,14 @@ pip install scikit-learn
 - SYS-82: a summary the model wrote but the code refused (not JSON, a field over its word limit, or a number that is not in the articles) is asked again once, then shows the headline list; `_summaries.rejections` counts the refusals by reason (`json`/`length`/`number`) and `_summaries.first_try` the answers accepted at once. Many `number` refusals mean the model is rewriting numbers ("13,3 juta" for "13.300.000"); the guard is on purpose (EXPERIMENTS.md, SYS-82 replay).
 - Preview a day without writing to the database: `venv\Scripts\python.exe scripts\preview_newsletter.py --date YYYY-MM-DD` (file in `digests/preview/`; no `newsletter_digests` row, no `api_usage_log` increment).
 - Check that today's articles exist: `SELECT COUNT(*) FROM sitemaps WHERE posted_at = YYYYMMDD;`
+
+**Search page: "Ringkasan AI sedang tidak tersedia" on every question**
+- Check the log for `rag answer unavailable:`. It names the cause: a missing key (`RAG_LLM_PROVIDER=… has no API key` at start-up), the provider's daily quota, or `spent $… today, RAG_DAILY_COST_LIMIT_USD=…`.
+- The articles stay visible meanwhile. The cap resets when the DB's `CURRENT_DATE` changes. The container runs on UTC, so that is **07:00 WIB**, the same as the extraction budget.
+
+**Search page: a filter returns nothing**
+- Topic is `articles.topic` (SYS-92), portal is `sitemaps.sources`, dates are `sitemaps.posted_at`.
+- Check that the scope has articles at all: `SELECT COUNT(*) FROM articles a JOIN sitemaps s USING (sitemap_id) WHERE a.topic = 'markets' AND s.posted_at >= 20261001;`
 
 **RAG: FTS returns no results**
 - Ensure `migrate_phase4.sql` has been run (adds `fts_vector` generated column).

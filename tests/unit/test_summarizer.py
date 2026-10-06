@@ -201,3 +201,56 @@ class TestBuildSummarizer:
         self._keys(monkeypatch)
         with pytest.raises(ValueError):
             sm.build_summarizer(provider="claude")
+
+
+class TestCompleteReturnsTokensWithoutCounting:
+    """SYS-98 (#267, ADR-005): the RAG page keeps its own books under web:<model>, so
+    complete() must hand back the tokens and must not count the call itself."""
+
+    def test_openai_reply_carries_the_reported_tokens(self):
+        usage = MagicMock()
+        s, client = _openai(usage=usage)
+        client.chat.completions.create.return_value = SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content="Jawaban"))],
+            usage=SimpleNamespace(prompt_tokens=1200, completion_tokens=90))
+        assert s.complete("p") == sm.Reply("Jawaban", 1200, 90)
+        usage.increment_api_call_count.assert_not_called()
+
+    def test_openai_reply_without_usage_is_zero_tokens_and_an_empty_text_is_returned(self):
+        s, _ = _openai(None)
+        assert s.complete("p") == sm.Reply("", 0, 0)
+
+    def test_gemini_reply_counts_thinking_as_output(self):
+        client = MagicMock()
+        client.models.generate_content.return_value = SimpleNamespace(
+            text="Jawaban", usage_metadata=SimpleNamespace(prompt_token_count=800, candidates_token_count=50,
+                                                           thoughts_token_count=30))
+        usage = MagicMock()
+        s = sm.GeminiSummarizer("gemini-test", "k", usage=usage, client=client, sleep=lambda s: None)
+        assert s.complete("p") == sm.Reply("Jawaban", 800, 80)
+        usage.increment_api_call_count.assert_not_called()
+
+    def test_priced_marks_who_costs_dollars(self):
+        assert sm.OpenAICompatSummarizer.priced is True and sm.GeminiSummarizer.priced is False
+
+    def test_summarize_still_counts_once(self):
+        usage = MagicMock()
+        s, _ = _openai("- a", usage=usage)
+        s.summarize("p")
+        usage.increment_api_call_count.assert_called_once_with("deepseek-test")
+
+    def test_the_error_names_the_setting(self):
+        with pytest.raises(ValueError, match="RAG_LLM_PROVIDER"):
+            sm.build_summarizer(provider="claude", setting="RAG_LLM_PROVIDER")
+
+    def test_a_forced_provider_without_its_key_is_none_not_the_other(self, monkeypatch):
+        monkeypatch.setattr(sm, "OPENAI_API_KEY", None)
+        monkeypatch.setattr(sm, "GEMINI_API_KEY", "g")
+        assert sm.build_summarizer(provider="openai") is None
+
+    def test_openai_options_reach_the_client(self, monkeypatch):
+        monkeypatch.setattr(sm, "OPENAI_API_KEY", "k")
+        seen = {}
+        monkeypatch.setattr(sm, "OpenAICompatSummarizer", lambda *a, **k: seen.update(k) or "s")
+        sm.build_summarizer(provider="openai", timeout_s=30, max_tokens=600)
+        assert seen["timeout_s"] == 30 and seen["max_tokens"] == 600
