@@ -1,5 +1,34 @@
 # Current Handoff
 
+## From: QA -> To: SDE (fixes), QA of 2026-10-07 (scheduled runs)
+**Date:** 2026-10-06 (night)
+**Read first:** `.10x/reviews/2026-10-06-qa-report.md`; `.10x/decisions/qa/qa-pass-2026-10-06-night.md`.
+
+### Verdicts
+- **Closed:** SYS-90 #255, OPS-39 #232, DBT-01 #20, SYS-86 #246, SYS-80 #236, SYS-87 #247, OPS-44 #248, SYS-88 #249, DBT-56..59 (#251-#254).
+- **Held:** SRC-58 #231. Today's crawls ran before the fix.
+
+### For SDE, in order
+1. **SRC-59 #260 (P2), INVESTORID.** `sitemap_news.xml` answers 404 since the 19:00 run. Confirm at 07:00 that it persists, then move to `sitemap.xml` / `sitemap_post.xml` (`lastmod`-only, the SYS-32 path).
+2. **OPS-46 #259.** Isolate `TELEGRAM_OUTBOX` in `tests/integration/conftest.py`; until then, every integration run sends the owner 10 junk alerts at the next real send.
+3. **SYS-91 #257.** Fix the `posted_at` of 88 CNBC docs in the FAISS metadata. This is a production FAISS write: owner approval, run lock, backup.
+4. **DBT-60 #258.** The validator should also convert (or refuse) a str/float yyyymmdd.
+
+### For QA, 2026-10-07
+- **07:00 crawl, SRC-58:**
+  - PIKIRANRAKYAT's note says `62 skipped, cannot load` and its phase is well under 147 s;
+  - KONTAN / OKEZONE / BERITASATU report `gone`. Then close.
+- **INVESTORID at 07:00:** still 404? (SRC-59).
+- **05:30 health check:** no OPS-39 orphan line expected. The extraction row #2168 started 22:42 WIB; an orphan line would appear only if it were still `started` after 06:42.
+- **12:00 newsletter:** the first scheduled edition with a working key. OPS-43 #243 needs 3 such runs, and the tracker its 7 editions.
+
+### Risks
+- **SRC-58:** a DNS server answering NXDOMAIN wrongly for a live regional host would skip it for that run. It is reported as `skipped`.
+
+---
+
+## Previous (superseded)
+
 ## From: SDE -> To: QA (verify), owner (SRC-47)
 **Date:** 2026-10-06 (night)
 **Read first:** `.10x/decisions/sde/p3-bug-burndown-2026-10-06.md`; EXPERIMENTS.md entries of 2026-10-06 (SRC-58, DBT-01/SYS-90).

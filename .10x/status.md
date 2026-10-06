@@ -2,7 +2,7 @@
 
 ## Project: NewsAggregator
 **Current Phase:** Implementation (dev): P1/P2 fixes + newsletter. Design approved by owner choice of DeepSeek; spec + ADR-001 written.
-**Last Updated:** 2026-10-06 (night) by sde
+**Last Updated:** 2026-10-06 (night) by qa
 **Health:** On Track
 
 ## Progress
@@ -122,3 +122,10 @@
 ## Ops 2026-10-06 (night): SumoPod key unblocked
 - The key's own $5 "Max budget" (not the account balance) blocked every call 2026-10-05 ~23:00 -> 2026-10-06 22:28: the 10-06 12:00 newsletter went out as headlines only, and the 21:00 extraction did 0/8. The owner removed the cap ("the $5 budget is no more a constraint").
 - Catch-up (owner chose both): 2026-10-05 newsletter rebuilt 22:29-22:42, 92/92 summaries, edition 931 words / 8 top stories / 0 hidden lines, message and edition PDF sent; extraction catch-up started 22:42 (log scheduled_extraction_2026-10-06_2242.log).
+
+## QA 2026-10-06 (night): the P3 burn-down and the #244 fixes verified
+- **Closed (12):** SYS-90, OPS-39, DBT-01, SYS-86, SYS-80, SYS-87, OPS-44, SYS-88, DBT-56, DBT-57, DBT-58, DBT-59.
+- **Held:** SRC-58 #231, until the 2026-10-07 07:00 crawl.
+- **Filed (4):** SRC-59 #260 (P2, INVESTORID news sitemap 404), SYS-91 #257, DBT-60 #258, OPS-46 #259 (P3).
+- **Tests:** unit 2,434 / integration 187; mutants 84/84 killed (69 dev + 15 QA `qa1006_*`). Report: reviews/2026-10-06-qa-report.md.
+- **Integration tests leak into the real Telegram outbox (OPS-46):** QA deleted the 10 test lines its own run queued.
