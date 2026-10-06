@@ -45,6 +45,32 @@ class CrawlerServiceImpl(CrawlerService):
         logger.info("Initializing Semantic Filter...")
         self.semantic_filter = SemanticImportanceFilter(soft_threshold=SOFT_THRESHOLD)
 
+    @staticmethod
+    def _branch_note(listing) -> Optional[str]:
+        """OPS-35 (#207) / SRC-58 (#231): the crawl_log note of a completed sitemap
+        run, or None. "did not load" lists only branches that might load next
+        time; branches the site does not have ("gone") and branches not fetched
+        because they cannot load ("skipped") are counted apart, so a source whose
+        live branches start failing still stands out."""
+        def names(pairs, limit=5):
+            head = "; ".join(f"{name}: {reason}" for name, reason in pairs[:limit])
+            return head + (f"; +{len(pairs) - limit} more" if len(pairs) > limit else "")
+
+        failures = getattr(listing, "branch_failures", None) or []
+        gone = getattr(listing, "branches_gone", None) or []
+        skipped = getattr(listing, "branches_skipped", None) or []
+        parts = []
+        if failures:
+            parts.append(f"{len(failures)} of {getattr(listing, 'branches_tried', '?')} branch sitemap(s) did not "
+                         f"load: {names(failures)}")
+        if gone:
+            parts.append(f"{len(gone)} gone: {names(gone)}")
+        if skipped:
+            keys = sorted(name for name, _ in skipped)
+            parts.append(f"{len(skipped)} skipped, cannot load: " + ", ".join(keys[:5]) +
+                         (f" +{len(keys) - 5} more" if len(keys) > 5 else ""))
+        return " | ".join(parts)[:1000] if parts else None
+
     def crawl_sitemaps(self, website_name: str) -> List[SitemapDTO]:
         log_id = self.data_flow_repo.log_crawl_start(website_name, "sitemap")
         try:
@@ -71,11 +97,8 @@ class CrawlerServiceImpl(CrawlerService):
             # `failed` with the reason); branches that did not load are a note on
             # a completed run, so "nothing new" and "half the source is gone"
             # differ in crawl_log.
-            branch_failures = getattr(raw_sitemaps, "branch_failures", None) or []
-            if branch_failures:
-                note = (f"{len(branch_failures)} of {getattr(raw_sitemaps, 'branches_tried', '?')} branch "
-                        f"sitemap(s) did not load: " +
-                        "; ".join(f"{name}: {reason}" for name, reason in branch_failures[:5]))[:1000]
+            note = self._branch_note(raw_sitemaps)
+            if note:
                 logger.warning(f"{website_name}: {note}")
                 self.data_flow_repo.log_crawl_complete(log_id, new_count, note=note)
             else:

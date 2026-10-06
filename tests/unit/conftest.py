@@ -24,6 +24,14 @@ def _no_real_backoff_sleep(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _no_real_dns(monkeypatch):
+    """SRC-58 (#231): a crawler asks DNS whether a branch's host exists before fetching it.
+    Unit tests never reach the network: every host resolves unless a test says otherwise."""
+    from newscrawler.core.page_loader import requests_page_loader
+    monkeypatch.setattr(requests_page_loader, "host_resolves", lambda host: True)
+
+
+@pytest.fixture(autouse=True)
 def _no_real_database_or_telegram(monkeypatch, tmp_path):
     """DBT-53 (#226): a unit test may not reach a database or Telegram. The default
     POSTGRES_DB_* point at production, so a test that exercises a script whose guard

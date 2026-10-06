@@ -59,6 +59,26 @@ def _host_suffix_match(host: str, suffixes) -> Optional[str]:
     return None
 
 
+# getaddrinfo's "this name does not exist" (NXDOMAIN): EAI_NONAME, which Windows reports as
+# WSAHOST_NOT_FOUND (11001). Any other failure (EAI_AGAIN/WSATRY_AGAIN, a timeout) is not a fact
+# about the host.
+_NO_SUCH_HOST = frozenset(e for e in (getattr(socket, "EAI_NONAME", None), 11001) if e is not None)
+
+
+def host_resolves(host: str) -> Optional[bool]:
+    """SRC-58 (#231): True when `host` has an address, False when DNS says it
+    does not exist, None when the lookup failed for another reason (no verdict).
+    One lookup, no retries: a crawler asks before fetching a branch, so a dead
+    regional subdomain is not retried with backoff on every run."""
+    try:
+        socket.getaddrinfo(host, None)
+        return True
+    except socket.gaierror as e:
+        return False if e.errno in _NO_SUCH_HOST else None
+    except (OSError, UnicodeError):
+        return None
+
+
 def is_name_resolution_failure(exc: BaseException) -> bool:
     """SYS-66: the host did not resolve. requests wraps it as
     ConnectionError -> MaxRetryError -> NewConnectionError -> socket.gaierror;

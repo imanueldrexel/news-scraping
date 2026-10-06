@@ -14,6 +14,7 @@ import pydantic
 from newscrawler.core.constants import VERBOSE, PARALLELIZE, MAX_WORKER, MIN_ARTICLE_CHARS
 from newscrawler.core.page_loader.throttle import NOT_FETCHED_REASON, ThrottleGuard
 from newscrawler.core.utils.utils import clean_body_paragraphs, unescape_headline
+from newscrawler.core.page_loader import requests_page_loader
 from newscrawler.core.page_loader.page_loader import PageLoader
 from newscrawler.core.page_loader.requests_page_loader import RequestsPageLoader
 from newscrawler.domain.dtos.dataflow.details.news_details_dto import NewsDetailsDTO
@@ -62,12 +63,33 @@ class SitemapListing(list):
     """What get_news_in_bulk has always returned (the raw entries of every
     crawled branch) plus, since OPS-35, the branches whose sitemap did not load:
     `branch_failures` is [(branch_name, reason), ...] and `branches_tried` how
-    many branches were fetched. Same shape as SitemapScrapeBatch."""
+    many branches were fetched. Same shape as SitemapScrapeBatch.
 
-    def __init__(self, items=(), branch_failures=(), branches_tried: int = 0):
+    SRC-58 (#231) splits out what could never have loaded, so `branch_failures`
+    lists only branches that might load next time (a 500, a timeout):
+    `branches_gone` -- fetched, and the site says the branch is not there (HTTP
+    404/410, a redirect to a malformed URL); `branches_skipped` -- not fetched,
+    because the host does not exist in DNS or the `<loc>` has no host. Both are
+    [(branch_name, reason), ...]."""
+
+    def __init__(self, items=(), branch_failures=(), branches_tried: int = 0, branches_gone=(),
+                 branches_skipped=()):
         super().__init__(items)
         self.branch_failures = list(branch_failures)
         self.branches_tried = branches_tried
+        self.branches_gone = list(branches_gone)
+        self.branches_skipped = list(branches_skipped)
+
+
+# SRC-58: a branch-fetch reason that says the branch is not there, as opposed to "not now".
+_GONE_REASON = re.compile(r"^(HTTP 404|HTTP 410|soft-404\b)|LocationParseError|InvalidURL|MissingSchema|InvalidSchema")
+
+
+def is_gone_reason(reason: Optional[str]) -> bool:
+    """SRC-58: True for a branch sitemap the site does not have (KONTAN `tv` 404,
+    `pressrelease` redirecting to 'https://.kontan.co.id/...'), False for one that
+    may load next time (HTTP 500/503, a timeout, a refused connection)."""
+    return bool(reason and _GONE_REASON.search(reason))
 
 
 class SitemapScrapeBatch(list):
@@ -445,18 +467,52 @@ class Crawler:
             logger.error(f"{self.website_name}: sitemap index {self.website_url} did not load: {reason}")
             raise SitemapIndexUnavailable(f"sitemap index did not load: {reason}")
 
-        branches_to_crawl = self.drop_soft_branches(listed)
+        in_scope = self.drop_soft_branches(listed)
+        branches_to_crawl, skipped = self.drop_unreachable_branches(in_scope)
         links_to_crawl = []
         self._branch_failures = []
 
         for branch_name, branch_link in branches_to_crawl.items():
             links = self._scrape(branch_link=branch_link, branch_name=branch_name)
             links_to_crawl.extend(links)
-        failures = list(self._branch_failures)
-        if branches_to_crawl and len(failures) >= len(branches_to_crawl):
+        gone = [f for f in self._branch_failures if is_gone_reason(f[1])]
+        failures = [f for f in self._branch_failures if not is_gone_reason(f[1])]
+        dead = skipped + gone + failures
+        if in_scope and len(dead) >= len(in_scope):
             raise SitemapIndexUnavailable(
-                f"all {len(branches_to_crawl)} branch sitemap(s) failed to load, e.g. {failures[0][1]}")
-        return SitemapListing(links_to_crawl, failures, len(branches_to_crawl))
+                f"all {len(in_scope)} branch sitemap(s) failed to load, e.g. {dead[0][1]}")
+        return SitemapListing(links_to_crawl, failures, len(branches_to_crawl), gone, skipped)
+
+    def drop_unreachable_branches(self, branches: Dict[str, str]) -> Tuple[Dict[str, str], List[Tuple[str, str]]]:
+        """SRC-58 (#231): (branches to fetch, [(skipped branch, reason)]). A branch
+        is skipped, unfetched, when its `<loc>` has no host, or when DNS says its
+        host does not exist -- PIKIRANRAKYAT lists 62 regional subdomains that do
+        not resolve, and fetching each cost three retries with backoff on every
+        run (its sitemap phase averaged 147 s).
+
+        Asked only while the index's own host resolves: that host just served the
+        index, so a "does not exist" for another host is a fact about that host,
+        not a network outage. A lookup that fails any other way is no verdict and
+        the branch is fetched as before. Each host is looked up once, in parallel."""
+        skipped, hosts = [], {}
+        for key, link in branches.items():
+            host = (urlparse(link or "").hostname or "")
+            if not host or "" in host.split("."):
+                skipped.append((key, f"malformed URL: {link!r}"[:200]))
+            else:
+                hosts.setdefault(host, []).append(key)
+        index_host = urlparse(self.website_url or "").hostname
+        if hosts and index_host and requests_page_loader.host_resolves(index_host) is True:
+            with ThreadPoolExecutor(max_workers=max(1, min(self.max_worker or 1, len(hosts)))) as pool:
+                verdicts = dict(zip(hosts, pool.map(requests_page_loader.host_resolves, hosts)))
+            for host, keys in hosts.items():
+                if verdicts[host] is False:
+                    skipped.extend((key, f"host does not resolve: {host}") for key in keys)
+        if skipped:
+            logger.info(f"{self.website_name}: skipped {len(skipped)} branch(es) that cannot load (SRC-58): "
+                        f"{_summarise(k for k, _ in skipped)}")
+        names = {k for k, _ in skipped}
+        return {k: v for k, v in branches.items() if k not in names}, skipped
 
     def _scrape(self, branch_link, branch_name) -> List:
         logger.info(f"Scrape {branch_name} on {self.website_name}")

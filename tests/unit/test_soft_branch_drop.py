@@ -124,7 +124,8 @@ class TestDropSoftBranches:
         c = self._crawler()
         c.page_loader = MagicMock()
         c.page_loader.get_soup.return_value = MagicMock()
-        c._get_branches = MagicMock(return_value={"ekonomi": "e-link", "bola": "b-link"})
+        c._get_branches = MagicMock(return_value={"ekonomi": "https://x.example.test/ekonomi.xml",
+                                                   "bola": "https://x.example.test/bola.xml"})
         c._scrape = MagicMock(return_value=[{"link": "x"}])
         assert c.get_news_in_bulk() == [{"link": "x"}]
         assert c._scrape.call_count == 1

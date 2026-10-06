@@ -22,11 +22,16 @@ URLSET = "<urlset><url><loc>https://example.test/a</loc></url></urlset>"
 class _Loader(PageLoader):
     """`pages` maps URL -> XML text; any other URL answers `missing`."""
 
-    def __init__(self, pages, missing="HTTP 403"):
+    def __init__(self, pages, missing="HTTP 403", reasons=None):
         self.pages = pages
         self.missing = missing
+        self.reasons = reasons or {}     # URL -> the reason that URL fails with
+        self.requested = []
 
     def get_soup_with_reason(self, url):
+        self.requested.append(url)
+        if url in self.reasons:
+            return None, self.reasons[url]
         if url in self.pages:
             return BeautifulSoup(self.pages[url], "html.parser"), None
         return None, self.missing
@@ -64,10 +69,10 @@ class TestGetNewsInBulk:
             c.get_news_in_bulk()
 
     def test_a_partial_failure_rides_on_the_result(self):
-        c = _Crawler(_Loader({INDEX: "<sitemapindex/>", BRANCHES["ekonomi"]: URLSET}, missing="HTTP 404"))
+        c = _Crawler(_Loader({INDEX: "<sitemapindex/>", BRANCHES["ekonomi"]: URLSET}, missing="HTTP 503"))
         listing = c.get_news_in_bulk()
         assert isinstance(listing, SitemapListing) and len(listing) == 1
-        assert listing.branch_failures == [("nasional", "HTTP 404")]
+        assert listing.branch_failures == [("nasional", "HTTP 503")]
         assert listing.branches_tried == 2
 
     def test_a_healthy_source_has_no_failures(self):
@@ -102,12 +107,12 @@ class TestCrawlSitemaps:
         assert "sitemap index did not load: HTTP 403" in msg
 
     def test_a_partial_failure_is_a_completed_run_with_a_note(self):
-        crawler = _Crawler(_Loader({INDEX: "<sitemapindex/>", BRANCHES["ekonomi"]: URLSET}, missing="HTTP 404"))
+        crawler = _Crawler(_Loader({INDEX: "<sitemapindex/>", BRANCHES["ekonomi"]: URLSET}, missing="HTTP 503"))
         crawler.batch_crawling_sitemap = MagicMock(return_value=[])
         svc = _service(crawler)
 
         svc.crawl_sitemaps("EXAMPLE")
 
         note = svc.data_flow_repo.log_crawl_complete.call_args.kwargs["note"]
-        assert note == "1 of 2 branch sitemap(s) did not load: nasional: HTTP 404"
+        assert note == "1 of 2 branch sitemap(s) did not load: nasional: HTTP 503"
         svc.data_flow_repo.log_crawl_failed.assert_not_called()
