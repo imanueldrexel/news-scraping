@@ -2,7 +2,7 @@
 
 ## Project: NewsAggregator
 **Current Phase:** Implementation (dev): P1/P2 fixes + newsletter. Design approved by owner choice of DeepSeek; spec + ADR-001 written.
-**Last Updated:** 2026-10-05 (night) by sde
+**Last Updated:** 2026-10-06 (night) by sde
 **Health:** On Track
 
 ## Progress
@@ -110,3 +110,11 @@
 - [x] SYS-88 #249 code done (ingest, page title, newsletter read path); backfill applied 2026-10-06 05:59 with the owner's approval: 2,410 rows, entity query 0, backup `backups/sys88_headlines_20261006_055952.json`. Ready for QA.
 - Tests: unit 2,387 passed; integration 183 passed; 112 newsletter mutants (see ticket comments).
 - **Blocker for 2026-10-06 12:00: the SumoPod prepaid balance ran out ~23:00** (owner 2026-10-06: not topped up; resolved by a top-up, no code change). The 21:00 extraction stopped (6,081/6,090, $2.04); the newsletter will get no summaries (headline lists, no edition) unless the balance is topped up first. The replays of this session spent part of it (~15 replayed days, roughly $0.2-0.3).
+
+## SDE 2026-10-06: P3 bug burn-down (decisions/sde/p3-bug-burndown-2026-10-06.md)
+- [x] SRC-58 #231: dead branches skipped (NXDOMAIN, hostless <loc>) or reported as gone (404, bad redirect). PIKIRANRAKYAT sitemap phase 147 s -> 50 s live. Ready for QA.
+- [x] OPS-39 #232: orphaned crawl_log rows reported at 05:30 (per-task limit) and closable; the 5 production rows closed (owner approved). Ready for QA.
+- [x] DBT-01 #20: requirements.txt = venv freeze; SitemapDTO.timestamp Optional. Ready for QA.
+- [x] SYS-90 #255 (found): an int yyyymmdd was read as Unix seconds (193 articles with posted_at 19700823); fixed at the DTO, rows repaired (owner approved). Ready for QA.
+- [ ] SRC-47 #157: owner-deferred 2026-09-25; re-measured read-only for the owner's re-decision.
+- Tests: unit 2,434 passed; integration 187 passed; 21 new mutants killed.

@@ -1,6 +1,30 @@
 # Current Handoff
 
-## From: SDE -> To: QA (verify), owner (two decisions)
+## From: SDE -> To: QA (verify), owner (SRC-47)
+**Date:** 2026-10-06 (night)
+**Read first:** `.10x/decisions/sde/p3-bug-burndown-2026-10-06.md`; EXPERIMENTS.md entries of 2026-10-06 (SRC-58, DBT-01/SYS-90).
+
+### Ready for QA (evidence on each ticket)
+- **SRC-58 #231:** watch PIKIRANRAKYAT's sitemap-phase time and the crawl_log notes (`did not load | gone | skipped`) at the next scheduled crawl.
+- **OPS-39 #232:** the next 05:30 health check should send no crawl_log line (0 orphans after the cleanup).
+- **DBT-01 #20.**
+- **SYS-90 #255:** found while doing DBT-01.
+
+### Owner
+- **SRC-47 #157:** deferred 2026-09-25, to be re-read before OPS-19's first unattended run (it started 2026-09-26). Re-measured 2026-10-06 (see the ticket comment): keep it deferred, or schedule it?
+
+### What to test
+- Mutants `src58_*`, `ops39_*`, `sys90_*`, `dbt01_*` in `qa_mutation_runner.py` (21, all killed in a worktree).
+- Integration: `test_crawl_log_orphans_live.py` and `test_sitemap_dto_dates_live.py`, which include the scripts' dry run, apply and restore.
+- `scripts/experiments/probe_dead_branches.py` re-checks the dead-branch facts.
+
+### Risks
+- **SRC-58:** the DNS skip trusts NXDOMAIN only while the index host resolves. A DNS server that wrongly answers NXDOMAIN for a live regional host would skip it for that run. It is reported in the note ("skipped").
+- **SYS-90:** the validator treats any int in 10000101-99991231 as a date. No other int should ever reach `timestamp`.
+
+---
+
+## Previous: From SDE -> To: QA (verify), owner (two decisions)
 **Date:** 2026-10-05 (night)
 **Read first:**
 - `.10x/decisions/sde/newsletter-5min-edition.md`, section "QA's findings fixed".
@@ -136,6 +160,7 @@ SYS-74, SYS-41, SRC-34, SRC-47/42/40/39, SRC-58, OPS-39, DBT-01. Lower `KNOWLEDG
 ---
 
 ## Handoff History
+- 2026-10-06 (night) SDE -> QA/owner: P3 burn-down (SRC-58, OPS-39, DBT-01, SYS-90 ready-for-qa; SRC-47 re-measured for the owner) (this file, top).
 - 2026-10-05 (night) SDE -> QA/owner: QA's #244 findings fixed; 8 ready-for-qa, SYS-88 backfill and the SumoPod top-up await the owner (this file, top).
 - 2026-10-05 (night) QA -> SDE/QA/owner: tracker #244 verified; 4 closed, SYS-80 sent back, 4 held, 8 filed (this file, top).
 - 2026-10-05 (evening) CTO -> QA: edition decisions built and replayed (this file, second).

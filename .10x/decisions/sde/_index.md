@@ -9,6 +9,8 @@
 
 - [newsletter-5min-edition](newsletter-5min-edition.md) — tracker #244: SYS-80..85, OPS-41..43 built 2026-10-05 (structured summaries + guards, editor pass, copy module, phone PDF, Telegram message); replayed on 3 days; SYS-82/SYS-83 targets partly missed, owner decisions listed. QA's findings fixed the same night (SYS-86/80/87/88, OPS-44, DBT-56..59); SYS-88's backfill applied 2026-10-06
 
+- [p3-bug-burndown-2026-10-06](p3-bug-burndown-2026-10-06.md) — SRC-58, OPS-39, DBT-01, SYS-90 (found) ready-for-qa; two owner-approved production writes with backups; SRC-47 owner-deferred, re-measured
+
 ## Cross-cutting SDE notes
 - PowerShell does not pipe a here-string into `git commit -F -`; write the message to a scratch file and pass its path.
 - A replay that spawns one process per date imports the code at each start: never edit source between dates (it mixes versions), and never run `qa_mutation_runner.py` at the same time (it mutates files in place).
