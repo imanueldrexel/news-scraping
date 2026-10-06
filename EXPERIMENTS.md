@@ -143,6 +143,7 @@ One line each; read this before starting on a scraper or pipeline problem.
 - **Never merge a section's articles by the transitive closure of shared headline words (SYS-67 #215).** Two crime headlines often share two words ("polisi", "ditangkap"), so the union of linked articles turned law_crime into ONE 176-article cluster -- the DBSCAN chaining SYS-40 removed. A word-frequency cap cannot find the day's biggest story either (its own words are as frequent as "polisi"), and cluster centroids cannot (a scandal's angles sit 0.23-0.45 apart, two unrelated KPK cases 0.20). What worked is asking the summarizer to group a section's clusters by story. -> "SYS-67: what tells one scandal's angles".
 - **Replay a boilerplate pattern list over stored bodies before shipping it (SYS-63 #204).** The first list left KONTAN's "Cek Berita dan Artikel yang lain di Google News" in 414 lines; only the before/after replay and the top removed lines showed it. -> `scripts/experiments/replay_clean_body.py`.
 - **deepseek-v4-flash overshoots word limits by 1-3 words on ~40% of first answers, whatever the prompt says, and writes one 60-second sentence per top story even when told "3-5 SAJA" (SYS-82/SYS-83).** Prompt wording did not move either; a retry that names every broken limit, a whole-item drop for optional fields, and a trim to 5 did. Do not re-tune the wording to chase the first-try rate. → [2026-10-05 replay entry](#2026-10-05--sys-82sys-83ops-42-replay-the-5-minute-edition-on-2026-10-04-10-03-and-09-28-four-runs)
+- **New-mode headless Chrome/Edge lays a window out at >= ~500 px, whatever `--window-size` says**: a 375 px screenshot is a cropped 500 px layout. Put the page in a 375 px iframe (`scripts/experiments/snapshot_rag_page.py`). And `load_dotenv()` in a script outside the repo loads nothing (it searches from the script's folder): pass the repo's `.env` path. → [2026-10-07 SYS-98/SYS-99 entry](#2026-10-07--sys-98sys-99-the-redesigned-search-answer-on-10-real-questions-deepseek-one-on-gemini-and-what-the-live-run-found)
 
 ## Log
 
@@ -1995,3 +1996,48 @@ SINDONEWS   old 12 new 12 | lost [] | gained []   links identical: True
   - Put the mutation worktree at a short path (`%TEMP%\q6`), never under the session scratchpad.
   - Integration tests are not isolated from `logs/telegram_outbox.jsonl`; until OPS-46, delete the file after a run if it holds only test lines.
 - **Links:** SYS-91 #257, DBT-60 #258, OPS-46 #259, SRC-59 #260; SYS-90 #255; `.10x/reviews/2026-10-06-qa-report.md`.
+
+### 2026-10-07 — SYS-98/SYS-99: the redesigned search answer on 10 real questions (DeepSeek), one on Gemini, and what the live run found
+- **Question / hypothesis:** does the PM's answer prompt (today's date, numbered articles, at most 120 words, `[n]` citations, plain text, a fixed not-enough sentence), routed through the shared Summarizer, give answers that:
+  - cite only cards that exist;
+  - stay in Indonesian reader copy;
+  - keep the numbers of the articles?
+
+  And what does it cost per answer?
+- **Method:**
+  - The app runs on :8765 with `RAG_LLM_PROVIDER=openai`.
+  - `scripts/experiments/replay_rag_answers.py --base http://127.0.0.1:8765 --out <scratch>` sends 9 questions plus 1 follow-up through `POST /api/query`; some carry topic or date filters. Each answer is checked automatically and dumped for a hand check.
+  - The Gemini side is checked with `QueryProcessor` built under `RAG_LLM_PROVIDER=gemini`, FAISS stubbed (FTS-only retrieval), on one question.
+  - The screenshots come from `scripts/experiments/snapshot_rag_page.py`.
+- **Result:**
+  - **10/10 answered:**
+    - 47-77 words; every `[n]` in range; no Markdown, English month, internal source name or yyyymmdd date;
+    - 0 numbers flagged by the number check;
+    - the not-enough sentence used verbatim once (IHSG, topic=markets, 7 days), followed by the facts the articles do state;
+    - the follow-up ("Apa dampaknya ke kredit perbankan?") resolved "dampaknya" from the history.
+  - **Cost and timing:**
+    - answers took 1.4-5.0 s, with 1,474-2,077 input / 107-171 output tokens, $0.00031-0.00041 each;
+    - 14 calls cost $0.0048 in total, under `api_usage_log.api_name = 'web:deepseek-v4-flash'`;
+    - retrieval took 62-125 ms, the first question after start-up included (62 ms);
+    - warm-up at start-up takes 14.8 s.
+  - **Gemini:** `gemini-2.5-flash` answered one question correctly, citing [4][5], with 1,772 input / 1,321 output tokens (thinking included) under `web:gemini-2.5-flash`, $0.
+  - **Hand check:**
+    - **Answer 8 (BI rate):** the 5.75% hold is correct, but the answer cites two forecast articles ([1], [4]) next to the one that reports the decision ([2]). Retrieval ranked the actual decision article ("BI Tahan BI-Rate di Level 5,75%") below the forecasts.
+    - **Answer 7 ("banjir dalam sepekan terakhir", 7-day filter):** it reports a 21 September flood, faithfully, from 1 October articles that recap "pekan ini". The filter is by publication date, as designed.
+  - **Failures found and fixed during the run:**
+    1. The app's INFO lines (the warm-up time) were dropped under uvicorn. The root logger is already configured there, so `logging.basicConfig` is a no-op. Fixed with `logger.setLevel(INFO)` in `app.py`.
+    2. The "Mencari artikel…" indicator showed permanently: `.pending { display: flex }` on the same element overrode `.search-status { display: none }`. Fixed with a wrapper, plus a test.
+    3. The replay's English-month check flagged "November" and "April". Both are spelled the same in Indonesian; the lists now hold only English-only spellings.
+  - **Keyboard-only end-to-end:** `scripts/experiments/e2e_rag_page.py` drives headless Chrome over CDP (`websocket-client`, `suppress_origin=True`; Chrome refuses the Origin header otherwise). 14/14 passed:
+    - the Tab order is search → Tanya → 3 examples → Filter, then with the panel open Topik → Portal → the date radio group;
+    - Enter asks, and focus lands on the new question;
+    - the follow-up appends in the same session;
+    - "Pertanyaan baru" empties the thread and the session.
+    - A synthetic Enter needs `text: ""`, or no implicit form submit fires.
+  - **Not a code fault:** a probe script in the scratchpad called `load_dotenv()` and loaded nothing. `find_dotenv` searches from the calling file's directory, not the cwd. The database worked only because its defaults match, so the "no Gemini key" warning was the probe's own fault.
+- **Conclusion / do not repeat:**
+  - The prompt holds on real questions; no tuning is needed.
+  - **The keyword half of retrieval is dead weight:** `plainto_tsquery` ANDs every word of a whole question, giving `fts=0-1` on every question. Filed as **SYS-103 (#273)**.
+  - **Headless Chrome/Edge (new mode) will not lay out a window narrower than ~500 px.** A `--window-size=375,...` screenshot is a 500 px layout cropped to 375. Render phone widths in a 375 px iframe instead (`snapshot_rag_page.py` does).
+  - A script outside the repo must call `load_dotenv(<repo>/.env)` explicitly.
+- **Links:** tracker #272, SYS-92..SYS-102 (#261-#271), SYS-103 #273, ADR-005, commit ceb73cf; mockup `.10x/specs/2026-10-07-rag-search-mockup.html`.
