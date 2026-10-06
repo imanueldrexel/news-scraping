@@ -377,6 +377,9 @@ WHERE task = 'health_check';
 ```
 Red flag: `hours_since > 36` (or a NULL `last_health_check`) — the scheduled job (05:30 daily) has stopped firing, from Task Scheduler, credentials, or the machine being off longer than its catch-up window. This is the same query `scripts/run_scheduled_health_check.py` runs on every invocation to alert on a gap by itself, but it's checkable here directly, without opening Task Scheduler — the point being that a broken *notifier* (no Telegram alert) must not also be a silent one.
 
+### Is a run going, or is a `started` row an orphan? (OPS-39, #232)
+`SELECT log_id, website, task, started_at FROM crawl_log WHERE status = 'started'` answers "is a run going?" only for rows younger than their job's Task Scheduler limit: 8 h for `extract_knowledge`, 4 h for everything else (`newscrawler/tools/crawl_log_orphans.py`). An older row belongs to a run that Task Scheduler ended or that crashed. The 05:30 health check sends `📋 NewsAggregator crawl_log: N row(s) still 'started' past their job's time limit ...` when there is one. Close them with `venv\Scripts\python.exe scripts\close_abandoned_crawl_log.py` (dry run by default; `--apply` backs the rows up to `backups/ops39_crawl_log_<timestamp>.json`, sets `status = 'failed'`, `finished_at = started_at`, `error_msg = 'abandoned: no run owned this row (closed <date>, OPS-39)'`; `--restore <file>` undoes it). A row younger than its limit is never touched.
+
 ### Check for a reporter selector that landed on the wrong element (SRC-10)
 ```sql
 SELECT s.sources, COUNT(*) FILTER (WHERE a.writer::text ~ '^\["[0-9]+"\]$') AS numeric_writer, COUNT(*) AS total

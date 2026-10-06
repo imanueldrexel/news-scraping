@@ -899,6 +899,22 @@ M = [
   '        if gone:\n            parts.append', '        if False:\n            parts.append'),
  ('src58_note_hides_skipped', 'newscrawler/domain/services/crawler_service_impl.py',
   '        if skipped:\n            keys = sorted', '        if False:\n            keys = sorted'),
+ # ── OPS-39 (#232): crawl_log orphans, SDE 2026-10-06 ──
+ ('ops39_extraction_limit_is_the_default', 'newscrawler/tools/crawl_log_orphans.py',
+  'ORPHAN_AFTER_HOURS = {"extract_knowledge": 8.0}', 'ORPHAN_AFTER_HOURS = {}'),
+ ('ops39_default_limit_8h', 'newscrawler/tools/crawl_log_orphans.py',
+  'DEFAULT_ORPHAN_AFTER_HOURS = 4.0', 'DEFAULT_ORPHAN_AFTER_HOURS = 8.0'),
+ ('ops39_every_started_row_is_an_orphan', 'newscrawler/tools/crawl_log_orphans.py',
+  '    return age_hours > limit_hours(task)', '    return True'),
+ ('ops39_close_any_status', 'newscrawler/tools/crawl_log_orphans.py',
+  '        "WHERE log_id = ANY(:ids) AND status = \'started\'"', '        "WHERE log_id = ANY(:ids)"'),
+ ('ops39_finished_now', 'newscrawler/tools/crawl_log_orphans.py',
+  "status = 'failed', finished_at = started_at, error_msg", "status = 'failed', finished_at = NOW(), error_msg"),
+ ('ops39_health_check_silent', 'scripts/run_scheduled_health_check.py',
+  '    orphaned = _orphaned_crawl_log_message()\n    if orphaned:', '    orphaned = _orphaned_crawl_log_message()\n    if False:'),
+ ('ops39_health_check_raises', 'scripts/run_scheduled_health_check.py',
+  '    except Exception as e:\n        logger.warning(f"Could not check crawl_log for orphaned rows: {e}")\n        return None',
+  '    except ImportError as e:\n        logger.warning(f"Could not check crawl_log for orphaned rows: {e}")\n        return None'),
 ]
 only = sys.argv[1:]
 # The tests each mutant runs (default: all of tests/unit). QA_MUTANT_TESTS narrows it to the files that

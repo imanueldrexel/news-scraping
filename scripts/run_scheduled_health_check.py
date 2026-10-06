@@ -160,6 +160,24 @@ def _stale_backup_message():
     return None
 
 
+def _orphaned_crawl_log_message():
+    """OPS-39 (#232): a message when crawl_log has a row still 'started' past its
+    job's time limit (a run that was killed or crashed; crawl_log_orphans), else
+    None. Never raises: a monitoring check must not crash the health check."""
+    try:
+        from newscrawler.infrastructure.network.clients.sqlalchemy_client import SQLAlchemyClient
+        from newscrawler.tools import crawl_log_orphans
+        with SQLAlchemyClient().get_session() as session:
+            rows = crawl_log_orphans.find_orphans(session)
+    except Exception as e:
+        logger.warning(f"Could not check crawl_log for orphaned rows: {e}")
+        return None
+    if not rows:
+        return None
+    return (f"{len(rows)} row(s) still 'started' past their job's time limit, so no run owns them: "
+            f"{crawl_log_orphans.describe(rows)}. Close them with scripts/close_abandoned_crawl_log.py.")
+
+
 def main() -> int:
     gap_hours = _hours_since_last_health_check()
     if gap_hours is not None and gap_hours > MISSED_RUN_GAP_HOURS:
@@ -177,6 +195,12 @@ def main() -> int:
         from notify_telegram import send
         send(f"💾 NewsAggregator DB backup: {stale_backup}")
         logger.warning(stale_backup)
+
+    orphaned = _orphaned_crawl_log_message()
+    if orphaned:
+        from notify_telegram import send
+        send(f"📋 NewsAggregator crawl_log: {orphaned}")
+        logger.warning(orphaned)
 
     python = sys.executable
     check_script = os.path.join(REPO_ROOT, "scripts", "check_crawlers.py")
