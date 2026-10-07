@@ -2041,3 +2041,28 @@ SINDONEWS   old 12 new 12 | lost [] | gained []   links identical: True
   - **Headless Chrome/Edge (new mode) will not lay out a window narrower than ~500 px.** A `--window-size=375,...` screenshot is a 500 px layout cropped to 375. Render phone widths in a 375 px iframe instead (`snapshot_rag_page.py` does).
   - A script outside the repo must call `load_dotenv(<repo>/.env)` explicitly.
 - **Links:** tracker #272, SYS-92..SYS-102 (#261-#271), SYS-103 #273, ADR-005, commit ceb73cf; mockup `.10x/specs/2026-10-07-rag-search-mockup.html`.
+
+### 2026-10-07 — SYS-103: which full-text query shape makes the search's keyword half useful
+- **Question / hypothesis:** the RAG search's FTS (`plainto_tsquery`, every word ANDed) contributes 0-1 hits per question (SYS-103 #273). Which query shape gives keyword recall at an interactive latency, without filling the result with noise?
+- **Method:** `scripts/experiments/probe_fts_query_shapes.py`, read-only, production, 354,620 L2 chunks, on the 9 replay questions. Each word's document frequency (df) comes from a GIN count. Four shapes:
+  - `and_all`: today's query.
+  - `or_all`: content words ORed (stop words and question words dropped).
+  - `rare_or`: words with df < 2% ORed, at least 2 present.
+  - `idf_score`: candidates are the OR of the anchors (words with df < 3%, names with df < 10%, else the rarest word). Every word, the frequent ones included, adds idf when present; the ranking is the idf-weighted coverage of the question. At least min(2, anchors) anchors must be present, plus a name when the question has one.
+- **Result:**
+  - **`and_all`:** 0-5 matches on 9/9 questions. The bug is confirmed.
+  - **`or_all`:** 7,803-95,851 matches, 358-6,922 ms. "indonesia" is in 22.2% of chunks, so the BI question ranks 95k rows and its top hit is a column titled "Bank Asing". Unusable.
+  - **`rare_or`:** 16-202 ms, excellent on 7/9. The BI question returns 4 BI-Rate decision and statement articles at the top. It fails when the decisive word is frequent:
+    - Iran (df 3.1%): only "konflik" remains, so it returns agrarian conflicts;
+    - oil: only "minyak" remains, so it returns cooking-oil promotions.
+  - **`idf_score`:** 62-265 ms, 221-11,124 candidates, on-topic top 5 on 9/9.
+    - Iran → Iran–US war news; oil → world oil prices / Hormuz.
+    - BI → "BI-Rate Ditahan 5,75%" in the top 5. It also lets in one deposit-rate table: many results tie at coverage 1.00, so the semantic score and recency must break ties.
+  - **Df lookup:** 0 ms (bi-rate) to 422 ms (indonesia, 78,714 chunks).
+- **Conclusion / do not repeat:**
+  - Do not OR every word: latency and noise.
+  - Do not drop a frequent word entirely, or a question can lose its subject.
+  - The shape that works: rare words and names choose the candidates, and every word scores by idf.
+  - Df lookups must be cached per process and capped (a count stopped at ~10% of chunks means "common").
+  - Ranking stays hybrid: FTS coverage replaces the `ts_rank × 10` normalisation. The rule that lets any FTS hit survive the semantic floor must become a coverage threshold, or OR candidates would bring junk past the floor.
+- **Links:** SYS-103 #273; the SYS-99 replay entry above.
