@@ -141,6 +141,7 @@ The article-crawl queue (`load_all_sitemaps`) = sitemaps with no `articles` row 
   - `retrieve`: hybrid FAISS L2 + Postgres FTS, merged per article.
     - Headline, portal, date and `articles.topic` come from the DB, not FAISS metadata. A hit without an article row is dropped.
     - Topic / portal / date filters are applied in the FTS SQL; the semantic search over-fetches `RAG_FILTERED_K` and filters after.
+    - The keyword half (`web/keywords.py`, SYS-103, ADR-006) matches the question's rare words (anchors) and scores IDF-weighted coverage; df from `pg_stats` + exact counts for rare words. A keyword hit survives the semantic floor at `RAG_MIN_KEYWORD_COVERAGE`.
     - Results are re-ranked and cut at the floor.
     - The source cards render at once.
   - `answer`: through the shared `Summarizer` (`RAG_LLM_PROVIDER`, DeepSeek by owner decision).

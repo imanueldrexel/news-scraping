@@ -144,6 +144,7 @@ One line each; read this before starting on a scraper or pipeline problem.
 - **Replay a boilerplate pattern list over stored bodies before shipping it (SYS-63 #204).** The first list left KONTAN's "Cek Berita dan Artikel yang lain di Google News" in 414 lines; only the before/after replay and the top removed lines showed it. -> `scripts/experiments/replay_clean_body.py`.
 - **deepseek-v4-flash overshoots word limits by 1-3 words on ~40% of first answers, whatever the prompt says, and writes one 60-second sentence per top story even when told "3-5 SAJA" (SYS-82/SYS-83).** Prompt wording did not move either; a retry that names every broken limit, a whole-item drop for optional fields, and a trim to 5 did. Do not re-tune the wording to chase the first-try rate. → [2026-10-05 replay entry](#2026-10-05--sys-82sys-83ops-42-replay-the-5-minute-edition-on-2026-10-04-10-03-and-09-28-four-runs)
 - **New-mode headless Chrome/Edge lays a window out at >= ~500 px, whatever `--window-size` says**: a 375 px screenshot is a cropped 500 px layout. Put the page in a 375 px iframe (`scripts/experiments/snapshot_rag_page.py`). And `load_dotenv()` in a script outside the repo loads nothing (it searches from the script's folder): pass the repo's `.env` path. → [2026-10-07 SYS-98/SYS-99 entry](#2026-10-07--sys-98sys-99-the-redesigned-search-answer-on-10-real-questions-deepseek-one-on-gemini-and-what-the-live-run-found)
+- **A word's document frequency over `chunks.fts_vector`: read `pg_stats.most_common_elems` (30 ms, shares within 0.4 points of the exact L2 count), don't count it**: counting 8 question words took ~800 ms, a LIMIT cap barely helps, and any word missing from the list is rare and cheap to count. In the keyword search, break coverage ties by `ts_rank_cd`, not newest-first (newest-first let off-topic recent paragraphs in). → 2026-10-07 "SYS-103 built" entry, ADR-006
 
 ## Log
 
@@ -2033,7 +2034,7 @@ SINDONEWS   old 12 new 12 | lost [] | gained []   links identical: True
     - Enter asks, and focus lands on the new question;
     - the follow-up appends in the same session;
     - "Pertanyaan baru" empties the thread and the session.
-    - A synthetic Enter needs `text: ""`, or no implicit form submit fires.
+    - A synthetic Enter needs `text: "\r"`, or no implicit form submit fires.
   - **Not a code fault:** a probe script in the scratchpad called `load_dotenv()` and loaded nothing. `find_dotenv` searches from the calling file's directory, not the cwd. The database worked only because its defaults match, so the "no Gemini key" warning was the probe's own fault.
 - **Conclusion / do not repeat:**
   - The prompt holds on real questions; no tuning is needed.
@@ -2066,3 +2067,38 @@ SINDONEWS   old 12 new 12 | lost [] | gained []   links identical: True
   - Df lookups must be cached per process and capped (a count stopped at ~10% of chunks means "common").
   - Ranking stays hybrid: FTS coverage replaces the `ts_rank × 10` normalisation. The rule that lets any FTS hit survive the semantic floor must become a coverage threshold, or OR candidates would bring junk past the floor.
 - **Links:** SYS-103 #273; the SYS-99 replay entry above.
+
+### 2026-10-07 — SYS-103 built: IDF-weighted keyword match on the replay, before and after
+- **Question / hypothesis:** with ADR-006 built (anchors + IDF-weighted coverage, df from `pg_stats.most_common_elems` plus exact counts for rare words), does the keyword half of the search contribute, keep the BI decision in the top 5, and stay interactive?
+- **Method:**
+  - df cost first, read-only on production (359,530 L2 paragraphs):
+    - exact counts of 8 words: 827 ms;
+    - the same capped at 10%: 782 ms (the cap barely helps: the cost is the words between 2% and 10%);
+    - `pg_stats` read: 30 ms, 1,000 words down to a share of 1.47%. Its shares are within 0.4 points of the exact L2 counts (indonesia 23.8 vs 22.2%, harga 8.4 vs 7.8, rupiah 2.7 vs 2.3, melemah 1.6 vs 1.3).
+  - Tie-break among equal coverage: `probe_fts_query_shapes.py --only idf_score --order recency` vs the default `--order rank`.
+  - Replay: `replay_rag_answers.py` against `uvicorn … --port 8765` on the new code: the 10 SYS-99 questions plus "Apa keputusan Bank Indonesia soal BI-Rate?". It costs 11 DeepSeek answers.
+  - Timing: the log's `rag retrieve ms=`; retrieval-only re-asks through `POST /api/query/form`; a scratch timer per question (df lookup vs query) on the replay questions and on 8 never-searched questions.
+- **Result:**
+  - **Tie-break:** newest-first pulled drought news into the flood question, a Wall Street piece into the Iran question, and "Rekomendasi Saham ICBP" into the rupiah question. `ts_rank_cd` (the default) kept all of them on topic. Recency stays the re-rank's job.
+  - **FTS hits:** `fts=20` on 11/11 questions (before: 0-1 on every question). Hits kept on keyword coverage among the 5 sources: 0-5 per question, more than 0 on 10/11 (the rupiah question's sources are all semantic, and on topic).
+  - **BI decision:** for "…soal BI-Rate?", ranks 3-5 are "BI Pertahankan BI-Rate 5,75 Persen", "Apindo: Keputusan BI Tahan Suku Bunga 5,75 Persen" and "Bos BI Bongkar Alasan Tahan BI Rate". Ranks 1-2 are two kumparan opinion pieces that hold every word (coverage 1.0, recent).
+  - **RUU question:** "8 Poin Krusial UU Pelindungan Ketenagakerjaan yang Baru Disahkan" is now a source.
+  - **Answers:** 11/11 `ok`, no automatic problem, 0 flagged numbers, 45-74 words.
+    - Each cost $0.0006-0.0008: tokens are as before (1,586-2,035 in); the replay ran in DeepSeek's peak window.
+    - One answer took 38.7 s on the provider's side.
+  - **Latency of the keyword half alone:**
+    - df lookup 0-140 ms on first sight of a word, 0 ms cached;
+    - query 15-313 ms, both for never-searched questions and when repeated.
+  - **Whole retrieval:**
+    - the first replay pass: 766-1,344 ms for the first six questions, 157-343 ms afterwards. Postgres had not yet read those GIN and heap pages, and the server's df cache was empty.
+    - Re-asked: 108-358 ms, including two questions never asked before.
+    - Before SYS-103: 62-125 ms, when FTS returned nothing.
+- **Conclusion / do not repeat:**
+  - The keyword half now works: every question gets keyword candidates, and a name lifts its article.
+  - The cost is ~50-230 ms more per retrieval when Postgres's pages are warm, up to ~1.3 s on the first touch of cold pages. That is small next to the 1.4-5 s answer, but it is not the < 400 ms target on a cold start.
+  - Don't count common words: read `pg_stats`.
+  - Open, not fixed here:
+    - "suku bunga" (2 common words, no stemming) still gives forecasts rather than the decision for "…soal suku bunga terbaru?";
+    - opinion pieces that hold every word can outrank the news.
+  - The next lever is stemming or phrase matching (ADR-006 negative), not more weighting.
+- **Links:** SYS-103 #273; ADR-006; the two SYS-103 entries above; `scripts/experiments/probe_fts_query_shapes.py` (`--order` added).

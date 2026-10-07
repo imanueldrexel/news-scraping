@@ -27,6 +27,7 @@ from newscrawler.core.constants import (
     RAG_DAILY_COST_LIMIT_USD,
     RAG_FILTERED_K,
     RAG_LLM_PROVIDER,
+    RAG_MIN_KEYWORD_COVERAGE,
     RAG_MIN_SEMANTIC_SCORE,
     RAG_RECENCY_WEIGHT,
     RAG_SEMANTIC_WEIGHT,
@@ -36,6 +37,7 @@ from newscrawler.core.newsletter_copy import outlet
 from newscrawler.core.peak_hours import cost_usd, is_peak
 from newscrawler.core.summarizer import QuotaExhausted, SummarizerError, build_summarizer
 from newscrawler.web import answer as answer_text
+from newscrawler.web import keywords
 from newscrawler.web.filters import Filters
 
 logger = logging.getLogger(__name__)
@@ -107,6 +109,7 @@ class QueryProcessor:
         `get_today_api_usage` (api_usage_log); left out, the knowledge datasource on this client."""
         self.faiss_ds = faiss_datasource
         self.client = db_client
+        self.keyword_df = keywords.DocFrequency(db_client)
         if summarizer is _FROM_CONFIG:
             summarizer = build_summarizer(provider=RAG_LLM_PROVIDER, setting="RAG_LLM_PROVIDER",
                                           timeout_s=RAG_ANSWER_TIMEOUT_S, max_tokens=RAG_ANSWER_MAX_TOKENS)
@@ -136,14 +139,17 @@ class QueryProcessor:
             merged = self._apply_filters(merged, filters, today)
         ranked = self._re_rank(merged, today)
         # Drop weakly relevant hits, so an off-topic question returns nothing rather than the
-        # nearest (but irrelevant) neighbours. Keyword (FTS) matches survive the semantic floor.
+        # nearest (but irrelevant) neighbours. A paragraph covering most of the question's
+        # weighted words survives the semantic floor (ADR-006).
         relevant = [h for h in ranked
-                    if h.get("semantic_score", 0.0) >= RAG_MIN_SEMANTIC_SCORE or h.get("bm25_score", 0.0) > 0
-                    ][:RAG_TOP_K]
+                    if h.get("semantic_score", 0.0) >= RAG_MIN_SEMANTIC_SCORE
+                    or h.get("keyword_score", 0.0) >= RAG_MIN_KEYWORD_COVERAGE][:RAG_TOP_K]
         for n, hit in enumerate(relevant, 1):
             hit["n"] = n
         logger.info(f"rag retrieve ms={int((time.monotonic() - start) * 1000)} semantic={len(semantic_hits)} "
-                    f"fts={len(fts_hits)} kept={len(relevant)} filters={filters.describe()}")
+                    f"fts={len(fts_hits)} kept={len(relevant)} "
+                    f"kept_by_keyword={sum(1 for h in relevant if h.get('keyword_score', 0.0) > 0)} "
+                    f"filters={filters.describe()}")
         return relevant
 
     _FTS_FILTERS = (
@@ -154,34 +160,57 @@ class QueryProcessor:
     )
 
     def _fts_search(self, query: str, k: int, filters: Filters, today: date) -> List[dict]:
-        start_day, end_day = filters.bounds(today)
-        params = {"query": query, "k": k, "topic": filters.topic, "source": filters.source,
-                  "from_day": int(start_day.strftime("%Y%m%d")) if start_day else None,
-                  "to_day": int(end_day.strftime("%Y%m%d")) if end_day else None}
-        # Fixed fragments, chosen by which filters are set; the values are bind parameters only.
-        where = " ".join(sql for name, sql in self._FTS_FILTERS if params[name] is not None)
-        join = "LEFT JOIN articles a ON a.sitemap_id = c.sitemap_id" if filters.topic else ""
-        sql = text(f"""
-            SELECT c.chunk_id, c.text_content, c.sitemap_id,
-                   ts_rank(c.fts_vector, plainto_tsquery('simple', :query)) AS bm25_score
-            FROM chunks c
-            JOIN sitemaps s ON c.sitemap_id = s.sitemap_id
-            {join}
-            WHERE c.fts_vector @@ plainto_tsquery('simple', :query)
-              AND c.chunk_level = 2
-              {where}
-            ORDER BY bm25_score DESC
-            LIMIT :k
-        """)
+        """The paragraphs holding the question's rare words, by IDF-weighted coverage (ADR-006).
+        `keyword_score` is that coverage, in [0, 1]."""
         try:
+            question_terms = keywords.terms(query)
+            if not question_terms:
+                return []
+            kq = keywords.KeywordQuery.build(question_terms, self.keyword_df.get([t.word for t in question_terms]))
+            if kq is None:
+                return []
+            sql, params = self._fts_sql(kq, k, filters, today)
             with self.client.get_session() as session:
-                rows = session.execute(sql, {key: v for key, v in params.items()
-                                             if key in ("query", "k") or v is not None}).fetchall()
+                rows = session.execute(sql, params).fetchall()
             return [{"chunk_id": row.chunk_id, "text_content": row.text_content, "sitemap_id": row.sitemap_id,
-                     "bm25_score": float(row.bm25_score), "semantic_score": 0.0} for row in rows]
+                     "keyword_score": float(row.keyword_score), "semantic_score": 0.0} for row in rows]
         except Exception as e:  # noqa: BLE001 -- keyword search is one of two retrievers
             logger.warning(f"FTS search failed: {type(e).__name__}: {e}")
             return []
+
+    @classmethod
+    def _fts_sql(cls, kq: "keywords.KeywordQuery", k: int, filters: Filters, today: date):
+        """The keyword query as fixed SQL fragments; every word and weight is a bind parameter."""
+        start_day, end_day = filters.bounds(today)
+        params = {"k": k, "anchors": " | ".join(keywords.lexeme(w) for w in kq.anchors), "need": kq.need}
+        has = {}
+        for i, w in enumerate(kq.words):
+            params[f"t{i}"], params[f"w{i}"] = keywords.lexeme(w), kq.weights[w]
+            has[w] = f"(c.fts_vector @@ to_tsquery('simple', :t{i}))::int"
+        score = " + ".join(f"CAST(:w{i} AS float8) * {has[w]}" for i, w in enumerate(kq.words))
+        rule = f"AND ({' + '.join(has[w] for w in kq.anchors)}) >= :need"
+        if kq.names:
+            rule += f" AND ({' + '.join(has[w] for w in kq.names)}) >= 1"
+        filter_values = {"topic": filters.topic, "source": filters.source,
+                         "from_day": int(start_day.strftime("%Y%m%d")) if start_day else None,
+                         "to_day": int(end_day.strftime("%Y%m%d")) if end_day else None}
+        # Fixed fragments, chosen by which filters are set; the values are bind parameters only.
+        where = " ".join(sql for name, sql in cls._FTS_FILTERS if filter_values[name] is not None)
+        params.update({name: v for name, v in filter_values.items() if v is not None})
+        join = "LEFT JOIN articles a ON a.sitemap_id = c.sitemap_id" if filters.topic else ""
+        sql = text(f"""
+            SELECT c.chunk_id, c.text_content, c.sitemap_id, ({score}) AS keyword_score
+            FROM chunks c
+            JOIN sitemaps s ON c.sitemap_id = s.sitemap_id
+            {join}
+            WHERE c.fts_vector @@ to_tsquery('simple', :anchors)
+              AND c.chunk_level = 2
+              {rule}
+              {where}
+            ORDER BY keyword_score DESC, ts_rank_cd(c.fts_vector, to_tsquery('simple', :anchors)) DESC
+            LIMIT :k
+        """)
+        return sql, params
 
     @staticmethod
     def _merge(semantic: List[dict], fts: List[dict]) -> List[dict]:
@@ -191,7 +220,7 @@ class QueryProcessor:
             sid = hit.get("sitemap_id")
             if sid not in combined:
                 combined[sid] = dict(hit)
-                combined[sid].setdefault("bm25_score", 0.0)
+                combined[sid].setdefault("keyword_score", 0.0)
             else:
                 combined[sid]["semantic_score"] = max(combined[sid].get("semantic_score", 0.0),
                                                       hit.get("semantic_score", 0.0))
@@ -201,7 +230,8 @@ class QueryProcessor:
                 combined[sid] = dict(hit)
                 combined[sid].setdefault("semantic_score", 0.0)
             else:
-                combined[sid]["bm25_score"] = max(combined[sid].get("bm25_score", 0.0), hit.get("bm25_score", 0.0))
+                combined[sid]["keyword_score"] = max(combined[sid].get("keyword_score", 0.0),
+                                                      hit.get("keyword_score", 0.0))
         return list(combined.values())
 
     def _attach_metadata(self, hits: List[dict]) -> List[dict]:
@@ -263,10 +293,9 @@ class QueryProcessor:
         for h in hits:
             d = h.get("posted_date") or posted_date(h.get("posted_at"))
             recency = max(0.0, 1.0 - max(0, (today - d).days) * 0.1 / 7) if d else 0.5
-            # ts_rank is in [0, 1] but usually tiny; scale it up
-            bm25_norm = min(1.0, h.get("bm25_score", 0.0) * 10)
+            # keyword_score is the IDF-weighted coverage, already in [0, 1] (ADR-006)
             h["final_score"] = (h.get("semantic_score", 0.0) * RAG_SEMANTIC_WEIGHT
-                                + bm25_norm * RAG_BM25_WEIGHT + recency * RAG_RECENCY_WEIGHT)
+                                + h.get("keyword_score", 0.0) * RAG_BM25_WEIGHT + recency * RAG_RECENCY_WEIGHT)
         return sorted(hits, key=lambda h: h["final_score"], reverse=True)
 
     # ── Answer ───────────────────────────────────────────────────────────────

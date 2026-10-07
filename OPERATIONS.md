@@ -49,6 +49,7 @@
 | `RAG_DAILY_COST_LIMIT_USD` | `1.0` | SYS-98: the page's own spend per day, read from `api_usage_log` under `web:<model>` (never the extraction's key, so search never eats `KNOWLEDGE_DAILY_COST_LIMIT_USD`). ~$0.001 per answer; at the cap the page shows articles only until midnight |
 | `RAG_ANSWER_TIMEOUT_S` / `RAG_ANSWER_MAX_TOKENS` | `30` / `600` | SYS-98: per-answer timeout and output bound (OpenAI-compatible provider) |
 | `RAG_FILTERED_K` | `200` | SYS-92/SYS-100: paragraphs the semantic search fetches when a topic / portal / date filter is set, before filtering on the database's metadata (the keyword search filters in SQL) |
+| `RAG_MIN_KEYWORD_COVERAGE` | `0.6` | SYS-103 (#273, ADR-006): a keyword hit below `RAG_MIN_SEMANTIC_SCORE` is still a source when it covers this share of the question's IDF-weighted words (0..1). The log's `kept_by_keyword=` counts the sources that matched on keywords. The words' document frequencies come from `pg_stats` (common words) and exact counts (rare words), cached per process for 24 h |
 | `RAG_QUESTION_MAX_CHARS` | `500` | Longest question the page accepts |
 | `RAG_WARM_AT_STARTUP` | `1` | SYS-102: load MiniLM and both FAISS indexes when the web app starts (a background thread; the log says `RAG warm-up done in Ns`). `0` = load on the first question |
 | `SITEMAP_RECRAWL_COOLDOWN_DAYS` | `7` | Days before a sitemap with no `articles` row is offered to the article crawl again |

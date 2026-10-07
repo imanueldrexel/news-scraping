@@ -91,7 +91,9 @@ def _qp_with_rows(rows):
     session.execute.return_value.fetchall.return_value = rows
     client = MagicMock()
     client.get_session.return_value.__enter__.return_value = session
-    return QueryProcessor(MagicMock(), client, summarizer=None, usage=MagicMock()), session
+    qp = QueryProcessor(MagicMock(), client, summarizer=None, usage=MagicMock())
+    qp.keyword_df = MagicMock(get=lambda words: {w: 0.01 for w in words})   # SYS-103: df is its own unit
+    return qp, session
 
 
 class TestFtsSql:
@@ -111,7 +113,7 @@ class TestFtsSql:
         qp._fts_search("rupiah", 20, f.Filters(), TODAY)
         sql, params = str(session.execute.call_args.args[0]), session.execute.call_args.args[1]
         assert "articles" not in sql and ":topic" not in sql
-        assert set(params) == {"query", "k"}
+        assert set(params) == {"k", "anchors", "need", "t0", "w0"}
 
     def test_a_failing_query_returns_no_hits(self):
         qp, session = _qp_with_rows([])

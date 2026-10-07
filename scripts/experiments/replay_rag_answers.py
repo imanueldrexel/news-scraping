@@ -37,6 +37,7 @@ QUESTIONS = [
     {"query": "Di mana terjadi banjir atau longsor dalam sepekan terakhir?", "topic": "disaster_accident", "rentang": "7"},
     {"query": "Apa keputusan Bank Indonesia soal suku bunga terbaru?", "followup": "Apa dampaknya ke kredit perbankan?"},
     {"query": "Bagaimana perkembangan konflik Iran terbaru?", "topic": "international"},
+    {"query": "Apa keputusan Bank Indonesia soal BI-Rate?"},     # SYS-103's Done-when: the decision in the top 5
 ]
 # Only spellings Indonesian does not share (April, September, November, Jan, Feb, ... are both).
 ENGLISH_MONTHS = r"\b(January|February|March|May|June|July|August|October|December|Aug|Oct|Dec)\b"
