@@ -164,9 +164,16 @@
 - Owner weighed Elasticsearch, then chose the IDF-weighted keyword match ("lets do that"): the problem is relevance, not speed.
 - Design: decisions/architect/rag-keyword-search.md. df from `pg_stats.most_common_elems` (30 ms) plus exact counts for rare words.
 - Plan:
-  - [ ] 1. `web/keywords.py` (terms, KeywordQuery, DocFrequency) + unit tests
-  - [ ] 2. `_fts_search` / floor / re-rank (`keyword_score`, `RAG_MIN_KEYWORD_COVERAGE`) + tests
-  - [ ] 3. integration test in `newsaggregator_test`
-  - [ ] 4. `sys103_*` mutants
-  - [ ] 5. replay (Done-when: fts on >= 8/10, BI decision in the top 5, < 400 ms) + EXPERIMENTS + OPERATIONS
-  - [ ] 6. ticket evidence, `status: ready-for-qa`
+  - [x] 1. `web/keywords.py` (terms, KeywordQuery, DocFrequency) + unit tests
+  - [x] 2. `_fts_search` / floor / re-rank (`keyword_score`, `RAG_MIN_KEYWORD_COVERAGE`) + tests
+  - [x] 3. integration test in `newsaggregator_test`
+  - [x] 4. `sys103_*` mutants
+  - [x] 5. replay (Done-when: fts on >= 8/10, BI decision in the top 5, < 400 ms) + EXPERIMENTS + OPERATIONS
+  - [x] 6. ticket evidence, `status: ready-for-qa`
+
+## Dev 2026-10-07: SYS-103 built (c69d34d), ready for QA
+- **Done-when:** fts=20 on 11/11 replay questions (was 0-1); the BI-Rate decision at ranks 3-5; the unit test on the BI question.
+- **Latency:** retrieval 108-358 ms warm; up to 1.3 s on cold Postgres pages (was 62-125 ms with an empty FTS).
+- **Tests:** unit 2,655 / integration 198; 25/25 `sys103_*` mutants killed.
+- **Open, not fixed:** no stemming ("suku bunga terbaru" → forecasts); opinion pieces holding every word can outrank news.
+- **Owner:** restart :8000 to pick up both #272 and SYS-103.

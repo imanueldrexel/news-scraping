@@ -1,5 +1,30 @@
 # Current Handoff
 
+## From: SDE (SYS-103 built) -> To: QA (verify, close), owner (restart :8000)
+**Date:** 2026-10-07
+**Read first:** ADR-006; `.10x/decisions/sde/rag-keyword-search.md`; the SYS-103 #273 evidence comment; EXPERIMENTS.md "2026-10-07 — SYS-103 built".
+
+### Ready for QA
+SYS-103 (#273), in addition to SYS-92..SYS-102 below.
+
+### What to test
+- `tests/unit/test_rag_keywords.py`, `test_query_processor_ranking.py`, `tests/integration/test_rag_keywords_live.py`.
+- Mutants `sys103_*` (25), as for #272.
+- Live:
+  - `replay_rag_answers.py` (now 11 questions; ~$0.0007 each in DeepSeek's peak window);
+  - `probe_fts_query_shapes.py --only idf_score` (read-only).
+- **Hand-check:**
+  - the BI-Rate question's ranks 1-2 (opinion pieces);
+  - whether `RAG_MIN_KEYWORD_COVERAGE=0.6` lets junk in on your own questions.
+
+### Known limits
+- No stemming or phrase match.
+- First-touch latency up to ~1.3 s on cold Postgres pages.
+
+---
+
+## Previous (superseded)
+
 ## From: SDE (tracker #272 built) -> To: QA (verify, close), owner (restart :8000)
 **Date:** 2026-10-07
 **Read first:**

@@ -22,3 +22,4 @@
 - Replays spend the production SumoPod account (prepaid balance, shared with the 21:00 extraction and the 12:00 newsletter). Check the balance before a replay round, and never run one while the extraction is running.
 - A module constant used as a default argument (`pick_articles(limit=MAX_ARTICLES)`) cannot be monkeypatched by name: patch `__defaults__` (DBT-59).
 - [rag-search-redesign](rag-search-redesign.md) — tracker #272: all 11 built, ready-for-qa; 42 mutants; SYS-103 found
+- [rag-keyword-search](rag-keyword-search.md) — SYS-103: IDF-weighted keyword match built (ADR-006), ready-for-qa; 25 mutants
