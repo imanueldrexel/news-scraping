@@ -105,18 +105,19 @@ def idf_score(session, words, df, args):
     t = time.monotonic()
     count = session.execute(text(f"SELECT COUNT(*) FROM chunks c WHERE c.chunk_level = 2 "
                                  f"AND c.fts_vector @@ to_tsquery('simple', :q) {where}"), params).scalar()
+    tie = "s.posted_at DESC, " if args.order == "recency" else ""
     rows = session.execute(text(f"""
-        SELECT s.headline, ({score}) / {sum(idf.values()):.4f} AS coverage
+        SELECT s.headline, s.posted_at, ({score}) / {sum(idf.values()):.4f} AS coverage
         FROM chunks c JOIN sitemaps s ON s.sitemap_id = c.sitemap_id
         WHERE c.chunk_level = 2 AND c.fts_vector @@ to_tsquery('simple', :q) {where}
-        ORDER BY coverage DESC, ts_rank_cd(c.fts_vector, to_tsquery('simple', :q)) DESC LIMIT 20"""),
+        ORDER BY coverage DESC, {tie}ts_rank_cd(c.fts_vector, to_tsquery('simple', :q)) DESC LIMIT 20"""),
                            params).fetchall()
     ms = int((time.monotonic() - t) * 1000)
     heads, seen = [], set()
-    for h, cov in rows:
+    for h, posted, cov in rows:
         if h not in seen:
             seen.add(h)
-            heads.append(f"{cov:.2f} {h}")
+            heads.append(f"{cov:.2f} {posted} {h}")
     return count, ms, heads[:5]
 
 
@@ -126,6 +127,8 @@ def main():
     ap.add_argument("--anchor-df", type=float, default=0.03)
     ap.add_argument("--name-df", type=float, default=0.10)
     ap.add_argument("--only", default="", help="comma-separated shapes to print (default: all)")
+    ap.add_argument("--order", choices=("rank", "recency"), default="rank",
+                    help="idf_score's tie-break among equal coverage: ts_rank_cd, or the newest first")
     args = ap.parse_args()
     client = SQLAlchemyClient()
     with client.get_session() as s:

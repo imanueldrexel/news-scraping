@@ -159,3 +159,14 @@
 - **Filed:** SYS-103 #273 (P3): FTS ANDs every question word, so it contributes 0-1 hits per question. Not started.
 - **Reviews:** `reviews/2026-10-07-qa-report.md`, `reviews/2026-10-07-security-review.md` (local-only sign-off).
 - **Owner:** restart the :8000 web app (one worker) to get the new page.
+
+## Dev 2026-10-07: SYS-103 keyword search (ADR-006), design + plan
+- Owner weighed Elasticsearch, then chose the IDF-weighted keyword match ("lets do that"): the problem is relevance, not speed.
+- Design: decisions/architect/rag-keyword-search.md. df from `pg_stats.most_common_elems` (30 ms) plus exact counts for rare words.
+- Plan:
+  - [ ] 1. `web/keywords.py` (terms, KeywordQuery, DocFrequency) + unit tests
+  - [ ] 2. `_fts_search` / floor / re-rank (`keyword_score`, `RAG_MIN_KEYWORD_COVERAGE`) + tests
+  - [ ] 3. integration test in `newsaggregator_test`
+  - [ ] 4. `sys103_*` mutants
+  - [ ] 5. replay (Done-when: fts on >= 8/10, BI decision in the top 5, < 400 ms) + EXPERIMENTS + OPERATIONS
+  - [ ] 6. ticket evidence, `status: ready-for-qa`
