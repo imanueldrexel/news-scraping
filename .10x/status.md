@@ -177,3 +177,20 @@
 - **Tests:** unit 2,655 / integration 198; 25/25 `sys103_*` mutants killed.
 - **Open, not fixed:** no stemming ("suku bunga terbaru" → forecasts); opinion pieces holding every word can outrank news.
 - **Owner:** restart :8000 to pick up both #272 and SYS-103.
+
+## QA 2026-10-07 (evening): tracker #272 + SYS-103 verified independently
+- **Closed (13):** SYS-92..SYS-103 (#261-#271, #273) on their Done-when; SRC-58 #231 on the 07:00 + 19:00 crawl notes.
+- **Filed (8 + test gaps):**
+  - SYS-104 #274 (P2): follow-ups retrieved without the thread.
+  - SYS-105 #275 (P2): 1-word trailing chunks are semantic hubs.
+  - SYS-106 #276 (P2): keyword-only hits never reach the top 5 (0 of 95).
+  - SYS-107 #277 (P2): candidates ignore dates.
+  - SYS-108 #278 (P3): the df cache keeps a 0.
+  - SRC-60 #279 (P2): kumparan reader posts stored as news.
+  - SRC-61 #280 (P3): kumparan chrome.
+  - DBT-61 #281 (P3): integration tests vs the crawl's run lock.
+  - Plus the `qa1007_*` test-gap ticket.
+- **Tests:** unit 2,655; integration 198 (8 false failures while the crawl held the lock). Dev mutants 67/67 killed; QA mutants: see the report.
+- **Held:** OPS-43 at 1 of 3 valid 12:00 runs (10-07); OPS-20/SYS-39 wait for tonight's 21:00 extraction. SRC-59 is still 404 and not worked.
+- **Owner:** restart :8000 (it still runs pre-ceb73cf code).
+- **Health:** the UI is done; retrieval quality (SYS-104..107, SRC-60) is the next work.

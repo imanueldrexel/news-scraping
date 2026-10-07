@@ -21,6 +21,8 @@ Reusable diagnostics live in `scripts/experiments/`. Throwaway repro code is inl
 
 One line each; read this before starting on a scraper or pipeline problem.
 
+- **A retriever's candidate count is not its contribution to the answer (QA 2026-10-07).** SYS-103 raised `fts` from 0-1 to 20 per question, yet 0 of 95 top-5 cards were keyword-only: the re-rank caps them at 0.40 (SYS-106 #276). Measure the top 5 by origin with `scripts/experiments/probe_rag_rank_breakdown.py --replay`.
+- **A 1-word chunk is a MiniLM hub: it scores ~0.78 against unrelated questions** (SYS-105 #275). "(jon)" / "--" sign-offs beat real articles for "Apa itu Danantara?". Never let a fragment chunk into the index or the candidates.
 - **`page_loader.get_url_with_reason` returns the response for ANY HTTP status, a 404 included; only `get_soup_with_reason` checks it.** A probe that treats a non-None response as "live" reports dead URLs as alive (SRC-29's first host probe: 342/342 "alive", truly 333/342 HTTP 404). Probe with `get_soup_with_reason`, the call the article crawl makes. → [2026-09-25 SRC-29 entry](#2026-09-25--src-29-inewss-dead-backlog-is-199-articles-listed-on-112-mirror-hosts-not-113-dead-hosts)
 - **INEWS lists each regional article under all 112 regional subdomains; only its home host serves it** (SRC-29 #111). Dedup INEWS regional rows by the `/read/<id>/` article id, never by host. → same entry
 - **Production Postgres is `newsaggregator-postgres` (`docker/docker-compose.yaml`, named volume `newsaggregator_pgdata`, since 2026-09-25; the old container and volume are removed).** Never remove that volume; the rollback is `backups/pg_dump/`. A kill signal sent from INSIDE a container does not test its restart policy (PID 1 ignores it); restart Docker Desktop (`docker desktop restart`) instead.
@@ -2102,3 +2104,48 @@ SINDONEWS   old 12 new 12 | lost [] | gained []   links identical: True
     - opinion pieces that hold every word can outrank the news.
   - The next lever is stemming or phrase matching (ADR-006 negative), not more weighting.
 - **Links:** SYS-103 #273; ADR-006; the two SYS-103 entries above; `scripts/experiments/probe_fts_query_shapes.py` (`--order` added).
+
+### 2026-10-07 — QA of tracker #272 (SYS-92..SYS-102) and SYS-103: live retrieval measured, 8 defects found
+- **Question / hypothesis:** do the redesigned search page's tickets hold independently of the dev's evidence? And does SYS-103's keyword half reach the reader, not just the log (`fts=20`)?
+- **Method:**
+  - Suites: `tests/unit`, and `tests/integration` with `TELEGRAM_OUTBOX` pointed at a temp file (OPS-46).
+  - Mutants in an exported copy (`git -c core.autocrlf=false archive HEAD … | tar -x` into `%TEMP%\q7`, venv junction, plus `.gitattributes`/`EXPERIMENTS.md`/`CLAUDE.md`/`OPERATIONS.md`/`requirements.txt`/`PRD.md`, which `test_repo_hygiene` reads). The dev's 67 `sys92_*`..`sys103_*` were run, plus 40 QA mutants `qa1007_*` (in `qa_mutation_runner.py`) on the RAG unit files; survivors were re-run on the full `tests/unit`.
+  - Live, production read-only, on `uvicorn … --port 8765`:
+    - the keyboard e2e `e2e_rag_page.py`;
+    - `snapshot_rag_page.py`;
+    - every topic option;
+    - a leak/escape scan of each page state;
+    - a follow-up pair;
+    - off-scope questions;
+    - ~7 DeepSeek answers (~$0.005 under `web:deepseek-v4-flash`).
+  - New `scripts/experiments/probe_rag_rank_breakdown.py`: `retrieve`'s own merge → metadata → re-rank, per question, with the top-N scores and the keyword-only / fragment counts.
+- **Result:**
+  - **Suites:** unit 2,655 passed / 5 skipped (= dev). Integration: 190 passed + **8 failed while the 19:00 crawl held `.scheduled_crawl.lock`**; after it ended, the 8 pass, so 198 / 1 skipped (= dev). The 8 are DBT-61 #281.
+  - **Mutants:** dev's 67/67 killed. QA's 40: 29/40 killed; the 11 survivors also survive the full tests/unit: 7 real test gaps -> DBT-62 #282, 4 equivalent (listed there). None of the 7 is a defect in the shipped behaviour (verified live). **The first survivor run was void:** every mutant "died" at `test_repo_hygiene` (no `.gitattributes` in the copy).
+  - **Live, what holds:**
+    - keyboard e2e 14/14;
+    - all 12 topic options give 5 cards, each in that topic;
+    - portal + 7 days and a reversed custom range behave;
+    - markup in the question is escaped;
+    - no internal name, 8-digit date, English month or timing in any state;
+    - empty / too-long questions get their copy (JSON 422);
+    - screenshots at 375 / 1280, light and dark, match the approved mockup.
+  - **Keyword half vs the reader:** 19 questions (the 10 replay + 9 QA): **0 of 95 top-5 cards are keyword-only**. 340 keyword-only hits pass the floor; the best ranks 15-21. Arithmetic: a keyword-only hit scores at most 0.3·1 + 0.1 = 0.40; FAISS's hits over the floor score 0.5-0.65. → SYS-106 #276.
+  - **"Apa itu Danantara?":**
+    - the top 14 are **1-word chunks** ("(jon)", "--") at semantic 0.776; the answer says no article discusses Danantara;
+    - "qwerty asdf zxcv" returns 3 such cards instead of `no_hits`;
+    - the store holds 1,606 L2 chunks under 10 words; cause: `HierarchicalChunker._merge_short` never merges the trailing paragraph. → SYS-105 #275.
+  - **"Berapa harga emas Antam hari ini?":** sources dated 24 Sep – 1 Oct; the answer gives the 1 Oct price. 21 articles of 7 Oct titled "Harga Emas Antam Hari Ini 7 Oktober…" exist. With the 7-day filter it answers correctly. → SYS-107 #277.
+  - **Follow-up** "Berapa target pertumbuhannya tahun depan?" after an OJK credit question: 5/5 sources and the answer are about GDP growth 2027. → SYS-104 #274.
+  - **DocFrequency** caches a 0 count for 24 h (offline repro with a fake clock). → SYS-108 #278.
+  - **The BI-Rate question's ranks 1-2 (the dev's "opinion pieces")** are kumparan reader posts. 314 of 1,825 KUMPARAN rows carry "Tulisan dari … tidak mewakili pandangan dari redaksi kumparan"; the URL's first segment (`kumparan*` desk vs a user handle) separates them exactly. → SRC-60 #279.
+  - **KUMPARAN chrome:** 95% of KUMPARAN bodies start with the headline again, the desk line and "·waktu baca N menit". → SRC-61 #280.
+  - **Not ticketed:**
+    - one CNN body with a stray "vdfzxvds" (the source's own text);
+    - ~20 old PIKIRANRAKYAT recipe rows filed as `commodities_energy` (pre-probe residue, 2022 – May 2026).
+- **Conclusion / do not repeat:**
+  - A retriever's candidate count (`fts=20`, `kept_by_keyword`) is not evidence that it reaches the reader. Measure the top-5 composition by origin with `probe_rag_rank_breakdown.py`.
+  - A weighted sum whose missing score counts as 0 cannot rank one retriever's exclusive finds above the other's.
+  - MiniLM puts 1-word strings near every question: any fragment chunk is a hub.
+  - Mutation copies made with `git archive` must carry the root files `test_repo_hygiene` reads, or every mutant "dies" on that test (the first survivor run here was void for that reason).
+- **Links:** tracker #272; SYS-92..103 (#261-#271, #273); SYS-104..108 (#274-#278); SRC-60 #279; SRC-61 #280; DBT-61 #281; DBT-62 #282; ADR-005/006; `.10x/reviews/2026-10-07-qa-independent-report.md`.

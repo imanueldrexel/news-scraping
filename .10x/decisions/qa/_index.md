@@ -19,3 +19,6 @@
 - Mutation runs: print the unmutated baseline and each kill's failing test; a worktree reaching the venv through a junction in the scratchpad "kills" everything at collection (MAX_PATH).
 - A repair of a derived value must cover every store that holds a copy (SYS-90: articles fixed, FAISS metadata not -> SYS-91); and a mutant that survives a narrowed test group is not equivalent until it survives the full `tests/unit`.
 - [rag-search-redesign](rag-search-redesign.md) — dev-side verification of tracker #272; gaps for independent QA
+- [qa-pass-2026-10-07-rag](qa-pass-2026-10-07-rag.md) - independent QA of #272 + SYS-103: 13 closed (incl. SRC-58), 8 filed (SYS-104..108, SRC-60/61, DBT-61) + test gaps; keyword-only hits never reach the top 5
+- Lesson: a retriever's candidate count is not its contribution; count the top-5 cards by origin (`probe_rag_rank_breakdown.py`).
+- Lesson: run the unmutated baseline in every mutation copy; identical failure counts across different mutants mean an environment failure, not kills.

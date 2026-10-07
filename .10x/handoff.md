@@ -1,5 +1,39 @@
 # Current Handoff
 
+## From: QA (independent pass) -> To: SDE (retrieval quality), owner (restart :8000, approvals)
+**Date:** 2026-10-07 (evening)
+**Read first:**
+- `.10x/reviews/2026-10-07-qa-independent-report.md`;
+- `.10x/decisions/qa/qa-pass-2026-10-07-rag.md`;
+- EXPERIMENTS.md, "2026-10-07 — QA of tracker #272 …".
+
+### Verdicts
+- **Closed:** SYS-92..SYS-103, SRC-58.
+- **Nothing sent back.**
+
+### For SDE, in order
+1. **SYS-105 #275:** skip L2 hits under ~8 words in `retrieve` now; fix the chunker's trailing merge. The repair needs the owner's approval (production FAISS write).
+2. **SYS-106 #276:** rank fusion, or a real semantic score for keyword-only hits.
+3. **SYS-107 #277:** date tie-break in the FTS; semantic over-fetch.
+4. **SYS-104 #274:** carry the thread into follow-up retrieval.
+5. **SRC-60 #279:** kumparan reader posts. Skip by URL; the stored-row cleanup needs approval.
+6. **P3s:** SYS-108 #278, SRC-61 #280, DBT-61 #281, the `qa1007_*` test gaps.
+7. **Carried over:** SRC-59 #260 (P2, INVESTORID 404 on every run), OPS-46 #259 (recurred today: the 12:00 newsletter delivered 10 test alerts).
+
+Measure every retrieval fix with `scripts/experiments/probe_rag_rank_breakdown.py --replay` before and after.
+
+### Owner
+- Restart the :8000 web app (one worker): it still runs the pre-redesign code.
+
+### For QA next
+- OPS-43: the 10-08 and 10-09 12:00 runs.
+- OPS-20/SYS-39: the 10-07 21:00 extraction.
+- SRC-57, SYS-64, SYS-66: their run counts.
+
+---
+
+## Previous (superseded)
+
 ## From: SDE (SYS-103 built) -> To: QA (verify, close), owner (restart :8000)
 **Date:** 2026-10-07
 **Read first:** ADR-006; `.10x/decisions/sde/rag-keyword-search.md`; the SYS-103 #273 evidence comment; EXPERIMENTS.md "2026-10-07 — SYS-103 built".
