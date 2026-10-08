@@ -69,7 +69,7 @@ def report(qp, label, question, history, today, detail, totals):
     totals["fragment_cards"] += frag
     dates = ",".join(str(h.get("posted_at"))[4:] for h in cards)
     print(f"\n== {label}{question}  semantic={counts['semantic']} fts={counts['fts']} articles={len(ranked)} "
-          f"horizon={counts['horizon']} cards={len(cards)} keyword-only cards={kw_cards} "
+          f"recent={counts['recent']} cards={len(cards)} keyword-only cards={kw_cards} "
           f"keyword-only over floor={kw_over_floor} best keyword-only rank={best_kw} fragment cards={frag} "
           f"card dates(mmdd)={dates}")
     for i, h in enumerate(ranked[:detail], 1):

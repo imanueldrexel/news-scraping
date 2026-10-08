@@ -16,6 +16,7 @@ from unittest.mock import MagicMock
 import pytest
 
 import newscrawler.web.query_processor as qp_mod
+from newscrawler.web import keywords
 from newscrawler.web.filters import Filters
 from newscrawler.web.query_processor import QueryProcessor, recency, retrieval_text
 from newscrawler.core.constants import (
@@ -30,7 +31,8 @@ TODAY = date(2026, 10, 7)
 # A real paragraph is longer than MIN_PARAGRAPH_WORDS; a test hit with one word of text is a
 # sign-off and is dropped (SYS-105).
 PARA = "Bank Indonesia menahan suku bunga acuan di level 5,75 persen pada rapat dewan gubernur bulan ini."
-KQ = object()   # a keyword query; its content does not matter once _fts_search / _coverage are stubbed
+KQ = object()
+TODAY_CUE = keywords.recency_cue("hari ini")   # a keyword query; its content does not matter once _fts_search / _coverage are stubbed
 
 
 def _hit(sid, semantic=0.0, keyword=0.0, posted_at="20261007", text_content=PARA, **extra):
@@ -44,7 +46,7 @@ def _qp(semantic=(), fts=(), similarity=None, coverage=None):
     qp = QueryProcessor.__new__(QueryProcessor)
     qp.faiss_ds = MagicMock()
     qp.faiss_ds.search_l2.return_value = [dict(h) for h in semantic]
-    qp.faiss_ds.similarity.side_effect = similarity or (lambda q, texts: [0.0] * len(texts))
+    qp.faiss_ds.similarity.side_effect = similarity or (lambda q, texts, ids=None: [0.0] * len(texts))
     qp.client = MagicMock()
     qp.summarizer = None  # answer generation disabled; we only assert on sources
     qp.usage = MagicMock()
@@ -79,7 +81,7 @@ class TestRelevanceFloor:
 
     def test_keyword_match_kept_even_below_floor(self):
         qp = _qp(fts=[_hit(12, keyword=RAG_MIN_KEYWORD_COVERAGE)],
-                 similarity=lambda q, texts: [RAG_MIN_SEMANTIC_SCORE - 0.2] * len(texts))
+                 similarity=lambda q, texts, ids=None: [RAG_MIN_SEMANTIC_SCORE - 0.2] * len(texts))
         result = qp.query("exact keyword", session_history=[])
         assert len(result["sources"]) == 1, "strong keyword match must survive the semantic floor"
 
@@ -155,7 +157,7 @@ class TestBothSignalsScored:
 
     def test_a_full_coverage_keyword_only_hit_outranks_a_semantic_hit_without_the_words(self):
         qp = _qp(semantic=[_hit(1, semantic=0.75)], fts=[_hit(2, keyword=1.0)],
-                 similarity=lambda q, texts: [0.70] * len(texts))
+                 similarity=lambda q, texts, ids=None: [0.70] * len(texts))
         hits = qp.retrieve("Apa itu Danantara?", Filters(), TODAY)
         assert [h["sitemap_id"] for h in hits] == [2, 1]
         assert hits[0]["semantic_score"] == 0.70 and hits[0]["origin"] == "keyword"
@@ -163,11 +165,11 @@ class TestBothSignalsScored:
     def test_each_one_retriever_hit_gets_the_other_score_for_its_own_paragraph(self):
         sem_para, kw_para = PARA + " semantik", PARA + " kata kunci"
         qp = _qp(semantic=[_hit(1, semantic=0.8, text_content=sem_para)],
-                 fts=[_hit(2, keyword=0.9, text_content=kw_para)],
-                 similarity=lambda q, texts: [0.65] * len(texts), coverage=lambda kq, texts: [0.5] * len(texts))
+                 fts=[_hit(2, keyword=0.9, text_content=kw_para, embedding_id="e2")],
+                 similarity=lambda q, texts, ids=None: [0.65] * len(texts), coverage=lambda kq, texts: [0.5] * len(texts))
         hits = {h["sitemap_id"]: h for h in qp.retrieve("Apa itu Danantara?", Filters(), TODAY)}
         assert (hits[1]["keyword_score"], hits[2]["semantic_score"]) == (0.5, 0.65)
-        qp.faiss_ds.similarity.assert_called_once_with("Apa itu Danantara?", [kw_para])
+        qp.faiss_ds.similarity.assert_called_once_with("Apa itu Danantara?", [kw_para], ["e2"])
         qp._coverage.assert_called_once_with(KQ, [sem_para])
 
     def test_an_article_both_found_is_not_rescored(self):
@@ -193,7 +195,7 @@ class TestBothSignalsScored:
     def test_the_log_counts_kept_keyword_only_hits(self, caplog):
         caplog.set_level(logging.INFO, logger="newscrawler.web.query_processor")
         qp = _qp(semantic=[_hit(1, semantic=0.8)], fts=[_hit(1, keyword=0.9), _hit(2, keyword=1.0), _hit(3, keyword=1.0)],
-                 similarity=lambda q, texts: [0.7] * len(texts))
+                 similarity=lambda q, texts, ids=None: [0.7] * len(texts))
         qp.retrieve("q", Filters(), TODAY)
         assert "keyword_only=2" in caplog.text
 
@@ -218,7 +220,7 @@ class TestRecency:
         def hits():
             return [{"sitemap_id": 1, "semantic_score": 0.93, "keyword_score": 1.0, "posted_at": "20260930"},
                     {"sitemap_id": 2, "semantic_score": 0.90, "keyword_score": 1.0, "posted_at": "20261007"}]
-        assert QueryProcessor._re_rank(hits(), TODAY, horizon=1)[0]["sitemap_id"] == 2
+        assert QueryProcessor._re_rank(hits(), TODAY, TODAY_CUE)[0]["sitemap_id"] == 2
         assert QueryProcessor._re_rank(hits(), TODAY)[0]["sitemap_id"] == 1
 
     def test_a_keyword_match_of_today_does_not_beat_a_relevant_article(self):
@@ -227,24 +229,27 @@ class TestRecency:
         relevant by meaning."""
         hits = [{"sitemap_id": 1, "semantic_score": 0.52, "keyword_score": 1.0, "posted_at": "20261007"},
                 {"sitemap_id": 2, "semantic_score": 0.90, "keyword_score": 1.0, "posted_at": "20261001"}]
-        ranked = QueryProcessor._re_rank(hits, TODAY, horizon=1)
+        ranked = QueryProcessor._re_rank(hits, TODAY, TODAY_CUE)
         assert ranked[0]["sitemap_id"] == 2
         assert ranked[1]["final_score"] == pytest.approx(0.52 * 0.6 + 0.3), "no recency below the semantic floor"
 
-    def test_the_latest_decision_outranks_todays_loosely_related_article(self):
-        """'terbaru' is a week's horizon: the BI decision of 15 days ago (0.88) stays above a semantic
-        0.81 story of today that holds one of the question's words."""
-        hits = [{"sitemap_id": 1, "semantic_score": 0.81, "keyword_score": 0.28, "posted_at": "20261007"},
-                {"sitemap_id": 2, "semantic_score": 0.88, "keyword_score": 1.0, "posted_at": "20260922"}]
-        assert QueryProcessor._re_rank(hits, TODAY, horizon=7)[0]["sitemap_id"] == 2
+    def test_the_latest_decision_outranks_todays_market_outlook(self):
+        """'terbaru' asks for the latest there is: recency only breaks near-ties. Measured on
+        'Apa keputusan Bank Indonesia soal suku bunga terbaru?': the decision of 15 days ago
+        (cosine 0.75) under a market outlook of today (0.63) holding every word, with one weight
+        for every cue."""
+        hits = [{"sitemap_id": 1, "semantic_score": 0.63, "keyword_score": 1.0, "posted_at": "20261007"},
+                {"sitemap_id": 2, "semantic_score": 0.75, "keyword_score": 1.0, "posted_at": "20260922"}]
+        assert QueryProcessor._re_rank(hits, TODAY, keywords.recency_cue("terbaru"))[0]["sitemap_id"] == 2
+        assert QueryProcessor._re_rank(hits, TODAY, TODAY_CUE)[0]["sitemap_id"] == 1, "'hari ini' means today"
 
     def test_the_question_decides_and_reaches_the_keyword_half(self, caplog):
         caplog.set_level(logging.INFO, logger="newscrawler.web.query_processor")
         qp = _qp(semantic=[_hit(1, semantic=0.9)])
         qp.retrieve("Berapa harga emas Antam hari ini?", Filters(), TODAY)
-        assert qp._fts_search.call_args.args[4] is True and "horizon=1 " in caplog.text
+        assert qp._fts_search.call_args.args[4] is True and "recent=1d " in caplog.text
         qp.retrieve("Berapa harga emas Antam?", Filters(), TODAY)
-        assert qp._fts_search.call_args.args[4] is False and "horizon=None " in caplog.text
+        assert qp._fts_search.call_args.args[4] is False and "recent=None " in caplog.text
 
     def test_the_semantic_half_over_fetches(self):
         qp = _qp()
@@ -281,3 +286,37 @@ class TestFollowUp:
         qp = _qp(semantic=[_hit(1, semantic=0.9)])
         qp.query("Dampaknya?", session_history=self.HISTORY)
         assert "OJK" in qp.faiss_ds.search_l2.call_args.args[0]
+
+    def test_query_retrieves_with_the_thread_when_given(self):
+        """SYS-104: the JSON API passes every question asked; the prompt keeps the answered turns."""
+        qp = _qp(semantic=[_hit(1, semantic=0.9)])
+        qp.query("Dampaknya?", session_history=[], thread=self.HISTORY)
+        assert "OJK" in qp.faiss_ds.search_l2.call_args.args[0]
+
+
+class TestSessionMemories:
+    """SYS-104: the prompt's answered turns and the retrieval thread are kept apart."""
+
+    def test_questions_and_answered_turns(self):
+        from newscrawler.web.session_manager import SessionManager
+        sm = SessionManager()
+        sm.record_question("s", "q1")
+        sm.record_question("s", "q2")
+        sm.update("s", "q2", "a2")
+        assert sm.get_questions("s") == [{"question": "q1"}, {"question": "q2"}]
+        assert sm.get_history("s") == [{"question": "q2", "answer": "a2"}]
+        assert sm.get_questions(None) == [] and sm.get_questions("other") == []
+
+    def test_the_thread_keeps_the_last_five(self):
+        from newscrawler.web.session_manager import SessionManager
+        sm = SessionManager()
+        for i in range(7):
+            sm.record_question("s", f"q{i}")
+        assert [t["question"] for t in sm.get_questions("s")] == ["q2", "q3", "q4", "q5", "q6"]
+
+    def test_an_expired_session_forgets_both(self):
+        from newscrawler.web.session_manager import SessionManager
+        sm = SessionManager(ttl_seconds=-1)
+        sm.record_question("s", "q1")
+        sm.update("s", "q1", "a1")
+        assert sm.get_questions("s") == [] and sm.get_history("s") == []

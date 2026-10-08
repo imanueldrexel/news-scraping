@@ -380,12 +380,12 @@ class ChunkFAISSDatasource:
 
         hits = []
         for doc, score in results:
-            # similarity_search_with_score returns an L2 distance (lower = more similar)
-            # under DistanceStrategy.EUCLIDEAN_DISTANCE. Embeddings are unit-normalized,
-            # so distance d maps to cosine similarity via cos = 1 - d^2 / 2. Convert here
-            # so downstream ranking can treat semantic_score as "higher = more relevant".
-            distance = float(score)
-            semantic_score = max(0.0, 1.0 - (distance * distance) / 2.0)
+            # similarity_search_with_score returns faiss's IndexFlatL2 distance, which is the
+            # SQUARED L2 distance (lower = more similar). Embeddings are unit-normalized, so
+            # d = 2 - 2*cos and cos = 1 - d / 2. SYS-110 (#284): this read 1 - d^2/2, as if d
+            # were the plain distance (cos 0.82 read 0.93, cos 0.29 read 0), and could not be
+            # compared with the cosine of a keyword-only paragraph (SYS-106).
+            semantic_score = max(0.0, 1.0 - float(score) / 2.0)
             hits.append({
                 "text_content": doc.page_content,
                 "semantic_score": semantic_score,
@@ -398,15 +398,39 @@ class ChunkFAISSDatasource:
             })
         return hits
 
-    def similarity(self, query_text: str, texts: List[str]) -> List[float]:
-        """SYS-106 (#276): each text's similarity to the query on search_l2's `semantic_score`
-        scale, for a paragraph the keyword search found and FAISS did not return. The vectors are
-        unit-normalised, so the cosine is the dot product (= 1 - d^2/2 for search_l2's distance)."""
+    def similarity(self, query_text: str, texts: List[str],
+                   embedding_ids: Optional[List[Optional[str]]] = None) -> List[float]:
+        """SYS-106 (#276): each paragraph's similarity to the query on search_l2's `semantic_score`
+        scale, for a paragraph the keyword search found and FAISS did not return. A paragraph in
+        NEWS_L2 (its chunk row's `embedding_id`) is scored with its stored vector, which is the one
+        search_l2 compares (one encoder revision, SYS-61) and costs nothing; any other is embedded
+        (~25 ms each on CPU). Vectors are unit-normalised: the cosine is the dot product
+        (= 1 - d^2/2 for search_l2's distance)."""
         if not texts:
             return []
         import numpy as np
-        vectors = np.asarray(self.embedding_model.embed_documents([query_text] + list(texts)), dtype="float32")
-        return [max(0.0, float(s)) for s in vectors[1:] @ vectors[0]]
+        query = np.asarray(self.embedding_model.embed_query(query_text), dtype="float32")
+        positions = self._l2_positions()
+        vectors: List = [None] * len(texts)
+        for i, embedding_id in enumerate(embedding_ids or []):
+            position = positions.get(embedding_id) if embedding_id else None
+            if position is not None:
+                vectors[i] = self.vs_l2.index.reconstruct(int(position))
+        missing = [i for i, v in enumerate(vectors) if v is None]
+        if missing:
+            for i, v in zip(missing, self.embedding_model.embed_documents([texts[i] for i in missing])):
+                vectors[i] = np.asarray(v, dtype="float32")
+        return [max(0.0, float(np.dot(v, query))) for v in vectors]
+
+    def _l2_positions(self) -> Dict[str, int]:
+        """docstore id -> position in NEWS_L2, built once per loaded index (a reload replaces vs_l2).
+        Two threads may build it at once; the second result simply replaces the first."""
+        vs = self.vs_l2
+        cached = self.__dict__.get("_positions")
+        if cached is None or cached[0] is not vs:
+            cached = (vs, {doc_id: pos for pos, doc_id in vs.index_to_docstore_id.items()})
+            self._positions = cached
+        return cached[1]
 
     @staticmethod
     def _get_existing_embedding_ids(vs: FAISS) -> Dict[Tuple[int, int, int], str]:

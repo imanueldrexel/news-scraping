@@ -31,22 +31,30 @@ QUESTION_WORDS = frozenset(
     "apa apakah bagaimana kenapa mengapa siapa kapan berapa mana dimana gimana seperti adakah benarkah "
     "terbaru terkini sekarang kini sepekan terakhir".split())
 _TOKEN = re.compile(r"\w[\w.,-]*\w|\w", re.UNICODE)
-# SYS-107 (#277): how a question asks for recent news, and how recent it means, in days: "hari
-# ini" is today, "pekan ini" this week, "terbaru" the latest there is, which may be a week old (a
-# BI rate decision is monthly). Not a topic: QUESTION_WORDS keeps these out of the keyword match.
+class RecencyCue(NamedTuple):
+    days: int           # recency halves at this age
+    weight: float       # its weight in the re-rank (the default recency weighs RAG_RECENCY_WEIGHT)
+
+
+# SYS-107 (#277, ADR-007): how a question asks for recent news, and how much it means it. "Hari
+# ini" asks for today's value, so recency weighs as much as the keyword coverage; "pekan ini"
+# for this week; "terbaru" for the latest there is, which may be weeks old (a BI rate decision
+# is monthly), so recency only breaks near-ties. Measured on the replay (EXPERIMENTS.md
+# 2026-10-08): one weight for all three put today's market outlooks above the BI decision.
+# Not a topic: QUESTION_WORDS keeps these words out of the keyword match.
 _RECENCY_CUES = (
-    (re.compile(r"\b(?:hari\s+ini|sekarang|saat\s+ini|kini|barusan)\b", re.IGNORECASE), 1),
-    (re.compile(r"\b(?:pekan\s+ini|minggu\s+ini|sepekan\s+terakhir)\b", re.IGNORECASE), 3),
-    (re.compile(r"\b(?:terbaru|terkini)\b", re.IGNORECASE), 7),
+    (re.compile(r"\b(?:hari\s+ini|sekarang|saat\s+ini|kini|barusan)\b", re.IGNORECASE), RecencyCue(1, 0.3)),
+    (re.compile(r"\b(?:pekan\s+ini|minggu\s+ini|sepekan\s+terakhir)\b", re.IGNORECASE), RecencyCue(3, 0.2)),
+    (re.compile(r"\b(?:terbaru|terkini)\b", re.IGNORECASE), RecencyCue(7, 0.1)),
 )
 
 
-def recency_horizon(question: str) -> Optional[int]:
-    """The days over which the question wants recent news (the shortest its words ask for), or None
-    when it does not ask."""
-    for cue, days in _RECENCY_CUES:
-        if cue.search(question or ""):
-            return days
+def recency_cue(question: str) -> Optional[RecencyCue]:
+    """How recent the question wants its news (the most precise cue its words hold), or None when
+    it does not ask."""
+    for pattern, cue in _RECENCY_CUES:
+        if pattern.search(question or ""):
+            return cue
     return None
 
 

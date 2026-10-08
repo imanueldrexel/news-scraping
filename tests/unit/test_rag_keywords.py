@@ -302,8 +302,8 @@ class TestCoverage:
         assert "BI-Rate" not in sql and "bi-rate" not in sql
 
 
-class TestRecencyHorizon:
-    """SYS-107 (#277): how recent a question wants its news, in days."""
+class TestRecencyCue:
+    """SYS-107 (#277): how recent a question wants its news (days) and how much (weight)."""
 
     @pytest.mark.parametrize("question, days", [
         ("Berapa harga emas Antam hari ini?", 1), ("Siapa Menkeu sekarang?", 1), ("IHSG saat ini?", 1),
@@ -312,13 +312,17 @@ class TestRecencyHorizon:
         ("Harga emas terbaru hari ini?", 1),        # the shortest horizon asked for wins
     ])
     def test_asks_for_recent(self, question, days):
-        assert keywords.recency_horizon(question) == days
+        assert keywords.recency_cue(question).days == days
+
+    def test_the_more_precise_the_cue_the_more_it_weighs(self):
+        today, week, latest = (keywords.recency_cue(q) for q in ("hari ini", "pekan ini", "terbaru"))
+        assert (today.weight, week.weight, latest.weight) == (0.3, 0.2, 0.1)
 
     @pytest.mark.parametrize("question", [
         "Berapa harga emas Antam?", "Apa itu Danantara?", "Hari Buruh 2026", "kinerja bank", "", None,
     ])
     def test_does_not(self, question):
-        assert keywords.recency_horizon(question) is None
+        assert keywords.recency_cue(question) is None
 
     def test_no_name_rule_without_names(self):
         qp, calls = _qp(df={"rupiah": 0.023, "melemah": 0.013})
@@ -334,11 +338,13 @@ class TestRecencyHorizon:
         assert params["from_day"] == 20261001 and params["to_day"] == 20261007
 
     def test_rows_become_hits_with_keyword_score(self):
-        row = SimpleNamespace(chunk_id=1, text_content="BI-Rate ditahan", sitemap_id=7, keyword_score=0.83)
-        qp, _ = _qp(rows=[row])
+        row = SimpleNamespace(chunk_id=1, text_content="BI-Rate ditahan", sitemap_id=7, embedding_id="e7",
+                              keyword_score=0.83)
+        qp, calls = _qp(rows=[row])
         hits = _search(qp, BI)
-        assert hits == [{"chunk_id": 1, "text_content": "BI-Rate ditahan", "sitemap_id": 7,
+        assert hits == [{"chunk_id": 1, "text_content": "BI-Rate ditahan", "sitemap_id": 7, "embedding_id": "e7",
                          "keyword_score": 0.83, "semantic_score": 0.0}]
+        assert "c.embedding_id" in calls[0][0], "SYS-106: a keyword-only hit is scored with its stored vector"
 
     def test_only_stop_words_no_query(self):
         qp, calls = _qp()

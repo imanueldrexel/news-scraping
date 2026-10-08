@@ -209,11 +209,10 @@ NEWSLETTER_MAX_CLUSTERS_PER_STORY = int(os.getenv("NEWSLETTER_MAX_CLUSTERS_PER_S
 RAG_SEMANTIC_WEIGHT = float(os.getenv("RAG_SEMANTIC_WEIGHT", 0.6))
 RAG_BM25_WEIGHT     = float(os.getenv("RAG_BM25_WEIGHT", 0.3))    # the keyword half (ADR-006: a coverage, not BM25)
 RAG_RECENCY_WEIGHT  = float(os.getenv("RAG_RECENCY_WEIGHT", 0.1))
-# SYS-107 (#277, ADR-007): the recency weight for a question that asks for the latest news
-# ("hari ini", "terbaru"); its recency also halves per day instead of fading 0.1 a week.
-RAG_RECENT_WEIGHT   = float(os.getenv("RAG_RECENT_WEIGHT", 0.3))
 RAG_TOP_K           = int(os.getenv("RAG_TOP_K", 5))
-RAG_MIN_SEMANTIC_SCORE = float(os.getenv("RAG_MIN_SEMANTIC_SCORE", 0.60))
+# The cosine similarity a paragraph needs to be a source. SYS-110 (#284): 0.55 is the old 0.60 on
+# the scale search_l2 used to report (1 - d^2/2 of a squared distance), so the same hits pass.
+RAG_MIN_SEMANTIC_SCORE = float(os.getenv("RAG_MIN_SEMANTIC_SCORE", 0.55))
 # SYS-103 (#273, ADR-006): a keyword hit below the semantic floor is kept when it covers at
 # least this share of the question's IDF-weighted words (0..1).
 RAG_MIN_KEYWORD_COVERAGE = float(os.getenv("RAG_MIN_KEYWORD_COVERAGE", 0.6))

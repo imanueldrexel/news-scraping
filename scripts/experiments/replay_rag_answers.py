@@ -30,7 +30,7 @@ from newscrawler.core.newsletter_copy import OUTLET_NAMES  # noqa: E402
 QUESTIONS = [
     {"query": "Kenapa rupiah melemah pekan ini?"},
     {"query": "Bagaimana kinerja IHSG pekan ini?", "topic": "markets", "rentang": "7"},
-    {"query": "Apa kata OJK soal kredit perbankan?"},
+    {"query": "Apa kata OJK soal kredit perbankan?", "followup": "Berapa target pertumbuhannya tahun depan?"},  # SYS-104
     {"query": "Apa isi RUU Ketenagakerjaan yang baru disahkan?"},
     {"query": "Bagaimana harga minyak dunia terbaru?", "topic": "commodities_energy"},
     {"query": "Apa perkembangan kasus korupsi yang ditangani KPK minggu ini?", "rentang": "7"},
@@ -38,6 +38,11 @@ QUESTIONS = [
     {"query": "Apa keputusan Bank Indonesia soal suku bunga terbaru?", "followup": "Apa dampaknya ke kredit perbankan?"},
     {"query": "Bagaimana perkembangan konflik Iran terbaru?", "topic": "international"},
     {"query": "Apa keputusan Bank Indonesia soal BI-Rate?"},     # SYS-103's Done-when: the decision in the top 5
+    # QA 2026-10-07's retrieval findings
+    {"query": "Apa itu Danantara?"},                             # SYS-105/106: Danantara articles, not "(jon)" chunks
+    {"query": "qwerty asdf zxcv"},                               # SYS-105: the no_hits state
+    {"query": "Berapa harga emas Antam hari ini?"},              # SYS-107: today's price
+    {"query": "Siapa Menteri Keuangan sekarang?"},               # SYS-107: recency only for relevant articles
 ]
 # Only spellings Indonesian does not share (April, September, November, Jan, Feb, ... are both).
 ENGLISH_MONTHS = r"\b(January|February|March|May|June|July|August|October|December|Aug|Oct|Dec)\b"

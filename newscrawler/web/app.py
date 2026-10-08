@@ -237,7 +237,8 @@ async def api_query_form(
                "notice": _question_notice(query), "session_id": session_id or None, "turn_id": "notice"}
     if context["notice"] is None:
         sid = session_id or _sessions.new_session_id()
-        hits = await run_in_threadpool(_retrieve, question, filters, _sessions.get_history(session_id))
+        hits = await run_in_threadpool(_retrieve, question, filters, _sessions.get_questions(session_id))
+        _sessions.record_question(sid, question)
         turn = _turns.put(question, sid, hits)
         context.update(session_id=sid, turn_id=turn.turn_id, cards=[card(h["n"], h) for h in hits])
     return templates.TemplateResponse(request, "_turn.html", context)
@@ -269,11 +270,13 @@ async def api_query(body: QueryRequest):
         return JSONResponse(status_code=422, content={"error": notice})
     session_id = body.session_id or _sessions.new_session_id()
     history = _sessions.get_history(session_id)
+    thread = _sessions.get_questions(session_id)
     filters = web_filters.parse(body.topic, body.source, body.rentang, body.date_from, body.date_to)
     # DBT-15 (#50): blocking work (FAISS, the encoder, psycopg2, the model's HTTP call) runs
     # in the threadpool, never on the event loop that also serves /api/health.
     result = await run_in_threadpool(_run_query, question=body.query.strip(), session_history=history,
-                                     filters=filters)
+                                     filters=filters, thread=thread)
+    _sessions.record_question(session_id, body.query.strip())
     if result["answer_status"] == OK:
         _sessions.update(session_id, body.query.strip(), result["answer"])
     result["session_id"] = session_id

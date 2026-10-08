@@ -319,6 +319,29 @@ class TestConversation:
         assert fake.retrieval_histories[0] == []
         assert [t["question"] for t in fake.retrieval_histories[1]] == ["Apa kata OJK soal kredit perbankan?"]
 
+    def test_a_follow_up_keeps_its_thread_when_the_answer_failed(self, page):
+        """SYS-104: only an ok answer enters the prompt's history (SYS-97), but the thread for
+        retrieval is every question asked: with the provider down (2026-10-08: the key was blocked)
+        a follow-up still finds its subject."""
+        client, fake = page
+        fake.result = AnswerResult(FAILED)
+        html = _ask(client, "Apa kata OJK soal kredit perbankan?").text
+        _answer(client, _turn_id(html))
+        sid = re.search(r'name="session_id" value="([^"]+)"', html).group(1)
+        _answer(client, _turn_id(_ask(client, "Berapa target pertumbuhannya tahun depan?", session_id=sid).text))
+        assert [t["question"] for t in fake.retrieval_histories[1]] == ["Apa kata OJK soal kredit perbankan?"]
+        assert fake.histories[-1] == [], "the prompt still gets answered turns only"
+
+    def test_the_json_api_retrieves_a_follow_up_with_its_thread(self, page, monkeypatch):
+        client, _ = page
+        calls = []
+        monkeypatch.setattr(app_mod, "_run_query", lambda **k: calls.append(k) or {
+            "answer_status": FAILED, "answer": "", "numbers_unverified": False, "sources": []})
+        sid = client.post("/api/query", json={"query": "Apa kata OJK soal kredit perbankan?"}).json()["session_id"]
+        client.post("/api/query", json={"query": "Berapa targetnya?", "session_id": sid})
+        assert calls[0]["thread"] == [] and calls[1]["session_history"] == []
+        assert calls[1]["thread"] == [{"question": "Apa kata OJK soal kredit perbankan?"}]
+
     def test_a_new_question_from_the_search_box_has_no_history(self, page):
         client, fake = page
         _answer(client, _turn_id(_ask(client, "Pertama").text))
