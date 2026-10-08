@@ -118,6 +118,9 @@ class TestSimilarityOfKeywordOnlyParagraphs:
         from langchain_community.vectorstores import FAISS
         ds, emb = self._ds()
         ds.similarity("q", ["near"], ["id-near"])
-        ds.vs_l2 = FAISS.from_texts(["far"], emb, ids=["id-near"])     # reloaded: the id now holds "far"
+        # Reloaded: the id now sits at another position and holds "far"; the cached map would read
+        # position 0 ("near" in the new index) and score 0.77.
+        ds.vs_l2 = FAISS.from_texts(["near", "far"], emb, ids=["id-new", "id-near"])
         emb.embedded.clear()
         assert ds.similarity("q", ["far"], ["id-near"]) == [pytest.approx(0.0)]
+        assert emb.embedded == []

@@ -243,6 +243,13 @@ class TestRecency:
         assert QueryProcessor._re_rank(hits, TODAY, keywords.recency_cue("terbaru"))[0]["sitemap_id"] == 2
         assert QueryProcessor._re_rank(hits, TODAY, TODAY_CUE)[0]["sitemap_id"] == 1, "'hari ini' means today"
 
+    def test_each_cue_weighs_its_own_weight(self):
+        """'hari ini' 0.3, 'pekan ini' 0.2, 'terbaru' 0.1, on an article of today."""
+        for question, weight in (("hari ini", 0.3), ("pekan ini", 0.2), ("terbaru", 0.1)):
+            hit = {"sitemap_id": 1, "semantic_score": 0.8, "keyword_score": 0.0, "posted_at": "20261007"}
+            QueryProcessor._re_rank([hit], TODAY, keywords.recency_cue(question))
+            assert hit["final_score"] == pytest.approx(0.8 * 0.6 + weight), question
+
     def test_the_question_decides_and_reaches_the_keyword_half(self, caplog):
         caplog.set_level(logging.INFO, logger="newscrawler.web.query_processor")
         qp = _qp(semantic=[_hit(1, semantic=0.9)])
