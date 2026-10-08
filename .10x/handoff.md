@@ -1,5 +1,51 @@
 # Current Handoff
 
+## From: SDE (QA's 2026-10-07 retrieval findings fixed) -> To: QA (verify, close), owner (key, restart :8000)
+**Date:** 2026-10-08 (evening)
+**Read first:**
+- `.10x/decisions/sde/rag-retrieval-quality.md`;
+- ADR-007;
+- EXPERIMENTS.md, "2026-10-08 — SDE fixes of QA's retrieval findings";
+- the evidence comment on each ticket.
+
+### Ready for QA (`status: ready-for-qa`)
+- SYS-104 #274, SYS-105 #275, SYS-106 #276, SYS-107 #277, SYS-108 #278;
+- SRC-60 #279, SRC-61 #280;
+- DBT-61 #281, DBT-62 #282;
+- OPS-46 #259 (carried over; same fixture file as DBT-61).
+- Found and fixed: SYS-110 #284 (`semantic_score` was not the cosine), DBT-63 #285 (fixture eol in worktrees).
+- Found, **not** fixed: SYS-109 #283 (MiniLM sees only ~97 words of a chunk; a full re-embed, owner decision).
+
+### Production writes done today (owner-approved; pg_dump `newsaggregator_20261008T100931Z.dump` first)
+- SRC-60 settle (KUMPARAN reader posts);
+- SRC-61 KUMPARAN body repair;
+- SYS-105 re-chunk of 3,075 articles.
+
+Backups and counts are in the decisions file.
+
+### What to test
+- **Suites:** `tests/unit`; `tests/integration` (now safe during a crawl and with no outbox redirect).
+- **Mutants** `sys104_*`..`sys110_*`, `src60_*`, `src61_*` and the retargeted `sys100_no_overfetch`, `sys103_*`, `qa1007_*`.
+  - **Re-create any old worktree first** (DBT-63, or `git checkout -- tests/fixtures`), then run the unmutated baseline.
+  - 11 unrelated mutants were stale at HEAD before this work: `ops32_no_retry`, `ops32_refusal_queued_forever`, `ops33_*` (2), `ops35_*` (2), `sys68_*` (3), `ops20_call_not_counted`, `sys67_prompt_focus_removed`. Yours to ticket.
+- **Live, read-only:** `probe_rag_rank_breakdown.py --replay --followups --detail 5`, then hand-check:
+  - the BI-Rate top 5 holds no reader post;
+  - the gold question's sources are from today.
+- **Needs the key:** `replay_rag_answers.py` against a second uvicorn. SYS-107's "the answer cites an article of that day" can only be seen with a working answer.
+- **The 19:00 crawl:** KUMPARAN's crawl_log note should read `N URL(s) out of scope: not a kumparan newsroom account (reader post) N`. SRC-57's intake should drop (the live listing kept 142 of 400).
+
+### Owner
+- **The SumoPod/DeepSeek key is blocked** (`401 Key is blocked. Update via /key/unblock`, seen 2026-10-08 ~16:30 WIB). The search page shows "Coba lagi"; tonight's 21:00 extraction (which re-extracts 576 KUMPARAN articles) and tomorrow's 12:00 newsletter fail until it is unblocked.
+- Restart :8000 (one worker) to serve the new retrieval.
+
+### Risks
+- Retrieval is slower than SYS-103: 62-625 ms warm (1.1 s for one follow-up), cold up to 2.1 s.
+- Residuals: an unknown name (Purbaya) 3/5; 2 of 7 follow-ups mixed.
+
+---
+
+## Previous (superseded)
+
 ## From: QA (independent pass) -> To: SDE (retrieval quality), owner (restart :8000, approvals)
 **Date:** 2026-10-07 (evening)
 **Read first:**

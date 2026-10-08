@@ -23,3 +23,6 @@
 - A module constant used as a default argument (`pick_articles(limit=MAX_ARTICLES)`) cannot be monkeypatched by name: patch `__defaults__` (DBT-59).
 - [rag-search-redesign](rag-search-redesign.md) — tracker #272: all 11 built, ready-for-qa; 42 mutants; SYS-103 found
 - [rag-keyword-search](rag-keyword-search.md) — SYS-103: IDF-weighted keyword match built (ADR-006), ready-for-qa; 25 mutants
+- [rag-retrieval-quality](rag-retrieval-quality.md) — QA's 2026-10-07 findings: SYS-104..108, SRC-60/61, DBT-61/62, OPS-46 ready-for-qa; SYS-110/DBT-63 found+fixed, SYS-109 filed; 3 owner-approved prod repairs 2026-10-08 (ADR-007)
+- Git Bash `date` prints UTC; local (WIB) = +7. Read the time from a log stamp or `date -u` + 7 before planning around the 07:00/12:00/19:00/21:00 jobs.
+- A mutation worktree made before DBT-63 checks fixtures out with CRLF: its unmutated baseline fails `test_repo_hygiene` (`1 failed, 1775 passed`), so a full-suite "kill" with that count is void. Run the baseline first.

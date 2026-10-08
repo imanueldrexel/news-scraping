@@ -22,7 +22,7 @@ Reusable diagnostics live in `scripts/experiments/`. Throwaway repro code is inl
 One line each; read this before starting on a scraper or pipeline problem.
 
 - **A retriever's candidate count is not its contribution to the answer (QA 2026-10-07).** SYS-103 raised `fts` from 0-1 to 20 per question, yet 0 of 95 top-5 cards were keyword-only: the re-rank caps them at 0.40 (SYS-106 #276). Measure the top 5 by origin with `scripts/experiments/probe_rag_rank_breakdown.py --replay`.
-- **A 1-word chunk is a MiniLM hub: it scores ~0.78 against unrelated questions** (SYS-105 #275). "(jon)" / "--" sign-offs beat real articles for "Apa itu Danantara?". Never let a fragment chunk into the index or the candidates.
+- **A 1-word chunk is a MiniLM hub: it scores ~0.78 against unrelated questions (0.665 as a true cosine, SYS-110)** (SYS-105 #275). "(jon)" / "--" sign-offs beat real articles for "Apa itu Danantara?". Never let a fragment chunk into the index or the candidates.
 - **`page_loader.get_url_with_reason` returns the response for ANY HTTP status, a 404 included; only `get_soup_with_reason` checks it.** A probe that treats a non-None response as "live" reports dead URLs as alive (SRC-29's first host probe: 342/342 "alive", truly 333/342 HTTP 404). Probe with `get_soup_with_reason`, the call the article crawl makes. → [2026-09-25 SRC-29 entry](#2026-09-25--src-29-inewss-dead-backlog-is-199-articles-listed-on-112-mirror-hosts-not-113-dead-hosts)
 - **INEWS lists each regional article under all 112 regional subdomains; only its home host serves it** (SRC-29 #111). Dedup INEWS regional rows by the `/read/<id>/` article id, never by host. → same entry
 - **Production Postgres is `newsaggregator-postgres` (`docker/docker-compose.yaml`, named volume `newsaggregator_pgdata`, since 2026-09-25; the old container and volume are removed).** Never remove that volume; the rollback is `backups/pg_dump/`. A kill signal sent from INSIDE a container does not test its restart policy (PID 1 ignores it); restart Docker Desktop (`docker desktop restart`) instead.
@@ -148,6 +148,9 @@ One line each; read this before starting on a scraper or pipeline problem.
 - **New-mode headless Chrome/Edge lays a window out at >= ~500 px, whatever `--window-size` says**: a 375 px screenshot is a cropped 500 px layout. Put the page in a 375 px iframe (`scripts/experiments/snapshot_rag_page.py`). And `load_dotenv()` in a script outside the repo loads nothing (it searches from the script's folder): pass the repo's `.env` path. → [2026-10-07 SYS-98/SYS-99 entry](#2026-10-07--sys-98sys-99-the-redesigned-search-answer-on-10-real-questions-deepseek-one-on-gemini-and-what-the-live-run-found)
 - **A word's document frequency over `chunks.fts_vector`: read `pg_stats.most_common_elems` (30 ms, shares within 0.4 points of the exact L2 count), don't count it**: counting 8 question words took ~800 ms, a LIMIT cap barely helps, and any word missing from the list is rare and cheap to count. In the keyword search, break coverage ties by `ts_rank_cd`, not newest-first (newest-first let off-topic recent paragraphs in). → 2026-10-07 "SYS-103 built" entry, ADR-006
 
+- **LangChain's `FAISS.similarity_search_with_score` on an `IndexFlatL2` returns the SQUARED L2 distance (d = 2 - 2cos for unit vectors): cos = 1 - d/2, not 1 - d²/2** (SYS-110 #284). The search page read the second until 2026-10-08 (cos 0.82 read 0.93). → 2026-10-08 "SDE fixes of QA's retrieval findings"
+- **The MiniLM encoder (`paraphrase-multilingual-MiniLM-L12-v2`) sees only 128 tokens (~97 words) of a chunk; L2 chunks run to 450 words** (SYS-109 #283): a word late in a paragraph does not move its vector. Score long paragraphs' keyword evidence with the FTS coverage, not their cosine. → same entry
+- **Do not `GROUP BY` a body column over the whole `articles` table in the Postgres container**: the parallel hash aggregate fails with "could not resize shared memory segment … No space left on device" (Docker's 64 MB `/dev/shm`). Select the ids first. → same entry
 ## Log
 
 ### 2026-09-19 — SYS-31 fix: does a category deny-list + off-topic-anchor margin actually fix filter precision?
@@ -2149,3 +2152,73 @@ SINDONEWS   old 12 new 12 | lost [] | gained []   links identical: True
   - MiniLM puts 1-word strings near every question: any fragment chunk is a hub.
   - Mutation copies made with `git archive` must carry the root files `test_repo_hygiene` reads, or every mutant "dies" on that test (the first survivor run here was void for that reason).
 - **Links:** tracker #272; SYS-92..103 (#261-#271, #273); SYS-104..108 (#274-#278); SRC-60 #279; SRC-61 #280; DBT-61 #281; DBT-62 #282; ADR-005/006; `.10x/reviews/2026-10-07-qa-independent-report.md`.
+
+### 2026-10-08 — SDE fixes of QA's retrieval findings (SYS-104..108, SRC-60/61): what moved the sources, what did not, and two scale bugs found on the way
+- **Question / hypothesis:** do QA's suggested fixes put the right articles in the five sources? Specifically:
+  - SYS-105: skip short hits, merge the trailing chunk.
+  - SYS-106: give keyword-only hits a semantic score.
+  - SYS-107: a date tie-break, over-fetch, a recency signal.
+  - SYS-104: retrieve a follow-up with the thread.
+  - And without new off-topic sources?
+- **Method:**
+  - `scripts/experiments/probe_rag_rank_breakdown.py --replay --followups --detail 5 <extra questions>`. It now calls `QueryProcessor.candidates` itself, read-only, no model call.
+    - The QA replay set (11) plus 9 questions: Danantara, gibberish, gold / rupiah "hari ini", Menkeu "sekarang", Purbaya, Pertamina, BBM, BBCA.
+    - 7 follow-up pairs, each ranked alone and after its first question.
+  - Ranking variants were simulated offline on one pickled candidate dump per variant round (scratch `variants.py`, `simulate.py`, `sim3.py`), then built.
+  - Live: `uvicorn … --port 8765` + `replay_rag_answers.py` (16 questions); a profile of each retrieval stage.
+  - Production read-only SQL on `chunks` / KUMPARAN rows; one KUMPARAN page fetched and saved as a fixture.
+- **Result:**
+  - **Baseline (HEAD de3ad00, 19 questions):** 0 of 93 cards keyword-only; 14 fragment cards; Danantara 5/5 one-word chunks; gibberish 3 cards; gold dated 24 Sep – 1 Oct.
+  - **Short chunks:** every L2 chunk under 30 words is an article's *last* chunk; only 1-17 per length are a whole article's only chunk. The trailing merge is the whole cause.
+    - Stored: 3,157 articles hold an L2 chunk under 15 words, 54,247 one under 80.
+    - `rechunk_stale_chunks.py` dry run: 3,075 articles / 17,222 chunk rows, L2 chunks under 10 words 1,616 → 0.
+  - **v1 (both signals + guard + over-fetch + recency weight 0.3 halving per day for any cue):** keyword-only cards 22, fragments 0; Danantara 5/5 Danantara articles; gibberish `no_hits`; gold 8 Oct first. **But:**
+    - "Siapa Menteri Keuangan sekarang?" ranked a rice-aid story first (semantic 0.52, coverage 1.0 on two common words, today);
+    - the BI "terbaru" question lost the decision to rank 4.
+  - **Keyword-only paragraphs' semantic looked low (0.2-0.6):** `max_seq_length` of the MiniLM is 128 tokens, about 97 words.
+    - Appending a sentence at word ~240 leaves the vector identical (cosine 1.0000).
+    - 37% of L2 chunks are longer: 22% of L2 words and 52% of L1 words are never embedded. → **SYS-109 #283** filed, not fixed here.
+    - The window around the matched word scored the same as the paragraph (the words were mostly inside the first 97). The headline was no better a signal.
+  - **Recency variants (offline, same candidates):**
+    - multiplicative → the stale 1 Oct gold first;
+    - a semantic gate (recency only for semantic ≥ floor) → Menkeu fixed;
+    - cue-specific horizons (1/3/7 days) → BI decision back in the top 5.
+  - **Follow-ups (7 pairs):** with the thread, 5 on topic (OJK credit target, BI → credit, gold → buyback, labour law → workers' response, KPK → its cases) and 2 mixed (Iran → oil 3/5; rupiah → "Apa yang dilakukan BI?" 4/5 rupiah, rank 1 off-topic). Alone, 3 of the 7 were off topic.
+    - **Failed:** letting only the follow-up's own words choose the keyword anchors. No gain; two pairs lost co-found articles. Reverted.
+  - **Live replay found:**
+    - The SumoPod key is blocked (`401 Key is blocked. Update via /key/unblock`); all 15 answers `failed`, as designed.
+    - Every follow-up lost its thread, because the session kept only *answered* turns. Fixed: the session keeps every question for retrieval (`followup=True` on the re-run).
+  - **Latency:** retrieval 560-2,400 ms after v1 (QA: 108-358 ms warm). Profile:
+    - FAISS 40-70 ms; keyword half 86-125 ms; metadata 8-10 ms; coverage 24-85 ms;
+    - **re-embedding 10-19 keyword-only paragraphs 246-496 ms.**
+    - Fixed: the stored NEWS_L2 vector is used (`chunks.embedding_id`).
+    - After the fix (replay run twice on :8765): warm retrieval 62-625 ms (1.1 s for the follow-up with the longest combined text), cold first touches up to 2.1 s. That is slower than SYS-103's 108-358 ms warm; the cards still render before the answer.
+  - **The unit test of that path found SYS-110 #284:**
+    - `search_l2` read FAISS's squared L2 distance as a distance: cos 0.819 read 0.934, cos 0.665 (a "(jon)" hub) 0.776, cos 0.594 (gibberish) 0.670;
+    - verified on production: faiss_d == 2 - 2cos to 4 decimals.
+    - Fixed to `1 - d/2`; floor 0.60 → 0.55 (the same pass set).
+  - **v4 on the cosine scale:**
+    - keyword-only cards 59 of 160, fragments 0;
+    - gold 5/5 from 7-8 Oct; rupiah "hari ini" 5/5 from 7 Oct;
+    - "Bagaimana kasus Pertamina?" gains a case article; Iran 3 articles of 7 Oct.
+    - **But** the BI "terbaru" question lost the decision again: one weight (0.3) on a compressed scale. Per-cue weights 0.3 / 0.2 / 0.1 (simulated, then built) put it back at rank 1. Weights were not re-simulated per question beyond these 12 recency questions.
+  - **KUMPARAN (SRC-60/61):**
+    - The URL's first path segment separates reader posts: 321 of the 357 non-desk articles carry the disclaimer, 0 of 1,521 desk articles do.
+    - The live listing: 142 kept, 258 out of scope (64%).
+    - The header rule removes the reading-time line from 1,781 of 1,781 stored bodies that have it. No prose line is removed (the only removed lines over 8 words are headline variants and reader-post author bios).
+    - `check_crawlers.py --website KUMPARAN`: `OK bisnis 10/6 31 3 3/3 (3685ch)`, 69 out of scope.
+  - **A query trap:** `GROUP BY a.extracted_text` over 90k bodies failed with `DiskFull: could not resize shared memory segment … No space left on device`. That is the container's 64 MB `/dev/shm` (a parallel hash aggregate), not the disk. Find the ids first, then read the texts.
+- **Conclusion / do not repeat:**
+  - Score both signals for every candidate on one scale. A missing score counted as 0, or two scales, hides one retriever.
+  - A recency signal must follow the question's own cue and its precision. It must never lift an article that is relevant only by keywords.
+  - Before combining a FAISS score with anything, check what the distance is: LangChain's `similarity_search_with_score` on `IndexFlatL2` returns the squared L2 distance.
+  - A follow-up's retrieval context must not depend on the answer's success.
+- **Production repairs (owner-approved 2026-10-08 17:10-17:44 WIB; fresh pg_dump `newsaggregator_20261008T100931Z.dump` first):**
+  - SRC-60 settle: 364 sitemaps, 357 articles, 1,092 chunk rows = vectors, 1,168 mentions; the disclaimer query now gives 0.
+  - SRC-61 KUMPARAN repair: 1,521 rewritten and re-chunked, 0 failed; `waktu baca N menit` 0 bodies.
+  - SYS-105 re-chunk: 3,075 articles, 17,222 chunk rows, 5,962 mentions detached and re-attached, 0 failed. L2 chunks under 10 words in multi-chunk *articles*: 0. The 28 left are all on VIVA's queued sitemaps with no article row.
+  - `check_store_consistency.py`: all 11 checks zero.
+  - Final probe: BI-Rate top 5 all the decision and reactions (the reader posts at ranks 1-2 are gone); BI "terbaru": the decision at rank 1; keyword-only cards 50 of 160.
+- **Mutants:** QA's 67 dev mutants all killed; 38/40 `qa1007_*` (2 equivalents); 44 new (2 survivors closed by tests).
+  - A full-suite re-run in an old worktree "killed" the 2 equivalents with `1 failed, 1775 passed`. The unmutated baseline gave the same count: fixture CRLF, DBT-63 #285, fixed.
+- **Links:** SYS-104 #274, SYS-105 #275, SYS-106 #276, SYS-107 #277, SYS-108 #278, SRC-60 #279, SRC-61 #280, DBT-61 #281, DBT-62 #282, OPS-46 #259; found: SYS-109 #283, SYS-110 #284; ADR-007; commits 715b4d8..b269431.; DBT-63 #285

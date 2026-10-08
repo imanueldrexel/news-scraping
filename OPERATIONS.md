@@ -45,11 +45,12 @@
 | `AUDIT_MIN_AGREEMENT_SAVED` / `_REJECTED` | `0.80` / `0.70` | OPS-18: judge agreement floors that alert; calibrated on the first run (healthy week: 0.87 / 0.78) |
 | `AUDIT_CELL_MIN_N` / `AUDIT_CELL_MIN_AGREEMENT` | `20` / `0.80` | OPS-18: a source x category with this many decisions alerts under this agreement |
 | `RAG_TOP_K` | `5` | Articles (source cards) behind one search answer |
+| `RAG_MIN_SEMANTIC_SCORE` | `0.55` | The cosine similarity a paragraph needs to be a source. SYS-110 (#284): 0.55 is the old 0.60 on the scale `search_l2` used to report (`1 - d²/2` of FAISS's squared distance); the same hits pass |
 | `RAG_LLM_PROVIDER` | `openai` | SYS-98 (#267, ADR-005): who writes the search page's answers. `openai` = SumoPod DeepSeek (`OPENAI_*`; owner decision 2026-10-07), `gemini` = Gemini (20/day free tier), empty = the newsletter's rule. A forced provider without its key: the page shows articles with "Ringkasan AI sedang tidak tersedia", never the other provider |
 | `RAG_DAILY_COST_LIMIT_USD` | `1.0` | SYS-98: the page's own spend per day, read from `api_usage_log` under `web:<model>` (never the extraction's key, so search never eats `KNOWLEDGE_DAILY_COST_LIMIT_USD`). ~$0.001 per answer; at the cap the page shows articles only until midnight |
 | `RAG_ANSWER_TIMEOUT_S` / `RAG_ANSWER_MAX_TOKENS` | `30` / `600` | SYS-98: per-answer timeout and output bound (OpenAI-compatible provider) |
 | `RAG_FILTERED_K` | `200` | SYS-92/SYS-100: paragraphs the semantic search fetches when a topic / portal / date filter is set, before filtering on the database's metadata (the keyword search filters in SQL) |
-| `RAG_MIN_KEYWORD_COVERAGE` | `0.6` | SYS-103 (#273, ADR-006): a keyword hit below `RAG_MIN_SEMANTIC_SCORE` is still a source when it covers this share of the question's IDF-weighted words (0..1). The log's `kept_by_keyword=` counts the sources that matched on keywords. The words' document frequencies come from `pg_stats` (common words) and exact counts (rare words), cached per process for 24 h |
+| `RAG_MIN_KEYWORD_COVERAGE` | `0.6` | SYS-103 (#273, ADR-006): a keyword hit below `RAG_MIN_SEMANTIC_SCORE` is still a source when it covers this share of the question's IDF-weighted words (0..1). Every candidate is scored on both signals (ADR-007); the log's `keyword_only=` counts the sources only the keyword half found. The words' document frequencies come from `pg_stats` (common words) and exact counts (rare words), cached per process for 24 h |
 | `RAG_QUESTION_MAX_CHARS` | `500` | Longest question the page accepts |
 | `RAG_WARM_AT_STARTUP` | `1` | SYS-102: load MiniLM and both FAISS indexes when the web app starts (a background thread; the log says `RAG warm-up done in Ns`). `0` = load on the first question |
 | `SITEMAP_RECRAWL_COOLDOWN_DAYS` | `7` | Days before a sitemap with no `articles` row is offered to the article crawl again |
@@ -137,13 +138,20 @@ uvicorn newscrawler.web.app:app --port 8000
    - `unavailable`: no key, a daily quota, or `RAG_DAILY_COST_LIMIT_USD` reached;
    - `failed`: the reader gets "Coba lagi";
    - no articles: no model call at all.
-4. The error itself goes to the log only. Each question logs `rag retrieve ms=… kept=… filters=…` and `rag answer status=… ms=… tokens=…/… cost=$…`.
+4. The error itself goes to the log only. Each question logs `rag retrieve ms=… semantic=… fts=… articles=… kept=… keyword_only=… recent=… followup=… filters=…` and `rag answer status=… ms=… tokens=…/… cost=$…`.
+
+**Retrieval (ADR-007):**
+- FAISS (100 paragraphs, `RAG_FILTERED_K` with a filter) and the keyword half (20); paragraphs under 15 words are skipped.
+- An article only one retriever found is scored on the other signal too: its stored vector's cosine, or its coverage.
+- A question that asks for recent news re-ranks by recency for articles relevant by meaning. The cue sets the horizon and weight, logged as `recent=`: "hari ini / sekarang" 1 day 0.3, "pekan ini" 3 days 0.2, "terbaru" 7 days 0.1.
+- A follow-up (`followup=True`) is retrieved with the session's last two questions, answered or not.
+- `scripts/experiments/probe_rag_rank_breakdown.py --replay --followups --detail 5` prints the ranking read-only, with no model call.
 
 `POST /api/query` is the one-call JSON API: `{"query", "topic", "source", "rentang", "date_from", "date_to", "session_id"}` → `{"answer_status", "answer", "numbers_unverified", "sources", "session_id"}`.
 
 **The page's spend:** `SELECT * FROM api_usage_log WHERE api_name LIKE 'web:%' ORDER BY log_date DESC LIMIT 7;`
 
-**Replay check:** `scripts/experiments/replay_rag_answers.py --base http://127.0.0.1:8000 --out <dir>` asks 10 fixed questions and checks each answer: citations in range, at most 120 words, no Markdown, English months or internal names.
+**Replay check:** `scripts/experiments/replay_rag_answers.py --base http://127.0.0.1:8000 --out <dir>` asks 15 fixed questions and a follow-up and checks each answer: citations in range, at most 120 words, no Markdown, English months or internal names.
 
 The UI loads NEWS_L1/NEWS_L2 at start-up (`RAG_WARM_AT_STARTUP`). The crawler (another process) saves them after every source. Before a query, at most every `FAISS_RELOAD_CHECK_S` seconds (default 30), the UI compares the files' generation with the one it loaded and reloads a level that changed, so no restart is needed after a crawl (DBT-16, #51). `/api/health` shows both sides: `faiss_docs` is on disk, and `faiss_in_memory` (`loaded_at`, `docs`) is what this process searches. They differ only until the next query after a save.
 
@@ -228,6 +236,52 @@ What it does, in order, holding the run lock throughout: back up `NEWS_L1`/`NEWS
 - **Refuses (exit 2)** while a crawl holds the run lock or a crawl_log row is `started` in the last 4 h. It is idempotent: a second run finds no article whose cleaned text differs.
 - **Verify a source:** the dry run for it shows 0 changed; `scripts\check_store_consistency.py` is all zero; the source's L2 chunk rows equal its vectors in `NEWS_L2` with no NULL `embedding_id`; a query for the chrome text (`ADVERTISEMENT SCROLL TO CONTINUE WITH CONTENT`) returns fewer chrome chunks. DETIK, measured: chrome chunks in the top 20 for that query 10 -> 3, for `Lihat Juga : Video detikFinance` 4 -> 0; 19 remaining pattern hits are ordinary prose ("kami melihat juga").
 - **Restore:** copy the backup's `L1`/`L2` directories back over `NEWS_L1`/`NEWS_L2` and restore the rows from `rows.json` (articles' old text, chunk rows, entity mentions); do this only with the run lock held.
+
+### Re-chunking stored sign-off fragments (SYS-105)
+
+The chunker used to keep an article's trailing sign-off as its own L2 chunk ("(jon)", "--", "Editor: X"). It now merges a short last paragraph backward, and the search skips any matched paragraph under 15 words. `scripts/rechunk_stale_chunks.py` brings the stored articles in line.
+
+- **Which articles:** those that hold an L2 chunk under `--min-words` (default 15) and that the chunker now cuts differently. `--min-words 80` takes every article the change touches (54,247 on 2026-10-08, about 4 h).
+- **Dry run (the default, read-only):** per source, the articles, their chunk rows, and their L2 chunks under 10 words before -> after. On 2026-10-08: 3,075 articles, 17,222 chunk rows, 1,616 -> 0.
+
+```
+venv\Scripts\python.exe scripts\rechunk_stale_chunks.py
+venv\Scripts\python.exe scripts\rechunk_stale_chunks.py --apply --until 11:30
+```
+
+`--apply` (every source, or `--source NAME`) holds the run lock throughout and runs these steps in order:
+1. One backup to `backups/sys105_ALL_<stamp>/`: FAISS plus the rows.
+2. Delete the targets' vectors (atomic, generation-checked saves).
+3. One SQL transaction: detach their entity mentions from the chunk rows (the mentions stay; the text does not change, so nothing is re-extracted) and delete their chunk rows.
+4. Re-chunk and re-embed per source, one FAISS flush per `--block`.
+5. Re-attach every detached mention to its article's new L1 chunk.
+
+Exits:
+- 2 while a crawl holds the run lock or a crawl_log row is `started`;
+- 3 at the `--until` deadline: run it again, and steps 4-5 pick up articles without chunks and mentions without a chunk.
+
+The same windows as the SYS-73 repair apply.
+
+### Settling a source's out-of-scope links (SRC-60)
+
+A crawler can call a listed URL out of scope (`Crawler.out_of_scope_reason`). KUMPARAN keeps only its newsroom desk accounts (`kumparan*`) and the partner newsroom `pandangan-jogja`; readers' blog posts are dropped. New listings skip them; the crawl_log note counts them (`N URL(s) out of scope: …`), and `check_crawlers.py` reports `out_of_scope` for its sample. `scripts/settle_out_of_scope_links.py --source NAME` applies the same rule, imported from the crawler, to what is already stored.
+
+- **Dry run (the default):** what would go, and a check on the rule: how many of the articles to delete, and of those kept, carry KUMPARAN's reader-post disclaimer. On 2026-10-08: 364 sitemaps, 357 articles, 321 with the disclaimer to delete, 0 of the 1,521 kept.
+
+```
+venv\Scripts\python.exe scripts\settle_out_of_scope_links.py --source KUMPARAN
+venv\Scripts\python.exe scripts\settle_out_of_scope_links.py --source KUMPARAN --apply
+```
+
+`--apply` holds the run lock and runs these steps in order:
+1. Back up to `backups/src60_<SOURCE>_<stamp>/`.
+2. Delete their vectors.
+3. One SQL transaction: delete their entity mentions, chunk rows and articles, and set the sitemaps `rejected_filter`.
+4. Recompute the entity counters (SYS-20).
+
+A second run finds nothing.
+
+**Then repair KUMPARAN's bodies (SRC-61):** `repair_boilerplate_bodies.py --apply --source KUMPARAN`. The body cleaner now drops KUMPARAN's page header (the headline again, the desk or writer, `·waktu baca N menit`). Run the settle first, so the reader posts are not repaired only to be deleted.
 
 ### Scheduled newsletter (OPS-38) — registered 2026-10-04
 

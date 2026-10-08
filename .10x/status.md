@@ -2,7 +2,7 @@
 
 ## Project: NewsAggregator
 **Current Phase:** Implementation (dev): P1/P2 fixes + newsletter. Design approved by owner choice of DeepSeek; spec + ADR-001 written.
-**Last Updated:** 2026-10-06 (night) by qa
+**Last Updated:** 2026-10-08 (evening) by sde
 **Health:** On Track
 
 ## Progress
@@ -194,3 +194,10 @@
 - **Held:** OPS-43 at 1 of 3 valid 12:00 runs (10-07); OPS-20/SYS-39 wait for tonight's 21:00 extraction. SRC-59 is still 404 and not worked.
 - **Owner:** restart :8000 (it still runs pre-ceb73cf code).
 - **Health:** the UI is done; retrieval quality (SYS-104..107, SRC-60) is the next work.
+
+## SDE 2026-10-08: QA's retrieval findings fixed (ADR-007)
+- [x] Ready for QA: SYS-104..108 (#274-#278), SRC-60 #279, SRC-61 #280, DBT-61 #281, DBT-62 #282, OPS-46 #259; found+fixed SYS-110 #284, DBT-63 #285; filed SYS-109 #283 (not fixed).
+- [x] Owner-approved production writes: SRC-60 settle, SRC-61 KUMPARAN repair, SYS-105 re-chunk (pg_dump first).
+- [ ] Owner: unblock the SumoPod key (401 since today; page answers, 21:00 extraction and 12:00 newsletter fail), restart :8000.
+- [ ] QA: verify; watch the 19:00 KUMPARAN out-of-scope note.
+- Details: decisions/sde/rag-retrieval-quality.md; handoff.md.
