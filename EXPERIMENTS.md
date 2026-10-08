@@ -152,6 +152,7 @@ One line each; read this before starting on a scraper or pipeline problem.
 - **The MiniLM encoder (`paraphrase-multilingual-MiniLM-L12-v2`) sees only 128 tokens, a median of ~83 Indonesian words (~1.5 tokens per word); never raise its `max_seq_length` (trained at 128: at 256 early-sentence recall falls 0.73 → 0.32, at 512 it is noise).** L2 chunks were up to 450 words; since SYS-109 (ADR-008) they are windows of at most 80 words. → 2026-10-08 (evening) "SYS-109: how to embed a long L2 paragraph"
 - **Do not `GROUP BY` a body column over the whole `articles` table in the Postgres container**: the parallel hash aggregate fails with "could not resize shared memory segment … No space left on device" (Docker's 64 MB `/dev/shm`). Select the ids first. → same entry
 - **A repair script's `--until HH:MM` is the NEXT HH:MM since SYS-111 (#287); before that it meant today's, so an evening run with a morning deadline deleted its targets and then stopped at once (2026-10-08: 358,398 L2 rows and vectors, search without L2 until `--resume` finished).** A deadline under 15 minutes away is now refused before the backup and the deletes. A destructive script checks every stop condition before its first delete. -> 2026-10-08 (evening) "SYS-109: how to embed a long L2 paragraph"
+- **Never `git worktree remove` a mutation worktree whose `venv` is a junction to the real venv: on Windows git recurses INTO the junction (2026-10-08: 23 packages of the project venv deleted, `aiohappyeyeballs`..`chardet`).** `cmd /c rmdir <wt>env` first (unlinks only), check no reparse point is left, then remove the worktree; afterwards `pip freeze` must equal requirements.txt. Repair: `pip install --no-deps --force-reinstall` of the missing pins. OPS-47 #288; teardown in `qa_mutation_runner.py`'s docstring.
 ## Log
 
 ### 2026-09-19 — SYS-31 fix: does a category deny-list + off-topic-anchor margin actually fix filter precision?
@@ -2250,8 +2251,20 @@ SINDONEWS   old 12 new 12 | lost [] | gained []   links identical: True
   - **Corpus:** 309,419 of 372,938 L2 chunks are over 80 words.
   - **Re-chunk dry run** (`rechunk_stale_chunks.py --all`): 100,466 articles; L2 358,162 → 713,589 rows; > 80 words 298,576 → 0.
   - **A cost found on the way:** `entity_mentions.chunk_id` (FK to chunks) and `entity_mentions.sitemap_id` had no index, so every chunk delete scans 230,061 mentions. Deleting 17,222 rows took 9 min → **DBT-64 #286**.
+  - **Production run (2026-10-08/09):**
+    - `backup_db` → `migrate.py` (DBT-64's indexes) → `--all --apply --until 06:15` at 20:04. **SYS-111 #287:** 06:15 was read as today's, already past. The run deleted 358,398 L2 rows and vectors (backup `backups/sys109_ALL_20261008T130410Z`), then stopped with exit 3 before re-chunking.
+    - With DBT-64's index, the delete of 358k rows took ~15 s; 17,222 had taken 9 min without it.
+    - `--apply --resume` (no deadline) ran 20:05 → 00:30: 100,466 articles, 0 empty, 0 failed, ~7 articles/s, `ANALYZE chunks`.
+    - **After:** 737,682 L2 rows on articles, 0 over 80 words (max 80, mean 60); 750,871 L2 vectors (the rest are 3,098 queued sitemaps). `check_store_consistency.py`: all 11 checks zero. Dry run `--all`: TOTAL 0.
+    - **Late recall on production** (`probe_late_recall_live.py`, same 200-article sample, k=100):
+      - late recall@1/@5/@20: 0.020/0.075/0.145 → **0.360/0.570/0.725**;
+      - early: 0.620/0.785/0.840 → 0.580/0.780/0.865.
+      - Lower than the pool probe's 0.75 because 750k windows compete, not 4k.
+    - **Replay probe (`--replay --followups`):** Danantara 5/5, gibberish 0 cards, gold "hari ini" 8 Oct first, 0 fragment cards; keyword-only cards 49/155 (50/160 before).
+      - "Menkeu sekarang" and the BI-decision question regressed: same-day keyword hits now clear the 0.55 gate. → **SYS-112 #289** (confounded by new 8 Oct articles).
+    - **Venv lost 23 packages mid-run.** Removing the mutation worktree followed its `venv` junction. Repaired from the pins. → **OPS-47 #288**.
 - **Conclusion / do not repeat:**
   - Never raise MiniLM's `max_seq_length` past 128. Its position table has 512, but it was trained at 128: at 256 early recall falls 0.73 → 0.32, and at 512 it is noise.
   - Chunk to the window instead (80 words, overlap 20, ADR-008). e5-base is worse than windows here and 6x slower on every crawl and query.
   - Measure tokens per word on real text before sizing a window: Indonesian news runs ~1.5 tokens per word on this tokenizer.
-- **Links:** SYS-109 #283, DBT-64 #286, ADR-008; spec `.10x/specs/2026-10-08-sys109-chunks-fit-encoder-window-design.md`; commits 377fbbd, b25dd36.
+- **Links:** SYS-109 #283, DBT-64 #286, ADR-008; spec `.10x/specs/2026-10-08-sys109-chunks-fit-encoder-window-design.md`; commits 377fbbd, b25dd36; found: SYS-111 #287 (5fcb58a, 8832fc4), SYS-112 #289, OPS-47 #288.

@@ -21,6 +21,13 @@ Never run it while a scheduled job imports the repo (crawl 07:00/19:00, newslett
 21:00): their worker processes would load a mutant. Run it in a scratch worktree instead
 (`git worktree add <scratch>\mutwt HEAD`, then `mklink /J <scratch>\mutwt\venv <repo>\venv`).
 
+Teardown -- in this order (OPS-47 #288). `git worktree remove --force` recurses INTO a junction on
+Windows: on 2026-10-08 it deleted the real venv's site-packages (23 packages) before it failed.
+    cmd /c rmdir <scratch>\mutwt\venv          # unlinks the junction only; the venv is untouched
+    Get-ChildItem <scratch>\mutwt -Recurse -Force -Attributes ReparsePoint   # must print nothing
+    git worktree remove --force <scratch>\mutwt
+Then `venv\Scripts\python.exe -m pip freeze` must still equal requirements.txt.
+
 A pattern is applied only when it occurs exactly once (some files have mixed
 line endings; the CRLF form is tried when the LF form is not found).
 """
