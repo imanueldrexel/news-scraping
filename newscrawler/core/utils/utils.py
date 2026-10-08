@@ -1,3 +1,4 @@
+import itertools
 import re
 import logging
 
@@ -101,9 +102,18 @@ _BOILERPLATE_LINE = re.compile(
     r"|berita\s+selengkapnya(?:\s+(?:baca\s+di\s+sini|tentang\b.{0,80}))?"   # DETIK, CNBC tail, LIPUTAN6
     rf"|(?=.{{0,220}}$)(?:ikuti|cek|dapatkan|klik|follow|temukan)\b(?=.{{0,120}}\b{_PROMO_OBJECT}\b)"
     r".*\b(?:google\s+news|whatsapp\s+channel|saluran\s+whatsapp)\b.*"
+    r"|ikuti\s+kumparan\s+di\s+google(?:\s+news)?"         # KUMPARAN (SRC-61), the outlet's name as the object
     r")\s*[:|]?\s*$",
     re.IGNORECASE,
 )
+# SRC-61 (#280): KUMPARAN's page header, which trafilatura keeps above the body: the headline
+# again, the desk ("kumparanNEWS") or the writer's name and title, then a middle dot and
+# "waktu baca 2 menit".
+# The reading-time line anchors it, within the body's first HEADER_LINES lines; it goes with the
+# short lines above it. A line ending in a full stop is prose and stays (SYS-75: never drop prose).
+_READING_TIME = re.compile(r"^[\u00b7\u2022]?\s*waktu\s+baca\s+\d+\s+menit$", re.IGNORECASE)
+HEADER_LINES = 5
+HEADER_LINE_MAX_WORDS = 25
 # Unmistakable widget text, removed wherever it sits in a line (SYS-75: the widget,
 # not the line -- a paragraph of prose can carry it at its end).
 _BOILERPLATE_ANYWHERE = re.compile(r"\[gambas:|tautan\s+telah\s+disalin", re.IGNORECASE)
@@ -157,6 +167,21 @@ def is_boilerplate_line(line: str) -> bool:
     return clean_line(line) is None
 
 
+def _reading_time_header(paragraphs) -> set:
+    """SRC-61: {(paragraph index, line index)} of a page header that ends in a reading-time line
+    among the body's first HEADER_LINES non-empty lines; empty when there is none."""
+    lines = ((p_index, l_index, line.strip())
+             for p_index, paragraph in enumerate(paragraphs) if isinstance(paragraph, str)
+             for l_index, line in enumerate(paragraph.split("\n")) if line.strip())
+    first = list(itertools.islice(lines, HEADER_LINES))
+    for k, (p_index, l_index, text) in enumerate(first):
+        if _READING_TIME.match(text):
+            return {(p_index, l_index)} | {
+                (p, l) for p, l, above in first[:k]
+                if len(above.split()) <= HEADER_LINE_MAX_WORDS and not above.rstrip("\"'\u201d\u2019)").endswith(".")}
+    return set()
+
+
 def clean_body_paragraphs(body):
     """SYS-63: the article body without page chrome and related-headline lines.
 
@@ -164,16 +189,19 @@ def clean_body_paragraphs(body):
     and returns the same shape. Works line by line inside each paragraph, because
     trafilatura and several site selectors keep a "Baca Juga: ..." line in the
     middle of a paragraph. A paragraph left empty is dropped; an editor-initials
-    tail "(ega/ega)" is cut from the body's last line only."""
+    tail "(ega/ega)" is cut from the body's last line only; a page header ending in a
+    reading-time line is cut from its first lines (SRC-61)."""
     if body is None:
         return None
     paragraphs = [body] if isinstance(body, str) else list(body)
+    header = _reading_time_header(paragraphs)
     cleaned = []
-    for paragraph in paragraphs:
+    for p_index, paragraph in enumerate(paragraphs):
         if not isinstance(paragraph, str):
             continue
         lines = paragraph.split("\n")
-        cleaned_lines = [clean_line(line) for line in lines]
+        cleaned_lines = [None if (p_index, l_index) in header else clean_line(line)
+                         for l_index, line in enumerate(lines)]
         if cleaned_lines == lines:
             cleaned.append(paragraph)           # nothing to remove: not even whitespace is touched
             continue

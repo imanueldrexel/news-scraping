@@ -59,6 +59,7 @@ class CrawlerServiceImpl(CrawlerService):
         failures = getattr(listing, "branch_failures", None) or []
         gone = getattr(listing, "branches_gone", None) or []
         skipped = getattr(listing, "branches_skipped", None) or []
+        out_of_scope = getattr(listing, "urls_out_of_scope", None) or {}
         parts = []
         if failures:
             parts.append(f"{len(failures)} of {getattr(listing, 'branches_tried', '?')} branch sitemap(s) did not "
@@ -69,6 +70,10 @@ class CrawlerServiceImpl(CrawlerService):
             keys = sorted(name for name, _ in skipped)
             parts.append(f"{len(skipped)} skipped, cannot load: " + ", ".join(keys[:5]) +
                          (f" +{len(keys) - 5} more" if len(keys) > 5 else ""))
+        if out_of_scope:
+            # SRC-60 (#279): listed entries that are not the outlet's news (KUMPARAN's reader posts)
+            parts.append(f"{sum(out_of_scope.values())} URL(s) out of scope: " +
+                         "; ".join(f"{reason} {n}" for reason, n in sorted(out_of_scope.items())))
         return " | ".join(parts)[:1000] if parts else None
 
     def crawl_sitemaps(self, website_name: str) -> List[SitemapDTO]:

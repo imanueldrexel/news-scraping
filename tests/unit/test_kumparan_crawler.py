@@ -9,6 +9,7 @@ object, a list of them, or a bare string.
 Fixture shape mirrors the live page (2026-09-20): two data-rh="true" ld+json
 blocks, a NewsArticle with a Person author and a BreadcrumbList without one.
 """
+import pytest
 from bs4 import BeautifulSoup
 
 from newscrawler.infrastructure.datasource.scrapers.kumparan.kumparan_crawler import (
@@ -95,3 +96,69 @@ def test_no_eval_anywhere_in_newscrawler():
                     if re.search(r"(?<![\w.])eval\(", code):
                         offenders.append(f"{os.path.relpath(path, root)}:{lineno}: {line.strip()}")
     assert offenders == [], "\n".join(offenders)
+
+
+class TestReaderPostsAreNotNews:
+    """SRC-60 (#279): KUMPARAN's news sitemaps list readers' blog posts next to the newsroom's
+    articles; 314 of 1,825 stored articles were "Tulisan dari ... tidak mewakili pandangan dari
+    redaksi kumparan", and two held ranks 1-2 of the BI-Rate search."""
+
+    @pytest.mark.parametrize("link", [
+        "https://kumparan.com/kumparannews/komjak-minta-ruu-perampasan-aset-28KSwanHaCI?page=all",
+        "https://kumparan.com/kumparanbisnis/airlangga-usul-simpanan-di-koperasi-dijamin-lps-28FOK7Uf7nA",
+        "https://kumparan.com/kumparanoto/x-1", "https://kumparan.com/kumparantekno/x-2",
+        "https://kumparan.com/pandangan-jogja/kodam-xxvi-mataram-akan-bermarkas-di-godean-28Je6HKu9oG",
+    ])
+    def test_newsroom_accounts_are_kept(self, link):
+        assert KumparanCrawler().out_of_scope_reason(link) is None
+
+    @pytest.mark.parametrize("link", [
+        "https://kumparan.com/tyasafira031/menjaga-pertumbuhan-ekonomi-indonesia-28K?page=all",
+        "https://kumparan.com/halizasalda24/kredit-umkm-terus-didorong-28K",
+        "https://kumparan.com/user-13082024092310/reforma-agraria-28K",
+        "https://kumparan.com/TDA/tda-jakarta-selatan-9-0-28H0e29YSD2?page=all",
+        "https://kumparan.com/daily-tech-science/prospektus-ipo-anthropic-28HQiTauPn6",
+        "https://kumparan.com/kumparan-fan/x", "", None,
+    ])
+    def test_reader_and_other_accounts_are_not(self, link):
+        assert KumparanCrawler().out_of_scope_reason(link) == "not a kumparan newsroom account (reader post)"
+
+    @staticmethod
+    def _crawler(monkeypatch):
+        crawler = KumparanCrawler()
+        sitemap = BeautifulSoup(
+            "<urlset>"
+            "<url><loc>https://kumparan.com/kumparanbisnis/bi-tahan-suku-bunga-28A</loc>"
+            "<news:publication_date>2026-10-07T10:00:00+07:00</news:publication_date>"
+            "<news:title>BI Tahan Suku Bunga</news:title></url>"
+            "<url><loc>https://kumparan.com/tyasafira031/menjaga-pertumbuhan-ekonomi-28B</loc>"
+            "<news:publication_date>2026-10-07T11:00:00+07:00</news:publication_date>"
+            "<news:title>Menjaga Pertumbuhan Ekonomi</news:title></url>"
+            "</urlset>", "html.parser")
+        monkeypatch.setattr(crawler, "list_branches",
+                            lambda: {"news": "https://kumparan.com/sitemap_channel_news.xml"})
+        monkeypatch.setattr(crawler, "_load_page", lambda url: (sitemap, None))
+        return crawler
+
+    def test_a_sitemap_with_a_desk_and_a_reader_url_keeps_the_desk_url(self, monkeypatch):
+        listing = self._crawler(monkeypatch).get_news_in_bulk()
+        assert [e["link"] for e in listing] == ["https://kumparan.com/kumparanbisnis/bi-tahan-suku-bunga-28A?page=all"]
+        assert listing.urls_out_of_scope == {"not a kumparan newsroom account (reader post)": 1}
+
+    def test_the_skips_are_counted_in_the_run_note(self, monkeypatch):
+        from unittest.mock import MagicMock, patch
+        from newscrawler.domain.services.crawler_service_impl import CrawlerServiceImpl
+        with patch("newscrawler.domain.services.crawler_service_impl.SemanticImportanceFilter"):
+            svc = CrawlerServiceImpl(data_flow_repo=MagicMock())
+        crawler = self._crawler(monkeypatch)
+        crawler.batch_crawling_sitemap = MagicMock(return_value=[])
+        svc.crawler_dict = {"KUMPARAN": crawler}
+        svc.crawl_sitemaps("KUMPARAN")
+        note = svc.data_flow_repo.log_crawl_complete.call_args.kwargs["note"]
+        assert note == "1 URL(s) out of scope: not a kumparan newsroom account (reader post) 1"
+
+    def test_other_crawlers_keep_every_url(self):
+        from newscrawler.core.crawler_dict_list import CRAWLER_DICT
+        for name, crawler in CRAWLER_DICT.items():
+            if name != "KUMPARAN":
+                assert crawler.out_of_scope_reason("https://example.test/anything") is None, name

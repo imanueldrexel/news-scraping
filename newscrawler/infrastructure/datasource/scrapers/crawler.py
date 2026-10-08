@@ -70,15 +70,19 @@ class SitemapListing(list):
     `branches_gone` -- fetched, and the site says the branch is not there (HTTP
     404/410, a redirect to a malformed URL); `branches_skipped` -- not fetched,
     because the host does not exist in DNS or the `<loc>` has no host. Both are
-    [(branch_name, reason), ...]."""
+    [(branch_name, reason), ...].
+
+    SRC-60 (#279): `urls_out_of_scope` is {reason: count} of the listed entries the
+    crawler's `out_of_scope_reason` dropped before they were stored."""
 
     def __init__(self, items=(), branch_failures=(), branches_tried: int = 0, branches_gone=(),
-                 branches_skipped=()):
+                 branches_skipped=(), urls_out_of_scope=None):
         super().__init__(items)
         self.branch_failures = list(branch_failures)
         self.branches_tried = branches_tried
         self.branches_gone = list(branches_gone)
         self.branches_skipped = list(branches_skipped)
+        self.urls_out_of_scope = dict(urls_out_of_scope or {})
 
 
 # SRC-58: a branch-fetch reason that says the branch is not there, as opposed to "not now".
@@ -470,18 +474,33 @@ class Crawler:
         in_scope = self.drop_soft_branches(listed)
         branches_to_crawl, skipped = self.drop_unreachable_branches(in_scope)
         links_to_crawl = []
+        out_of_scope = collections.Counter()
         self._branch_failures = []
 
         for branch_name, branch_link in branches_to_crawl.items():
-            links = self._scrape(branch_link=branch_link, branch_name=branch_name)
-            links_to_crawl.extend(links)
+            for entry in self._scrape(branch_link=branch_link, branch_name=branch_name):
+                reason = self.out_of_scope_reason(entry.get("link"))
+                if reason:
+                    out_of_scope[reason] += 1
+                else:
+                    links_to_crawl.append(entry)
+        if out_of_scope:
+            logger.info(f"{self.website_name}: {sum(out_of_scope.values())} listed URL(s) out of scope (SRC-60): "
+                        f"{dict(out_of_scope)}")
         gone = [f for f in self._branch_failures if is_gone_reason(f[1])]
         failures = [f for f in self._branch_failures if not is_gone_reason(f[1])]
         dead = skipped + gone + failures
         if in_scope and len(dead) >= len(in_scope):
             raise SitemapIndexUnavailable(
                 f"all {len(in_scope)} branch sitemap(s) failed to load, e.g. {dead[0][1]}")
-        return SitemapListing(links_to_crawl, failures, len(branches_to_crawl), gone, skipped)
+        return SitemapListing(links_to_crawl, failures, len(branches_to_crawl), gone, skipped, out_of_scope)
+
+    def out_of_scope_reason(self, link: Optional[str]) -> Optional[str]:
+        """SRC-60 (#279): why a listed article is not this outlet's news, judged from its URL before
+        it is stored or fetched; None keeps it. For what a branch name cannot say: KUMPARAN's
+        `news` and `bisnis` sitemaps list readers' blog posts next to the newsroom's articles.
+        Applied here, after `_scrape`, so a crawler that overrides `_scrape` is covered too."""
+        return None
 
     def drop_unreachable_branches(self, branches: Dict[str, str]) -> Tuple[Dict[str, str], List[Tuple[str, str]]]:
         """SRC-58 (#231): (branches to fetch, [(skipped branch, reason)]). A branch

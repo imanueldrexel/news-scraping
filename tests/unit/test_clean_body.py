@@ -4,6 +4,7 @@ every extractor's output.
 The boilerplate lines below are real: each is a line stored in `articles.extracted_text`
 on 2026-10-01..03 for the source named (pulled read-only). The prose lines are
 real article sentences, so a pattern that over-reaches fails here."""
+import os
 import pytest
 from bs4 import BeautifulSoup
 
@@ -302,3 +303,59 @@ class TestWidgetTrailingProse:
     def test_a_paragraph_with_nothing_to_remove_is_still_byte_identical(self):
         paragraph = "Satu.  \nDua."
         assert clean_body_paragraphs([paragraph])[0] is paragraph
+
+
+KUMPARAN_PAGE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "fixtures",
+                             "kumparan_article_2026-10-08.html")
+PROSE_1 = "Presiden Prabowo Subianto mengungkapkan hasil penertiban kawasan hutan oleh satgas kepada wartawan."
+
+
+class TestKumparanReadingTimeHeader:
+    """SRC-61 (#280): 1,730 of 1,825 KUMPARAN bodies started with the headline again, the desk and
+    "·waktu baca N menit"; the search page showed them in the snippets."""
+
+    def test_a_saved_page_gives_a_body_that_starts_at_the_first_prose_line(self, monkeypatch):
+        crawler = CRAWLER_DICT["KUMPARAN"]
+        with open(KUMPARAN_PAGE, encoding="utf-8") as f:
+            soup = BeautifulSoup(f.read(), "html.parser")
+        monkeypatch.setattr(crawler, "_load_page", lambda url: (soup, None))
+        dto, reason = crawler._fetch_news_details(SitemapDTO(
+            headline="Luhut Ajak Investor Jangan Ragu Investasi ke RI: Indonesia Tak Menuju Kolaps",
+            link="https://kumparan.com/kumparanbisnis/x", sources="KUMPARAN", sitemap_id=1))
+        assert reason is None, reason
+        lines = [line for p in dto.extracted_text for line in p.split("\n") if line.strip()]
+        assert lines[0].startswith("Ketua Dewan Ekonomi Nasional (DEN), Luhut Binsar Panjaitan")
+        body = "\n".join(lines)
+        assert "waktu baca" not in body.lower() and "kumparanBISNIS" not in body
+
+    def test_headline_desk_and_reading_time_go(self):
+        body = ["Prabowo: Satgas PKH Selamatkan Lahan Senilai Rp 400 T", "kumparanNEWS", "·waktu baca 2 menit",
+                PROSE_1]
+        assert clean_body_paragraphs(body) == [PROSE_1]
+
+    def test_a_writers_name_and_title_go_too(self):
+        body = ["Kredit UMKM Terus Didorong", "Haliza Salda", "Mahasiswa Universitas Pamulang",
+                "·waktu baca 3 menit", PROSE_1]
+        assert clean_body_paragraphs(body) == [PROSE_1]
+
+    def test_the_header_inside_one_string_body(self):
+        body = "Judul Berita Hari Ini\nkumparanBISNIS\n·waktu baca 2 menit\n\n" + PROSE_1
+        assert clean_body_paragraphs(body) == PROSE_1
+
+    def test_prose_above_the_reading_time_line_stays(self):
+        """SYS-75: never drop a prose paragraph; a lead that ends in a full stop is prose."""
+        body = ["Judul Berita", "Berita Bisnis", PROSE_1, "·waktu baca 2 menit", "Paragraf kedua berita ini."]
+        assert clean_body_paragraphs(body) == [PROSE_1, "Paragraf kedua berita ini."]
+
+    def test_without_a_reading_time_line_nothing_is_cut(self):
+        body = ["Judul Berita", "kumparanNEWS", PROSE_1]
+        assert clean_body_paragraphs(body) == body
+
+    def test_a_reading_time_line_deep_in_the_body_is_not_a_header(self):
+        body = [PROSE_1] * 5 + ["Judul", "waktu baca 2 menit", PROSE_1]
+        assert clean_body_paragraphs(body) == body
+
+    def test_the_google_news_promo_line(self):
+        assert is_boilerplate_line("Ikuti kumparan di Google")
+        assert is_boilerplate_line("Ikuti kumparan di Google News")
+        assert not is_boilerplate_line("Ikuti kumparan di Google untuk kabar terbaru soal harga emas hari ini.")
