@@ -129,12 +129,24 @@ def _mock_crawler(soup="SOUP", branches=None, articles=None, dtos=None, details=
     from newscrawler.infrastructure.datasource.scrapers.crawler import Crawler as _RealCrawler
     c.drop_soft_branches.side_effect = lambda b: {k: v for k, v in (b or {}).items() if not _RealCrawler.is_soft_branch(k)}
     c._scrape.return_value = articles if articles is not None else [{"link": "http://e.com/a"}]
+    c.out_of_scope_reason.return_value = None     # SRC-60: every URL in scope unless a test says otherwise
     c.batch_crawling_sitemap.return_value = dtos if dtos is not None else [SitemapDTO(headline="h", link="http://e.com/a", sources="KOMPAS")]
     c.batch_crawling_details.return_value = details if details is not None else [_detail(["body text here"])]
     return c
 
 
 class TestCheckOne:
+    def test_the_sample_drops_what_production_drops_by_url(self):
+        """SRC-60 (#279): production never stores a KUMPARAN reader post; the health sample does
+        not fetch one either, and the count is in the result."""
+        c = _mock_crawler(articles=[{"link": "https://kumparan.com/kumparannews/a"},
+                                    {"link": "https://kumparan.com/tyasafira031/b"}])
+        c.out_of_scope_reason.side_effect = lambda link: None if "/kumparannews/" in link else "reader post"
+        r = cc.check_one("KUMPARAN", c, sample_size=2)
+        assert r["out_of_scope"] == 1 and r["sitemap_links"] == 1
+        sampled = c.batch_crawling_sitemap.call_args.args[0]
+        assert [a["link"] for a in sampled] == ["https://kumparan.com/kumparannews/a"]
+
     def test_a_trafilatura_first_source_is_judged_by_its_declaration(self):
         """DBT-05: CNBC is trafilatura by design -- its samples coming from
         trafilatura is OK, not FALLBACK."""

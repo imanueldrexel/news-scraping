@@ -238,6 +238,9 @@ def _blank_result(name: str, started_at: datetime = None) -> dict:
         # them the base Crawler drops as soft verticals before anything is
         # fetched. A site adding a vertical shows up here on the day it does.
         "branches": 0, "soft_branches": 0,
+        # SRC-60 (#279): listed entries of the sampled branch the crawler calls out of scope by
+        # URL (KUMPARAN's reader posts); production drops them before storing, so does the sample.
+        "out_of_scope": 0,
         # OPS-17: the newest publication date among the listed entries, so a
         # sitemap that still serves but stopped updating is visible.
         "newest_listed": None, "listing_age_days": None,
@@ -282,7 +285,9 @@ def check_one(name: str, crawler, sample_size: int) -> dict:
 
         branch_name, branch_link = pick_branch(branches)
         result["branch"] = branch_name
-        articles = crawler._scrape(branch_link=branch_link, branch_name=branch_name) or []
+        listed = crawler._scrape(branch_link=branch_link, branch_name=branch_name) or []
+        articles = [a for a in listed if not crawler.out_of_scope_reason(a.get("link"))]
+        result["out_of_scope"] = len(listed) - len(articles)
         result["sitemap_links"] = len(articles)
         if not articles:
             result["note"] = "first branch scraped 0 article links"
