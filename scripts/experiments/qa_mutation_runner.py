@@ -1278,6 +1278,15 @@ M = [
   '        if len(group) >= group_size:\n', '        if True:\n'),
  ('sys109_failed_group_not_retried', 'scripts/backfill_orphan_chunks.py',
   '            if len(group) == 1:\n                logger.error', '            if True:\n                logger.error'),
+ # SDE 2026-10-08: SYS-111 (a deadline already past today is tomorrow; refuse a too-close one before deleting).
+ # The guards' removal is killed by tests/integration (test_*_live.py::*too_close*), not by this runner.
+ ('sys111_past_deadline_is_today', 'scripts/repair_boilerplate_bodies.py',
+  'return deadline if deadline > now else deadline + timedelta(days=1)', 'return deadline'),
+ ('sys111_too_close_never', 'scripts/repair_boilerplate_bodies.py',
+  'return deadline is not None and deadline - (now or datetime.now()) < timedelta(minutes=MIN_RUN_MINUTES)',
+  'return False'),
+ ('sys111_too_close_at_the_margin', 'scripts/repair_boilerplate_bodies.py',
+  '< timedelta(minutes=MIN_RUN_MINUTES)', '<= timedelta(minutes=MIN_RUN_MINUTES)'),
 ]
 only = sys.argv[1:]
 # The tests each mutant runs (default: all of tests/unit). QA_MUTANT_TESTS narrows it to the files that

@@ -198,6 +198,11 @@ def _apply_locked(args, client, make_repo) -> int:
             logger.error("a crawl_log row is 'started' in the last 4 h; refusing to rewrite FAISS under a running crawl")
             return 2
     source = args.source.upper() if args.source else None
+    deadline = sys73.parse_until(args.until)
+    if not args.resume and sys73.too_close(deadline):
+        logger.error("--until %s is less than %d minutes away; refusing before any backup or delete (SYS-111)",
+                     args.until, sys73.MIN_RUN_MINUTES)
+        return 2
     summary = {"articles": 0, "l2_rows_deleted": 0, "vectors_deleted": 0}
     if not args.resume:
         targets = load_targets(client, source, args.min_words, args.all)
@@ -215,7 +220,6 @@ def _apply_locked(args, client, make_repo) -> int:
                 session.commit()
             logger.info("deleted %d L2 row(s) and %d vector(s) of %d article(s)", summary["l2_rows_deleted"],
                         summary["vectors_deleted"], len(ids))
-    deadline = sys73.parse_until(args.until)
     if make_repo is None:
         from newscrawler.infrastructure.repositories.dataflow.data_flow_repository_impl import DataFlowRepositoryImpl
         make_repo = DataFlowRepositoryImpl

@@ -245,13 +245,25 @@ class TestApply:
         assert old[seeded.polluted] == POLLUTED_BODY and seeded.clean not in old
         assert dump["entity_mentions"] and dump["chunks"]
 
-    def test_a_deadline_in_the_past_rewrites_but_does_not_rechunk_and_rechunk_only_finishes(self, repair, client, env, seeded):
-        past = (datetime.now() - timedelta(minutes=1)).strftime("%H:%M")
-        assert repair.apply_source(_args(until=past), client=client) == 3
+    def test_a_deadline_reached_mid_run_rewrites_but_does_not_rechunk_and_rechunk_only_finishes(
+            self, repair, client, env, seeded, monkeypatch):
+        """The clock reaches the deadline after the rewrite, before the first re-chunk block."""
+        import functools
+        monkeypatch.setattr(repair, "rechunk", functools.partial(repair.rechunk, now=lambda: datetime.max))
+        later = (datetime.now() + timedelta(hours=2)).strftime("%H:%M")
+        assert repair.apply_source(_args(until=later), client=client) == 3
         assert not _chunks(client, seeded.polluted), "stopped before re-chunking: no chunk rows yet"
         assert not any(b in _text(client, seeded.polluted) for b in BOILERPLATE), "the text is already clean"
         assert repair.apply_source(_args(rechunk_only=True), client=client) == 0
         assert _chunks(client, seeded.polluted) and _vector_ids(seeded.polluted)
+
+    def test_a_deadline_too_close_refuses_before_the_backup_and_the_rewrite(self, repair, client, env, seeded):
+        """SYS-111 (#287): exit 2 with nothing touched, not exit 3 after the deletes."""
+        soon = (datetime.now() + timedelta(minutes=repair.MIN_RUN_MINUTES - 5)).strftime("%H:%M")
+        before = _text(client, seeded.polluted), _chunks(client, seeded.polluted), _vector_ids(seeded.polluted)
+        assert repair.apply_source(_args(until=soon), client=client) == 2
+        assert (_text(client, seeded.polluted), _chunks(client, seeded.polluted), _vector_ids(seeded.polluted)) == before
+        assert not os.path.isdir(repair.BACKUP_DIR) or not os.listdir(repair.BACKUP_DIR), "no backup taken"
 
     @pytest.mark.parametrize("block, saves", [(2, 4), (1, 6)])
     def test_faiss_is_saved_once_per_block_not_once_per_article(self, repair, client, env, seeded, monkeypatch,

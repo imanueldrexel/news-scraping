@@ -43,7 +43,7 @@ import os
 import re
 import sys
 from collections import Counter, defaultdict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
@@ -192,13 +192,26 @@ def select_targets(rows):
     return out
 
 
+# SYS-111 (#287): a write path refuses to start its destructive step with less time than this
+# before its deadline; it would delete everything it targets and then stop at once.
+MIN_RUN_MINUTES = 15
+
+
 def parse_until(value, now=None):
-    """'HH:MM' (local time, today) -> datetime, or None. A deadline already past means 'stop now'."""
+    """'HH:MM' (local time) -> the next such time: today if still ahead, otherwise tomorrow; None
+    without a value. SYS-111 (#287): it used to mean today even when passed, so an evening run
+    with --until 06:15 stopped at once, after its deletes."""
     if not value:
         return None
     hour, minute = (int(x) for x in value.split(":"))
     now = now or datetime.now()
-    return now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    deadline = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    return deadline if deadline > now else deadline + timedelta(days=1)
+
+
+def too_close(deadline, now=None) -> bool:
+    """SYS-111: True when a run with this deadline must not start its destructive step."""
+    return deadline is not None and deadline - (now or datetime.now()) < timedelta(minutes=MIN_RUN_MINUTES)
 
 
 def _crawl_running(session):
@@ -331,6 +344,10 @@ def apply_source(args, client=None, make_repo=None) -> int:
 
 def _apply_locked(args, source, client, make_repo) -> int:
     dirs = _faiss_dirs()
+    if not args.rechunk_only and too_close(parse_until(args.until)):
+        logger.error("--until %s is less than %d minutes away; refusing before any backup or delete (SYS-111)",
+                     args.until, MIN_RUN_MINUTES)
+        return 2
     with client.get_session() as session:
         logger.info("database: %s", session.execute(text("SELECT current_database()")).scalar())
         if _crawl_running(session):

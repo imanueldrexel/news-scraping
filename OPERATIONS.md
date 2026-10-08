@@ -230,10 +230,10 @@ venv\Scripts\python.exe scripts\repair_boilerplate_bodies.py --apply --source DE
 
 What it does, in order, holding the run lock throughout: back up `NEWS_L1`/`NEWS_L2` and the rows about to change to `backups/sys73_<SOURCE>_<stamp>/` (about 2.1 GB; delete it once the source is verified); delete the changed articles' vectors from both indexes (one atomic, generation-checked save each); one SQL transaction that deletes their entity mentions (those articles are reset for extraction and re-extracted by the nightly job), deletes their chunk rows and writes the cleaned text; re-chunk and re-embed them from the stored text, `--block` articles per FAISS flush; recompute the counters of the entities that lost mentions (SYS-20). A telegram line reports the result.
 
-- **When:** only when no crawl, newsletter or extraction is due. The crawls hold the lock from 07:00 and 19:00 for up to 4 h, the newsletter job is at 12:00 and the extraction at 21:00 (it waits up to 90 min for the lock), so the free windows are about 02:00-06:30 and 08:30-11:30. Pass `--until HH:MM` so no new block starts after that time; the 12:00 newsletter exits 2 if the lock is held.
+- **When:** only when no crawl, newsletter or extraction is due. The crawls hold the lock from 07:00 and 19:00 for up to 4 h, the newsletter job is at 12:00 and the extraction at 21:00 (it waits up to 90 min for the lock), so the free windows are about 02:00-06:30 and 08:30-11:30. Pass `--until HH:MM` so no new block starts after that time; the 12:00 newsletter exits 2 if the lock is held. `--until` is the **next** HH:MM: `--until 06:15` given at 20:00 means tomorrow 06:15. A deadline less than 15 minutes away (`MIN_RUN_MINUTES`) is refused with exit 2 before the backup and the deletes. SYS-111 (#287): before that fix it meant today's 06:15, and an evening run deleted 358,398 L2 rows, then stopped at once.
 - **Cost:** about 0.25 s per article, a 5 min SQL step per 10,000 articles and 1-2 min for the backup: DETIK (10,413 articles, 56,858 chunk rows) took 44 minutes on 2026-10-05.
 - **Interrupted or stopped at the deadline (exit 3):** the rewritten articles have no chunks yet and nothing else is inconsistent; `--apply --source NAME --rechunk-only` finishes it (`scripts/backfill_orphan_chunks.py --website NAME` does the same).
-- **Refuses (exit 2)** while a crawl holds the run lock or a crawl_log row is `started` in the last 4 h. It is idempotent: a second run finds no article whose cleaned text differs.
+- **Refuses (exit 2)** while a crawl holds the run lock, while a crawl_log row is `started` in the last 4 h, or when `--until` is less than 15 minutes away. It is idempotent: a second run finds no article whose cleaned text differs.
 - **Verify a source:** the dry run for it shows 0 changed; `scripts\check_store_consistency.py` is all zero; the source's L2 chunk rows equal its vectors in `NEWS_L2` with no NULL `embedding_id`; a query for the chrome text (`ADVERTISEMENT SCROLL TO CONTINUE WITH CONTENT`) returns fewer chrome chunks. DETIK, measured: chrome chunks in the top 20 for that query 10 -> 3, for `Lihat Juga : Video detikFinance` 4 -> 0; 19 remaining pattern hits are ordinary prose ("kami melihat juga").
 - **Restore:** copy the backup's `L1`/`L2` directories back over `NEWS_L1`/`NEWS_L2` and restore the rows from `rows.json` (articles' old text, chunk rows, entity mentions); do this only with the run lock held.
 
@@ -257,7 +257,7 @@ venv\Scripts\python.exe scripts\rechunk_stale_chunks.py --apply --until 11:30
 5. Re-attach every detached mention to its article's new L1 chunk.
 
 Exits:
-- 2 while a crawl holds the run lock or a crawl_log row is `started`;
+- 2 while a crawl holds the run lock or a crawl_log row is `started`, or when `--until` is less than 15 minutes away (nothing touched, SYS-111);
 - 3 at the `--until` deadline: run it again, and steps 4-5 pick up articles without chunks and mentions without a chunk.
 
 The same windows as the SYS-73 repair apply.
@@ -291,7 +291,7 @@ The L2 chunks became windows of at most 80 words (overlap 20), because MiniLM em
 venv\Scripts\python.exe scripts\backup_db.py
 venv\Scripts\python.exe scripts\migrate.py                       # DBT-64's indexes first: chunk deletes check the mention FK
 venv\Scripts\python.exe scripts\rechunk_stale_chunks.py --all    # dry run: articles, L2 rows before -> after
-venv\Scripts\python.exe scripts\rechunk_stale_chunks.py --all --apply --until 06:15
+venv\Scripts\python.exe scripts\rechunk_stale_chunks.py --all --apply --until 06:15   # the NEXT 06:15 (SYS-111)
 venv\Scripts\python.exe scripts\rechunk_stale_chunks.py --apply --resume --until 11:30   # if it stopped (exit 3)
 ```
 

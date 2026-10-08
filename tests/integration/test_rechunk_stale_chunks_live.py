@@ -214,15 +214,33 @@ class TestRechunkToTheEncoderWindowLive:
             assert sum(1 for _ in f) == 2, "the two deleted L2 rows are in the backup"
 
     def test_a_stopped_run_is_finished_by_resume_without_a_new_backup(self, client, env, monkeypatch, scripts):
+        import functools
+        from datetime import datetime, timedelta
         long_ = _article(client, LONG)
         _store_as_production_did(client, monkeypatch)
         before = _snapshot(client, long_)
-        assert scripts.rechunk.apply(_args(all=True, until="00:00"), client=client) == 3
+        rechunk = scripts.sys73.rechunk
+        monkeypatch.setattr(scripts.sys73, "rechunk", functools.partial(rechunk, now=lambda: datetime.max))
+        later = (datetime.now() + timedelta(hours=2)).strftime("%H:%M")
+        assert scripts.rechunk.apply(_args(all=True, until=later), client=client) == 3
+        monkeypatch.setattr(scripts.sys73, "rechunk", rechunk)
         assert _rows(client, long_, 2) == [], "stopped after the deletes, before the re-chunk"
         assert scripts.rechunk.apply(_args(resume=True), client=client) == 0
         assert max(r.token_count for r in _assert_l2_consistent(client, long_)) <= 80
         assert _snapshot(client, long_) == before
         assert len(os.listdir(env.backups)) == 1, "--resume takes no backup"
+
+    def test_a_deadline_too_close_refuses_before_the_backup_and_the_deletes(self, client, env, monkeypatch, scripts):
+        """SYS-111 (#287): `--until` under MIN_RUN_MINUTES away is exit 2 with nothing touched. The
+        2026-10-08 run read 06:15 as already past, deleted 358,398 L2 rows, then stopped (exit 3)."""
+        from datetime import datetime, timedelta
+        long_ = _article(client, LONG)
+        _store_as_production_did(client, monkeypatch)
+        before = _rows(client, long_, 2), _vector_ids(2, long_)
+        soon = (datetime.now() + timedelta(minutes=scripts.sys73.MIN_RUN_MINUTES - 5)).strftime("%H:%M")
+        assert scripts.rechunk.apply(_args(all=True, until=soon), client=client) == 2
+        assert (_rows(client, long_, 2), _vector_ids(2, long_)) == before
+        assert not os.path.isdir(env.backups) or os.listdir(env.backups) == [], "no backup taken"
 
     def test_the_dry_run_writes_nothing(self, client, env, monkeypatch, scripts, capsys):
         long_ = _article(client, LONG)

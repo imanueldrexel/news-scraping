@@ -54,6 +54,31 @@ class TestParseUntil:
         now = datetime(2026, 10, 5, 8, 15, 42)
         assert repair.parse_until("11:30", now=now) == datetime(2026, 10, 5, 11, 30)
 
-    def test_a_past_deadline_stops_everything(self, repair):
-        now = datetime(2026, 10, 5, 12, 0)
-        assert repair.parse_until("11:30", now=now) < now
+    def test_a_time_already_past_today_means_tomorrow(self, repair):
+        """SYS-111 (#287): `--until 06:15` given at 20:04 is tomorrow morning, not this morning."""
+        now = datetime(2026, 10, 8, 20, 4)
+        assert repair.parse_until("06:15", now=now) == datetime(2026, 10, 9, 6, 15)
+
+    def test_the_current_minute_is_tomorrow(self, repair):
+        now = datetime(2026, 10, 8, 11, 30)
+        assert repair.parse_until("11:30", now=now) == datetime(2026, 10, 9, 11, 30)
+
+
+class TestTooClose:
+    """SYS-111: a write path must not start deleting with less than MIN_RUN_MINUTES to run."""
+
+    def test_no_deadline_is_never_too_close(self, repair):
+        assert not repair.too_close(None)
+
+    def test_inside_the_margin(self, repair):
+        now = datetime(2026, 10, 8, 6, 1)
+        assert repair.too_close(repair.parse_until("06:15", now=now), now=now)
+
+    def test_at_the_margin_it_may_start(self, repair):
+        now = datetime(2026, 10, 8, 6, 0)
+        assert repair.MIN_RUN_MINUTES == 15
+        assert not repair.too_close(repair.parse_until("06:15", now=now), now=now)
+
+    def test_the_evening_run_that_lost_its_l2_may_start(self, repair):
+        now = datetime(2026, 10, 8, 20, 4)
+        assert not repair.too_close(repair.parse_until("06:15", now=now), now=now)
