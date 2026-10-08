@@ -242,6 +242,15 @@ class TestRechunkToTheEncoderWindowLive:
         assert (_rows(client, long_, 2), _vector_ids(2, long_)) == before
         assert not os.path.isdir(env.backups) or os.listdir(env.backups) == [], "no backup taken"
 
+    def test_a_time_already_past_today_is_tomorrow_and_the_run_finishes(self, client, env, monkeypatch, scripts):
+        """The 2026-10-08 incident: `--until 06:15` at 20:04. A minute ago means tomorrow, so it runs to the end."""
+        from datetime import datetime, timedelta
+        long_ = _article(client, LONG)
+        _store_as_production_did(client, monkeypatch)
+        a_minute_ago = (datetime.now() - timedelta(minutes=1)).strftime("%H:%M")
+        assert scripts.rechunk.apply(_args(all=True, until=a_minute_ago), client=client) == 0
+        assert max(r.token_count for r in _assert_l2_consistent(client, long_)) <= 80
+
     def test_the_dry_run_writes_nothing(self, client, env, monkeypatch, scripts, capsys):
         long_ = _article(client, LONG)
         _store_as_production_did(client, monkeypatch)
