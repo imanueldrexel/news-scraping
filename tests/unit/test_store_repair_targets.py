@@ -77,3 +77,45 @@ class TestSettleTargets:
                 self._row(5, "https://kumparan.com/TDA/e", status="rejected_filter", article=False, chunks=True)]
         targets = settle.select_targets(rows, KumparanCrawler().out_of_scope_reason)
         assert [r.sitemap_id for r, _ in targets] == [2, 3, 5], "a settled row without chunks is left alone"
+
+
+class TestGroupedRechunk:
+    """SYS-109: the corpus re-chunk embeds many articles per save_chunk_data call; a failed group is
+    saved again article by article, so one bad article fails alone."""
+
+    @staticmethod
+    def _rows(n):
+        return [SimpleNamespace(sitemap_id=i, extracted_text=_words(f"a{i}x", 30), writer=[], headline="h",
+                                sources="DETIK", category="ekonomi", posted_at=20261008) for i in range(1, n + 1)]
+
+    @staticmethod
+    def _repo(bad=()):
+        calls = []
+
+        def save(chunks):
+            ids = sorted({c.sitemap_id for c in chunks})
+            calls.append(ids)
+            if set(ids) & set(bad):
+                raise RuntimeError("bad article")
+        return SimpleNamespace(save_chunk_data=save), calls
+
+    def test_articles_are_saved_in_groups(self):
+        from newscrawler.core.chunker import HierarchicalChunker
+        backfill = _load("backfill_orphan_chunks")
+        repo, calls = self._repo()
+        assert backfill.rechunk_articles(repo, HierarchicalChunker(), self._rows(5), group_size=3) == (5, 0, 0)
+        assert calls == [[1, 2, 3], [4, 5]]
+
+    def test_a_failed_group_is_retried_one_by_one(self):
+        from newscrawler.core.chunker import HierarchicalChunker
+        backfill = _load("backfill_orphan_chunks")
+        repo, calls = self._repo(bad={2})
+        assert backfill.rechunk_articles(repo, HierarchicalChunker(), self._rows(3), group_size=3) == (2, 0, 1)
+        assert calls == [[1, 2, 3], [1], [2], [3]]
+
+    def test_the_default_saves_each_article_alone(self):
+        from newscrawler.core.chunker import HierarchicalChunker
+        backfill = _load("backfill_orphan_chunks")
+        repo, calls = self._repo()
+        backfill.rechunk_articles(repo, HierarchicalChunker(), self._rows(2))
+        assert calls == [[1], [2]]

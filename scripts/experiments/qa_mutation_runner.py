@@ -1263,6 +1263,21 @@ M = [
   '            session["questions"] = session["questions"][-TURNS_KEPT:]\n', ''),
  ('sys104_query_thread_ignored', 'newscrawler/web/query_processor.py',
   'history=session_history if thread is None else thread)', 'history=session_history)'),
+ # SDE 2026-10-08: SYS-109 (chunks fit the encoder window)
+ ('sys109_old_max_back', 'newscrawler/core/constants.py',
+  'CHUNK_MAX_TOKENS = int(os.getenv("CHUNK_MAX_TOKENS", 80))', 'CHUNK_MAX_TOKENS = int(os.getenv("CHUNK_MAX_TOKENS", 450))'),
+ ('sys109_old_overlap_back', 'newscrawler/core/constants.py',
+  'CHUNK_OVERLAP_TOKENS = int(os.getenv("CHUNK_OVERLAP_TOKENS", 20))', 'CHUNK_OVERLAP_TOKENS = int(os.getenv("CHUNK_OVERLAP_TOKENS", 50))'),
+ ('sys109_old_min_back', 'newscrawler/core/constants.py',
+  'CHUNK_MIN_TOKENS = int(os.getenv("CHUNK_MIN_TOKENS", 40))', 'CHUNK_MIN_TOKENS = int(os.getenv("CHUNK_MIN_TOKENS", 80))'),
+ ('sys109_missing_l2_not_target', 'scripts/rechunk_stale_chunks.py',
+  '        if new and list(stored or []) != new:\n', '        if new and stored and list(stored) != new:\n'),
+ ('sys109_report_overlong_not_counted', 'scripts/rechunk_stale_chunks.py',
+  'for w in s if w > max_words),', 'for w in s if w > max_words * 9),'),
+ ('sys109_group_never_batches', 'scripts/backfill_orphan_chunks.py',
+  '        if len(group) >= group_size:\n', '        if True:\n'),
+ ('sys109_failed_group_not_retried', 'scripts/backfill_orphan_chunks.py',
+  '            if len(group) == 1:\n                logger.error', '            if True:\n                logger.error'),
 ]
 only = sys.argv[1:]
 # The tests each mutant runs (default: all of tests/unit). QA_MUTANT_TESTS narrows it to the files that
