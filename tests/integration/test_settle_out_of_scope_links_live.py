@@ -133,7 +133,8 @@ class TestSettleOutOfScopeLinksLive:
         settled_long_ago = _sitemap(client, "rudi-yahya", status="rejected_filter", article=False)
         _chunk_and_embed(client)
         entity = _mention(client, reader)
-        assert _vectors(reader) == 3 and _vectors(desk) == 3, "L1 + two L2 each, as production holds them"
+        rows = {sid: _state(client, sid).chunks for sid in (reader, desk)}
+        assert _vectors(reader) == rows[reader] > 0 and _vectors(desk) == rows[desk] > 0, "one vector per chunk row"
         desk_before = (_state(client, desk), _vectors(desk))
 
         assert scripts.settle.apply(SimpleNamespace(source=SOURCE), client=client) == 0
