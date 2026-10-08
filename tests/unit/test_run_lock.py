@@ -237,6 +237,8 @@ WRITE_PATHS = [
     ("run_scheduled_newsletter", []),
     ("run_scheduled_extraction", []),
     ("repair_boilerplate_bodies", ["--apply", "--source", "DETIK"]),
+    ("rechunk_stale_chunks", ["--apply"]),
+    ("settle_out_of_scope_links", ["--apply", "--source", "KUMPARAN"]),
 ]
 
 
@@ -254,7 +256,9 @@ def _live_foreign_pid():
 # chokepoint alone missed three scripts that reach it through the datasource,
 # the repository or the crawl service.
 FAISS_WRITER_MARKERS = ("_atomic_save_local", "ChunkFAISSDatasource", "DataFlowRepositoryImpl", "load_index",
-                        "init_crawler", "process_event")
+                        "init_crawler", "process_event",
+                        # SYS-105/SRC-60: a repair that writes through the SYS-73 script's helpers
+                        "import repair_boilerplate_bodies")
 # It takes the lock itself; its worker is the lock owner's child.
 LOCK_OWNER = "run_scheduled_crawl.py"
 

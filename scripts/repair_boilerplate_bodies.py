@@ -233,13 +233,14 @@ def _faiss_dirs():
     return cfd.VECTOR_DB_NAME_L1, cfd.VECTOR_DB_NAME_L2
 
 
-def backup(client, source, targets, dirs, stamp):
-    """FAISS directories and the rows about to change, under backups/sys73_<source>_<stamp>/."""
+def backup(client, source, targets, dirs, stamp, tag="sys73"):
+    """FAISS directories and the rows about to change, under backups/<tag>_<source>_<stamp>/.
+    `targets`: (sitemap_id, anything) pairs. Shared by the SYS-105 / SRC-60 repairs (their tags)."""
     import shutil
     free_gb = shutil.disk_usage(BACKUP_DIR if os.path.isdir(BACKUP_DIR) else ROOT).free / 1e9
     if free_gb < MIN_FREE_GB_FOR_BACKUP:
         raise RuntimeError("only %.1f GB free; the backup needs about %d" % (free_gb, MIN_FREE_GB_FOR_BACKUP))
-    path = os.path.join(BACKUP_DIR, "sys73_%s_%s" % (source, stamp))
+    path = os.path.join(BACKUP_DIR, "%s_%s_%s" % (tag, source, stamp))
     for db in dirs:
         shutil.copytree(db, os.path.join(path, os.path.basename(db.rstrip("/\\"))))
     ids = [sid for sid, _ in targets]
