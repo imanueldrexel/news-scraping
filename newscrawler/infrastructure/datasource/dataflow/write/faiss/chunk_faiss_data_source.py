@@ -398,6 +398,16 @@ class ChunkFAISSDatasource:
             })
         return hits
 
+    def similarity(self, query_text: str, texts: List[str]) -> List[float]:
+        """SYS-106 (#276): each text's similarity to the query on search_l2's `semantic_score`
+        scale, for a paragraph the keyword search found and FAISS did not return. The vectors are
+        unit-normalised, so the cosine is the dot product (= 1 - d^2/2 for search_l2's distance)."""
+        if not texts:
+            return []
+        import numpy as np
+        vectors = np.asarray(self.embedding_model.embed_documents([query_text] + list(texts)), dtype="float32")
+        return [max(0.0, float(s)) for s in vectors[1:] @ vectors[0]]
+
     @staticmethod
     def _get_existing_embedding_ids(vs: FAISS) -> Dict[Tuple[int, int, int], str]:
         """Maps (sitemap_id, chunk_level, chunk_index) -> the docstore key (embedding_id)

@@ -163,13 +163,13 @@ def _refresh_faiss_if_stale() -> None:
         _reload_lock.release()
 
 
-def _retrieve(question: str, filters) -> list:
+def _retrieve(question: str, filters, history: list) -> list:
     """DBT-15 (#50): the sync entry points handed to run_in_threadpool. _get_processor()
     itself must run inside the threadpool too -- calling it before the dispatch would block
     the event loop for the full model/index load if the warm-up has not finished."""
     processor = _get_processor()
     _refresh_faiss_if_stale()
-    return processor.retrieve(question, filters)
+    return processor.retrieve(question, filters, history=history)
 
 
 def _answer(question: str, hits: list, history: list) -> AnswerResult:
@@ -230,14 +230,14 @@ async def api_query_form(
     """Step one of a turn (ADR-005): find the articles and render the question with its
     sources; the answer placeholder then asks /api/answer/{turn_id}. The search box sends
     no session id, so it always starts a new conversation; the follow-up form sends one
-    (SYS-97)."""
+    (SYS-97), and the follow-up is retrieved with the conversation's questions (SYS-104)."""
     question = query.strip()
     filters = web_filters.parse(topic, source, rentang, date_from, date_to)
     context = {"question": question, "filters": filters, "cards": [], "result": None,
                "notice": _question_notice(query), "session_id": session_id or None, "turn_id": "notice"}
     if context["notice"] is None:
         sid = session_id or _sessions.new_session_id()
-        hits = await run_in_threadpool(_retrieve, question, filters)
+        hits = await run_in_threadpool(_retrieve, question, filters, _sessions.get_history(session_id))
         turn = _turns.put(question, sid, hits)
         context.update(session_id=sid, turn_id=turn.turn_id, cards=[card(h["n"], h) for h in hits])
     return templates.TemplateResponse(request, "_turn.html", context)

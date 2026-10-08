@@ -1,9 +1,10 @@
-"""Hybrid retrieval and the answer for the search page (ADR-005).
+"""Hybrid retrieval and the answer for the search page (ADR-005, ADR-007).
 
 `retrieve` finds the articles: FAISS (L2 paragraphs) and Postgres full-text,
 merged per article, given their headline / link / portal / date / topic from
 the database (SYS-92: FAISS metadata is neither the topic nor always the right
-date, SYS-91), filtered (SYS-100), re-ranked, cut at the relevance floor.
+date, SYS-91), filtered (SYS-100), scored on both signals (SYS-106), re-ranked,
+cut at the relevance floor. A follow-up is retrieved with the thread (SYS-104).
 
 `answer` writes the answer through the shared Summarizer (SYS-98) and returns a
 state, never an error as text (SYS-94): `ok`, `unavailable` (no provider, a
@@ -30,6 +31,7 @@ from newscrawler.core.constants import (
     RAG_MIN_KEYWORD_COVERAGE,
     RAG_MIN_SEMANTIC_SCORE,
     RAG_RECENCY_WEIGHT,
+    RAG_RECENT_WEIGHT,
     RAG_SEMANTIC_WEIGHT,
     RAG_TOP_K,
 )
@@ -43,11 +45,19 @@ from newscrawler.web.filters import Filters
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
-SEARCH_K = 20               # paragraphs per retriever without a filter
+SEARCH_K = 20               # paragraphs of the keyword half
+# SYS-107 (#277): FAISS paragraphs without a filter. A daily story (gold, rupiah) has hundreds of
+# near-identical paragraphs, and the 20 most similar were an arbitrary, often week-old, slice.
+SEMANTIC_K = 100
+# SYS-105 (#275): a matched paragraph shorter than this is a sign-off, a caption or a credit line,
+# never an answer; and a vector of a few words lies near every question (a "hub").
+MIN_PARAGRAPH_WORDS = 15
+FOLLOWUP_CONTEXT_TURNS = 2  # SYS-104 (#274): a follow-up is retrieved with this many previous questions
 SNIPPET_CHARS = 280
 USAGE_PREFIX = "web:"       # api_usage_log key of the page's calls: never the extraction's own key
 
 OK, UNAVAILABLE, FAILED, NO_HITS = "ok", "unavailable", "failed", "no_hits"
+SEMANTIC, KEYWORD, BOTH = "semantic", "keyword", "both"     # which retriever found an article
 _FROM_CONFIG = object()
 
 
@@ -68,6 +78,38 @@ def posted_date(value) -> Optional[date]:
         return datetime.strptime(str(value)[:8], "%Y%m%d").date()
     except (TypeError, ValueError):
         return None
+
+
+def retrieval_text(question: str, history: Sequence[dict] = ()) -> str:
+    """SYS-104 (#274): what a turn is retrieved on. A follow-up is often elliptical ("Berapa target
+    pertumbuhannya tahun depan?"): its own words name the wrong subject or none. It is retrieved
+    with the thread's last questions, newest first. Its own words come first, so they lead the
+    keyword terms and survive the encoder's length cut. Without history (the search box, the
+    first turn) a question is retrieved on its own text."""
+    previous = [t["question"].strip() for t in history if (t.get("question") or "").strip()]
+    return " ".join([question.strip()] + previous[::-1][:FOLLOWUP_CONTEXT_TURNS])
+
+
+def substantial(hits: List[dict]) -> List[dict]:
+    """SYS-105: the hits whose matched paragraph is long enough to answer anything."""
+    return [h for h in hits if len((h.get("text_content") or "").split()) >= MIN_PARAGRAPH_WORDS]
+
+
+def recency(d: Optional[date], today: date, horizon: Optional[int] = None) -> float:
+    """In [0, 1]. By default a slow fade, 0.1 a week. For a question that asks for recent news
+    (SYS-107) it halves at the question's horizon (keywords.recency_horizon: 1 day for "hari ini"),
+    so today's report beats last week's near-copy. An undated article sits in the middle."""
+    if d is None:
+        return 0.5
+    days = max(0, (today - d).days)
+    return 1.0 / (1 + days / horizon) if horizon else max(0.0, 1.0 - days * 0.1 / 7)
+
+
+def passes_floor(hit: dict) -> bool:
+    """Relevant enough to show: similar enough, or covering most of the question's weighted words
+    (ADR-006). Below both, an off-topic question gets nothing rather than its nearest neighbours."""
+    return (hit.get("semantic_score", 0.0) >= RAG_MIN_SEMANTIC_SCORE
+            or hit.get("keyword_score", 0.0) >= RAG_MIN_KEYWORD_COVERAGE)
 
 
 def safe_link(link: Optional[str]) -> str:
@@ -126,31 +168,50 @@ class QueryProcessor:
 
     # ── Retrieval ────────────────────────────────────────────────────────────
 
-    def retrieve(self, question: str, filters: Optional[Filters] = None, today: Optional[date] = None) -> List[dict]:
-        """The relevant articles, best first, at most RAG_TOP_K, each with `n` (1-based)."""
+    def retrieve(self, question: str, filters: Optional[Filters] = None, today: Optional[date] = None,
+                 history: Sequence[dict] = ()) -> List[dict]:
+        """The relevant articles, best first, at most RAG_TOP_K, each with `n` (1-based). `history` is
+        the conversation so far: a follow-up is retrieved with its previous questions (SYS-104)."""
         filters = filters or Filters()
         today = today or date.today()
         start = time.monotonic()
-        k = RAG_FILTERED_K if filters.active else SEARCH_K
-        semantic_hits = self.faiss_ds.search_l2(question, k=k)
-        fts_hits = self._fts_search(question, SEARCH_K, filters, today)
+        ranked, counts = self.candidates(question, filters, today, history)
+        relevant = [h for h in ranked if passes_floor(h)][:RAG_TOP_K]
+        for n, hit in enumerate(relevant, 1):
+            hit["n"] = n
+        logger.info(f"rag retrieve ms={int((time.monotonic() - start) * 1000)} semantic={counts['semantic']} "
+                    f"fts={counts['fts']} articles={len(ranked)} kept={len(relevant)} "
+                    f"keyword_only={sum(1 for h in relevant if h.get('origin') == KEYWORD)} "
+                    f"horizon={counts['horizon']} followup={bool(history)} filters={filters.describe()}")
+        return relevant
+
+    def candidates(self, question: str, filters: Filters, today: date, history: Sequence[dict] = ()):
+        """Every candidate article, scored on both signals and ranked, before the floor and the cut
+        (ADR-007). Returns (ranked hits, {"semantic", "fts", "horizon"} for the log)."""
+        text_ = retrieval_text(question, history)
+        horizon = keywords.recency_horizon(text_)
+        kq = self._keyword_query(text_)
+        semantic_hits = substantial(self.faiss_ds.search_l2(text_, k=RAG_FILTERED_K if filters.active else SEMANTIC_K))
+        fts_hits = (substantial(self._fts_search(kq, SEARCH_K, filters, today, horizon is not None))
+                    if kq is not None else [])
         merged = self._attach_metadata(self._merge(semantic_hits, fts_hits))
         if filters.active:
             merged = self._apply_filters(merged, filters, today)
-        ranked = self._re_rank(merged, today)
-        # Drop weakly relevant hits, so an off-topic question returns nothing rather than the
-        # nearest (but irrelevant) neighbours. A paragraph covering most of the question's
-        # weighted words survives the semantic floor (ADR-006).
-        relevant = [h for h in ranked
-                    if h.get("semantic_score", 0.0) >= RAG_MIN_SEMANTIC_SCORE
-                    or h.get("keyword_score", 0.0) >= RAG_MIN_KEYWORD_COVERAGE][:RAG_TOP_K]
-        for n, hit in enumerate(relevant, 1):
-            hit["n"] = n
-        logger.info(f"rag retrieve ms={int((time.monotonic() - start) * 1000)} semantic={len(semantic_hits)} "
-                    f"fts={len(fts_hits)} kept={len(relevant)} "
-                    f"kept_by_keyword={sum(1 for h in relevant if h.get('keyword_score', 0.0) > 0)} "
-                    f"filters={filters.describe()}")
-        return relevant
+        self._complete_scores(text_, kq, merged)
+        return self._re_rank(merged, today, horizon), {"semantic": len(semantic_hits), "fts": len(fts_hits),
+                                                       "horizon": horizon}
+
+    def _keyword_query(self, text_: str) -> Optional["keywords.KeywordQuery"]:
+        """The question's weighted words (ADR-006), or None: no content word, every word a typo, or
+        the df lookup failed (the semantic half still answers)."""
+        try:
+            question_terms = keywords.terms(text_)
+            if not question_terms:
+                return None
+            return keywords.KeywordQuery.build(question_terms, self.keyword_df.get([t.word for t in question_terms]))
+        except Exception as e:  # noqa: BLE001 -- keyword search is one of two retrievers
+            logger.warning(f"Keyword query failed: {type(e).__name__}: {e}")
+            return None
 
     _FTS_FILTERS = (
         ("topic", "AND a.topic = :topic"),
@@ -159,17 +220,12 @@ class QueryProcessor:
         ("to_day", "AND s.posted_at <= :to_day"),
     )
 
-    def _fts_search(self, query: str, k: int, filters: Filters, today: date) -> List[dict]:
+    def _fts_search(self, kq: "keywords.KeywordQuery", k: int, filters: Filters, today: date,
+                    recent: bool = False) -> List[dict]:
         """The paragraphs holding the question's rare words, by IDF-weighted coverage (ADR-006).
         `keyword_score` is that coverage, in [0, 1]."""
         try:
-            question_terms = keywords.terms(query)
-            if not question_terms:
-                return []
-            kq = keywords.KeywordQuery.build(question_terms, self.keyword_df.get([t.word for t in question_terms]))
-            if kq is None:
-                return []
-            sql, params = self._fts_sql(kq, k, filters, today)
+            sql, params = self._fts_sql(kq, k, filters, today, recent)
             with self.client.get_session() as session:
                 rows = session.execute(sql, params).fetchall()
             return [{"chunk_id": row.chunk_id, "text_content": row.text_content, "sitemap_id": row.sitemap_id,
@@ -178,16 +234,28 @@ class QueryProcessor:
             logger.warning(f"FTS search failed: {type(e).__name__}: {e}")
             return []
 
-    @classmethod
-    def _fts_sql(cls, kq: "keywords.KeywordQuery", k: int, filters: Filters, today: date):
-        """The keyword query as fixed SQL fragments; every word and weight is a bind parameter."""
-        start_day, end_day = filters.bounds(today)
-        params = {"k": k, "anchors": " | ".join(keywords.lexeme(w) for w in kq.anchors), "need": kq.need}
-        has = {}
+    @staticmethod
+    def _word_tests(kq: "keywords.KeywordQuery", vector: str):
+        """(coverage SQL, {word: SQL that is 1 when `vector` holds it}, bind parameters). `vector` is a
+        fixed SQL expression; every word and weight is a bind parameter."""
+        params, has = {}, {}
         for i, w in enumerate(kq.words):
             params[f"t{i}"], params[f"w{i}"] = keywords.lexeme(w), kq.weights[w]
-            has[w] = f"(c.fts_vector @@ to_tsquery('simple', :t{i}))::int"
+            has[w] = f"({vector} @@ to_tsquery('simple', :t{i}))::int"
         score = " + ".join(f"CAST(:w{i} AS float8) * {has[w]}" for i, w in enumerate(kq.words))
+        return score, has, params
+
+    @classmethod
+    def _fts_sql(cls, kq: "keywords.KeywordQuery", k: int, filters: Filters, today: date, recent: bool = False):
+        """The keyword query as fixed SQL fragments; every word and weight is a bind parameter.
+
+        Equal coverage is broken by `ts_rank_cd` (ADR-006 measured newest-first there: it let
+        off-topic recent paragraphs in). For a question that asks for the latest news (SYS-107)
+        the newest of the paragraphs that hold every word come first: a daily story has hundreds
+        of them and the rank among them is arbitrary."""
+        start_day, end_day = filters.bounds(today)
+        score, has, params = cls._word_tests(kq, "c.fts_vector")
+        params.update({"k": k, "anchors": " | ".join(keywords.lexeme(w) for w in kq.anchors), "need": kq.need})
         rule = f"AND ({' + '.join(has[w] for w in kq.anchors)}) >= :need"
         if kq.names:
             rule += f" AND ({' + '.join(has[w] for w in kq.names)}) >= 1"
@@ -198,6 +266,7 @@ class QueryProcessor:
         where = " ".join(sql for name, sql in cls._FTS_FILTERS if filter_values[name] is not None)
         params.update({name: v for name, v in filter_values.items() if v is not None})
         join = "LEFT JOIN articles a ON a.sitemap_id = c.sitemap_id" if filters.topic else ""
+        newest = f"CASE WHEN ({score}) > 0.9999 THEN s.posted_at END DESC NULLS LAST, " if recent else ""
         sql = text(f"""
             SELECT c.chunk_id, c.text_content, c.sitemap_id, ({score}) AS keyword_score
             FROM chunks c
@@ -207,19 +276,56 @@ class QueryProcessor:
               AND c.chunk_level = 2
               {rule}
               {where}
-            ORDER BY keyword_score DESC, ts_rank_cd(c.fts_vector, to_tsquery('simple', :anchors)) DESC
+            ORDER BY keyword_score DESC, {newest}ts_rank_cd(c.fts_vector, to_tsquery('simple', :anchors)) DESC
             LIMIT :k
         """)
         return sql, params
 
+    def _coverage(self, kq: "keywords.KeywordQuery", texts: List[str]) -> List[float]:
+        """Each text's IDF-weighted coverage of the question (ADR-006's `keyword_score`), computed by
+        the same `to_tsvector('simple', ...)` that `chunks.fts_vector` stores. One round trip."""
+        score, _, params = self._word_tests(kq, "x.v")
+        params["texts"] = list(texts)
+        sql = text(f"""
+            SELECT x.i, ({score}) AS coverage
+            FROM (SELECT u.i, to_tsvector('simple', u.body) AS v
+                  FROM unnest(CAST(:texts AS text[])) WITH ORDINALITY AS u(body, i)) AS x
+            ORDER BY x.i
+        """)
+        with self.client.get_session() as session:
+            return [float(row.coverage) for row in session.execute(sql, params).fetchall()]
+
+    def _complete_scores(self, text_: str, kq: Optional["keywords.KeywordQuery"], hits: List[dict]) -> None:
+        """SYS-106 (#276): an article only one retriever found gets the other signal's score for its
+        own paragraph, so the re-rank compares like with like. A missing score used to count as 0:
+        a keyword-only hit scored at most 0.40 and never reached the five sources (0 of 95), and a
+        FAISS hit the keyword half had not returned lost its words' share. On a failure the
+        missing score stays 0, as before."""
+        keyword_only = [h for h in hits if h.get("origin") == KEYWORD]
+        if keyword_only:
+            try:
+                scores = self.faiss_ds.similarity(text_, [h.get("text_content") or "" for h in keyword_only])
+                for h, s in zip(keyword_only, scores):
+                    h["semantic_score"] = s
+            except Exception as e:  # noqa: BLE001 -- the hits keep their keyword score
+                logger.warning(f"Semantic score of keyword-only hits failed: {type(e).__name__}: {e}")
+        semantic_only = [h for h in hits if h.get("origin") == SEMANTIC]
+        if kq is not None and semantic_only:
+            try:
+                for h, c in zip(semantic_only, self._coverage(kq, [h.get("text_content") or "" for h in semantic_only])):
+                    h["keyword_score"] = c
+            except Exception as e:  # noqa: BLE001 -- the hits keep their semantic score
+                logger.warning(f"Keyword coverage of semantic-only hits failed: {type(e).__name__}: {e}")
+
     @staticmethod
     def _merge(semantic: List[dict], fts: List[dict]) -> List[dict]:
-        """One hit per article: its best paragraph from either retriever, both scores."""
+        """One hit per article: its best paragraph from either retriever, both scores, and which
+        retriever found it (`origin`: semantic / keyword / both)."""
         combined: dict = {}
         for hit in semantic:
             sid = hit.get("sitemap_id")
             if sid not in combined:
-                combined[sid] = dict(hit)
+                combined[sid] = dict(hit, origin=SEMANTIC)
                 combined[sid].setdefault("keyword_score", 0.0)
             else:
                 combined[sid]["semantic_score"] = max(combined[sid].get("semantic_score", 0.0),
@@ -227,11 +333,13 @@ class QueryProcessor:
         for hit in fts:
             sid = hit.get("sitemap_id")
             if sid not in combined:
-                combined[sid] = dict(hit)
+                combined[sid] = dict(hit, origin=KEYWORD)
                 combined[sid].setdefault("semantic_score", 0.0)
             else:
                 combined[sid]["keyword_score"] = max(combined[sid].get("keyword_score", 0.0),
                                                       hit.get("keyword_score", 0.0))
+                if combined[sid]["origin"] == SEMANTIC:
+                    combined[sid]["origin"] = BOTH
         return list(combined.values())
 
     def _attach_metadata(self, hits: List[dict]) -> List[dict]:
@@ -288,14 +396,21 @@ class QueryProcessor:
         return out
 
     @staticmethod
-    def _re_rank(hits: List[dict], today: Optional[date] = None) -> List[dict]:
+    def _re_rank(hits: List[dict], today: Optional[date] = None, horizon: Optional[int] = None) -> List[dict]:
+        """`horizon`: the question asks for recent news (SYS-107, ADR-007). Recency then weighs
+        RAG_RECENT_WEIGHT and halves at the horizon, but only for an article that is relevant by
+        meaning (semantic >= RAG_MIN_SEMANTIC_SCORE). A keyword match alone does not make today's
+        article the answer: 'Siapa Menteri Keuangan sekarang?' ranked a rice-aid story first."""
         today = today or date.today()
         for h in hits:
             d = h.get("posted_date") or posted_date(h.get("posted_at"))
-            recency = max(0.0, 1.0 - max(0, (today - d).days) * 0.1 / 7) if d else 0.5
+            semantic = h.get("semantic_score", 0.0)
+            if horizon is None:
+                fresh = recency(d, today) * RAG_RECENCY_WEIGHT
+            else:
+                fresh = recency(d, today, horizon) * RAG_RECENT_WEIGHT if semantic >= RAG_MIN_SEMANTIC_SCORE else 0.0
             # keyword_score is the IDF-weighted coverage, already in [0, 1] (ADR-006)
-            h["final_score"] = (h.get("semantic_score", 0.0) * RAG_SEMANTIC_WEIGHT
-                                + h.get("keyword_score", 0.0) * RAG_BM25_WEIGHT + recency * RAG_RECENCY_WEIGHT)
+            h["final_score"] = semantic * RAG_SEMANTIC_WEIGHT + h.get("keyword_score", 0.0) * RAG_BM25_WEIGHT + fresh
         return sorted(hits, key=lambda h: h["final_score"], reverse=True)
 
     # ── Answer ───────────────────────────────────────────────────────────────
@@ -361,7 +476,7 @@ class QueryProcessor:
 
     def query(self, question: str, session_history: Sequence[dict], filters: Optional[Filters] = None,
               today: Optional[date] = None) -> dict:
-        hits = self.retrieve(question, filters, today)
+        hits = self.retrieve(question, filters, today, history=session_history)
         result = self.answer(question, hits, session_history, today)
         return {
             "question": question,

@@ -85,11 +85,17 @@ class TestMergeShort:
         result = self.chunker._merge_short([exact, nxt])
         assert len(result) == 2
 
-    def test_MS04_long_then_short_stays_separate(self):
+    def test_MS04_long_then_short_tail_merges_backward(self):
+        """SYS-105 (#275): the last paragraph has nothing to merge forward into; a short one joins
+        the chunk before it instead of becoming its own (a "(jon)" chunk is a search hub)."""
         long_p = make_words(MAX_T)
         short_p = make_words(MIN_T - 1)
         result = self.chunker._merge_short([long_p, short_p])
-        assert len(result) == 2
+        assert result == [long_p + " " + short_p]
+
+    def test_MS04b_long_then_long_tail_stays_separate(self):
+        long_p, tail = make_words(MAX_T), make_words(MIN_T)
+        assert self.chunker._merge_short([long_p, tail]) == [long_p, tail]
 
     def test_MS05_short_then_long_merged(self):
         short_p = make_words(MIN_T - 1)
@@ -104,8 +110,36 @@ class TestMergeShort:
         n = MIN_T - 1
         paras = [make_words(n) for _ in range(5)]
         result = self.chunker._merge_short(paras)
-        # Each pair merges to >= MIN_T, triggering flush; result is [p0+p1, p2+p3, p4]
-        assert len(result) == 3
+        # Each pair merges to >= MIN_T, triggering flush; the short p4 left over joins p2+p3 (SYS-105)
+        assert len(result) == 2
+        assert result[1] == " ".join(paras[2:])
+
+
+class TestTrailingSignOff:
+    """SYS-105 (#275), through the public chunk(): an article ending in a sign-off gives no
+    one-word L2 chunk; the sign-off stays in the text, at the end of the last chunk."""
+
+    @staticmethod
+    def _chunk(paragraphs):
+        from newscrawler.domain.dtos.dataflow.details.news_details_dto import NewsDetailsDTO
+        news = NewsDetailsDTO(sitemap_id=1, extracted_text=paragraphs, reporter=[], meta_data={"title": "t"})
+        chunker = HierarchicalChunker(min_tokens=MIN_T, max_tokens=MAX_T, overlap_tokens=OVERLAP)
+        return [c for c in chunker.chunk(news) if c.chunk_level == 2]
+
+    @pytest.mark.parametrize("sign_off", ["(jon)", "--", "Editor: Theresa Sandra Desfika", "( )"])
+    def test_sign_off_is_not_its_own_chunk(self, sign_off):
+        body = [make_words(120), make_words(100), sign_off]
+        l2 = self._chunk(body)
+        assert [c.token_count for c in l2] == [120, 100 + _count(sign_off)]
+        assert l2[-1].text_content.endswith(sign_off) and l2[-1].is_last_chunk
+
+    def test_a_short_article_keeps_its_one_short_chunk(self):
+        l2 = self._chunk(["Rupiah ditutup menguat."])
+        assert [c.text_content for c in l2] == ["Rupiah ditutup menguat."]
+
+    def test_tail_over_max_is_split_without_a_fragment(self):
+        l2 = self._chunk([make_words(MAX_T), "(jon)"])
+        assert len(l2) == 2 and min(c.token_count for c in l2) > OVERLAP
 
 
 class TestChunkerConfigFromEnv:

@@ -110,7 +110,7 @@ class TestWebRefresh:
         ds.refresh_stale.side_effect = lambda: order.append("refresh")
         monkeypatch.setattr(web_app, "_get_processor", lambda: processor)
         monkeypatch.setattr(web_app, "FAISS_RELOAD_CHECK_S", 0)
-        web_app._retrieve("q", None)
+        web_app._retrieve("q", None, [])
         assert order == ["refresh", "retrieve"]
 
     def test_health_shows_what_this_process_searches(self, web):

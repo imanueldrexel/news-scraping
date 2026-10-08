@@ -63,7 +63,8 @@ class TestParse:
 
 
 def _hit(sid, topic, source="KONTAN", day=date(2026, 10, 5)):
-    return {"sitemap_id": sid, "topic": topic, "source": source, "posted_date": day, "semantic_score": 0.9}
+    return {"sitemap_id": sid, "topic": topic, "source": source, "posted_date": day, "semantic_score": 0.9,
+            "text_content": "Paragraf berita yang cukup panjang untuk menjadi sumber jawaban di halaman pencarian berita Indonesia ini."}
 
 
 class TestApplyFilters:
@@ -99,7 +100,7 @@ def _qp_with_rows(rows):
 class TestFtsSql:
     def test_filters_are_bind_parameters_in_fixed_fragments(self):
         qp, session = _qp_with_rows([])
-        qp._fts_search("rupiah", 20, f.Filters(topic="markets", source="KONTAN", days=7), TODAY)
+        qp._fts_search(qp._keyword_query("rupiah"), 20, f.Filters(topic="markets", source="KONTAN", days=7), TODAY)
         sql, params = str(session.execute.call_args.args[0]), session.execute.call_args.args[1]
         assert "a.topic = :topic" in sql and "s.sources = :source" in sql
         assert "s.posted_at >= :from_day" in sql and "s.posted_at <= :to_day" in sql
@@ -110,7 +111,7 @@ class TestFtsSql:
 
     def test_no_filter_no_join_no_where(self):
         qp, session = _qp_with_rows([])
-        qp._fts_search("rupiah", 20, f.Filters(), TODAY)
+        qp._fts_search(qp._keyword_query("rupiah"), 20, f.Filters(), TODAY)
         sql, params = str(session.execute.call_args.args[0]), session.execute.call_args.args[1]
         assert "articles" not in sql and ":topic" not in sql
         assert set(params) == {"k", "anchors", "need", "t0", "w0"}
@@ -118,7 +119,7 @@ class TestFtsSql:
     def test_a_failing_query_returns_no_hits(self):
         qp, session = _qp_with_rows([])
         session.execute.side_effect = RuntimeError("db down")
-        assert qp._fts_search("rupiah", 20, f.Filters(), TODAY) == []
+        assert qp._fts_search(qp._keyword_query("rupiah"), 20, f.Filters(), TODAY) == []
 
 
 class TestMetadata:
@@ -157,7 +158,7 @@ class TestRetrieve:
     def test_no_filter_searches_the_default_depth(self):
         qp = self._qp()
         qp.retrieve("q", f.Filters(), TODAY)
-        assert qp.faiss_ds.search_l2.call_args.kwargs["k"] == qp_mod.SEARCH_K
+        assert qp.faiss_ds.search_l2.call_args.kwargs["k"] == qp_mod.SEMANTIC_K
 
     def test_only_hits_in_the_topic_are_kept_and_numbered(self):
         qp = self._qp()

@@ -134,6 +134,12 @@ class HierarchicalChunker:
                 if buf:
                     result.append(buf)
                 buf = para
-        if buf:
+        # SYS-105 (#275): a short paragraph merges forward, so the last one has nothing to merge
+        # into and used to become its own chunk: a sign-off ("(jon)", "--", "Editor: X"). A vector
+        # of one or two words lies near every question and filled the search page's sources.
+        # It merges backward instead; only an article that is short as a whole keeps a short chunk.
+        if buf and result and _count(buf) < self.min_tokens:
+            result[-1] = result[-1] + " " + buf
+        elif buf:
             result.append(buf)
         return result or paragraphs

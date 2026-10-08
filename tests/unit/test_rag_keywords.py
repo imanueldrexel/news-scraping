@@ -175,6 +175,21 @@ class TestDocFrequency:
         assert dfq.get(["ojk", "harga"]) == {"ojk": 0.015, "harga": 0.08}
         assert len(calls) == n, "a cached word costs no query"
 
+    def test_a_word_not_yet_in_the_corpus_is_counted_again(self):
+        """SYS-108 (#278): 'danantara' asked at 09:00 before the crawl had 0 paragraphs; at 19:30,
+        after the crawl, it has 25, and the next question must see them (within the 24 h TTL)."""
+        now = [0.0]
+        counts = {"danantara": 0}
+        client, calls = _db(counts=counts)
+        dfq = DocFrequency(client, ttl_s=24 * 3600, clock=lambda: now[0])
+        assert dfq.get(["danantara"]) == {"danantara": 0.0}
+        counts["danantara"] = 25
+        now[0] = 10.5 * 3600
+        assert dfq.get(["danantara"]) == {"danantara": pytest.approx(0.025)}
+        n = len(calls)
+        assert dfq.get(["danantara"]) == {"danantara": pytest.approx(0.025)}
+        assert len(calls) == n, "a word that occurs is cached as before"
+
     def test_reloaded_after_ttl(self):
         now = [0.0]
         client, calls = _db(counts={"ojk": 15})
@@ -225,10 +240,14 @@ def _qp(df=None, rows=()):
     return qp, calls
 
 
+def _search(qp, question, k=20, filters=None, today=date(2026, 10, 7), recent=False):
+    return qp._fts_search(qp._keyword_query(question), k, filters or Filters(), today, recent)
+
+
 class TestFtsSearch:
     def test_question_words_are_bind_values_never_sql(self):
         qp, calls = _qp()
-        qp._fts_search(BI, 20, Filters(), date(2026, 10, 7))
+        _search(qp, BI)
         sql, params = calls[0]
         for word in ("keputusan", "bank", "indonesia", "bi-rate", "Apa", "soal"):
             assert word not in sql
@@ -240,7 +259,7 @@ class TestFtsSearch:
 
     def test_sql_shape(self):
         qp, calls = _qp()
-        qp._fts_search(BI, 20, Filters(), date(2026, 10, 7))
+        _search(qp, BI)
         sql = " ".join(calls[0][0].split())
         assert "plainto_tsquery" not in sql
         assert "c.fts_vector @@ to_tsquery('simple', :anchors)" in sql
@@ -248,15 +267,67 @@ class TestFtsSearch:
         assert "ORDER BY keyword_score DESC, ts_rank_cd(c.fts_vector, to_tsquery('simple', :anchors)) DESC" in sql
         # the name rule: one of the names must be present
         assert sql.count(">= 1") == 1
+        # DBT-62: paragraphs only; an L1 lead repeats the article's first two paragraphs
+        assert "AND c.chunk_level = 2" in sql
+
+    def test_asked_for_recent_the_newest_full_coverage_paragraphs_come_first(self):
+        """SYS-107 (#277): equal coverage is ordered by date when the question asks for the latest,
+        only among the paragraphs holding every word (ADR-006: newest-first over partial coverage
+        let off-topic paragraphs in), and by ts_rank_cd otherwise."""
+        qp, calls = _qp()
+        _search(qp, BI, recent=True)
+        sql = " ".join(calls[0][0].split())
+        order = sql[sql.index("ORDER BY"):]
+        assert order.startswith("ORDER BY keyword_score DESC, CASE WHEN (")
+        assert ") > 0.9999 THEN s.posted_at END DESC NULLS LAST, ts_rank_cd(" in order
+        _search(qp, BI, recent=False)
+        assert "s.posted_at END" not in calls[1][0]
+
+
+class TestCoverage:
+    """SYS-106 (#276): a FAISS hit the keyword half did not return gets its coverage, computed
+    as `chunks.fts_vector` is (to_tsvector('simple', ...)), with the same weights."""
+
+    def test_sql_binds_texts_words_and_weights(self):
+        qp, calls = _qp(rows=[SimpleNamespace(i=1, coverage=1.0), SimpleNamespace(i=2, coverage=0.25)])
+        kq = qp._keyword_query(BI)
+        assert qp._coverage(kq, ["BI-Rate ditahan", "bank lain"]) == [1.0, 0.25]
+        sql, params = calls[0]
+        flat = " ".join(sql.split())
+        assert "to_tsvector('simple', u.body)" in flat and "unnest(CAST(:texts AS text[])) WITH ORDINALITY" in flat
+        assert "x.v @@ to_tsquery('simple', :t" in flat and "ORDER BY x.i" in flat
+        assert params["texts"] == ["BI-Rate ditahan", "bank lain"]
+        assert sorted(v for k, v in params.items() if k.startswith("t") and k != "texts") == sorted(
+            ["'keputusan'", "'bank'", "'indonesia'", "'bi-rate'"])
+        assert "BI-Rate" not in sql and "bi-rate" not in sql
+
+
+class TestRecencyHorizon:
+    """SYS-107 (#277): how recent a question wants its news, in days."""
+
+    @pytest.mark.parametrize("question, days", [
+        ("Berapa harga emas Antam hari ini?", 1), ("Siapa Menkeu sekarang?", 1), ("IHSG saat ini?", 1),
+        ("Kenapa rupiah melemah pekan ini?", 3), ("Banjir dalam sepekan terakhir?", 3), ("KPK minggu ini", 3),
+        ("Bagaimana harga minyak dunia terbaru?", 7), ("kabar TERKINI KPK", 7),
+        ("Harga emas terbaru hari ini?", 1),        # the shortest horizon asked for wins
+    ])
+    def test_asks_for_recent(self, question, days):
+        assert keywords.recency_horizon(question) == days
+
+    @pytest.mark.parametrize("question", [
+        "Berapa harga emas Antam?", "Apa itu Danantara?", "Hari Buruh 2026", "kinerja bank", "", None,
+    ])
+    def test_does_not(self, question):
+        assert keywords.recency_horizon(question) is None
 
     def test_no_name_rule_without_names(self):
         qp, calls = _qp(df={"rupiah": 0.023, "melemah": 0.013})
-        qp._fts_search("kenapa rupiah melemah?", 20, Filters(), date(2026, 10, 7))
+        _search(qp, "kenapa rupiah melemah?")
         assert ">= 1" not in calls[0][0]
 
     def test_filters_still_bound(self):
         qp, calls = _qp()
-        qp._fts_search(BI, 20, Filters(topic="ekonomi_makro", source="KOMPAS", days=7), date(2026, 10, 7))
+        _search(qp, BI, filters=Filters(topic="ekonomi_makro", source="KOMPAS", days=7))
         sql, params = calls[0]
         assert "AND a.topic = :topic" in sql and "AND s.sources = :source" in sql
         assert params["topic"] == "ekonomi_makro" and params["source"] == "KOMPAS"
@@ -265,22 +336,28 @@ class TestFtsSearch:
     def test_rows_become_hits_with_keyword_score(self):
         row = SimpleNamespace(chunk_id=1, text_content="BI-Rate ditahan", sitemap_id=7, keyword_score=0.83)
         qp, _ = _qp(rows=[row])
-        hits = qp._fts_search(BI, 20, Filters(), date(2026, 10, 7))
+        hits = _search(qp, BI)
         assert hits == [{"chunk_id": 1, "text_content": "BI-Rate ditahan", "sitemap_id": 7,
                          "keyword_score": 0.83, "semantic_score": 0.0}]
 
     def test_only_stop_words_no_query(self):
         qp, calls = _qp()
-        assert qp._fts_search("apa itu yang ini?", 20, Filters(), date(2026, 10, 7)) == []
+        assert qp._keyword_query("apa itu yang ini?") is None
         assert calls == [] and not qp.keyword_df.get.called
 
     def test_no_word_occurs_no_query(self):
         qp, calls = _qp(df={})
-        assert qp._fts_search("xyzzy qwrtp", 20, Filters(), date(2026, 10, 7)) == []
+        assert qp._keyword_query("xyzzy qwrtp") is None
         assert calls == []
 
     def test_df_failure_drops_the_keyword_half(self, caplog):
         qp, calls = _qp()
         qp.keyword_df.get.side_effect = RuntimeError("db down")
-        assert qp._fts_search(BI, 20, Filters(), date(2026, 10, 7)) == []
+        assert qp._keyword_query(BI) is None
+        assert "Keyword query failed" in caplog.text
+
+    def test_a_failing_query_returns_no_hits(self, caplog):
+        qp, _ = _qp()
+        qp.client.get_session.side_effect = RuntimeError("db down")
+        assert _search(qp, BI) == []
         assert "FTS search failed" in caplog.text

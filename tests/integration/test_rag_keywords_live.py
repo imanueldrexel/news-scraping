@@ -73,7 +73,8 @@ def seeded():
 
 def _hits(client, question):
     qp = QueryProcessor(MagicMock(), client, summarizer=None, usage=MagicMock())
-    return qp._fts_search(question, 20, Filters(), TODAY)
+    kq = qp._keyword_query(question)
+    return [] if kq is None else qp._fts_search(kq, 20, Filters(), TODAY)
 
 
 def _by_key(ids, hits):
@@ -117,3 +118,27 @@ class TestDocFrequencyLive:
         assert df["zqputus"] == pytest.approx(4 / total)
         assert df["zqbank"] == pytest.approx(2 / total)
         assert df["zqtidakada"] == 0.0
+
+
+class TestCoverageLive:
+    """SYS-106 (#276): a FAISS hit the keyword half did not return is scored by `_coverage`, on the
+    paragraph's text. It must give the score the FTS SQL gives the same paragraph from the stored
+    `fts_vector`, or the two kinds of hits would not compare like with like."""
+
+    def test_coverage_of_a_text_equals_the_fts_score_of_that_paragraph(self, seeded):
+        client, ids = seeded
+        qp = QueryProcessor(MagicMock(), client, summarizer=None, usage=MagicMock())
+        question = "Apa kata Zqbank soal ZQRATE dan zqputus?"
+        kq = qp._keyword_query(question)
+        fts = {h["sitemap_id"]: h["keyword_score"] for h in qp._fts_search(kq, 20, Filters(), TODAY)}
+        keys = [k for k in ("all", "rate_and_word") if ids[k] in fts]
+        assert keys == ["all", "rate_and_word"]
+        got = qp._coverage(kq, [PARAGRAPHS[k] for k in keys])
+        assert got == [pytest.approx(fts[ids[k]]) for k in keys]
+
+    def test_a_text_without_the_words_covers_nothing_and_order_is_kept(self, seeded):
+        client, _ = seeded
+        qp = QueryProcessor(MagicMock(), client, summarizer=None, usage=MagicMock())
+        kq = qp._keyword_query("Apa kata Zqbank soal ZQRATE dan zqputus?")
+        got = qp._coverage(kq, ["Tidak ada kata kunci di sini.", PARAGRAPHS["all"], "zqputus saja"])
+        assert got[0] == 0.0 and got[1] == pytest.approx(1.0) and 0 < got[2] < 1

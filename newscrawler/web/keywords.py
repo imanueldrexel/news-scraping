@@ -31,6 +31,23 @@ QUESTION_WORDS = frozenset(
     "apa apakah bagaimana kenapa mengapa siapa kapan berapa mana dimana gimana seperti adakah benarkah "
     "terbaru terkini sekarang kini sepekan terakhir".split())
 _TOKEN = re.compile(r"\w[\w.,-]*\w|\w", re.UNICODE)
+# SYS-107 (#277): how a question asks for recent news, and how recent it means, in days: "hari
+# ini" is today, "pekan ini" this week, "terbaru" the latest there is, which may be a week old (a
+# BI rate decision is monthly). Not a topic: QUESTION_WORDS keeps these out of the keyword match.
+_RECENCY_CUES = (
+    (re.compile(r"\b(?:hari\s+ini|sekarang|saat\s+ini|kini|barusan)\b", re.IGNORECASE), 1),
+    (re.compile(r"\b(?:pekan\s+ini|minggu\s+ini|sepekan\s+terakhir)\b", re.IGNORECASE), 3),
+    (re.compile(r"\b(?:terbaru|terkini)\b", re.IGNORECASE), 7),
+)
+
+
+def recency_horizon(question: str) -> Optional[int]:
+    """The days over which the question wants recent news (the shortest its words ask for), or None
+    when it does not ask."""
+    for cue, days in _RECENCY_CUES:
+        if cue.search(question or ""):
+            return days
+    return None
 
 
 class Term(NamedTuple):
@@ -89,7 +106,8 @@ class KeywordQuery:
 
 
 class DocFrequency:
-    """Each word's share of L2 paragraphs, cached per process for DF_TTL_S.
+    """Each word's share of L2 paragraphs, cached per process for DF_TTL_S (a share of 0 is not
+    cached, SYS-108).
 
     A word in the planner's most-common list takes its share from there (ANALYZE's sample
     over all chunk levels, within a fraction of a point of the exact L2 share). A word not
@@ -118,7 +136,10 @@ class DocFrequency:
         if missing:
             counts = self._count(missing)
             with self._lock:
-                self._counted.update(counts)
+                # SYS-108 (#278): a 0 means "not in the corpus yet", not "a typo forever": a new
+                # name is asked about before the crawl that brings its articles. It is counted
+                # again on the next question (a word that occurs nowhere is a cheap count).
+                self._counted.update({w: n for w, n in counts.items() if n > 0})
             known.update(counts)
         return known
 

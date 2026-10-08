@@ -96,6 +96,17 @@ class TestUsage:
         assert kwargs["cost_usd"] == pytest.approx(qp_mod.cost_usd(2000, 200, False))
         assert kwargs["cost_usd"] > 0
 
+    def test_priced_at_the_peak_rate_in_the_peak_window(self, monkeypatch):
+        """DBT-62: in DeepSeek's peak window the answer costs the peak price; priced off-peak at all
+        hours, RAG_DAILY_COST_LIMIT_USD would under-count."""
+        monkeypatch.setattr(qp_mod, "is_peak", lambda: True)
+        usage = _usage()
+        result = _qp(FakeSummarizer(Reply("Jawaban [1].", 2000, 200)), usage).answer("q", HITS, [], TODAY)
+        assert qp_mod.cost_usd(2000, 200, True) != qp_mod.cost_usd(2000, 200, False)
+        assert usage.increment_api_call_count.call_args.kwargs["cost_usd"] == pytest.approx(
+            qp_mod.cost_usd(2000, 200, True))
+        assert result.cost_usd == pytest.approx(qp_mod.cost_usd(2000, 200, True))
+
     def test_an_unpriced_provider_costs_nothing(self):
         usage = _usage()
         _qp(FakeSummarizer(Reply("Jawaban.", 2000, 200), priced=False, name="gemini-x"), usage).answer(
@@ -146,7 +157,7 @@ class TestProviderFromConfig:
 class TestJsonQuery:
     def test_shape_and_reader_names(self):
         qp = _qp(FakeSummarizer(Reply("Jawaban [1].")))
-        qp.retrieve = lambda question, filters=None, today=None: [dict(h) for h in HITS]
+        qp.retrieve = lambda question, filters=None, today=None, history=(): [dict(h) for h in HITS]
         out = qp.query("q", [], today=TODAY)
         assert out["answer_status"] == OK and out["answer"] == "Jawaban [1]."
         assert out["numbers_unverified"] is False

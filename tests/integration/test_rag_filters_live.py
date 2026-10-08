@@ -19,6 +19,8 @@ from newscrawler.web.query_processor import QueryProcessor  # noqa: E402
 
 TODAY = date(2026, 10, 7)
 WORD = "zrupiahz"   # a token no other test row carries
+# SYS-105: a matched paragraph under MIN_PARAGRAPH_WORDS is never a source, so the seeded ones are real-sized.
+FILLER = "menurut keterangan resmi yang disampaikan kepada wartawan di Jakarta pada hari Senin pagi"
 
 
 @pytest.fixture
@@ -50,7 +52,7 @@ def seeded():
                     "INSERT INTO articles (sitemap_id, extracted_text, meta_data, is_embedded, topic) "
                     "VALUES (:sid, 'teks', '{}', true, :t) RETURNING articles_id"),
                     {"sid": sid, "t": topic}).scalar()
-            for level, body in ((1, f"Pembuka artikel {i}."), (2, f"Paragraf {WORD} nomor {i}.")):
+            for level, body in ((1, f"Pembuka artikel {i}."), (2, f"Paragraf {WORD} nomor {i} {FILLER}.")):
                 s.execute(text(
                     "INSERT INTO chunks (sitemap_id, article_id, chunk_level, chunk_index, chunk_total, "
                     "is_first_chunk, is_last_chunk, text_content, chunk_status) "
@@ -68,14 +70,15 @@ def seeded():
 
 def _processor(client, semantic_ids=()):
     faiss = MagicMock()
-    faiss.search_l2.return_value = [{"sitemap_id": sid, "semantic_score": 0.9, "text_content": "x",
+    faiss.search_l2.return_value = [{"sitemap_id": sid, "semantic_score": 0.9, "text_content": f"{WORD} {FILLER}",
                                      "posted_at": "19700823", "source": "WRONG"} for sid in semantic_ids]
     return QueryProcessor(faiss, client, summarizer=None, usage=MagicMock())
 
 
 class TestFtsWithFiltersLive:
     def _ids(self, client, filters):
-        return {h["sitemap_id"] for h in _processor(client)._fts_search(WORD, 20, filters, TODAY)}
+        qp = _processor(client)
+        return {h["sitemap_id"] for h in qp._fts_search(qp._keyword_query(WORD), 20, filters, TODAY)}
 
     def test_no_filter(self, seeded):
         client, ids = seeded

@@ -47,9 +47,11 @@ class FakeProcessor:
         self.result = AnswerResult(OK, "Jawaban [1].", answer_text.parse("Jawaban [1].", 2))
         self.retrieved = []
         self.histories = []
+        self.retrieval_histories = []
 
-    def retrieve(self, question, filters=None, today=None):
+    def retrieve(self, question, filters=None, today=None, history=()):
         self.retrieved.append((question, filters))
+        self.retrieval_histories.append(list(history))
         return [dict(h) for h in self.hits]
 
     def answer(self, question, hits, history, today=None):
@@ -216,6 +218,33 @@ class TestTurn:
         html = _ask(client, question).text
         assert notice in html and fake.retrieved == []
 
+    def test_a_question_of_exactly_the_maximum_is_asked(self, page, monkeypatch):
+        """DBT-62: RAG_QUESTION_MAX_CHARS is the longest allowed, not the shortest refused."""
+        client, fake = page
+        html = _ask(client, "x" * 500).text
+        assert copy.QUESTION_TOO_LONG.format(n=500) not in html and fake.retrieved[-1][0] == "x" * 500
+        monkeypatch.setattr(app_mod, "_run_query", lambda **k: {"answer_status": OK, "answer": "",
+                                                                "numbers_unverified": False, "sources": []})
+        assert client.post("/api/query", json={"query": "x" * 500}).status_code == 200
+
+    def test_card_links_open_a_new_tab_without_the_opener(self, page):
+        """DBT-62 / security review S3: a scraped site opened from a card cannot reach this page."""
+        html = _ask(page[0]).text
+        links = re.findall(r'<a class="card-link"[^>]*>', html)
+        assert links and all('target="_blank"' in a and 'rel="noopener noreferrer"' in a for a in links)
+
+    def test_the_follow_up_form_sends_the_active_filters(self, page):
+        """DBT-62: a follow-up searches with the filters its chips show, so the form includes every
+        filter control of the page."""
+        form = re.search(r'<form id="followup".*?</form>', _ask(page[0]).text, re.S).group(0)
+        include = re.search(r'hx-include="([^"]+)"', form).group(1)
+        assert [s.strip() for s in include.split(",")] == [
+            "#filter-topic", "#filter-source", "[name='rentang']", "#filter-from", "#filter-to"]
+        index = page[0].get("/").text
+        for control in ('id="filter-topic"', 'id="filter-source"', 'name="rentang"', 'id="filter-from"',
+                        'id="filter-to"'):
+            assert control in index
+
 
 class TestAnswer:
     def _answer_html(self, page, result):
@@ -280,11 +309,22 @@ class TestConversation:
         assert fake.histories[0] == []
         assert [t["question"] for t in fake.histories[1]] == ["Kenapa rupiah melemah?"]
 
+    def test_a_follow_up_is_retrieved_with_the_conversation(self, page):
+        """SYS-104 (#274): the thread reaches retrieval, not only the answer prompt."""
+        client, fake = page
+        html = _ask(client, "Apa kata OJK soal kredit perbankan?").text
+        _answer(client, _turn_id(html))
+        sid = re.search(r'name="session_id" value="([^"]+)"', html).group(1)
+        _ask(client, "Berapa target pertumbuhannya tahun depan?", session_id=sid)
+        assert fake.retrieval_histories[0] == []
+        assert [t["question"] for t in fake.retrieval_histories[1]] == ["Apa kata OJK soal kredit perbankan?"]
+
     def test_a_new_question_from_the_search_box_has_no_history(self, page):
         client, fake = page
         _answer(client, _turn_id(_ask(client, "Pertama").text))
         _answer(client, _turn_id(_ask(client, "Tidak berkaitan").text))   # no session_id: "Pertanyaan baru"
         assert fake.histories == [[], []]
+        assert fake.retrieval_histories == [[], []], "the search box retrieves on its own text"
 
     def test_a_failed_answer_is_not_history(self, page):
         client, fake = page
