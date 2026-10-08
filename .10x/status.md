@@ -207,3 +207,4 @@
 - Measured (probe_encoder_window.py): 80-word windows late recall@1 0.137 -> 0.750, early 0.730 -> 0.753; MiniLM window raise and e5-base rejected.
 - ADR-008; spec `.10x/specs/2026-10-08-sys109-chunks-fit-encoder-window-design.md`; DBT-64 #286 filed (mention FK indexes).
 - Plan: decisions/engineering-manager/chunks-fit-encoder-window.md (7 tasks; production run overnight after the 19:00 crawl).
+- [x] SYS-109 implementation done (b25dd36, 3aea301, 6ddae23): unit 2,765, integration 207, 7/7 mutants; production run next (dump -> migration -> `--all --apply --until 06:15`).

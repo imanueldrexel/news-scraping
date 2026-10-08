@@ -149,7 +149,7 @@ One line each; read this before starting on a scraper or pipeline problem.
 - **A word's document frequency over `chunks.fts_vector`: read `pg_stats.most_common_elems` (30 ms, shares within 0.4 points of the exact L2 count), don't count it**: counting 8 question words took ~800 ms, a LIMIT cap barely helps, and any word missing from the list is rare and cheap to count. In the keyword search, break coverage ties by `ts_rank_cd`, not newest-first (newest-first let off-topic recent paragraphs in). → 2026-10-07 "SYS-103 built" entry, ADR-006
 
 - **LangChain's `FAISS.similarity_search_with_score` on an `IndexFlatL2` returns the SQUARED L2 distance (d = 2 - 2cos for unit vectors): cos = 1 - d/2, not 1 - d²/2** (SYS-110 #284). The search page read the second until 2026-10-08 (cos 0.82 read 0.93). → 2026-10-08 "SDE fixes of QA's retrieval findings"
-- **The MiniLM encoder (`paraphrase-multilingual-MiniLM-L12-v2`) sees only 128 tokens (~97 words) of a chunk; L2 chunks run to 450 words** (SYS-109 #283): a word late in a paragraph does not move its vector. Score long paragraphs' keyword evidence with the FTS coverage, not their cosine. → same entry
+- **The MiniLM encoder (`paraphrase-multilingual-MiniLM-L12-v2`) sees only 128 tokens, a median of ~83 Indonesian words (~1.5 tokens per word); never raise its `max_seq_length` (trained at 128: at 256 early-sentence recall falls 0.73 → 0.32, at 512 it is noise).** L2 chunks were up to 450 words; since SYS-109 (ADR-008) they are windows of at most 80 words. → 2026-10-08 (evening) "SYS-109: how to embed a long L2 paragraph"
 - **Do not `GROUP BY` a body column over the whole `articles` table in the Postgres container**: the parallel hash aggregate fails with "could not resize shared memory segment … No space left on device" (Docker's 64 MB `/dev/shm`). Select the ids first. → same entry
 ## Log
 
@@ -2222,3 +2222,35 @@ SINDONEWS   old 12 new 12 | lost [] | gained []   links identical: True
 - **Mutants:** QA's 67 dev mutants all killed; 38/40 `qa1007_*` (2 equivalents); 44 new (2 survivors closed by tests).
   - A full-suite re-run in an old worktree "killed" the 2 equivalents with `1 failed, 1775 passed`. The unmutated baseline gave the same count: fixture CRLF, DBT-63 #285, fixed.
 - **Links:** SYS-104 #274, SYS-105 #275, SYS-106 #276, SYS-107 #277, SYS-108 #278, SRC-60 #279, SRC-61 #280, DBT-61 #281, DBT-62 #282, OPS-46 #259; found: SYS-109 #283, SYS-110 #284; ADR-007; commits 715b4d8..b269431.; DBT-63 #285
+
+### 2026-10-08 (evening) — SYS-109: how to embed a long L2 paragraph so search finds what it says late
+- **Question / hypothesis:** MiniLM embeds 128 tokens and L2 chunks ran to 450 words. Which fix makes late content findable without losing early content, and at what cost?
+  - raise the model's window;
+  - chunk to the window;
+  - switch to a longer-window encoder.
+- **Method:** `scripts/experiments/probe_encoder_window.py` (new, read-only on production).
+  - 300 L2 paragraphs of ≥ 200 words, hidden among 3,999 random L2 paragraphs.
+  - Per source, two queries from its own text: the first 8-30-word sentence after word 130 (late), and one in the first 60 words (early).
+  - Recall@1/@5 and MRR of the source among the pool; throughput on this CPU (16 threads, no GPU).
+  - Separately, MiniLM token counts of N-word windows on 400 long paragraphs.
+- **Result:**
+
+| Option | late r@1 | late r@5 | early r@1 | paragraphs/s | corpus re-embed |
+|---|---|---|---|---|---|
+| minilm128 (today) | 0.137 | 0.273 | 0.730 | 47 | — |
+| minilm256 | 0.187 | 0.423 | 0.320 | 30 | 3.4 h |
+| minilm512 | 0.013 | 0.030 | 0.020 | 24 | 4.3 h |
+| win70 (≤ 70 words, overlap 20) | 0.723 | 0.850 | 0.763 | 18 | 5.7 h |
+| **win80** | **0.750** | **0.887** | **0.753** | 21 | 5.0 h |
+| win90 | 0.690 | 0.840 | 0.747 | 24 | 4.3 h |
+| e5base (512 tokens) | 0.407 | 0.640 | 0.713 | 8 | 13.0 h |
+
+  - **Tokens per window:** 70 words p50 108, 4.7% > 128; 80 words p50 123, 32% > 128; 90 words p50 138, 82% > 128; 100 words 99% > 128. So 128 tokens hold a median of **~83 Indonesian words** (~1.53 tokens per word), not the ~97 first written on SYS-109.
+  - **Corpus:** 309,419 of 372,938 L2 chunks are over 80 words.
+  - **Re-chunk dry run** (`rechunk_stale_chunks.py --all`): 100,466 articles; L2 358,162 → 713,589 rows; > 80 words 298,576 → 0.
+  - **A cost found on the way:** `entity_mentions.chunk_id` (FK to chunks) and `entity_mentions.sitemap_id` had no index, so every chunk delete scans 230,061 mentions. Deleting 17,222 rows took 9 min → **DBT-64 #286**.
+- **Conclusion / do not repeat:**
+  - Never raise MiniLM's `max_seq_length` past 128. Its position table has 512, but it was trained at 128: at 256 early recall falls 0.73 → 0.32, and at 512 it is noise.
+  - Chunk to the window instead (80 words, overlap 20, ADR-008). e5-base is worse than windows here and 6x slower on every crawl and query.
+  - Measure tokens per word on real text before sizing a window: Indonesian news runs ~1.5 tokens per word on this tokenizer.
+- **Links:** SYS-109 #283, DBT-64 #286, ADR-008; spec `.10x/specs/2026-10-08-sys109-chunks-fit-encoder-window-design.md`; commits 377fbbd, b25dd36.

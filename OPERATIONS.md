@@ -14,7 +14,7 @@
 | `GEMINI_DAILY_CALL_LIMIT` | `20` | OPS-20 (#136): Gemini calls/day per model, counted in `api_usage_log`. **This project's free tier enforces 20/day/model**; knowledge extraction stops cleanly at the limit instead of spinning on 429s, and logs one WARNING naming the quota (`...PerDayPerProjectPerModel-FreeTier`) on the day's first 429. Raise it only after enabling billing |
 | `DAILY_API_CALL_LIMIT` | `1400` | OPS-20: budget of the OpenAI-compatible endpoint (labeller, drift audit) per model name in `api_usage_log`. Not Gemini's quota — see `GEMINI_DAILY_CALL_LIMIT` |
 | `SOFT_THRESHOLD` | *(unset)* | SYS-37: overrides the probe artifact's CV-chosen P(soft) threshold (0.39 for the 2026-09-22 artifact, `newscrawler/core/models/importance_probe.json`). Leave unset unless OPS-18 says the operating point must move. The probe's encoder (`intfloat/multilingual-e5-large`, ~2.2 GB) is loaded by the crawler in addition to MiniLM. |
-| `CHUNK_MIN_TOKENS` / `CHUNK_MAX_TOKENS` / `CHUNK_OVERLAP_TOKENS` | `80` / `450` / `50` | DBT-13: whitespace-token bounds of the L2 paragraph chunks; `HierarchicalChunker()` reads them as its defaults and refuses `overlap >= max` or `min > max` at start-up. Changing them changes the L2 vector count (SYS-41). |
+| `CHUNK_MIN_TOKENS` / `CHUNK_MAX_TOKENS` / `CHUNK_OVERLAP_TOKENS` | `40` / `80` / `20` | SYS-109 (ADR-008): L2 chunks are windows of at most 80 words, so MiniLM's 128-token input (~83 Indonesian words) sees all of each one; they were 80 / 450 / 50. DBT-13: whitespace-token bounds of the L2 chunks; `HierarchicalChunker()` reads them as its defaults and refuses `overlap >= max` or `min > max` at start-up. Changing them changes the L2 vector count (SYS-41). |
 | `OPENAI_API_KEY` | — | OPS-20: OpenAI-compatible endpoint (SumoPod). Used by the offline gold-set labeller / drift audit and, since 2026-10-04, by the **newsletter's cluster summaries** (SYS-68, ADR-001); never in the per-article crawl path. Knowledge extraction still calls Gemini until SYS-39 decides |
 | `OPENAI_BASE_URL` | — | e.g. `https://ai.sumopod.com/v1` |
 | `OPENAI_MODEL` | `deepseek-v4-flash` | Labelling and summary model; a reasoning model is called with thinking disabled |
@@ -282,6 +282,40 @@ venv\Scripts\python.exe scripts\settle_out_of_scope_links.py --source KUMPARAN -
 A second run finds nothing.
 
 **Then repair KUMPARAN's bodies (SRC-61):** `repair_boilerplate_bodies.py --apply --source KUMPARAN`. The body cleaner now drops KUMPARAN's page header (the headline again, the desk or writer, `·waktu baca N menit`). Run the settle first, so the reader posts are not repaired only to be deleted.
+
+### Re-chunking the corpus to the encoder window (SYS-109, ADR-008)
+
+The L2 chunks became windows of at most 80 words (overlap 20), because MiniLM embeds only 128 tokens, about 83 Indonesian words. Articles crawled since then are chunked that way. The stored ones are re-chunked by `scripts/rechunk_stale_chunks.py --all`. It is **L2-only**: L1 rows, L1 vectors and entity mentions are never touched.
+
+```
+venv\Scripts\python.exe scripts\backup_db.py
+venv\Scripts\python.exe scripts\migrate.py                       # DBT-64's indexes first: chunk deletes check the mention FK
+venv\Scripts\python.exe scripts\rechunk_stale_chunks.py --all    # dry run: articles, L2 rows before -> after
+venv\Scripts\python.exe scripts\rechunk_stale_chunks.py --all --apply --until 06:15
+venv\Scripts\python.exe scripts\rechunk_stale_chunks.py --apply --resume --until 11:30   # if it stopped (exit 3)
+```
+
+**What `--apply` does, in order:**
+1. **One backup:** `backups/sys109_ALL_<stamp>/`, holding a copy of `NEWS_L2` and `l2_rows.jsonl` (the deleted L2 rows).
+2. Delete the targets' L2 vectors (one atomic save) and L2 rows (one transaction).
+3. Re-chunk per source: 50 articles per embedding batch, one FAISS flush per 5,000.
+4. `ANALYZE chunks`.
+
+**Scale (dry run 2026-10-08):**
+- 100,466 articles; L2 358,162 → 713,589 rows.
+- NEWS_L2 grows from ~1.8 GB to ~3.5 GB on disk and in each process that loads it.
+
+**Verify:**
+- the dry run shows `TOTAL 0`;
+- `check_store_consistency.py` is all zero;
+- `SELECT count(*) FROM chunks c JOIN articles a USING (sitemap_id) WHERE chunk_level = 2 AND token_count > 80` = 0;
+- the replay probe.
+
+**Rollback:**
+1. Under the run lock, copy the backup's `NEWS_L2` back.
+2. Delete the L2 rows of the re-chunked articles.
+3. Re-insert `l2_rows.jsonl`.
+4. Set `CHUNK_*` back to 80/450/50 in `.env`.
 
 ### Scheduled newsletter (OPS-38) — registered 2026-10-04
 
