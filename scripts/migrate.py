@@ -60,6 +60,7 @@ MIGRATIONS = [
     "migrate_articles_topic.sql",
     "migrate_chunks_article_id.sql",
     "migrate_api_usage_tokens.sql",
+    "migrate_entity_mentions_indexes.sql",
 ]
 
 # Superseded/dead files kept in scripts/ for reference only -- excluded from both the

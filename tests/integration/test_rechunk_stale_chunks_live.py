@@ -1,11 +1,13 @@
-"""SYS-105 (#275): scripts/rechunk_stale_chunks.py against a live PostgreSQL and a real (temp-directory)
-FAISS store, in the Done-when's terms:
+"""SYS-105 (#275) / SYS-109 (#283, ADR-008): scripts/rechunk_stale_chunks.py against a live PostgreSQL and
+a real (temp-directory) FAISS store. The repair is L2-only:
 
-  * an article stored with the old chunker's trailing sign-off chunk ("(jon)") is re-chunked: no L2
-    chunk under 10 words is left, and every new chunk row has a vector while the old ones are gone;
-  * its entity mention is kept and points at the new L1 chunk (the text did not change: nothing is
-    re-extracted);
-  * an article without a fragment is untouched (same chunk rows); a second run finds nothing;
+  * SYS-105 (`--min-words`): an article stored with the old trailing sign-off chunk ("(jon)") loses it;
+  * SYS-109 (`--all`): an article stored with the old 450-word chunks gets windows of at most 80 words;
+  * in both, the article's L1 row and L1 vector are the same objects as before, and so is its entity
+    mention (it points at the L1 chunk); every new L2 row has a vector and no old L2 vector is left;
+  * an article whose layout does not change is untouched; a second run finds nothing;
+  * a run stopped at its deadline leaves articles without L2, and `--resume` finishes them without a
+    new backup;
   * the dry run writes nothing; a running crawl_log row refuses the write.
 
 Uses temp FAISS, backup and lock paths, never the real NEWS_L1/NEWS_L2 or backups/."""
@@ -30,7 +32,8 @@ def _words(prefix, n):
 
 
 SIGNED_OFF = "\n\n".join([_words("pembuka", 120), _words("isi", 100), "(jon)"])
-CLEAN = "\n\n".join([_words("bersih", 120), _words("lanjut", 100)])
+LONG = "\n\n".join([_words("panjang", 200), _words("kedua", 150)])
+SHORT = _words("pendek", 60)
 
 
 @pytest.fixture(scope="module")
@@ -70,7 +73,7 @@ def env(monkeypatch, scripts):
     monkeypatch.setattr(cfd, "VECTOR_DB_NAME_L1", f"{tmp}/L1")
     monkeypatch.setattr(cfd, "VECTOR_DB_NAME_L2", f"{tmp}/L2")
     monkeypatch.setattr(scripts.sys73, "BACKUP_DIR", f"{tmp}/backups")
-    yield SimpleNamespace(tmp=tmp)
+    yield SimpleNamespace(tmp=tmp, backups=f"{tmp}/backups")
     shutil.rmtree(tmp, ignore_errors=True)
 
 
@@ -101,14 +104,21 @@ def _old_merge_short(self, paragraphs):
     return result or paragraphs
 
 
-def _store_as_production_did(client, monkeypatch, scripts):
+def _store_as_production_did(client, monkeypatch, old_merge=False):
+    """Chunk and embed every article of SOURCE with the chunk sizes before SYS-109 (80/450/50) and,
+    if asked, the trailing behaviour before SYS-105."""
     import backfill_orphan_chunks
+    from newscrawler.core import constants
     from newscrawler.core.chunker import HierarchicalChunker
     from newscrawler.infrastructure.repositories.dataflow.data_flow_repository_impl import DataFlowRepositoryImpl
     with client.get_session() as s:
         rows = s.execute(backfill_orphan_chunks._FETCH_SQL, {"website": SOURCE}).fetchall()
     with monkeypatch.context() as m:
-        m.setattr(HierarchicalChunker, "_merge_short", _old_merge_short)
+        m.setattr(constants, "CHUNK_MIN_TOKENS", 80)
+        m.setattr(constants, "CHUNK_MAX_TOKENS", 450)
+        m.setattr(constants, "CHUNK_OVERLAP_TOKENS", 50)
+        if old_merge:
+            m.setattr(HierarchicalChunker, "_merge_short", _old_merge_short)
         repo = DataFlowRepositoryImpl(client)
         with repo.deferred_embeddings(SOURCE):
             backfill_orphan_chunks.rechunk_articles(repo, HierarchicalChunker(), rows)
@@ -129,66 +139,108 @@ def _mention_on_l1(client, sid):
         s.commit()
 
 
-def _l2(client, sid):
+def _rows(client, sid, level):
     with client.get_session() as s:
         return s.execute(text("SELECT chunk_id, token_count, embedding_id FROM chunks WHERE sitemap_id = :i "
-                              "AND chunk_level = 2 ORDER BY chunk_index"), {"i": sid}).fetchall()
+                              "AND chunk_level = :l ORDER BY chunk_index"), {"i": sid, "l": level}).fetchall()
 
 
-def _vector_texts(sid):
-    from newscrawler.infrastructure.datasource.dataflow.write.faiss.chunk_faiss_data_source import (
-        VECTOR_DB_NAME_L2,
-    )
-    from newscrawler.infrastructure.datasource.dataflow.write.faiss.index_generation import load_index
+def _mention_chunk(client, sid):
+    with client.get_session() as s:
+        return s.execute(text("SELECT chunk_id FROM entity_mentions WHERE sitemap_id = :i"), {"i": sid}).scalar()
+
+
+def _vector_ids(level, sid):
     import repair_store_consistency
-    store = load_index(VECTOR_DB_NAME_L2, repair_store_consistency._NoEmbeddings())
-    return sorted(d.page_content.split()[-1] for d in store.docstore._dict.values() if d.metadata.get("sitemap_id") == sid)
+    from newscrawler.infrastructure.datasource.dataflow.write.faiss import chunk_faiss_data_source as cfd
+    from newscrawler.infrastructure.datasource.dataflow.write.faiss.index_generation import load_index
+    db = cfd.VECTOR_DB_NAME_L1 if level == 1 else cfd.VECTOR_DB_NAME_L2
+    store = load_index(db, repair_store_consistency._NoEmbeddings())
+    return sorted(i for i, d in store.docstore._dict.items() if d.metadata.get("sitemap_id") == sid)
+
+
+def _snapshot(client, sid):
+    """What an L2-only repair must leave alone: the L1 row and vector, and the mention's chunk."""
+    return _rows(client, sid, 1), _vector_ids(1, sid), _mention_chunk(client, sid)
 
 
 def _args(**kw):
-    return SimpleNamespace(**dict(dict(source=SOURCE, min_words=15, block=1000, until=None), **kw))
+    return SimpleNamespace(**dict(dict(source=SOURCE, min_words=15, all=False, resume=False, block=1000, group=50,
+                                       until=None), **kw))
 
 
-class TestRechunkStaleChunksLive:
-    def test_the_sign_off_chunk_is_merged_and_everything_else_is_kept(self, client, env, monkeypatch, scripts):
-        signed, clean = _article(client, SIGNED_OFF), _article(client, CLEAN)
-        _store_as_production_did(client, monkeypatch, scripts)
+def _assert_l2_consistent(client, sid):
+    l2 = _rows(client, sid, 2)
+    assert all(r.embedding_id for r in l2), "every new L2 row has its vector"
+    assert sorted(r.embedding_id for r in l2) == _vector_ids(2, sid), "no old L2 vector is left"
+    return l2
+
+
+class TestRechunkFragmentsLive:
+    def test_the_sign_off_chunk_goes_and_l1_and_the_mention_stay(self, client, env, monkeypatch, scripts):
+        signed, short = _article(client, SIGNED_OFF), _article(client, SHORT)
+        _store_as_production_did(client, monkeypatch, old_merge=True)
         _mention_on_l1(client, signed)
-        assert [r.token_count for r in _l2(client, signed)] == [120, 100, 1], "the old layout, as in production"
-        clean_before = _l2(client, clean)
+        assert [r.token_count for r in _rows(client, signed, 2)] == [120, 100, 1], "the old layout"
+        before, short_before = _snapshot(client, signed), _rows(client, short, 2)
 
         assert scripts.rechunk.apply(_args(), client=client) == 0
 
-        after = _l2(client, signed)
-        assert [r.token_count for r in after] == [120, 101]
-        assert all(r.embedding_id for r in after), "every new chunk row has its vector"
-        assert _vector_texts(signed) == sorted(["pembuka119", "(jon)"]), "old vectors gone, new ones present"
-        with client.get_session() as s:
-            mention = s.execute(text("SELECT m.chunk_id, c.chunk_level, a.knowledge_extracted FROM entity_mentions m "
-                                     "JOIN chunks c ON c.chunk_id = m.chunk_id JOIN articles a "
-                                     "ON a.sitemap_id = m.sitemap_id WHERE m.sitemap_id = :i"), {"i": signed}).fetchone()
-        assert mention is not None and mention.chunk_level == 1, "the mention points at the new L1 chunk"
-        assert mention.knowledge_extracted == 1, "nothing is re-extracted"
-        assert _l2(client, clean) == clean_before, "an article without a fragment is untouched"
+        l2 = _assert_l2_consistent(client, signed)
+        assert min(r.token_count for r in l2) >= 10 and max(r.token_count for r in l2) <= 80
+        assert _snapshot(client, signed) == before, "L1 row, L1 vector and mention untouched"
+        assert _rows(client, short, 2) == short_before, "an article without a fragment is not a target"
+        assert scripts.rechunk.load_targets(client, SOURCE, 15) == {}, "a second run finds nothing"
 
-        assert scripts.rechunk.load_targets(client, SOURCE, 15)[0] == {}, "a second run finds nothing"
+
+class TestRechunkToTheEncoderWindowLive:
+    def test_all_turns_long_chunks_into_windows_and_keeps_l1(self, client, env, monkeypatch, scripts):
+        long_, short = _article(client, LONG), _article(client, SHORT)
+        _store_as_production_did(client, monkeypatch)
+        _mention_on_l1(client, long_)
+        assert [r.token_count for r in _rows(client, long_, 2)] == [200, 150], "the old 450-word layout"
+        before, short_before = _snapshot(client, long_), _rows(client, short, 2)
+
+        assert scripts.rechunk.apply(_args(all=True), client=client) == 0
+
+        l2 = _assert_l2_consistent(client, long_)
+        assert max(r.token_count for r in l2) <= 80 and len(l2) >= 5
+        assert _snapshot(client, long_) == before, "L1 row, L1 vector and mention untouched"
+        assert _rows(client, short, 2) == short_before, "a 60-word article keeps its one chunk"
+        assert scripts.rechunk.load_targets(client, SOURCE, 15, all_articles=True) == {}
+        backups = os.listdir(env.backups)
+        assert len(backups) == 1 and backups[0].startswith("sys109_SYS105TEST_")
+        with open(os.path.join(env.backups, backups[0], "l2_rows.jsonl"), encoding="utf-8") as f:
+            assert sum(1 for _ in f) == 2, "the two deleted L2 rows are in the backup"
+
+    def test_a_stopped_run_is_finished_by_resume_without_a_new_backup(self, client, env, monkeypatch, scripts):
+        long_ = _article(client, LONG)
+        _store_as_production_did(client, monkeypatch)
+        before = _snapshot(client, long_)
+        assert scripts.rechunk.apply(_args(all=True, until="00:00"), client=client) == 3
+        assert _rows(client, long_, 2) == [], "stopped after the deletes, before the re-chunk"
+        assert scripts.rechunk.apply(_args(resume=True), client=client) == 0
+        assert max(r.token_count for r in _assert_l2_consistent(client, long_)) <= 80
+        assert _snapshot(client, long_) == before
+        assert len(os.listdir(env.backups)) == 1, "--resume takes no backup"
 
     def test_the_dry_run_writes_nothing(self, client, env, monkeypatch, scripts, capsys):
-        signed = _article(client, SIGNED_OFF)
-        _store_as_production_did(client, monkeypatch, scripts)
-        before = _l2(client, signed)
+        long_ = _article(client, LONG)
+        _store_as_production_did(client, monkeypatch)
+        before = _rows(client, long_, 2)
         monkeypatch.setattr(scripts.rechunk, "SQLAlchemyClient", lambda: client)
-        assert scripts.rechunk.main(["--source", SOURCE]) == 0
-        assert "SYS105TEST" in capsys.readouterr().out
-        assert _l2(client, signed) == before
+        assert scripts.rechunk.main(["--source", SOURCE, "--all"]) == 0
+        out = capsys.readouterr().out
+        assert "SYS105TEST" in out and "2 -> " in out
+        assert _rows(client, long_, 2) == before
 
     def test_a_running_crawl_refuses_the_write(self, client, env, monkeypatch, scripts):
-        signed = _article(client, SIGNED_OFF)
-        _store_as_production_did(client, monkeypatch, scripts)
-        before = _l2(client, signed)
+        long_ = _article(client, LONG)
+        _store_as_production_did(client, monkeypatch)
+        before = _rows(client, long_, 2)
         with client.get_session() as s:
             s.execute(text("INSERT INTO crawl_log (website, task, status, started_at) "
                            "VALUES (:s, 'full_text', 'started', NOW())"), {"s": SOURCE})
             s.commit()
-        assert scripts.rechunk.apply(_args(), client=client) == 2
-        assert _l2(client, signed) == before
+        assert scripts.rechunk.apply(_args(all=True), client=client) == 2
+        assert _rows(client, long_, 2) == before

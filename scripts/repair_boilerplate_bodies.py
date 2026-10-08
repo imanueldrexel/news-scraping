@@ -284,7 +284,7 @@ def delete_vectors(targets, dirs):
     return deleted
 
 
-def rechunk(client, source, block, deadline, make_repo=None, now=datetime.now):
+def rechunk(client, source, block, deadline, make_repo=None, now=datetime.now, group_size=1):
     """Re-chunk and re-embed this source's articles that have no chunks, `block` articles per FAISS
     flush (`deferred_embeddings`: without it every article would rewrite the 2 GB index). Stops starting
     blocks at the deadline. Returns (repaired, empty, failed, left)."""
@@ -308,7 +308,7 @@ def rechunk(client, source, block, deadline, make_repo=None, now=datetime.now):
                            deadline.strftime("%H:%M"), len(orphans) - start)
             return repaired, empty, failed, len(orphans) - start
         with repo.deferred_embeddings(source):
-            r, e, f = rechunk_articles(repo, chunker, orphans[start:start + block])
+            r, e, f = rechunk_articles(repo, chunker, orphans[start:start + block], group_size=group_size)
         repaired, empty, failed = repaired + r, empty + e, failed + f
         logger.info("%s: %d/%d re-chunked (%d empty, %d failed)", source, start + len(orphans[start:start + block]),
                     len(orphans), empty, failed)

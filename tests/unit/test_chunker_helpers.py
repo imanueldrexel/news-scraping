@@ -170,3 +170,38 @@ class TestChunkerConfigFromEnv:
         with pytest.raises(ValueError):
             HierarchicalChunker(max_tokens=0)
         HierarchicalChunker(max_tokens=450, overlap_tokens=449)   # the edge that still advances by 1
+
+
+class TestChunksFitTheEncoderWindow:
+    """SYS-109 (#283, ADR-008): by default no L2 chunk is longer than MiniLM can see (128 tokens,
+    ~83 Indonesian words): windows of at most 80 words that overlap by 20; short paragraphs merge
+    until 40 words."""
+
+    @staticmethod
+    def _l2(paragraphs):
+        from newscrawler.domain.dtos.dataflow.details.news_details_dto import NewsDetailsDTO
+        news = NewsDetailsDTO(sitemap_id=1, extracted_text=paragraphs, reporter=[], meta_data={"title": "t"})
+        return [c for c in HierarchicalChunker().chunk(news) if c.chunk_level == 2]
+
+    def test_a_long_paragraph_becomes_overlapping_windows_of_at_most_80_words(self):
+        words = [f"w{i}" for i in range(300)]
+        l2 = self._l2([" ".join(words)])
+        assert max(c.token_count for c in l2) <= 80
+        assert [c.text_content.split()[0] for c in l2] == ["w0", "w60", "w120", "w180", "w240"]
+        assert l2[0].text_content.split()[-20:] == l2[1].text_content.split()[:20]
+        assert l2[-1].text_content.split()[-1] == "w299", "nothing is lost at the end"
+
+    def test_short_paragraphs_merge_until_40_words(self):
+        l2 = self._l2([make_words(25), make_words(25), make_words(45), "(jon)"])
+        assert [c.token_count for c in l2] == [50, 46]
+
+    def test_no_default_chunk_exceeds_the_window_on_a_realistic_article(self):
+        paragraphs = [make_words(n) for n in (12, 140, 33, 61, 450, 8, 95, 2)]
+        assert max(c.token_count for c in self._l2(paragraphs)) <= 80
+
+    def test_the_l1_lead_is_unchanged(self):
+        from newscrawler.domain.dtos.dataflow.details.news_details_dto import NewsDetailsDTO
+        paragraphs = [make_words(140), make_words(30)]
+        news = NewsDetailsDTO(sitemap_id=1, extracted_text=paragraphs, reporter=[], meta_data={"title": "t"})
+        l1 = [c for c in HierarchicalChunker().chunk(news) if c.chunk_level == 1]
+        assert [c.text_content for c in l1] == [" ".join(paragraphs)]

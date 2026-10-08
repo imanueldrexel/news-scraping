@@ -91,9 +91,14 @@ VECTOR_DB_NAME_L2 = os.getenv("VECTOR_DB_NAME_L2", "NEWS_L2")
 # DBT-13 (#48): consumed by HierarchicalChunker() as its defaults (validated
 # there: 0 < min <= max, 0 <= overlap < max). Whitespace tokens, not model
 # tokens. Changing them changes the L2 vector count (SYS-41).
-CHUNK_MIN_TOKENS = int(os.getenv("CHUNK_MIN_TOKENS", 80))
-CHUNK_MAX_TOKENS = int(os.getenv("CHUNK_MAX_TOKENS", 450))
-CHUNK_OVERLAP_TOKENS = int(os.getenv("CHUNK_OVERLAP_TOKENS", 50))
+# L2 chunk sizes, in whitespace words. SYS-109 (#283, ADR-008): MiniLM embeds only the first 128
+# tokens of a text, a median of ~83 Indonesian words, so a chunk of up to 450 words was mostly
+# invisible to semantic search (a sentence after word 130 found its paragraph at rank 1 in 13.7%
+# of cases; with 80-word windows 75.0%). Short paragraphs merge until 40 words; a longer text is
+# split into windows of at most 80 words that overlap by 20.
+CHUNK_MIN_TOKENS = int(os.getenv("CHUNK_MIN_TOKENS", 40))
+CHUNK_MAX_TOKENS = int(os.getenv("CHUNK_MAX_TOKENS", 80))
+CHUNK_OVERLAP_TOKENS = int(os.getenv("CHUNK_OVERLAP_TOKENS", 20))
 EMBEDDING_MODEL_HF = os.getenv("EMBEDDING_MODEL_HF", "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
 # SYS-37 (#121): the INTERESTS phrase list that the cosine filter scored
 # against is retired -- the news-worthy decision is the probe in

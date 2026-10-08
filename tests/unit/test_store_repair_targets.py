@@ -44,9 +44,20 @@ class TestRechunkTargets:
     def test_an_empty_body_is_not_rechunked(self):
         assert rechunk.select_targets([(1, "DETIK", "", [3])], self._chunker()) == {}
 
-    def test_the_report_counts_fragments_before_and_after(self):
-        out = rechunk.report({"DETIK": [(1, [120, 100, 1], [120, 101])]}, {"DETIK": 4})
-        assert "DETIK                    1           4          1 -> 0" in out
+    def test_the_report_counts_rows_fragments_and_overlong_chunks(self):
+        out = rechunk.report({"DETIK": [(1, [120, 100, 1], [80, 80, 41])]}, 80)
+        assert out.splitlines()[1].split() == ["DETIK", "1", "3", "->", "3", "1", "->", "0", "2", "->", "0"]
+
+    def test_an_article_stored_without_l2_rows_is_a_target(self):
+        """SYS-109: the layout of an article a stopped run left without L2 is None."""
+        body = _words("a", 60)
+        assert rechunk.select_targets([(1, "DETIK", body, None)], self._chunker()) == {"DETIK": [(1, [], [60])]}
+
+    def test_the_default_chunker_splits_what_fit_the_old_one(self):
+        """SYS-109: under the defaults (80/20/40) a 200-word paragraph stored whole is a target."""
+        from newscrawler.core.chunker import HierarchicalChunker
+        targets = rechunk.select_targets([(1, "DETIK", _words("a", 200), [200])], HierarchicalChunker())
+        assert targets["DETIK"][0][2] == [80, 80, 80]
 
 
 class TestSettleTargets:

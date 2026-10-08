@@ -66,12 +66,40 @@ _FETCH_SQL = text("""
 """)
 
 
-def rechunk_articles(repo, chunker, rows):
+def rechunk_articles(repo, chunker, rows, group_size=1):
     """Re-chunk and save `rows` (articles with an `articles` row but missing chunks) from
     their stored text. Returns (repaired, empty, failed). Used by this script and by
     scripts/repair_boilerplate_bodies.py (SYS-73), which wraps it in `deferred_embeddings`
-    so a block of articles costs one FAISS save instead of one per article."""
+    so a block of articles costs one FAISS save instead of one per article.
+
+    `group_size`: articles per `save_chunk_data` call, so their chunks are embedded in one batch
+    (SYS-109: the whole corpus at ~8 windows an article). A group that fails is saved again
+    article by article, so one bad article fails alone."""
     repaired, empty, failed = 0, 0, 0
+    group = []
+
+    def save_group():
+        nonlocal repaired, failed
+        if not group:
+            return
+        try:
+            repo.save_chunk_data([c for _, chunks in group for c in chunks])
+            repaired += len(group)
+        except Exception as e:
+            if len(group) == 1:
+                logger.error("sitemap_id %d: failed to save chunks: %s", group[0][0], e)
+                failed += 1
+            else:
+                logger.warning("a group of %d articles failed to save (%s); saving them one by one", len(group), e)
+                for sitemap_id, chunks in group:
+                    try:
+                        repo.save_chunk_data(chunks)
+                        repaired += 1
+                    except Exception as e1:
+                        logger.error("sitemap_id %d: failed to save chunks: %s", sitemap_id, e1)
+                        failed += 1
+        group.clear()
+
     for row in rows:
         # SYS-18: extracted_text is prose joined with "\n\n" at the write boundary
         # (sql_alchemy_articles_data_source.save_newsdetails); split it the same way.
@@ -103,12 +131,10 @@ def rechunk_articles(repo, chunker, rows):
             empty += 1
             continue
 
-        try:
-            repo.save_chunk_data(chunks)
-            repaired += 1
-        except Exception as e:
-            logger.error("sitemap_id %d: failed to save chunks: %s", row.sitemap_id, e)
-            failed += 1
+        group.append((row.sitemap_id, chunks))
+        if len(group) >= group_size:
+            save_group()
+    save_group()
     return repaired, empty, failed
 
 
