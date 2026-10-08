@@ -201,3 +201,9 @@
 - [ ] Owner: unblock the SumoPod key (401 since today; page answers, 21:00 extraction and 12:00 newsletter fail), restart :8000.
 - [ ] QA: verify; watch the 19:00 KUMPARAN out-of-scope note.
 - Details: decisions/sde/rag-retrieval-quality.md; handoff.md.
+
+## SYS-109 #283 (chunks fit the encoder window): design + planning done 2026-10-08
+- Owner: "design it and fix it directly after the design is finished".
+- Measured (probe_encoder_window.py): 80-word windows late recall@1 0.137 -> 0.750, early 0.730 -> 0.753; MiniLM window raise and e5-base rejected.
+- ADR-008; spec `.10x/specs/2026-10-08-sys109-chunks-fit-encoder-window-design.md`; DBT-64 #286 filed (mention FK indexes).
+- Plan: decisions/engineering-manager/chunks-fit-encoder-window.md (7 tasks; production run overnight after the 19:00 crawl).

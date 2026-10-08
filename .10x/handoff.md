@@ -1,5 +1,15 @@
 # Current Handoff
 
+## From: Architect/EM (SYS-109 design + plan) -> To: SDE (same session: build, then the overnight production re-chunk)
+**Date:** 2026-10-08 (evening)
+**Read first:** ADR-008; `.10x/specs/2026-10-08-sys109-chunks-fit-encoder-window-design.md`; `.10x/decisions/{architect,dba,senior-engineer,engineering-manager}/chunks-fit-encoder-window.md`.
+- Decision: L2 chunks of at most 80 words (overlap 20, min 40), MiniLM unchanged; the store is re-chunked L2-only (L1, mentions untouched); DBT-64 #286 adds the mention indexes first.
+- Production: fresh dump -> migration -> `rechunk_stale_chunks.py --all --apply --until 06:15` once the 19:00 crawl releases the lock.
+
+---
+
+## Previous (superseded)
+
 ## From: SDE (QA's 2026-10-07 retrieval findings fixed) -> To: QA (verify, close), owner (key, restart :8000)
 **Date:** 2026-10-08 (evening)
 **Read first:**
