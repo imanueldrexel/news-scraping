@@ -1,5 +1,39 @@
 # Current Handoff
 
+## From: SDE (SYS-109 built and run on production) -> To: QA (verify, close), owner (restart :8000, SumoPod key)
+**Date:** 2026-10-09 (00:50)
+**Read first:**
+- `.10x/decisions/sde/chunks-fit-encoder-window.md`;
+- ADR-008;
+- EXPERIMENTS.md "2026-10-08 (evening) — SYS-109" (production results at the end of Result);
+- the evidence comment on each ticket.
+
+### Ready for QA (`status: ready-for-qa`)
+- **SYS-109 #283:**
+  - L2 windows ≤ 80 words; the production re-chunk is done.
+  - Re-run `probe_late_recall_live.py --measure <sample>`. The sample is in the session scratchpad; re-draw one with `--sample` if needed and compare both indexes' generations.
+  - Run `check_store_consistency.py` and the SQL `token_count > 80` = 0.
+- **DBT-64 #286:** mention indexes on both DBs; integration 210 passed.
+- **SYS-111 #287:** `--until` is the next HH:MM; a too-close deadline refuses before deleting. Mutants `sys111_*` (unit) and the guard removals (integration `-k too_close`).
+- **OPS-47 #288:**
+  - a mutation worktree's teardown (docstring of `qa_mutation_runner.py`);
+  - **use it**: `rmdir` the junction before `git worktree remove`;
+  - check `pip freeze` == `requirements.txt` after.
+
+### Open, found tonight
+- **SYS-112 #289** (P2, web): after the windows, same-day keyword hits clear the 0.55 recency gate. "Menkeu sekarang" leads with Danantara dividend stories; the BI-decision question loses the decision. Confounded by new 8 Oct articles. Re-tune offline on the windowed scores.
+
+### Production state
+- NEWS_L2: 750,871 vectors (~1.1 GB `.faiss` + 0.5 GB `.pkl`), ~2x before.
+- Rollback: `backups/sys109_ALL_20261008T130410Z` + OPERATIONS.md.
+- pg_dump `newsaggregator_20261008T130309Z.dump` was taken before the run.
+- The 21:00 extraction on 2026-10-08 exited 2 (run lock held by the re-chunk); the next one is 2026-10-09 21:00.
+- The venv was repaired at 00:40; the next scheduled process is the 07:00 crawl.
+
+---
+
+## Previous (superseded)
+
 ## From: Architect/EM (SYS-109 design + plan) -> To: SDE (same session: build, then the overnight production re-chunk)
 **Date:** 2026-10-08 (evening)
 **Read first:** ADR-008; `.10x/specs/2026-10-08-sys109-chunks-fit-encoder-window-design.md`; `.10x/decisions/{architect,dba,senior-engineer,engineering-manager}/chunks-fit-encoder-window.md`.

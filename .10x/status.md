@@ -208,3 +208,8 @@
 - ADR-008; spec `.10x/specs/2026-10-08-sys109-chunks-fit-encoder-window-design.md`; DBT-64 #286 filed (mention FK indexes).
 - Plan: decisions/engineering-manager/chunks-fit-encoder-window.md (7 tasks; production run overnight after the 19:00 crawl).
 - [x] SYS-109 implementation done (b25dd36, 3aea301, 6ddae23): unit 2,765, integration 207, 7/7 mutants; production run next (dump -> migration -> `--all --apply --until 06:15`).
+- [x] Production re-chunk done 2026-10-09 00:30. 100,466 articles, 0 failed; 737,682 L2 rows, 0 over 80 words; store consistency zero; late recall@1 0.020 → 0.360.
+- [x] Found and fixed: SYS-111 #287 (`--until` past = today: deleted before stopping) and OPS-47 #288 (worktree teardown deleted 23 venv packages through the junction; repaired, `pip freeze` == requirements.txt).
+- [x] Ready for QA: SYS-109 #283, DBT-64 #286, SYS-111 #287, OPS-47 #288.
+- [ ] SYS-112 #289 (filed): re-tune the recency gate/floor on the windowed scores ("Menkeu sekarang", BI decision).
+- [ ] Owner: restart :8000 (NEWS_L2 now 750k vectors, ~7.6 GB per web process); unblock the SumoPod key. The 21:00 extraction was skipped on 2026-10-08 (run lock).
