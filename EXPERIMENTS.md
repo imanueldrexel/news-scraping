@@ -2256,7 +2256,7 @@ SINDONEWS   old 12 new 12 | lost [] | gained []   links identical: True
     - With DBT-64's index, the delete of 358k rows took ~15 s; 17,222 had taken 9 min without it.
     - `--apply --resume` (no deadline) ran 20:05 → 00:30: 100,466 articles, 0 empty, 0 failed, ~7 articles/s, `ANALYZE chunks`.
     - **After:** 737,682 L2 rows on articles, 0 over 80 words (max 80, mean 60); 750,871 L2 vectors (the rest are 3,098 queued sitemaps). `check_store_consistency.py`: all 11 checks zero. Dry run `--all`: TOTAL 0.
-    - **Late recall on production** (`probe_late_recall_live.py`, same 200-article sample, k=100):
+    - **Late recall on production** (`probe_late_recall_live.py --measure scripts/experiments/late_recall_sample_2026-10-08.json`, the same 200 articles before and after, k=100):
       - late recall@1/@5/@20: 0.020/0.075/0.145 → **0.360/0.570/0.725**;
       - early: 0.620/0.785/0.840 → 0.580/0.780/0.865.
       - Lower than the pool probe's 0.75 because 750k windows compete, not 4k.

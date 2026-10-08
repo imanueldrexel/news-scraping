@@ -11,7 +11,7 @@
 ### Ready for QA (`status: ready-for-qa`)
 - **SYS-109 #283:**
   - L2 windows ≤ 80 words; the production re-chunk is done.
-  - Re-run `probe_late_recall_live.py --measure <sample>`. The sample is in the session scratchpad; re-draw one with `--sample` if needed and compare both indexes' generations.
+  - Re-run `probe_late_recall_live.py --measure scripts/experiments/late_recall_sample_2026-10-08.json` (the sample behind both measurements); expect late @1 0.360, early @1 0.580.
   - Run `check_store_consistency.py` and the SQL `token_count > 80` = 0.
 - **DBT-64 #286:** mention indexes on both DBs; integration 210 passed.
 - **SYS-111 #287:** `--until` is the next HH:MM; a too-close deadline refuses before deleting. Mutants `sys111_*` (unit) and the guard removals (integration `-k too_close`).
