@@ -2268,3 +2268,16 @@ SINDONEWS   old 12 new 12 | lost [] | gained []   links identical: True
   - Chunk to the window instead (80 words, overlap 20, ADR-008). e5-base is worse than windows here and 6x slower on every crawl and query.
   - Measure tokens per word on real text before sizing a window: Indonesian news runs ~1.5 tokens per word on this tokenizer.
 - **Links:** SYS-109 #283, DBT-64 #286, ADR-008; spec `.10x/specs/2026-10-08-sys109-chunks-fit-encoder-window-design.md`; commits 377fbbd, b25dd36; found: SYS-111 #287 (5fcb58a, 8832fc4), SYS-112 #289, OPS-47 #288.
+
+### 2026-10-11 — entity-links design: what the stored corpus can support (relation cues, ticker coverage, history, timestamps)
+- **Question / hypothesis:** the entity-links design (second-order exposure, group ties, rising attention; prices from the owner's own DB) assumes (1) news states typed company links often enough, (2) listed companies are covered, (3) there is history to backtest on, (4) an article's publication time is known.
+- **Method:** read-only SQL on `newsaggregator`, 2026-10-11 (59,723 of 114,524 articles extracted). Relation cues: 1,500 random extracted articles with >= 2 ORGANIZATION mentions incl. one with a ticker; regex over `articles.extracted_text`, e.g. supply/customer `\b(pemasok|memasok|pasokan ke|pelanggan utama|offtaker|off-taker|pembeli (utama|tunggal))\b`, subsidiary/owner `\b(anak usaha|anak perusahaan|induk usaha|pemegang saham (pengendali|mayoritas)|kepemilikan saham)\b`. Coverage: distinct `entities.ticker ~ '^[A-Z]{4}$'` by `entity_mentions` articles. History: `articles JOIN sitemaps` by month of `posted_at`.
+- **Result:**
+  - Population: 10,154 extracted articles have >= 2 organizations incl. a listed one; 3,305 name >= 2 distinct tickers.
+  - Cue share in that population: supply/customer 3%, contract 8%, lender 9%, JV/partner 5%, M&A 7%, subsidiary/owner 13%, board 22% (mostly "direktur utama X said", not cross-board), group 17%. => ~300 supply/customer articles so far, ~20/day at today's volume (keyword lower bound; the LLM may find more).
+  - Ticker coverage, last 30 days: 795 distinct 4-letter tickers mentioned (LLM tickers, some invalid), 459 in >= 4 articles, 140 in >= 20, median 5. All time 960 (> ~950 listed, so some invented).
+  - History: dense only from 2026-09 (41,647 Sep, 33,701 Oct 1-10); 2026-05 13,576; 2026-08 7,003; before 2026-05 < 3,400/month.
+  - Time of day: `sitemaps.posted_at` and `articles.meta_data.posted_at` are int yyyymmdd; the sitemap's `news:publication_date` time (crawler.py:628) is parsed and dropped.
+  - External: IDX/KSEI publish all shareholders > 1% of every issuer monthly since 2026-03 (structured ownership, beats news for owns/group edges). Precedent for the thesis: Cohen & Frazzini (customer->supplier returns lag ~1 month), Scherbina & Schlusche (news co-mentions cross-predict returns).
+- **Conclusion / do not repeat:** supplier/customer edges from news are sparse (3%) -- second-order exposure will start thin and grow; ownership/group edges should come from the KSEI > 1% file, not news. A historical backtest of >= 50 signals per detector is not possible on 6 dense weeks: the gate has to be a forward test. Store the publication timestamp before any price alignment is built.
+- **Links:** design in progress (`.10x/specs/2026-10-11-entity-links-design.md`, not yet written).

@@ -213,3 +213,9 @@
 - [x] Ready for QA: SYS-109 #283, DBT-64 #286, SYS-111 #287, OPS-47 #288.
 - [ ] SYS-112 #289 (filed): re-tune the recency gate/floor on the windowed scores ("Menkeu sekarang", BI decision).
 - [ ] Owner: restart :8000 (NEWS_L2 now 750k vectors, ~7.6 GB per web process); unblock the SumoPod key. The 21:00 extraction was skipped on 2026-10-08 (run lock).
+
+## 2026-10-11: entity links (feature `entity-links`) -- Phase 0 brainstorm done, spec awaiting owner review
+- Goal: links between KB entities -> listed companies exposed to news their price has not reflected; newsletter uses the links too.
+- Spec: `specs/2026-10-11-entity-links-design.md` (owner decisions 1-9 inside). Evidence: EXPERIMENTS.md 2026-10-11.
+- KB state 2026-10-10: 59,723/114,524 articles extracted (~3 nights left at ~20k/night, ~$6.8/night); 88.6k entities, 482k mentions, 125 aliases; heavy duplication (PGAS x17).
+- Next: owner reviews spec -> Phase 1 (CTO/PM decisions, PRD non-goals updated) -> ADR -> tickets. Waiting on owner: price-DB access + 4 facts (adjusted? volume/value? suspension/board? existing calcs?).
