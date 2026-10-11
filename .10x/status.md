@@ -227,3 +227,4 @@
   - SYS-113 (docs: PRD non-goals, Phase 1 CTO/PM, ADR-009, Phase 3 plan) comes before any code.
   - SYS-120 PriceSource is blocked on the owner (DB access + 4 facts).
   - No code written yet.
+- **Parked by the owner on 2026-10-12 ("leave it for now").** Resume at SYS-113 when the owner picks it up again.
