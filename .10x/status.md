@@ -223,3 +223,7 @@
   - merge undo is exact (deleted duplicate mentions are kept in `entity_merges`);
   - `extract_links` runs a ~300-article pilot, and the 85% precision gate is checked on it before the ~$20 full pass;
   - new section "Production writes and their order": migrations A -> merge -> migrations B (the unique ticker index) -> link pass.
+- 2026-10-12 tickets filed (owner: "raise tickets to do all those things first"): tracker #315; SYS-113..SYS-136 = #290..#313; OPS-48 = #314.
+  - SYS-113 (docs: PRD non-goals, Phase 1 CTO/PM, ADR-009, Phase 3 plan) comes before any code.
+  - SYS-120 PriceSource is blocked on the owner (DB access + 4 facts).
+  - No code written yet.
