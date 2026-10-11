@@ -219,3 +219,7 @@
 - Spec: `specs/2026-10-11-entity-links-design.md` (owner decisions 1-9 inside). Evidence: EXPERIMENTS.md 2026-10-11.
 - KB state 2026-10-10: 59,723/114,524 articles extracted (~3 nights left at ~20k/night, ~$6.8/night); 88.6k entities, 482k mentions, 125 aliases; heavy duplication (PGAS x17).
 - Next: owner reviews spec -> Phase 1 (CTO/PM decisions, PRD non-goals updated) -> ADR -> tickets. Waiting on owner: price-DB access + 4 facts (adjusted? volume/value? suspension/board? existing calcs?).
+- 2026-10-12 spec revision (owner said yes):
+  - merge undo is exact (deleted duplicate mentions are kept in `entity_merges`);
+  - `extract_links` runs a ~300-article pilot, and the 85% precision gate is checked on it before the ~$20 full pass;
+  - new section "Production writes and their order": migrations A -> merge -> migrations B (the unique ticker index) -> link pass.

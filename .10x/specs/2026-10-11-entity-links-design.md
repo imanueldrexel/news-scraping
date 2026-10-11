@@ -1,6 +1,6 @@
 # Entity links: hidden company links -> mispricing candidates (design, 2026-10-11)
 
-**Feature slug:** `entity-links`. **Status:** brainstorm approved section by section by the owner on 2026-10-10/11; awaiting the owner's review of this document.
+**Feature slug:** `entity-links`. **Status:** brainstorm approved section by section by the owner on 2026-10-10/11. Revised 2026-10-12 with an exact merge undo, the link-job pilot before the full pass, and the order of production writes. Awaiting the owner's review of this document.
 **Evidence:** EXPERIMENTS.md "2026-10-11 — entity-links design: what the stored corpus can support".
 
 ## Goal
@@ -59,10 +59,11 @@ Link entities in the knowledge base to each other, using the news and IDX's offi
 - **Mechanics:**
   - Mentions are re-pointed to the surviving entity; when an article mentions both copies, one mention is kept.
   - Every merged-away name becomes an `entity_aliases` row, and every merge is written to `entity_merges` (undoable).
+  - **Undo is exact (owner, 2026-10-12):** `entity_merges` keeps everything the merge changes. That covers the merged-away entity row as it was, the ids of the mentions re-pointed, the alias rows added, and **every mention row deleted as a duplicate, in full**. Undo restores the entity, re-points those mentions back, re-inserts the deleted mentions, removes the added aliases and recomputes the counts. The pg_dump is the backstop, not the undo path.
   - `mention_count`, `first_seen_at` and `last_seen_at` are recomputed.
 - **Going forward:** the normaliser checks `listed_companies` and the alias table on every extraction, so duplicates stop being created.
 - **Safety:**
-  - Dry run first (report of every merge group).
+  - Dry run first: a report of every merge group (survivor, rows folded in, mention counts). The owner can veto individual groups.
   - pg_dump backup, then the owner approves the production write.
   - It must not run while `extract_knowledge` is running: it takes the same run lock or checks `crawl_log`.
 
@@ -91,10 +92,15 @@ Link entities in the knowledge base to each other, using the news and IDX's offi
   - Types: `supplier_of`, `customer_of`, `contract_with`, `lender_to`, `jv_partner`, `acquires`, `subsidiary_of`, `shareholder_of`, `director_of`, `commissioner_of`, `same_group`.
   - Instructions: return nothing when no link is stated; a quote by a CEO is not a link between companies.
 - **Validation:** a link is rejected when its type is outside the list, its entity number is outside the list, its subject equals its object, or its evidence is not a substring of the article (after whitespace normalisation).
-- **Cost estimate:** ~1,000 tokens in and ~150 out per article. The one-time pass over ~85k articles is ~$20 off-peak; ongoing ~3,000 articles/day is ~$0.7–0.9/day.
-- **Quality gate, before step 4 is used anywhere:**
-  - Hand-check 100 sampled links, stratified by type: precision must be **≥ 85%**.
-  - Recall is measured on 50 articles with supplier/contract wording: reported, not gated.
+- **Cost estimate:** ~1,000 tokens in and ~150 out per article. The one-time pass over ~85k articles is ~$20 off-peak; ongoing ~3,000 articles/day is ~$0.7–0.9/day. The ~85k is an estimate: the real queue is counted after the `extract_knowledge` backlog clears, and that count goes into the approval request.
+- **Pilot first, then the one-time pass (owner, 2026-10-12):**
+  1. **Pilot:** `extract_links` runs on ~300 queued articles (~$0.07), stratified so that every relation-cue group from the corpus probe is present. No approval needed.
+  2. **Quality gate on the pilot:**
+     - Hand-check 100 sampled links, stratified by type: precision must be **≥ 85%**.
+     - Recall is measured on 50 articles with supplier/contract wording: reported, not gated.
+     - A failed gate means changing the prompt or validation and re-running the pilot, never the full pass.
+  3. **Full pass:** only after the pilot passes, and on the owner's approval with the real queue count and cost. It runs under `LINKS_DAILY_COST_LIMIT_USD`, so it spreads over several nights.
+- Step 4 is used nowhere until the gate has passed.
 
 ### 4. Graph
 - **`entity_links`** is a materialised view refreshed after each `extract_links` run and each KSEI ingest. It has one row per (A, B, type) with: `evidence_count`, `distinct_sources`, `first_seen`, `last_seen`, the `sources` set (`news`/`ksei`), and for KSEI the latest `stake_pct`/`as_of`.
@@ -172,6 +178,18 @@ A detector passing is an **owner decision** recorded in config (`LINK_DETECTORS_
   - Its numbers come from the signal's price snapshot. They are checked against that snapshot and kept outside SYS-87's article-number check by design.
   - It ends with "Bukan rekomendasi investasi."
 
+## Production writes and their order
+Each one gets a pg_dump backup first (`scripts/backup_db.py`) and its own owner approval. Every migration runs on `newsaggregator_test` first (DBT-22).
+
+| # | Write | Contents | Undo |
+|---|---|---|---|
+| 1 | **Migrations, batch A** (additive) | `sitemaps.published_at`, `listed_companies`, `entity_merges`, `entity_relations`, `articles.links_extracted`/`links_extract_attempts`/`last_link_error`, `entity_comention_weekly`, `link_signals`, the `entity_links` view | Drop the new objects; existing code never reads them |
+| 2 | **Entity merge** | Step 1, after its dry-run report | Exact undo from `entity_merges` |
+| 3 | **Migrations, batch B** | Partial unique index: one entity per non-null ticker | Drop the index |
+| 4 | **Link pass** | The one-time `extract_links` pass, after the pilot passes | Delete `entity_relations` rows with `source='news'`; the money is spent |
+
+Batch B can't run before the merge: today's duplicates (BBCA ×5) would make the index fail. Writes 1–3 may share one approval if the owner prefers.
+
 ## When each part goes live
 | After | Live |
 |---|---|
@@ -203,12 +221,13 @@ A detector passing is an **owner decision** recorded in config (`LINK_DETECTORS_
   - Web copy and no-`| safe` tests extended.
 - **Integration (`newsaggregator_test`):**
   - The migrations.
-  - Merge apply + undo.
+  - Merge apply + undo. After undo, the `entities`, `entity_mentions` and `entity_aliases` rows touched must equal the snapshot taken before the merge, including mentions deleted as duplicates.
+  - Batch B fails on a DB that still holds duplicate tickers (the order is enforced, not just documented).
   - Unique-ticker enforcement.
   - `entity_links` refresh.
   - `extract_links` end to end with a fake provider.
 - **Mutation:** the QA practice (`qa_mutation_runner.py`) on the merge rules, link validation and detector thresholds.
-- **Bake-off:** link precision ≥ 85% on the 100-link hand check before anything shows links.
+- **Bake-off:** link precision ≥ 85% on the 100-link hand check of the pilot, before the full pass and before anything shows links.
 
 ## Inputs from the owner
 - Price database access (host, database, read-only user).
@@ -216,7 +235,7 @@ A detector passing is an **owner decision** recorded in config (`LINK_DETECTORS_
 - Whether volume and/or traded value exist (the `illiquid` flag).
 - Whether suspension or special-board status exists (those flags).
 - Whether the price project already computes market-relative returns or signals (reuse rather than rebuild).
-- Approval of each production write: the step-1 merge, the migrations on `newsaggregator`, the one-time `extract_links` pass (~$20).
+- Approval of each production write in "Production writes and their order": migrations A, the step-1 merge, migrations B, and the one-time `extract_links` pass (~$20, after the pilot).
 
 ## Risks
 - **The edge may be weak or absent.** The research supports a lag, and some replications doubt its size. The forward test is the honest answer; the cost of finding out is ~3 months of watching plus ~$1/day.
