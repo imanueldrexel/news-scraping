@@ -1367,6 +1367,8 @@ M = [
   '        if not previous:\n            return followup.alone(question)\n', ''),
  ('sys140_joined_for_keywords', 'newscrawler/web/query_processor.py',
   'kq = self._keyword_query(*query.questions)', 'kq = self._keyword_query(" ".join(query.questions))'),
+ ('sys141_reads_vs_l2_twice', 'newscrawler/infrastructure/datasource/dataflow/write/faiss/chunk_faiss_data_source.py',
+  'vectors[i] = vs.index.reconstruct(int(position))', 'vectors[i] = self.vs_l2.index.reconstruct(int(position))'),
  ('sys140_names_on_joined_text', 'newscrawler/web/keywords.py',
   '    for one in (question,) + more:\n', '    for one in (" ".join((question,) + more),):\n'),
 ]

@@ -404,28 +404,33 @@ class ChunkFAISSDatasource:
         scale, for a paragraph the keyword search found and FAISS did not return. A paragraph in
         NEWS_L2 (its chunk row's `embedding_id`) is scored with its stored vector, which is the one
         search_l2 compares (one encoder revision, SYS-61) and costs nothing; any other is embedded
-        (~25 ms each on CPU). Vectors are unit-normalised: the cosine is the dot product
-        (= 1 - d^2/2 for search_l2's distance)."""
+        (~25 ms each on CPU). Vectors are unit-normalised: the cosine is the dot product, which is
+        1 - d/2 for search_l2's squared distance d.
+
+        SYS-141 (#323): the positions and the vectors come from one NEWS_L2 object, read once. A
+        reload (`refresh_stale`) swaps `vs_l2`, and FAISS positions are renumbered by a delete, so
+        positions of one index read from another are other paragraphs' vectors."""
         if not texts:
             return []
         import numpy as np
+        vs = self.vs_l2
         query = np.asarray(self.embedding_model.embed_query(query_text), dtype="float32")
-        positions = self._l2_positions()
+        positions = self._l2_positions(vs)
         vectors: List = [None] * len(texts)
         for i, embedding_id in enumerate(embedding_ids or []):
             position = positions.get(embedding_id) if embedding_id else None
             if position is not None:
-                vectors[i] = self.vs_l2.index.reconstruct(int(position))
+                vectors[i] = vs.index.reconstruct(int(position))
         missing = [i for i, v in enumerate(vectors) if v is None]
         if missing:
             for i, v in zip(missing, self.embedding_model.embed_documents([texts[i] for i in missing])):
                 vectors[i] = np.asarray(v, dtype="float32")
         return [max(0.0, float(np.dot(v, query))) for v in vectors]
 
-    def _l2_positions(self) -> Dict[str, int]:
-        """docstore id -> position in NEWS_L2, built once per loaded index (a reload replaces vs_l2).
-        Two threads may build it at once; the second result simply replaces the first."""
-        vs = self.vs_l2
+    def _l2_positions(self, vs: FAISS) -> Dict[str, int]:
+        """docstore id -> position in `vs` (the caller's NEWS_L2), built once per loaded index (a
+        reload replaces vs_l2). Two threads may build it at once; the second result simply replaces
+        the first."""
         cached = self.__dict__.get("_positions")
         if cached is None or cached[0] is not vs:
             cached = (vs, {doc_id: pos for pos, doc_id in vs.index_to_docstore_id.items()})

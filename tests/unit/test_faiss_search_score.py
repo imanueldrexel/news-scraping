@@ -124,3 +124,22 @@ class TestSimilarityOfKeywordOnlyParagraphs:
         emb.embedded.clear()
         assert ds.similarity("q", ["far"], ["id-near"]) == [pytest.approx(0.0)]
         assert emb.embedded == []
+
+    def test_a_reload_during_the_call_does_not_mix_two_indexes(self):
+        """SYS-141 (#323): `refresh_stale` swaps vs_l2 between the position lookup and the vector
+        read. In the new index the old position of 'id-near' holds 'far' (cosine 0): the score must
+        still be the paragraph's own (0.77), read from the index its position came from."""
+        from langchain_community.vectorstores import FAISS
+        ds, emb = self._ds()
+        reloaded = FAISS.from_texts(["far", "near"], emb, ids=["id-far", "id-near"])
+        lookup = ds._l2_positions
+
+        def lookup_then_reload(vs):
+            positions = lookup(vs)
+            ds.vs_l2 = reloaded
+            return positions
+        ds._l2_positions = lookup_then_reload
+        emb.embedded.clear()
+
+        assert ds.similarity("q", ["near"], ["id-near"]) == [pytest.approx(0.6 ** 0.5)]
+        assert emb.embedded == []
