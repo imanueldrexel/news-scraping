@@ -239,6 +239,7 @@ WRITE_PATHS = [
     ("repair_boilerplate_bodies", ["--apply", "--source", "DETIK"]),
     ("rechunk_stale_chunks", ["--apply"]),
     ("settle_out_of_scope_links", ["--apply", "--source", "KUMPARAN"]),
+    ("drop_oversized_queued_chunks", ["--apply", "--source", "VIVA"]),
 ]
 
 

@@ -325,6 +325,28 @@ venv\Scripts\python.exe scripts\rechunk_stale_chunks.py --apply --resume --until
 3. Re-insert `l2_rows.jsonl`.
 4. Set `CHUNK_*` back to 80/450/50 in `.env`.
 
+### Queued sitemaps with chunks from an older chunker (SYS-137)
+
+The re-chunk above covers articles only. A queued sitemap (no `articles` row) can still hold chunks from an older chunker, e.g. VIVA's June backlog with L2 rows of up to 450 words. The crawl's dedup keeps any stored level, so the article it saves would adopt those chunks.
+
+The store check's `l2_over_max_tokens` (every crawl's summary, baseline 0) counts such rows. It covers both cases:
+- rows the crawl already adopted: re-chunk them with `rechunk_stale_chunks.py --source <S> --apply`;
+- rows still queued: drop them, and the crawl chunks those sitemaps fresh.
+
+```
+venv\Scripts\python.exe scripts\backup_db.py
+venv\Scripts\python.exe scripts\drop_oversized_queued_chunks.py --source VIVA            # dry run
+venv\Scripts\python.exe scripts\drop_oversized_queued_chunks.py --source VIVA --apply    # under the run lock
+venv\Scripts\python.exe scripts\rechunk_stale_chunks.py --source VIVA                    # dry run: the adopted ones
+venv\Scripts\python.exe scripts\rechunk_stale_chunks.py --source VIVA --apply --until 18:30
+```
+
+`drop_oversized_queued_chunks.py --apply`:
+1. backs up `NEWS_L2` and the rows (`backups/sys137_<source>_<stamp>/`);
+2. deletes those sitemaps' L2 vectors, then their L2 rows in one transaction. **L1 is kept.**
+
+It refuses (exit 1) if an entity mention points at a target row. A kill between steps 2a and 2b leaves rows without vectors; run it again.
+
 ### Scheduled newsletter (OPS-38) — registered 2026-10-04
 
 `venv\Scripts\python.exe scripts\run_scheduled_newsletter.py [--date YYYY-MM-DD] [--dry-run]` builds the digest of the previous day (or `--date`; today and later are refused), through `crawler_service.generate_newsletter`, so it writes the `newsletter_digests` row, the `digests/<date>.md` file and a `crawl_log` row (`website='ALL'`, `task='newsletter'`, OPS-11). It then sends one Telegram line:

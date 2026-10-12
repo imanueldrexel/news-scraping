@@ -1370,6 +1370,10 @@ M = [
  ('sys141_reads_vs_l2_twice', 'newscrawler/infrastructure/datasource/dataflow/write/faiss/chunk_faiss_data_source.py',
   'vectors[i] = vs.index.reconstruct(int(position))', 'vectors[i] = self.vs_l2.index.reconstruct(int(position))'),
  ('dbt65_vertical_tab_back', 'EXPERIMENTS.md', 'rmdir <wt>\\venv', 'rmdir <wt>\x0benv'),
+ ('sys137_store_check_never', 'scripts/check_store_consistency.py',
+  '"l2_over_max_tokens":       oversized_l2_rows,', '"l2_over_max_tokens":       0,'),
+ ('sys137_store_check_any_length', 'scripts/check_store_consistency.py',
+  'AND token_count > :m"),', 'AND token_count >= :m"),'),
  ('sys140_names_on_joined_text', 'newscrawler/web/keywords.py',
   '    for one in (question,) + more:\n', '    for one in (" ".join((question,) + more),):\n'),
 ]

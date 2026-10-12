@@ -26,6 +26,11 @@ A vector with no article is split by what can still happen to its sitemap
                           when the crawl reaches it. Informational, like the
                           vector totals: it is not a pass/fail check.
 
+l2_over_max_tokens (SYS-137) counts L2 chunk rows longer than CHUNK_MAX_TOKENS words:
+a window MiniLM cannot see whole (ADR-008). The chunker never writes one; a row
+the crawl adopted from an older chunker (VIVA's June backlog) or a lowered
+CHUNK_MAX_TOKENS does. `rechunk_stale_chunks.py` repairs article rows.
+
 faiss_pair_mismatch (SYS-56) counts the levels whose index.faiss and index.pkl
 are not one pair (position count differs, a position maps to no document) or
 that carry an interrupted save's journal. Every search of such a level returns
@@ -61,7 +66,7 @@ except Exception:
 logging.basicConfig(level=logging.WARNING, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("check_store_consistency")
 
-from newscrawler.core.constants import VECTOR_DB_NAME_L1, VECTOR_DB_NAME_L2
+from newscrawler.core.constants import CHUNK_MAX_TOKENS, VECTOR_DB_NAME_L1, VECTOR_DB_NAME_L2
 
 # Known, ticketed debris a check may carry without being GROWING. Empty since
 # 2026-09-26: every check measured 0 after the repairs (the transient
@@ -108,12 +113,13 @@ def _sitemap_ids(docstore):
 
 def compute_divergence(l1_ids, l2_ids, articles_ids, chunks_l1_ids, chunks_l2_ids,
                         pending_embedding_count, terminal_ids=frozenset(), url_category_rows=0,
-                        pair_mismatch_levels=0) -> dict:
+                        pair_mismatch_levels=0, oversized_l2_rows=0) -> dict:
     """Pure: every count from plain Python sets/ints, no I/O. Kept separate from
     gather_counts() so the arithmetic itself has a fast, DB-free unit test.
     `terminal_ids`: sitemap_ids that can never get an article (OPS-25).
     `url_category_rows`: sitemaps rows whose category is a URL (SRC-53).
-    `pair_mismatch_levels`: FAISS levels that are not one pair (SYS-56)."""
+    `pair_mismatch_levels`: FAISS levels that are not one pair (SYS-56).
+    `oversized_l2_rows`: L2 chunk rows longer than CHUNK_MAX_TOKENS words (SYS-137)."""
     l1_set, l2_set = set(l1_ids), set(l2_ids)
     chunks_any = set(chunks_l1_ids) | set(chunks_l2_ids)
     dup_l1 = {sid for sid, n in Counter(l1_ids).items() if n > 1}
@@ -132,6 +138,7 @@ def compute_divergence(l1_ids, l2_ids, articles_ids, chunks_l1_ids, chunks_l2_id
         "chunks_pending_embedding": pending_embedding_count,
         "chunks_not_in_faiss":      len(chunks_any - (l1_set | l2_set)),
         "sitemaps_url_category":    url_category_rows,
+        "l2_over_max_tokens":       oversized_l2_rows,
         # Informational (INFO_KEYS): queued sitemaps' vectors link up when crawled.
         "l1_no_articles_queued":    len(l1_orphan - terminal),
         "l2_no_articles_queued":    len(l2_orphan - terminal),
@@ -158,6 +165,8 @@ LABELS = {
     # checks (probe_branch_scope.py --fail-on-url-keys, the offline fleet test)
     # see only what crawlers list today, never rows already stored.
     "sitemaps_url_category":    "sitemaps rows with a URL as category",
+    # SYS-137 (#316): the crawl adopts a queued sitemap's stored chunks as they are.
+    "l2_over_max_tokens":       "L2 chunk rows over CHUNK_MAX_TOKENS words",
 }
 # Order matters for display. INFO_KEYS are context, not pass/fail checks.
 CHECK_KEYS = list(LABELS.keys())
@@ -175,7 +184,7 @@ def growing_checks(counts: dict) -> list:
 
 def gather_counts() -> dict:
     """The only I/O in this module: two pickle reads, two index.faiss headers
-    and four cheap SQL COUNTs.
+    and five cheap SQL COUNTs.
     Raises on a real infrastructure failure (missing FAISS dir, DB down) --
     main() decides how to report that; this function does not swallow it, the
     same rule check_crawlers.py's own DB calls follow."""
@@ -202,13 +211,16 @@ def gather_counts() -> dict:
             text("SELECT COUNT(*) FROM chunks WHERE chunk_status = 'pending_embedding'")).scalar()
         url_categories = session.execute(
             text("SELECT COUNT(*) FROM sitemaps WHERE category LIKE 'http%'")).scalar()
+        oversized = session.execute(
+            text("SELECT COUNT(*) FROM chunks WHERE chunk_level = 2 AND token_count > :m"),
+            {"m": CHUNK_MAX_TOKENS}).scalar()
         no_article = (set(l1_ids) | set(l2_ids)) - articles_ids
         state = _load_state(session, no_article) if no_article else {}
     # A sitemap row that is gone is terminal too (the repair's own rule).
     terminal = {sid for sid in no_article if state.get(sid, "terminal") == "terminal"}
 
     return compute_divergence(l1_ids, l2_ids, articles_ids, chunks_l1_ids, chunks_l2_ids, pending, terminal,
-                              url_category_rows=url_categories,
+                              url_category_rows=url_categories, oversized_l2_rows=oversized,
                               pair_mismatch_levels=sum(1 for p in (l1_problem, l2_problem) if p))
 
 

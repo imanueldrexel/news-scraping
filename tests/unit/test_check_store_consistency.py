@@ -70,6 +70,14 @@ class TestComputeDivergence:
         assert csc.growing_checks(counts) == ["sitemaps_url_category"]
         assert csc.compute_divergence([], [], set(), [], [], 0)["sitemaps_url_category"] == 0
 
+    def test_oversized_l2_rows_are_a_check(self):
+        """SYS-137 (#316): VIVA articles saved over their June 450-word chunks; the chunker never
+        writes one, so any is growth."""
+        counts = csc.compute_divergence([], [], set(), [], [], 0, oversized_l2_rows=2012)
+        assert counts["l2_over_max_tokens"] == 2012
+        assert csc.growing_checks(counts) == ["l2_over_max_tokens"]
+        assert csc.compute_divergence([], [], set(), [], [], 0)["l2_over_max_tokens"] == 0
+
     def test_every_check_has_baseline_zero(self):
         """A baseline above the real count hides that much new damage (OPS-25)."""
         assert all(csc.BASELINE.get(k, 0) == 0 for k in csc.CHECK_KEYS)
@@ -214,7 +222,7 @@ class TestReportingHelpers:
 
 
 class _Stores:
-    """A stand-in for the four queries gather_counts() makes, over a model of
+    """A stand-in for the five queries gather_counts() makes, over a model of
     the tables. Any other SQL fails the test, so a changed query (SRC-53's check
     turned into `WHERE false`, say) cannot quietly return a default."""
 
@@ -241,6 +249,9 @@ class _Stores:
         if q == "SELECT COUNT(*) FROM sitemaps WHERE category LIKE 'http%'":
             n = sum(1 for c in self.categories if c.startswith("http"))
             return SimpleNamespace(scalar=lambda: n)
+        if q == "SELECT COUNT(*) FROM chunks WHERE chunk_level = 2 AND token_count > :m":
+            assert params == {"m": 80}, "SYS-137: measured against CHUNK_MAX_TOKENS"
+            return SimpleNamespace(scalar=lambda: 0)
         raise AssertionError("gather_counts sent SQL this model does not know: %s" % q)
 
 

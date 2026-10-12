@@ -42,6 +42,8 @@ def client():
         pytest.skip(f"Cannot connect to test DB: {exc}")
     yield c
     with c.get_session() as s:
+        s.execute(text("DELETE FROM chunks WHERE sitemap_id IN (SELECT sitemap_id FROM sitemaps WHERE sources = :s)"),
+                  {"s": SOURCE})
         s.execute(text("DELETE FROM sitemaps WHERE sources = :s"), {"s": SOURCE})
         s.commit()
 
@@ -61,3 +63,27 @@ class TestSitemapsUrlCategory:
         counts = csc.gather_counts()
         assert counts["sitemaps_url_category"] == before + 1
         assert "sitemaps_url_category" in csc.growing_checks(counts)
+
+
+def _insert_l2_chunk(client, link, words):
+    with client.get_session() as s:
+        sid = s.execute(text("INSERT INTO sitemaps (headline, link, sources, category, posted_at) "
+                             "VALUES ('t', :l, :s, 'ekonomi', 20261012) RETURNING sitemap_id"),
+                        {"l": link, "s": SOURCE}).scalar()
+        s.execute(text("INSERT INTO chunks (sitemap_id, chunk_level, chunk_index, chunk_total, is_first_chunk, "
+                       "is_last_chunk, text_content, token_count, embedding_id, chunk_status) "
+                       "VALUES (:sid, 2, 0, 1, true, true, :t, :n, NULL, 'pending_embedding')"),
+                  {"sid": sid, "t": " ".join(["kata"] * words), "n": words})
+        s.commit()
+
+
+class TestOversizedL2Rows:
+    """SYS-137 (#316): the count comes from the database, against CHUNK_MAX_TOKENS."""
+
+    def test_a_200_word_l2_row_is_counted_and_growing_an_80_word_one_is_not(self, client, csc):
+        before = csc.gather_counts()["l2_over_max_tokens"]
+        _insert_l2_chunk(client, "http://sys137.test/a", 200)
+        _insert_l2_chunk(client, "http://sys137.test/b", csc.CHUNK_MAX_TOKENS)
+        counts = csc.gather_counts()
+        assert counts["l2_over_max_tokens"] == before + 1
+        assert "l2_over_max_tokens" in csc.growing_checks(counts)
