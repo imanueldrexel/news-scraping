@@ -13,6 +13,9 @@ logging.basicConfig()
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
+_POST_SITEMAP = re.compile(r"^https://investor\.id/sitemap_post\.xml$")
+_ARTICLE_URL = re.compile(r"^https://investor\.id/[a-z-]+/\d+/[^/?#]+")
+
 
 class InvestorIDCrawler(Crawler):
     def __init__(self):
@@ -22,8 +25,25 @@ class InvestorIDCrawler(Crawler):
 
     @staticmethod
     def _get_branches(soup) -> Dict[str, str]:
-        branches = {"news": URL.INVESTORID.value}
-        return branches
+        """SRC-59 (#260): `soup` is investor.id's index (basic / post / news). The news sitemap
+        answers 404 since 2026-10-06; the post sitemap holds the latest 100 articles, lastmod
+        only (the base crawler's SYS-32 path). Keyed `news` as the old leaf was, so the stored
+        category does not change. An index without it gives no branch, and the run fails with
+        that reason instead of saving nothing quietly."""
+        for loc in soup.find_all("loc"):
+            url = loc.get_text(" ").strip()
+            if _POST_SITEMAP.match(url):
+                return {"news": url}
+        return {}
+
+    @classmethod
+    def _link_has_article_id(cls, link: str) -> bool:
+        """SRC-59: the post sitemap is lastmod-only, so a row's headline starts as the URL
+        slug in words, and the article id is its own path segment
+        (`/business/457702/medcoenergi-akuisisi-10-hak-partisipasi-eni`), not the slug's
+        tail. Without this the slug ("Akuisisi 10 Hak") would stay the title instead of
+        the page's ("Akuisisi 10% Hak")."""
+        return bool(_ARTICLE_URL.match(link or ""))
 
     @staticmethod
     def _get_branch_name_from_url(url) -> str:

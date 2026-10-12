@@ -2485,3 +2485,26 @@ SINDONEWS   old 12 new 12 | lost [] | gained []   links identical: True
   - Do not use a `se-…-nya` pattern for adverbs: *sesudahnya / setelahnya / sebaliknya* point back.
   - A forced-kept probe measures a deterministic rule that only fires on some model outputs, without waiting for the model to produce that output.
 - **Links:** SYS-138 #317, SYS-143 #326, SYS-144 #327, SYS-145 #328, DBT-69 #330, DBT-68 #329; ADR-013, ADR-014; `.10x/specs/2026-10-12-qa-second-pass-fixes-design.md`
+
+### 2026-10-12 — SRC-59 INVESTORID probe, its slug-headline trap, and SYS-91's NEWS_L1 dry run
+- **Question / hypothesis:**
+  - SRC-59: can INVESTORID read `sitemap_post.xml` through the base crawler's lastmod path, with real headlines?
+  - SYS-91: how many FAISS documents disagree with `sitemaps.posted_at`?
+- **Method (read-only):**
+  - `curl` with the bot UA and the browser UA on `investor.id/{sitemap_news,sitemap,sitemap_post,sitemap_basic}.xml`, `?page=2` / `?p=2` / `sitemap_post2.xml`;
+  - `check_crawlers.py --website INVESTORID --sample-size 3 --report-dir <scratchpad>`;
+  - a scratch script running `CRAWLER_DICT["INVESTORID"].get_news_in_bulk()`, `_get_sitemap`, `_get_news_details` on 3 entries;
+  - og:title by curl;
+  - `repair_faiss_posted_at.find` on NEWS_L1 only (NEWS_L2 left to the write run because of memory: the extraction and :8000 were loaded, 10.5 GB free).
+- **Result:**
+  - **The bot UA gets 403 (CloudFront) on every investor.id URL; the browser UA gets 200.** Production already uses the browser UA there (`BROWSER_UA_HOSTS`). `sitemap_news.xml` is 404 with both.
+  - **`sitemap_post.xml`:** 100 entries, lastmod only, spanning 10:33-22:10 of one day, with no second page (`?page=2` returns the same 100).
+  - **Categories** come from the URL section (SRC-48 path): market 32, business 29, macroeconomy 9, national 8, news 8, international 5, lifestyle 4, finance 3, investory 2.
+  - **`check_crawlers.py`:** OK, 100 links, 3/3 details (3,438 chars).
+  - **Trap: the slug headline would have stayed the title.** investor.id puts the article id in its own segment (`/business/457702/<slug>`), so SYS-33's "id at the slug's tail" test never saw a placeholder. "Medcoenergi Akuisisi 10 Hak…" stayed instead of the og:title "MedcoEnergi Akuisisi 10% Hak…". Fixed with a per-crawler hook, `_link_has_article_id`.
+  - **Not one rule for every shape:** KOMPAS's `/<id>/<slug>` would turn thousands of genuine slug-equal headlines into "placeholders". og:title also had `&nbsp; ` (a double space), now collapsed.
+  - **NEWS_L1:** 92 documents disagree. 88 are CNBC `19700823` (the ticket's 88); 4 are TRIBUN with an empty `posted_at` (sitemaps say 20260917).
+- **Conclusion / do not repeat:**
+  - Probe investor.id with the browser UA; a bot-UA 403 there means nothing.
+  - A new lastmod-only source needs its URL's id position checked against `_is_placeholder_headline`, or its slugs become permanent titles.
+- **Links:** SRC-59 #260, SYS-91 #257, DBT-60 #258; `.10x/specs/2026-10-12-src59-dbt60-sys91-design.md`

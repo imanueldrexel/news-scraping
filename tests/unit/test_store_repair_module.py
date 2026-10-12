@@ -13,7 +13,7 @@ REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 SCRIPTS = os.path.join(REPO, "scripts")
 TOOLKIT = ("repair_boilerplate_bodies", "rechunk_stale_chunks", "settle_out_of_scope_links",
            "drop_oversized_queued_chunks", "backfill_orphan_chunks", "recount_entity_mentions",
-           "repair_store_consistency", "requeue_cascaded_articles")
+           "repair_store_consistency", "requeue_cascaded_articles", "repair_faiss_posted_at")
 # The OPS-01 Telegram notifier is shared by eight scripts (the scheduled jobs too); moving it is not
 # DBT-67's change.
 NOT_A_REPAIR_STEP = {"notify_telegram"}

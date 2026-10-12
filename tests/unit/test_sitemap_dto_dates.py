@@ -19,10 +19,43 @@ from newscrawler.infrastructure.repositories.dataflow.data_flow_repository_impl 
     (20260918, datetime(2026, 9, 18)),
     (None, None),
     (datetime(2026, 9, 18, 7, 30, tzinfo=timezone.utc), datetime(2026, 9, 18, 7, 30, tzinfo=timezone.utc)),
-    (1758200000, 1758200000),                 # not a yyyymmdd: left to pydantic (Unix seconds, as before)
+    # DBT-60 (#258): the same date as text or a float (meta_data->>'posted_at', FAISS metadata)
+    ("20260918", datetime(2026, 9, 18)),
+    (" 20260918 ", datetime(2026, 9, 18)),
+    (20260918.0, datetime(2026, 9, 18)),
+    # a date string that is not digits only is pydantic's to parse
+    ("2026-09-18T07:30:00+07:00", "2026-09-18T07:30:00+07:00"),
 ])
 def test_posted_at_datetime(value, expected):
     assert posted_at_datetime(value) == expected
+
+
+@pytest.mark.parametrize("value", [
+    1758200000,             # Unix seconds: never accepted (it used to pass through to pydantic)
+    "1758200000",
+    1758200000.0,
+    20260918.5,             # not an integral date
+    "2026091",              # 7 digits
+    -20260918,
+    "20261318",             # month 13
+    20260230,               # 30 February
+])
+def test_a_number_that_is_not_a_yyyymmdd_is_refused(value):
+    """DBT-60: a numeric posted_at is a yyyymmdd or an error, never Unix seconds and 1970."""
+    with pytest.raises(ValueError):
+        posted_at_datetime(value)
+
+
+@pytest.mark.parametrize("timestamp", ["20260918", 20260918.0])
+def test_the_dto_reads_the_text_and_float_forms_as_that_day(timestamp):
+    """The ticket's repro: SitemapDTO(timestamp='20260918') was 1970-08-23."""
+    assert SitemapDTO(headline="h", link="l", sources="CNBC", timestamp=timestamp).timestamp == datetime(2026, 9, 18)
+
+
+def test_the_dto_refuses_unix_seconds():
+    from pydantic import ValidationError
+    with pytest.raises(ValidationError):
+        SitemapDTO(headline="h", link="l", sources="CNBC", timestamp="1758200000")
 
 
 def test_a_stored_int_date_is_that_day_not_unix_seconds():

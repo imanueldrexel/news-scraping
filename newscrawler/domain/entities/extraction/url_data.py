@@ -28,7 +28,9 @@ class URL(enum.Enum):
     # is a two-level structure -- this lists per-section monthly sub-indexes
     # (insider/ekonomi.xml, insider/bisnis.xml, ...), see TirtoCrawler._get_branches.
     TIRTO = "https://tirto.id/sitemap/news.xml"
-    INVESTORID = "https://investor.id/sitemap_news.xml"
+    # SRC-59 (#260): sitemap_news.xml answers 404 since 2026-10-06; the index lists the live
+    # sitemap_post.xml (lastmod only), see InvestorIDCrawler._get_branches.
+    INVESTORID = "https://investor.id/sitemap.xml"
     BERITASATU = "https://www.beritasatu.com/sitemap.xml"
     SUARA = "https://www.suara.com/sitemap.xml"
     KUMPARAN = "https://kumparan.com/sitemap.xml"

@@ -240,6 +240,7 @@ WRITE_PATHS = [
     ("rechunk_stale_chunks", ["--apply"]),
     ("settle_out_of_scope_links", ["--apply", "--source", "KUMPARAN"]),
     ("drop_oversized_queued_chunks", ["--apply", "--source", "VIVA"]),
+    ("repair_faiss_posted_at", ["--apply"]),
 ]
 
 

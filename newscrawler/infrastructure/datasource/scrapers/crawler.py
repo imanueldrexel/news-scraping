@@ -859,13 +859,22 @@ class Crawler:
         Equality alone is not enough: 3,580 genuine headlines on MEDIAINDONESIA,
         JPNN, INEWS, KOMPAS, ... are short, punctuation-free Title Case and
         coincide with their own slug ("Keadilan Terkubur Longsor"). The
-        placeholder additionally carries the URL's trailing id token, which a
-        real headline does not, so both conditions are required."""
+        placeholder additionally carries the URL's article id, which a real
+        headline does not, so both conditions are required."""
         if not sitemap.headline or not sitemap.link:
             return False
         if sitemap.headline != cls._derive_headline_from_url(sitemap.link):
             return False
-        return cls._slug_has_id_tail(sitemap.link)
+        return cls._link_has_article_id(sitemap.link)
+
+    @classmethod
+    def _link_has_article_id(cls, link: str) -> bool:
+        """Where a lastmod-only outlet puts its article id. By default at the end
+        of the slug (TIRTO, TEMPO); a crawler whose URLs carry it elsewhere
+        overrides this (SRC-59: investor.id's `/<section>/<id>/<slug>`). Not one
+        rule for every URL shape: KOMPAS's `/<id>/<slug>` would make thousands of
+        genuine slug-equal headlines look like placeholders."""
+        return cls._slug_has_id_tail(link)
 
     @staticmethod
     def _get_page_title(soup) -> Optional[str]:
@@ -875,10 +884,11 @@ class Crawler:
         itself."""
         og_title = soup.find("meta", property="og:title")
         if og_title and og_title.get("content"):
-            return unescape_headline(og_title["content"].strip())
+            # SRC-59: one space where the page had `&nbsp; ` ("Menambah&nbsp; Lengkap")
+            return " ".join(unescape_headline(og_title["content"]).split())
         title_tag = soup.find("title")
         if title_tag and title_tag.get_text(strip=True):
-            return unescape_headline(title_tag.get_text(" ").strip())
+            return " ".join(unescape_headline(title_tag.get_text(" ")).split())
         return None
 
     @staticmethod
