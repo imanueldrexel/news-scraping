@@ -247,3 +247,12 @@
   - QA's 48 own tests (1 = the SYS-111 repro); QA mutants: 4 real gaps → DBT-66.
 - **Owner:** the SumoPod key has been blocked since 10-11 (account budget $22.50 exhausted by extraction). The newsletter, extraction and search answers degrade until it is unblocked or topped up.
 - Report: `reviews/2026-10-12-qa-report.md`.
+
+## Ops 2026-10-12: SumoPod topped up
+- The owner topped up twice; the balance is **$22.50**. The key works again: a test call returned 200 after the 401 "blocked" on 10-11.
+- The 10-10 block was the prepaid balance running out ("Spend=22.5, Budget=22.5"), not a separate limit on the key.
+- **Plan, at the measured $0.34 per 1,000 articles:**
+  - `KNOWLEDGE_DAILY_COST_LIMIT_USD` stays at 8;
+  - nights 10-12/13/14 extract ~20k each (`KNOWLEDGE_MAX_PER_RUN`), ~$20.5 in total, which clears the backlog (50,462 + new);
+  - about $2 is left on 10-15. The steady cost after that is ~$1.20/day (~$36/month).
+- **Action due 10-15:** either the owner tops up again, or set `KNOWLEDGE_DAILY_COST_LIMIT_USD=1.5` in `.env` before the 10-15 21:00 run. Otherwise extraction spends the last of the balance and the 10-16 12:00 newsletter fails.
