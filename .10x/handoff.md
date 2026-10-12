@@ -21,7 +21,7 @@
 - **DBT-67 #325 (code done, c02470a, NOT yet labelled):** store_repair module. The host stopped its mutation run for low memory after 2 of 13 mutants (both KILLED); the label goes on once the other 11 are run. Your first-pass `qa_2026_10_12/test_qa_tickets.py::TestSys111DeadlineResolvedOnce` patches names that DBT-67 renamed (see the ticket).
 
 ### Owner
-- **Restart :8000** to serve SYS-138/143/144/145. No production DB or FAISS write was made.
+- :8000 restarted 2026-10-12 20:40 after the 19:00 crawl (on 3c429a6/c02470a). Live smoke: "Apa kabar Danantara pekan ini?" gives card 1 = 8 Oct "Deviden Danantara…", `window=7d+1`, no Primbon card, answer ok. No production DB or FAISS write was made.
 - Unchanged from QA's handoff: `.env` VIVA=1800 stays until QA closes SYS-139.
 
 ### For QA next
