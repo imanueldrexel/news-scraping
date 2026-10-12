@@ -1,4 +1,5 @@
 """SYS-104 (#274), ADR-010: the pure parts of a follow-up's retrieval (newscrawler/web/followup.py).
+SYS-143 (#326) refusal/list check, SYS-144 (#327) -nya adverbs, SYS-145 (#328, ADR-014) kept-thread.
 The composed path through QueryProcessor is in test_query_processor_ranking.py::TestFollowUp."""
 import pytest
 
@@ -42,6 +43,26 @@ class TestRefersBack:
     def test_a_question_that_names_its_subject(self, question):
         assert not f.refers_back(question)
 
+    @pytest.mark.parametrize("question", [
+        "Apa yang sebenarnya terjadi pada Garuda Indonesia?",
+        "Bagaimana nasib Sritex selanjutnya?",
+        "Apakah harga emas biasanya naik menjelang Lebaran?",
+        "Siapa saja tersangka korupsi timah, misalnya?",
+        "Apakah Danantara akhirnya membeli saham Garuda?",
+        "Seharusnya BI menurunkan suku bunga?",
+        "Tampaknya IHSG menguat, kenapa?",
+    ])
+    def test_an_adverb_ending_in_nya_is_not_a_back_reference(self, question):
+        """SYS-144: on the fallback these questions were retrieved with the old thread (0/5)."""
+        assert not f.refers_back(question)
+
+    @pytest.mark.parametrize("question", [
+        "Apa yang terjadi sesudahnya?", "Bagaimana setelahnya?", "Apa sebaliknya?",
+        "Apakah Sritex akhirnya membayar utangnya?",     # an adverb does not hide a real reference
+    ])
+    def test_words_that_do_point_back_still_do(self, question):
+        assert f.refers_back(question)
+
 
 class TestCheck:
     @pytest.mark.parametrize("reply, expected", [
@@ -61,6 +82,38 @@ class TestCheck:
 
     def test_the_length_limit_is_inclusive(self):
         assert f.check("x" * f.REWRITE_MAX_CHARS) == "x" * f.REWRITE_MAX_CHARS
+
+    @pytest.mark.parametrize("reply", [
+        "Maaf, saya tidak dapat menulis ulang pertanyaan tersebut.",
+        "Mohon maaf, pertanyaan ini tidak jelas.",
+        "Saya tidak bisa membantu dengan permintaan ini.",
+        "Sebagai AI, saya tidak memiliki akses ke berita.",
+        "Pertanyaan: \"Maaf, saya tidak mampu menjawab.\"",       # a label does not hide a refusal
+        "Sorry, I cannot rewrite this question.",
+        "I can't help with that.",
+    ])
+    def test_a_refusal_is_not_a_query(self, reply):
+        """SYS-143, ADR-010 decision 3: one short line, so only an explicit check stops it."""
+        assert f.check(reply) is None
+
+    @pytest.mark.parametrize("reply", ["1. Apa itu Danantara?", "2) Siapa pemimpinnya?",
+                                       "- Apa itu Danantara?", "* Apa itu Danantara?", "• Apa itu Danantara?"])
+    def test_a_list_item_is_not_a_query(self, reply):
+        assert f.check(reply) is None
+
+    @pytest.mark.parametrize("reply", [
+        # rewrites logged on production 2026-10-12 (EXPERIMENTS.md, SYS-104)
+        "Apa target pertumbuhan kredit perbankan tahun depan menurut OJK?",
+        "Berapa harga buyback emas Antam hari ini?",
+        "Siapa yang dipanggil KPK pekan ini dan kasusnya tentang apa?",
+        "Berapa kerugian negara dalam kasus korupsi tol MBZ?",
+        # questions that merely contain the words
+        "1.000 pekerja Sritex di-PHK, apa kata Kemnaker?",
+        "Apakah BI minta maaf soal rupiah?",
+        "-5% IHSG hari ini, kenapa?",
+    ])
+    def test_real_questions_still_pass(self, reply):
+        assert f.check(reply) == reply
 
 
 class TestResolve:
@@ -87,6 +140,20 @@ class TestResolve:
                                "Apa kata OJK soal kredit perbankan?")
         assert r.cue_text == "Apa dampaknya?"       # 'pekan ini' must not leak (QA, SYS-104)
         assert r.how == "fallback-thread"
+
+    def test_a_kept_follow_up_that_refers_back_uses_the_thread(self):
+        """SYS-145, ADR-014: the model kept 'Bagaimana dampaknya ke rupiah?' after The Fed (0/5 Fed
+        cards alone); '-nya' still points at the Fed decision."""
+        fed = ["Apa keputusan The Fed terbaru?"]
+        r = f.resolve("Bagaimana dampaknya ke rupiah?", fed, "Bagaimana dampaknya ke rupiah?")
+        assert r == f.Retrieval("Bagaimana dampaknya ke rupiah? Apa keputusan The Fed terbaru?",
+                                ("Bagaimana dampaknya ke rupiah?", "Apa keputusan The Fed terbaru?"),
+                                "Bagaimana dampaknya ke rupiah?", "kept-thread")
+
+    def test_a_kept_topic_switch_with_an_adverb_stays_kept(self):
+        """SYS-144 first: an adverb in -nya must not pull a kept switch back to the old thread."""
+        q = "Apa yang sebenarnya terjadi pada Garuda Indonesia?"
+        assert f.resolve(q, self.PREVIOUS, q) == f.Retrieval(q, (q,), q, "kept")
 
     def test_the_fallback_for_a_new_subject_is_its_own_words(self):
         assert f.resolve("Apa itu Danantara?", self.PREVIOUS, None) == f.Retrieval(

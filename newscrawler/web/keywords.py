@@ -100,6 +100,12 @@ class KeywordQuery:
     names: List[str]            # ... and one of these, when there are any
     need: int
 
+    @property
+    def subject(self) -> List[str]:
+        """What the question is about: its names, or its anchors when it names nothing. A paragraph
+        holding none of these is not about the question, however close its vector (ADR-013)."""
+        return self.names or self.anchors
+
     @classmethod
     def build(cls, question_terms: Sequence[Term], df: Dict[str, float]) -> Optional["KeywordQuery"]:
         """None when no word occurs anywhere (a question of typos, or of stop words only)."""

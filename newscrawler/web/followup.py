@@ -3,10 +3,12 @@
 A follow-up (a turn whose session already holds a question) is rewritten by one model call into a
 standalone question: "Kasusnya tentang apa?" after "Siapa yang dipanggil KPK pekan ini?" becomes a
 question about the KPK cases, while "Apa itu Danantara?" after an OJK question stays as it is. The
-rewrite is then retrieved exactly as a search-box question.
+rewrite is then retrieved exactly as a search-box question. A rewrite equal to the follow-up
+("kept") of a follow-up that refers back is retrieved with the thread, as the fallback is (SYS-145,
+ADR-014).
 
 Without a usable rewrite (no provider, the page's daily cap, a timeout, an error, an output that
-fails `check`), the fallback is deterministic:
+fails `check`: several lines, a refusal, a list), the fallback is deterministic:
   - a follow-up that refers back (`refers_back`) is retrieved on its own words plus the thread, its
     keyword terms taken question by question, its recency cue from its own words only;
   - any other follow-up is retrieved on its own words.
@@ -23,22 +25,36 @@ logger = logging.getLogger(__name__)
 FOLLOWUP_CONTEXT_TURNS = 2      # the thread's newest questions a follow-up is resolved with
 REWRITE_MAX_CHARS = 300         # a longer "question" is an answer or a list, not a query
 
-ALONE, LLM, KEPT, FALLBACK_THREAD, FALLBACK_OWN = "alone", "llm", "kept", "fallback-thread", "fallback-own"
+ALONE, LLM, KEPT, KEPT_THREAD = "alone", "llm", "kept", "kept-thread"
+FALLBACK_THREAD, FALLBACK_OWN = "fallback-thread", "fallback-own"
 
 # A word that points back into the conversation. "-nya" is the usual Indonesian back-reference
 # ("pertumbuhannya", "buyback-nya"); a few common words merely end in it. "itu" is not one: "Apa
 # itu Danantara?" names its own subject.
-_NOT_REFERENCES = frozenset({"hanya", "punya", "tanya", "bertanya"})
+# SYS-144 (#327): adverbs ending in -nya have no referent ("Bagaimana nasib Sritex selanjutnya?").
+# A list, not a se-...-nya pattern: "sesudahnya", "setelahnya" and "sebaliknya" do point back.
+_NOT_REFERENCES = frozenset({
+    "hanya", "punya", "tanya", "bertanya",
+    "sebenarnya", "sesungguhnya", "selanjutnya", "sebelumnya", "biasanya", "akhirnya", "misalnya",
+    "khususnya", "terutamanya", "sepertinya", "tampaknya", "nampaknya", "kelihatannya", "rupanya",
+    "agaknya", "seharusnya", "semestinya", "setidaknya", "sekurangnya", "umumnya", "tentunya", "katanya",
+})
 _REFERENCE = re.compile(r"\b(?:dia|ia|mereka|beliau|tersebut)\b|\b[\w-]+nya\b", re.IGNORECASE)
 _LABEL = re.compile(r"^(?:pertanyaan(?:\s+(?:hasil|baru|lengkap))?|hasil)\s*:\s*", re.IGNORECASE)
 _QUOTES = "\"'“”‘’`"
+# SYS-143 (#326): a refusal or a list item is one short line too, and must not be searched
+# (ADR-010 decision 3).
+_REFUSAL = re.compile(r"^(?:(?:mohon\s+)?maaf\b|saya\s+tidak\s+(?:dapat|bisa|mampu)\b|"
+                      r"sebagai\s+(?:ai|asisten|model)\b|(?:i'?m\s+)?sorry\b|i\s+(?:cannot|can't)\b)",
+                      re.IGNORECASE)
+_LIST_ITEM = re.compile(r"^(?:\d+[.)]|[-*•])\s")
 
 
 class Retrieval(NamedTuple):
     text: str                   # what both retrievers and the scores read
     questions: Tuple[str, ...]  # the keyword terms come from these, one by one, first first (SYS-140)
     cue_text: str               # where the recency cue is read
-    how: str                    # alone / llm / kept / fallback-thread / fallback-own
+    how: str                    # alone / llm / kept / kept-thread / fallback-thread / fallback-own
 
 
 def previous_questions(history: Sequence[dict]) -> list:
@@ -76,12 +92,12 @@ def prompt(question: str, previous: Sequence[str]) -> str:
 
 def check(reply: Optional[str]) -> Optional[str]:
     """The rewrite if it can be used as a query: one non-empty line of at most REWRITE_MAX_CHARS once
-    a label and quotes are stripped; else None."""
+    a label and quotes are stripped, and neither a refusal nor a list item; else None."""
     text = (reply or "").strip()
     if not text or "\n" in text:
         return None
     text = _LABEL.sub("", text).strip().strip(_QUOTES).strip()
-    if not text or len(text) > REWRITE_MAX_CHARS:
+    if not text or len(text) > REWRITE_MAX_CHARS or _REFUSAL.match(text) or _LIST_ITEM.match(text):
         return None
     return text
 
@@ -91,17 +107,30 @@ def alone(question: str) -> Retrieval:
     return Retrieval(q, (q,), q, ALONE)
 
 
+def _with_thread(q: str, previous: Sequence[str], how: str) -> Retrieval:
+    """Own words plus the thread, newest first; keyword terms per question (SYS-140); the recency
+    cue from the follow-up's own words only."""
+    newest_first = tuple(reversed(previous))
+    return Retrieval(" ".join((q,) + newest_first), (q,) + newest_first, q, how)
+
+
 def resolve(question: str, previous: Sequence[str], rewritten: Optional[str]) -> Retrieval:
-    """The retrieval for a follow-up, given the checked rewrite (None when there is none)."""
+    """The retrieval for a follow-up, given the checked rewrite (None when there is none).
+
+    A rewrite equal to the follow-up means the model judged that it stands alone. If the follow-up
+    still refers back ("Bagaimana dampaknya ke rupiah?" after The Fed), the thread is used anyway
+    (SYS-145, ADR-014): the model took the object for the subject."""
     q = question.strip()
     if not previous:
         return alone(q)
     if rewritten is not None:
-        how = KEPT if " ".join(rewritten.split()).lower() == " ".join(q.split()).lower() else LLM
-        return Retrieval(rewritten, (rewritten,), rewritten, how)
+        if " ".join(rewritten.split()).lower() != " ".join(q.split()).lower():
+            return Retrieval(rewritten, (rewritten,), rewritten, LLM)
+        if refers_back(q):
+            return _with_thread(q, previous, KEPT_THREAD)
+        return Retrieval(rewritten, (rewritten,), rewritten, KEPT)
     if refers_back(q):
-        newest_first = tuple(reversed(previous))
-        return Retrieval(" ".join((q,) + newest_first), (q,) + newest_first, q, FALLBACK_THREAD)
+        return _with_thread(q, previous, FALLBACK_THREAD)
     return Retrieval(q, (q,), q, FALLBACK_OWN)
 
 

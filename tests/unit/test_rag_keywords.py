@@ -5,6 +5,7 @@ words; the score is the IDF-weighted coverage; df from the planner statistics fo
 common words and an exact count for the rest, cached.
 """
 import math
+import re
 from datetime import date
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -132,6 +133,17 @@ class TestKeywordQueryBuild:
         df = {"indonesia": 0.22, "longsor": 0.003}
         kq = KeywordQuery.build([Term("longsor", False), Term("indonesia", True)], df)
         assert kq.anchors == ["longsor"] and kq.names == []
+
+    def test_the_subject_is_the_names(self):
+        """ADR-013: what a this-week paragraph must hold to lead the week window."""
+        df = {"iran": 0.031, "konflik": 0.021, "perkembangan": 0.039}
+        kq = KeywordQuery.build([Term("perkembangan", False), Term("konflik", False), Term("iran", True)], df)
+        assert kq.subject == ["iran"]
+
+    def test_a_question_without_names_has_its_anchors_as_subject(self):
+        df = {"indonesia": 0.22, "longsor": 0.003, "banjir": 0.01}
+        kq = KeywordQuery.build([Term("longsor", False), Term("banjir", False), Term("indonesia", True)], df)
+        assert kq.subject == ["longsor", "banjir"]
 
     def test_word_in_every_paragraph_gets_equal_weights(self):
         kq = KeywordQuery.build([Term("aa", False), Term("bb", False)], {"aa": 1.0, "bb": 1.0})
@@ -312,7 +324,7 @@ class TestCoverage:
     as `chunks.fts_vector` is (to_tsvector('simple', ...)), with the same weights."""
 
     def test_sql_binds_texts_words_and_weights(self):
-        qp, calls = _qp(rows=[SimpleNamespace(i=1, coverage=1.0), SimpleNamespace(i=2, coverage=0.25)])
+        qp, calls = _qp(rows=[SimpleNamespace(i=1, value=1.0), SimpleNamespace(i=2, value=0.25)])
         kq = qp._keyword_query(BI)
         assert qp._coverage(kq, ["BI-Rate ditahan", "bank lain"]) == [1.0, 0.25]
         sql, params = calls[0]
@@ -323,6 +335,23 @@ class TestCoverage:
         assert sorted(v for k, v in params.items() if k.startswith("t") and k != "texts") == sorted(
             ["'keputusan'", "'bank'", "'indonesia'", "'bi-rate'"])
         assert "BI-Rate" not in sql and "bi-rate" not in sql
+
+
+class TestHoldsSubject:
+    """ADR-013 (SYS-138): the subject test is the coverage's tokenization over the subject words only,
+    every word a bind parameter."""
+
+    def test_sql_tests_only_the_subject_words(self):
+        qp, calls = _qp(rows=[SimpleNamespace(i=1, value=True), SimpleNamespace(i=2, value=False)])
+        kq = qp._keyword_query(BI)
+        assert kq.subject == ["bank", "bi-rate"]
+        assert qp._holds_subject(kq, ["BI-Rate ditahan", "harga emas"]) == [True, False]
+        sql, params = calls[0]
+        flat = " ".join(sql.split())
+        assert "to_tsvector('simple', u.body)" in flat and ">= 1 AS value" in flat
+        tested = {params[k] for k in re.findall(r":(t\d+)\)\)::int", flat)}
+        assert tested == {"'bank'", "'bi-rate'"}
+        assert "bi-rate" not in sql
 
 
 class TestRecencyCue:

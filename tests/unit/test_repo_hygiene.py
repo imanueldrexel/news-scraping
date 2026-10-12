@@ -47,3 +47,41 @@ def test_no_control_characters_in_tracked_markdown():
         if hits:
             offenders[os.path.relpath(path, REPO)] = hits
     assert offenders == {}
+
+
+def _shadowed_names(source):
+    """Names a module defines twice at the top level, or a class defines twice in its body: the
+    second silently replaces the first, so pytest collects one and an edit to the other never runs."""
+    import ast
+    import warnings
+    from collections import Counter
+
+    def repeated(body, where):
+        names = Counter(n.name for n in body if isinstance(n, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)))
+        return ["%s%s x%d" % (where, name, count) for name, count in names.items() if count > 1]
+
+    with warnings.catch_warnings():     # an escape warning in some docstring is not this check's business
+        warnings.simplefilter("ignore")
+        tree = ast.parse(source)
+    found = repeated(tree.body, "")
+    for node in tree.body:
+        if isinstance(node, ast.ClassDef):
+            found += repeated(node.body, node.name + ".")
+    return found
+
+
+def test_no_test_module_shadows_a_test_name():
+    """DBT-68 (#329): test_source_worker.py defined `class TestSoftDeadline` twice (SYS-139's commit).
+    flake8's F811 would catch it, but pre-commit is not wired up."""
+    offenders = {}
+    for path in _tracked("tests/*test_*.py"):
+        with open(path, encoding="utf-8") as f:
+            found = _shadowed_names(f.read())
+        if found:
+            offenders[os.path.relpath(path, REPO)] = found
+    assert offenders == {}
+
+
+def test_the_shadow_check_finds_a_repeated_class_and_method():
+    source = "class A:\n    def t(self): pass\n    def t(self): pass\n\nclass A:\n    pass\n\ndef f(): pass\n"
+    assert sorted(_shadowed_names(source)) == ["A x2", "A.t x2"]

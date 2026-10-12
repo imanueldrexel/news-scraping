@@ -7,7 +7,9 @@
   * a saved article with the same old chunks is untouched (rechunk_stale_chunks.py owns it);
   * a queued sitemap whose L2 rows fit the limit is untouched;
   * the crawl's own save then writes that sitemap's chunks fresh, every L2 row within CHUNK_MAX_TOKENS;
-  * a second run finds nothing; the dry run writes nothing.
+  * a second run finds nothing; the dry run writes nothing;
+  * DBT-69 (#330): `--source` leaves another source's queued stale chunks alone, and a queued L2 row
+    of exactly CHUNK_MAX_TOKENS words is not a target (81 words is).
 
 Uses temp FAISS, backup and lock paths, never the real NEWS_L1/NEWS_L2 or backups/."""
 import os
@@ -22,6 +24,7 @@ psycopg2 = pytest.importorskip("psycopg2", reason="psycopg2 not installed")
 from sqlalchemy import text  # noqa: E402
 
 SOURCE = "VIVA"
+OTHER = "JPNN"      # a second source for the --source scope (DBT-69)
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 SCRIPTS = os.path.join(ROOT, "scripts")
 LONG_BODY = "\n\n".join(" ".join(f"kata{i}x{j}" for j in range(200)) for i in range(2))   # 2 x 200 words
@@ -48,10 +51,11 @@ def client():
         pytest.skip(f"Cannot connect to test DB: {exc}")
     yield c
     with c.get_session() as s:
-        ids = "(SELECT sitemap_id FROM sitemaps WHERE sources = :s)"
-        s.execute(text(f"DELETE FROM chunks WHERE sitemap_id IN {ids}"), {"s": SOURCE})
-        s.execute(text(f"DELETE FROM articles WHERE sitemap_id IN {ids}"), {"s": SOURCE})
-        s.execute(text("DELETE FROM sitemaps WHERE sources = :s"), {"s": SOURCE})
+        for source in (SOURCE, OTHER):
+            ids = "(SELECT sitemap_id FROM sitemaps WHERE sources = :s)"
+            s.execute(text(f"DELETE FROM chunks WHERE sitemap_id IN {ids}"), {"s": source})
+            s.execute(text(f"DELETE FROM articles WHERE sitemap_id IN {ids}"), {"s": source})
+            s.execute(text("DELETE FROM sitemaps WHERE sources = :s"), {"s": source})
         s.commit()
 
 
@@ -66,27 +70,27 @@ def env(monkeypatch, scripts):
     shutil.rmtree(tmp, ignore_errors=True)
 
 
-def _sitemap(client, body, status):
+def _sitemap(client, body, status, source=SOURCE):
     with client.get_session() as s:
         sid = s.execute(text(
             "INSERT INTO sitemaps (headline, link, sources, category, posted_at, crawl_status) "
             "VALUES ('h', :l, :s, 'berita', 20260602, :st) RETURNING sitemap_id"),
-            {"l": f"https://www.viva.co.id/berita/{uuid.uuid4().hex}", "s": SOURCE, "st": status}).scalar()
+            {"l": f"https://drop-sys137.test/{source}/{uuid.uuid4().hex}", "s": source, "st": status}).scalar()
         s.execute(text("INSERT INTO articles (sitemap_id, extracted_text, writer, meta_data, knowledge_extracted) "
                        "VALUES (:sid, :t, '[\"r\"]', '{}', 0)"), {"sid": sid, "t": body})
         s.commit()
     return sid
 
 
-def _chunk_like_june(client):
-    """Chunk and embed every VIVA article with a 450-word window, the chunker of 2026-06-02."""
+def _chunk_like_june(client, source=SOURCE):
+    """Chunk and embed every article of `source` with a 450-word window, the chunker of 2026-06-02."""
     import backfill_orphan_chunks
     from newscrawler.core.chunker import HierarchicalChunker
     from newscrawler.infrastructure.repositories.dataflow.data_flow_repository_impl import DataFlowRepositoryImpl
     with client.get_session() as s:
-        rows = s.execute(backfill_orphan_chunks._FETCH_SQL, {"website": SOURCE}).fetchall()
+        rows = s.execute(backfill_orphan_chunks._FETCH_SQL, {"website": source}).fetchall()
     repo = DataFlowRepositoryImpl(client)
-    with repo.deferred_embeddings(SOURCE):
+    with repo.deferred_embeddings(source):
         backfill_orphan_chunks.rechunk_articles(repo, HierarchicalChunker(max_tokens=450), rows)
     return repo
 
@@ -173,3 +177,38 @@ class TestDropOversizedQueuedChunksLive:
         assert scripts.drop.main(["--source", SOURCE]) == 0
         assert "1 queued sitemap(s) with stale chunks" in capsys.readouterr().out
         assert (_rows(client, queued, 2), _vectors(queued, 2)) == before
+
+    def test_source_scope_leaves_another_sources_queued_chunks_alone(self, client, env, scripts):
+        """DBT-69: `--source VIVA --apply` must not drop JPNN's queued stale chunks (QA mutant
+        qa1012b_drop_ignores_source)."""
+        mine = _sitemap(client, LONG_BODY, "pending")
+        theirs = _sitemap(client, LONG_BODY, "pending", source=OTHER)
+        _chunk_like_june(client)
+        _chunk_like_june(client, OTHER)
+        _unsave(client, mine)
+        _unsave(client, theirs)
+        before = (_rows(client, theirs, 1), _rows(client, theirs, 2), _vectors(theirs, 1), _vectors(theirs, 2))
+        assert [t.sitemap_id for t in scripts.drop.load(client, OTHER)] == [theirs]
+
+        assert scripts.drop.apply(SimpleNamespace(source=SOURCE), client=client) == 0
+
+        assert _rows(client, mine, 2) == [] and _vectors(mine, 2) == 0
+        assert (_rows(client, theirs, 1), _rows(client, theirs, 2), _vectors(theirs, 1), _vectors(theirs, 2)) == before
+
+    def test_a_queued_l2_row_at_the_limit_is_not_a_target(self, client, env, scripts):
+        """DBT-69: SYS-109 allows an L2 row of exactly CHUNK_MAX_TOKENS words; one word more is stale
+        (QA mutant qa1012b_drop_at_the_cap)."""
+        from newscrawler.core.constants import CHUNK_MAX_TOKENS
+        at, over = _sitemap(client, "x", "pending"), _sitemap(client, "x", "pending")
+        with client.get_session() as s:
+            for sid, words in ((at, CHUNK_MAX_TOKENS), (over, CHUNK_MAX_TOKENS + 1)):
+                for level in (1, 2):
+                    s.execute(text(
+                        "INSERT INTO chunks (sitemap_id, chunk_level, chunk_index, chunk_total, is_first_chunk, "
+                        "is_last_chunk, text_content, chunk_status, token_count) "
+                        "VALUES (:sid, :lv, 0, 1, true, true, 'teks', 'embedded', :n)"),
+                        {"sid": sid, "lv": level, "n": words})
+            s.commit()
+        _unsave(client, at)
+        _unsave(client, over)
+        assert [t.sitemap_id for t in scripts.drop.load(client, SOURCE)] == [over]

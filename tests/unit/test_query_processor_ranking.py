@@ -44,9 +44,10 @@ def _hit(sid, semantic=0.0, keyword=0.0, posted_at="20261007", text_content=PARA
                  "title": f"t{sid}", "text_content": text_content}, **extra)
 
 
-def _qp(semantic=(), fts=(), similarity=None, coverage=None):
+def _qp(semantic=(), fts=(), similarity=None, coverage=None, subject=None):
     """A QueryProcessor whose two retrievers return these hits. `similarity` / `coverage` score the
-    other signal of a one-retriever hit (SYS-106); by default 0."""
+    other signal of a one-retriever hit (SYS-106); by default 0. `subject` says which texts hold the
+    question's subject (ADR-013); by default all do."""
     qp = QueryProcessor.__new__(QueryProcessor)
     qp.faiss_ds = MagicMock()
     qp.faiss_ds.search_l2.return_value = [dict(h) for h in semantic]
@@ -58,6 +59,7 @@ def _qp(semantic=(), fts=(), similarity=None, coverage=None):
     qp._keyword_query = MagicMock(return_value=KQ)
     qp._fts_search = MagicMock(side_effect=lambda kq, k, filters, today, recent=False: [dict(h) for h in fts])
     qp._coverage = MagicMock(side_effect=coverage or (lambda kq, texts: [0.0] * len(texts)))
+    qp._holds_subject = MagicMock(side_effect=subject or (lambda kq, texts: [True] * len(texts)))
     qp._attach_metadata = lambda hits: hits
     return qp
 
@@ -370,6 +372,41 @@ class TestFollowUp:
         qp._keyword_query.assert_called_once_with("Apa dampaknya ke kredit?", "Kenapa rupiah melemah pekan ini?")
         assert counts["rewrite"] == "fallback-thread" and counts["recent"] is None
 
+    def test_an_unusable_reply_is_still_counted(self):
+        """DBT-69 (ADR-010 decision 7): a reply that fails the check was paid for, so it counts
+        against RAG_DAILY_COST_LIMIT_USD like a usable one."""
+        qp = self._qp(_Rewriter("satu\ndua"))
+        _, counts = qp.candidates("Apa dampaknya ke kredit?", Filters(), TODAY, self.OJK)
+        assert counts["rewrite"] == "fallback-thread"
+        kwargs = qp.usage.increment_api_call_count.call_args.kwargs
+        assert qp.usage.increment_api_call_count.call_count == 1
+        assert kwargs["input_tokens"] == 150 and kwargs["output_tokens"] == 20 and kwargs["cost_usd"] > 0
+
+    def test_a_refusal_falls_back_and_is_never_searched(self):
+        """SYS-143: 'Maaf, saya tidak dapat ...' was searched as the question."""
+        qp = self._qp(_Rewriter("Maaf, saya tidak dapat menulis ulang pertanyaan tersebut."))
+        _, counts = qp.candidates("Berapa target pertumbuhannya tahun depan?", Filters(), TODAY, self.OJK)
+        assert counts["rewrite"] == "fallback-thread"
+        assert "Maaf" not in qp.faiss_ds.search_l2.call_args.args[0]
+        qp.usage.increment_api_call_count.assert_called_once()
+
+    def test_a_kept_follow_up_that_refers_back_is_retrieved_with_the_thread(self):
+        """SYS-145 (ADR-014), the composed path: both retrievers and the keyword terms get the thread,
+        the cue the follow-up's own words."""
+        fed = [{"question": "Apa keputusan The Fed terbaru?", "answer": "-"}]
+        qp = self._qp(_Rewriter("Bagaimana dampaknya ke rupiah?"))
+        _, counts = qp.candidates("Bagaimana dampaknya ke rupiah?", Filters(), TODAY, fed)
+        assert qp.faiss_ds.search_l2.call_args.args[0] == "Bagaimana dampaknya ke rupiah? Apa keputusan The Fed terbaru?"
+        qp._keyword_query.assert_called_once_with("Bagaimana dampaknya ke rupiah?", "Apa keputusan The Fed terbaru?")
+        assert counts["rewrite"] == "kept-thread" and counts["recent"] is None
+
+    def test_a_follow_up_with_an_adverb_in_nya_falls_back_to_its_own_words(self):
+        """SYS-144, the composed path: 'selanjutnya' does not pull a new subject to the old thread."""
+        qp = self._qp(None)
+        _, counts = qp.candidates("Bagaimana nasib Sritex selanjutnya?", Filters(), TODAY, self.OJK)
+        assert qp.faiss_ds.search_l2.call_args.args[0] == "Bagaimana nasib Sritex selanjutnya?"
+        assert counts["rewrite"] == "fallback-own"
+
     def test_a_follow_up_that_names_its_subject_falls_back_to_its_own_words(self):
         qp = self._qp(None)
         _, counts = qp.candidates("Di mana terjadi banjir minggu ini?", Filters(), TODAY, self.OJK)
@@ -461,6 +498,109 @@ class TestWeekWindow:
         qp.candidates("IHSG pekan ini?", Filters(topic="markets"), TODAY)
         windowed = qp._fts_search.call_args_list[0].args[2]
         assert windowed == Filters(topic="markets", days=7)
+
+    @pytest.mark.parametrize("filters", [Filters(date_from=date(2026, 9, 1)),
+                                         Filters(date_to=date(2026, 9, 30)),
+                                         Filters(date_from=date(2026, 9, 1), date_to=date(2026, 9, 30))])
+    def test_a_readers_picked_dates_win(self, filters):
+        """QA mutant qa1012b_picked_dates_ignored: only the `days` chip was covered."""
+        qp = _qp(semantic=[self._dated(1, 24, 0.85), self._dated(2, 4, 0.70)])
+        _, counts = qp.candidates("Apa perkembangan kasus KPK minggu ini?", filters, TODAY)
+        assert counts["window"] is None
+        assert qp.faiss_ds.search_l2.call_count == 1
+
+    def test_below_floor_week_hits_do_not_make_a_full_week(self):
+        """QA mutant qa1012b_window_leads_below_floor: four of five this-week hits are below the
+        floor, so the week is thin and an older relevant article fills."""
+        week = [self._dated(1, 1, 0.70)] + [self._dated(i, i, 0.05) for i in range(2, 6)]
+        qp = _qp(semantic=week + [self._dated(9, 20, 0.90)])
+        hits = qp.retrieve("Bagaimana kinerja IHSG pekan ini?", Filters(), TODAY)
+        assert [h["sitemap_id"] for h in hits] == [1, 9]
+
+
+def _off_subject(*ids):
+    """A `subject` stub: the texts of these sitemaps do not hold the question's subject. Texts are
+    tagged with their sitemap id by `_tagged`."""
+    return lambda kq, texts: [not any(t.endswith(f"#{i}") for i in ids) for t in texts]
+
+
+def _tagged(hit):
+    return dict(hit, text_content=f"{PARA} #{hit['sitemap_id']}")
+
+
+class TestWeekWindowSubjectGate:
+    """SYS-138 sent back (QA 2026-10-12), ADR-013: on a thin week the window led with any paragraph
+    over the floor. 'Apa kabar Danantara pekan ini?' got a Primbon piece of 6 Oct as card 1 (semantic
+    0.558, none of the question's words) above Danantara articles (semantic 0.25, coverage 1.0)."""
+
+    _dated = staticmethod(TestWeekWindow._dated)
+
+    def _danantara(self, subject):
+        week = _tagged(self._dated(1, 6, 0.558))                        # FAISS only, the Primbon piece
+        older = dict(self._dated(2, 11, 0.0), keyword_score=1.0)       # the keyword half found it
+        return _qp(semantic=[week], fts=[older], subject=subject,
+                   similarity=lambda q, texts, ids=None: [0.249] * len(texts))
+
+    def test_a_this_week_paragraph_without_the_subject_does_not_lead(self):
+        qp = self._danantara(subject=_off_subject(1))
+        hits = qp.retrieve("Apa kabar Danantara pekan ini?", Filters(), TODAY)
+        assert [h["sitemap_id"] for h in hits] == [2, 1]
+
+    def test_it_is_not_dropped_and_the_log_counts_no_leader(self, caplog):
+        """A gate on the lead, not a filter: the paragraph still passes the floor and still shows,
+        where its score puts it without the window."""
+        qp = self._danantara(subject=_off_subject(1))
+        with caplog.at_level(logging.INFO, logger="newscrawler.web.query_processor"):
+            hits = qp.retrieve("Apa kabar Danantara pekan ini?", Filters(), TODAY)
+        assert 1 in [h["sitemap_id"] for h in hits]
+        assert "window=7d+0 " in caplog.text
+
+    def test_the_same_paragraph_holding_the_subject_leads(self):
+        qp = self._danantara(subject=_off_subject())
+        assert [h["sitemap_id"] for h in qp.retrieve("Apa kabar Danantara pekan ini?", Filters(), TODAY)][0] == 1
+
+    def test_only_semantic_only_hits_over_the_floor_are_tested(self):
+        """A keyword hit holds the subject by the FTS rule; a below-floor hit cannot lead anyway."""
+        both = _tagged(self._dated(3, 2, 0.70))
+        qp = _qp(semantic=[_tagged(self._dated(1, 2, 0.70)), _tagged(self._dated(4, 3, 0.05)), both],
+                 fts=[dict(both, keyword_score=1.0), dict(_tagged(self._dated(5, 1, 0.0)), keyword_score=1.0)])
+        qp.candidates("Bagaimana kinerja IHSG pekan ini?", Filters(), TODAY)
+        tested = [t for call in qp._holds_subject.call_args_list for t in call.args[1]]
+        assert tested == [f"{PARA} #1"]
+
+    def test_only_leaders_count_toward_a_full_week(self):
+        """Five this-week paragraphs over the floor, four off the subject: the week is thin, so the
+        older on-subject article fills, after the one leader."""
+        week = [_tagged(self._dated(i, i, 0.70)) for i in range(1, 6)]
+        qp = _qp(semantic=week + [_tagged(self._dated(9, 20, 0.95))], subject=_off_subject(2, 3, 4, 5))
+        _, counts = qp.candidates("Bagaimana kinerja IHSG pekan ini?", Filters(), TODAY)
+        assert counts["window"] == "7d+1"
+        assert [h["sitemap_id"] for h in qp.retrieve("Bagaimana kinerja IHSG pekan ini?", Filters(), TODAY)][:2] == [1, 9]
+
+    def test_a_full_week_puts_every_leader_before_an_off_subject_paragraph(self):
+        week = [_tagged(self._dated(i, 3, 0.70)) for i in range(1, 6)]
+        loud = _tagged(self._dated(6, 1, 0.95))              # fresher and closer, but off the subject
+        qp = _qp(semantic=[loud] + week, subject=_off_subject(6))
+        hits = qp.retrieve("Bagaimana kinerja IHSG pekan ini?", Filters(), TODAY)
+        assert [h["sitemap_id"] for h in hits] == [1, 2, 3, 4, 5]
+        assert qp.faiss_ds.search_l2.call_count == 1      # a full week needs no second retrieval
+
+    def test_without_a_keyword_query_the_floor_decides(self):
+        qp = _qp(semantic=[self._dated(1, 2, 0.70), self._dated(2, 20, 0.90)],
+                 subject=lambda kq, texts: [False] * len(texts))
+        qp._keyword_query = MagicMock(return_value=None)
+        hits = qp.retrieve("Apa yang terjadi pekan ini?", Filters(), TODAY)
+        assert [h["sitemap_id"] for h in hits] == [1, 2]
+        qp._holds_subject.assert_not_called()
+
+    def test_if_the_subject_test_fails_no_unchecked_paragraph_leads(self, caplog):
+        def boom(kq, texts):
+            raise RuntimeError("db down")
+        qp = self._danantara(subject=boom)
+        with caplog.at_level(logging.WARNING, logger="newscrawler.web.query_processor"):
+            hits = qp.retrieve("Apa kabar Danantara pekan ini?", Filters(), TODAY)
+        assert [h["sitemap_id"] for h in hits] == [2, 1]
+        assert "Subject test of the window's hits failed: RuntimeError: db down" in caplog.text
 
 
 class TestTheRewriterFromConfig:

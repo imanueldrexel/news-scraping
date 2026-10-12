@@ -142,3 +142,25 @@ class TestCoverageLive:
         kq = qp._keyword_query("Apa kata Zqbank soal ZQRATE dan zqputus?")
         got = qp._coverage(kq, ["Tidak ada kata kunci di sini.", PARAGRAPHS["all"], "zqputus saja"])
         assert got[0] == 0.0 and got[1] == pytest.approx(1.0) and 0 < got[2] < 1
+
+
+class TestHoldsSubjectLive:
+    """ADR-013 (SYS-138): a this-week FAISS hit leads the week window only when its paragraph holds
+    the question's subject, tested by the same `to_tsvector('simple', ...)` as the keyword half."""
+
+    def test_a_name_question_needs_one_of_its_names(self, seeded):
+        client, _ = seeded
+        qp = QueryProcessor(MagicMock(), client, summarizer=None, usage=MagicMock())
+        kq = qp._keyword_query("Apa kata Zqbank soal ZQRATE dan zqputus?")
+        assert sorted(kq.subject) == ["zqbank", "zqrate"]
+        got = qp._holds_subject(kq, [PARAGRAPHS["word_only"], PARAGRAPHS["bank_only"],
+                                     "Tidak ada kata kunci di sini.", PARAGRAPHS["rate_and_word"]])
+        assert got == [False, True, False, True]
+
+    def test_a_question_without_names_needs_one_of_its_anchors(self, seeded):
+        client, _ = seeded
+        qp = QueryProcessor(MagicMock(), client, summarizer=None, usage=MagicMock())
+        kq = qp._keyword_query("bagaimana zqputus dan zqhasil")
+        assert kq.names == [] and sorted(kq.subject) == ["zqhasil", "zqputus"]
+        got = qp._holds_subject(kq, ["Kabar zqhasil saja.", "Tidak ada kata kunci di sini."])
+        assert got == [True, False]

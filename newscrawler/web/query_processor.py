@@ -5,7 +5,7 @@ merged per article, given their headline / link / portal / date / topic from
 the database (SYS-92: FAISS metadata is neither the topic nor always the right
 date, SYS-91), filtered (SYS-100), scored on both signals (SYS-106), re-ranked,
 cut at the relevance floor. A "this week" question prefers the last 7 days (a soft window,
-ADR-012). A follow-up is first rewritten into a standalone question by one
+ADR-012) whose articles lead only when they hold the question's subject (ADR-013). A follow-up is first rewritten into a standalone question by one
 model call, with a deterministic fallback (`followup`, ADR-010).
 
 `answer` writes the answer through the shared Summarizer (SYS-98) and returns a
@@ -199,9 +199,10 @@ class QueryProcessor:
         """Every candidate article, scored on both signals and ranked, before the floor and the cut
         (ADR-007). Returns (ranked hits, {"semantic", "fts", "recent", "window", "rewrite"} for the log).
 
-        SYS-138 (ADR-012): a cue with a window ("pekan ini": 7 days) and no date filter of the
-        reader's is retrieved within the window first. When fewer than RAG_TOP_K of its articles
-        pass the floor, they come first and the unwindowed ranking fills the rest."""
+        SYS-138 (ADR-012, ADR-013): a cue with a window ("pekan ini": 7 days) and no date filter of
+        the reader's is retrieved within the window first. The window's articles that may lead
+        (`_window_leaders`) come first; when they are fewer than RAG_TOP_K, the unwindowed ranking
+        fills the rest."""
         query = self.resolve(question, history)
         cue = keywords.recency_cue(query.cue_text)
         kq = self._keyword_query(*query.questions)
@@ -210,16 +211,38 @@ class QueryProcessor:
             ranked, counts = self._ranked(query.text, kq, filters, today, cue)
             counts["window"] = None
         else:
-            ranked, counts = self._ranked(query.text, kq, window, today, cue)
-            inside = [h for h in ranked if passes_floor(h)]
-            counts["window"] = f"{window.days}d"
-            if len(inside) < RAG_TOP_K:
-                seen = {h.get("sitemap_id") for h in inside}
-                everything, counts_all = self._ranked(query.text, kq, filters, today, cue)
-                ranked = inside + [h for h in everything if h.get("sitemap_id") not in seen]
-                counts = dict(counts_all, window=f"{window.days}d+{len(inside)}")
+            in_window, counts = self._ranked(query.text, kq, window, today, cue)
+            leaders = self._window_leaders(kq, in_window)
+            if len(leaders) >= RAG_TOP_K:
+                rest = in_window
+                counts["window"] = f"{window.days}d"
+            else:
+                rest, counts = self._ranked(query.text, kq, filters, today, cue)
+                counts["window"] = f"{window.days}d+{len(leaders)}"
+            led = {h.get("sitemap_id") for h in leaders}
+            ranked = leaders + [h for h in rest if h.get("sitemap_id") not in led]
         counts.update(recent=f"{cue.days}d" if cue else None, rewrite=query.how)
         return ranked, counts
+
+    def _window_leaders(self, kq: Optional["keywords.KeywordQuery"], in_window: List[dict]) -> List[dict]:
+        """ADR-013: the window's articles that may lead, best first: past the floor and holding the
+        question's subject (`KeywordQuery.subject`). The floor alone let a this-week paragraph
+        without a single question word lead (a Primbon piece for 'Danantara pekan ini').
+
+        A keyword hit holds the subject by construction (the FTS rule requires a name, or `need`
+        anchors); only semantic-only hits are tested. Without a keyword query there is no subject
+        to test and the floor decides. If the test fails, no unchecked paragraph leads."""
+        inside = [h for h in in_window if passes_floor(h)]
+        unchecked = [h for h in inside if h.get("origin") == SEMANTIC]
+        if kq is None or not unchecked:
+            return inside
+        try:
+            held = self._holds_subject(kq, [h.get("text_content") or "" for h in unchecked])
+        except Exception as e:  # noqa: BLE001 -- the window still leads with its keyword hits
+            logger.warning(f"Subject test of the window's hits failed: {type(e).__name__}: {e}")
+            held = [False] * len(unchecked)
+        off_subject = {id(h) for h, ok in zip(unchecked, held) if not ok}
+        return [h for h in inside if id(h) not in off_subject]
 
     def _ranked(self, text_: str, kq: Optional["keywords.KeywordQuery"], filters: Filters, today: date,
                 cue: Optional["keywords.RecencyCue"]):
@@ -347,15 +370,25 @@ class QueryProcessor:
         """Each text's IDF-weighted coverage of the question (ADR-006's `keyword_score`), computed by
         the same `to_tsvector('simple', ...)` that `chunks.fts_vector` stores. One round trip."""
         score, _, params = self._word_tests(kq, "x.v")
-        params["texts"] = list(texts)
+        return [float(v) for v in self._per_text(score, params, texts)]
+
+    def _holds_subject(self, kq: "keywords.KeywordQuery", texts: List[str]) -> List[bool]:
+        """Whether each text holds one of the question's subject words (ADR-013), by the same
+        tokenization as `_coverage`. One round trip."""
+        _, has, params = self._word_tests(kq, "x.v")
+        return [bool(v) for v in self._per_text(f"({' + '.join(has[w] for w in kq.subject)}) >= 1", params, texts)]
+
+    def _per_text(self, expression: str, params: dict, texts: List[str]) -> list:
+        """`expression` (fixed SQL over `x.v`, each text's `to_tsvector('simple', ...)`) for each text,
+        in order."""
         sql = text(f"""
-            SELECT x.i, ({score}) AS coverage
+            SELECT x.i, {expression} AS value
             FROM (SELECT u.i, to_tsvector('simple', u.body) AS v
                   FROM unnest(CAST(:texts AS text[])) WITH ORDINALITY AS u(body, i)) AS x
             ORDER BY x.i
         """)
         with self.client.get_session() as session:
-            return [float(row.coverage) for row in session.execute(sql, params).fetchall()]
+            return [row.value for row in session.execute(sql, dict(params, texts=list(texts))).fetchall()]
 
     def _complete_scores(self, text_: str, kq: Optional["keywords.KeywordQuery"], hits: List[dict]) -> None:
         """SYS-106 (#276): an article only one retriever found gets the other signal's score for its

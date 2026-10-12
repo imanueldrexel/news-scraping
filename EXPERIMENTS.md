@@ -162,6 +162,7 @@ One line each; read this before starting on a scraper or pipeline problem.
 - **A recency cue cannot fix a question whose real cause is the encoder (SYS-112, 2026-10-12):** 'Apa keputusan BI terbaru...' is 0/3 under every weight, gate and window. Its decision stories score 0.43-0.53 because MiniLM does not read 'BI' as Bank Indonesia; the long form gets 3/3. Measure with `probe_recency_tuning.py` before touching a recency knob. -> 2026-10-12 entry
 - **Dropping one chunk level of a queued sitemap leaves `l1_not_in_l2` (SYS-137, 2026-10-12):** a queued sitemap has no article and no mentions, so drop BOTH levels (`drop_oversized_queued_chunks.py`); keeping its L1 kept June's extraction and made the store check read 2,171 divergent sitemaps.
 - **The RAG floor is a tail filter, not a lead filter (SYS-138 send-back, 2026-10-12):** it admits a semantic-only hit at 0.55 with no keyword. A rule that puts a subset first whenever its hits "pass the floor" (the week window) led 2/10 held-out week questions with a keyword-coverage-0 off-topic card. Measure such a rule with `scripts/experiments/qa_2026_10_12b/probe_week_window_lead.py` on questions it was not tuned on. -> 2026-10-12 QA second-pass entry
+- **"May this article lead?" = does its paragraph hold the question's subject word (ADR-013, 2026-10-12):** a keyword-coverage threshold (0.6) drops this week's on-topic KPK/IHSG cards (0.55-0.61), and a final-score margin cannot separate the Primbon piece (0.402) from Danantara cards (~0.41). `KeywordQuery.subject` (names, else anchors) separates every case. Don't re-try coverage or margin gates. -> 2026-10-12 "SYS-138 rework" entry
 ## Log
 
 ### 2026-09-19 — SYS-31 fix: does a category deny-list + off-topic-anchor margin actually fix filter precision?
@@ -2448,3 +2449,39 @@ SINDONEWS   old 12 new 12 | lost [] | gained []   links identical: True
   - A "prefer X when it passes the floor" rule inherits the floor's leniency: the floor admits semantic-only hits at 0.55 with no keyword, which is fine at the tail of a list and wrong at its head.
   - For an LLM step with a deterministic fallback, probe the fallback on the same pairs: it is the path served whenever the key or balance fails (10-08..10-12).
 - **Links:** SYS-138 (#317) sent back; SYS-143 #326, SYS-144 #327, SYS-145 #328, DBT-68 #329, DBT-69 #330 filed; `.10x/reviews/2026-10-12-qa-report-2.md`
+
+### 2026-10-12 — SYS-138 rework (ADR-013) and SYS-143/144/145 (ADR-014): which gate separates an off-topic fresh lead, and what the follow-up fixes do on production
+- **Question / hypothesis:** QA sent SYS-138 back: on a thin week the window put any this-week paragraph over the floor first (Danantara: a Primbon piece; Harvey Moeis: a Pemko Medan piece). Which relevance gate stops that without losing KPK/IHSG's this-week cards? And do the adverb list (SYS-144), the refusal check (SYS-143) and "kept + a back-reference → thread" (SYS-145) hold on production?
+- **Method (production, read-only):**
+  - before the change: `scripts/experiments/qa_2026_10_12b/probe_week_window_lead.py`, reading each window card's keyword coverage;
+  - after: the same probe, plus `probe_rag_rank_breakdown.py --replay`;
+  - follow-ups: `probe_followup_rewrite.py --fallback` and `qa_2026_10_12b/probe_qa_followup_pairs.py --fallback`, 28 rewrite calls, $0.0013;
+  - SYS-145: a forced-kept probe (a rewriter that echoes the follow-up, no model call; inlined from the scratchpad: `Echo.complete` returns the prompt's `Pertanyaan lanjutan` text, run over both probes' sets).
+- **Result:**
+  - **Coverage of this week's on-topic cards:** KPK 0.57-0.61, IHSG 0.55. QA's first idea, a gate at `RAG_MIN_KEYWORD_COVERAGE` 0.6, would drop exactly the cards SYS-138 was opened for.
+  - **A final-score margin cannot separate Danantara:** the Primbon piece scores 0.402, about the same as the 5th Danantara card (0.41).
+  - **What separates every bad lead is the subject word.** The Primbon piece has no `danantara`, the Pemko Medan piece no `harvey`/`moeis`, the TNI motor case (Pertamina card 1) no `pertamina`. So: lead only if the paragraph holds one of `KeywordQuery.names`, else one of its anchors (ADR-013).
+  - **After, `probe_week_window_lead.py`:**
+    - served card 1 holds no keyword where the unwindowed one does: **0/10** (was 2/10);
+    - KPK 5/5 and IHSG 5/5 this week;
+    - Danantara card 1 is DETIK 8 Oct "Deviden Danantara…" (`window=7d+1`);
+    - Harvey Moeis is ranked as without the window (`7d+0`);
+    - Pertamina leads with this week's Kuntadi/KOSMAK pieces that name Pertamina (`7d+4`), no longer the TNI case;
+    - Garuda: 5 this-week haze disruptions, each paragraph naming a Garuda Indonesia flight (checked by regex on the matched paragraph).
+  - **Replay:** BI-Rate decision cards are 28 Sep and 23 Sep (unchanged); every week-cue question's cards are this week; non-week questions unchanged by construction (their path is untouched).
+  - **Follow-ups (LLM path):**
+    - dev switch 22/25 = alone; elliptical 35/35; held-out 25/30;
+    - QA switch 18/22 = alone; QA elliptical **20/25** (was 15/25: the model rewrote the Fed pair this time, 5/5).
+  - **Fallback:**
+    - QA's three adverb switch pairs now equal alone: Garuda 3/5, Sritex 2/2, Danantara 3/5 (were 0/5, 1/5, 0/5, SYS-144);
+    - elliptical 33/35 (no worse); QA elliptical 16/25.
+  - **Forced kept (SYS-145):**
+    - the Fed pair 5/5 via `kept-thread` (0/5 as `kept`);
+    - every switch pair stays `kept` with its alone cards (22/25, 18/22);
+    - elliptical pairs equal the fallback (33/35, 22/30, 16/25). Kept-thread is never worse than the old `kept`.
+  - **QA's `test_qa_fixes.py`:** 37 pass; 1 fails by its fixture. `test_a_keywordless_week_paragraph_does_not_lead_a_relevant_older_one` puts the older Danantara hit in the FAISS list with `keyword_score=1.0`. `_complete_scores` then overwrites it with the `_coverage` stub's 0, so the hit is below the floor before ranking, and no fix can make it pass. The corrected shape (keyword hit via `fts=`, subject stub) is `tests/unit/test_query_processor_ranking.py::TestWeekWindowSubjectGate::test_a_this_week_paragraph_without_the_subject_does_not_lead`.
+- **Conclusion / do not repeat:**
+  - For "may this article lead?", test whether it holds the question's subject word. Coverage thresholds and score margins both failed on the reported cases.
+  - Do not use a `se-…-nya` pattern for adverbs: *sesudahnya / setelahnya / sebaliknya* point back.
+  - A forced-kept probe measures a deterministic rule that only fires on some model outputs, without waiting for the model to produce that output.
+- **Links:** SYS-138 #317, SYS-143 #326, SYS-144 #327, SYS-145 #328, DBT-69 #330, DBT-68 #329; ADR-013, ADR-014; `.10x/specs/2026-10-12-qa-second-pass-fixes-design.md`
