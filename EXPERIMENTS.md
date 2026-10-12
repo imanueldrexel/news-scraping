@@ -159,6 +159,8 @@ One line each; read this before starting on a scraper or pipeline problem.
 - **Never `git worktree remove` a mutation worktree whose `venv` is a junction to the real venv: on Windows git recurses INTO the junction (2026-10-08: 23 packages of the project venv deleted, `aiohappyeyeballs`..`chardet`).** `cmd /c rmdir <wt>\venv` first (unlinks only), check no reparse point is left, then remove the worktree; afterwards `pip freeze` must equal requirements.txt. Repair: `pip install --no-deps --force-reinstall` of the missing pins. OPS-47 #288; teardown in `qa_mutation_runner.py`'s docstring.
 - **A follow-up is rewritten by one model call before retrieval since ADR-010 (SYS-104, 2026-10-12): never join the thread into the query again.** Joined, a topic switch got 0/5 of its own cards and the old recency cue leaked; rewritten, topic switches keep their own cards (22/25 = alone) and elliptical ones go 16/35 -> 35/35. Measure with `scripts/experiments/probe_followup_rewrite.py`. -> 2026-10-12 entry
 - **A mutation worktree under the session scratchpad is past Windows' 260-character path limit (2026-10-12):** through the venv junction, `transformers/models/...` reached 264 characters, so the unmutated baseline failed to import (`FileNotFoundError`) and every mutant read "KILLED". Put the worktree at a short path (`%TEMP%\mutwt`) and read the baseline line before any mutant line.
+- **A recency cue cannot fix a question whose real cause is the encoder (SYS-112, 2026-10-12):** 'Apa keputusan BI terbaru...' is 0/3 under every weight, gate and window. Its decision stories score 0.43-0.53 because MiniLM does not read 'BI' as Bank Indonesia; the long form gets 3/3. Measure with `probe_recency_tuning.py` before touching a recency knob. -> 2026-10-12 entry
+- **Dropping one chunk level of a queued sitemap leaves `l1_not_in_l2` (SYS-137, 2026-10-12):** a queued sitemap has no article and no mentions, so drop BOTH levels (`drop_oversized_queued_chunks.py`); keeping its L1 kept June's extraction and made the store check read 2,171 divergent sitemaps.
 ## Log
 
 ### 2026-09-19 — SYS-31 fix: does a category deny-list + off-topic-anchor margin actually fix filter precision?
@@ -2364,3 +2366,43 @@ SINDONEWS   old 12 new 12 | lost [] | gained []   links identical: True
   - Latency 938-2,890 ms (median ~1.6 s); 18 calls = 4,667/251 tokens, $0.0017.
 - **Conclusion / do not repeat:** the rewrite meets QA's amended Done-when: topic switches keep their alone cards, and the elliptical pairs are on topic. Do not go back to joining the thread into the query. The fallback (back-reference rule) is a fair floor when the provider is down: 33/35 and 22/30. Unknown names (MBZ vs MBG) are a retrieval limit, not a rewrite one.
 - **Links:** SYS-104 (#274), SYS-140 (#322), ADR-010, commit f842ae7, `newscrawler/web/followup.py`, `scripts/experiments/probe_followup_rewrite.py`
+
+### 2026-10-12 — SYS-138/SYS-112: recency re-tune measured offline; only the week window ships (ADR-012)
+- **Question / hypothesis:** "minggu ini" from the search box gets 2-10-week-old articles (SYS-138), and "sekarang/terbaru" questions lead with passing mentions (SYS-112). Owner chose a soft date window for the week cue plus a relevance gate for freshness. Do they meet both Done-whens without regressions?
+- **Method:** `venv\Scripts\python.exe scripts\experiments\probe_recency_tuning.py --dump <f>` (read-only, production ~12:00 WIB): 15 questions, each question's candidates unfiltered and under `Filters(days=7)`. Then `--eval <f>` re-ranks the dump offline under 12 settings. Metrics: week questions with ≥ 3/5 cards from the last 7 days; "now" questions' on-topic top 3; regressions as fewer on-topic cards in the top 5. On topic means the title holds one of the question's subject words.
+- **Result:**
+  - The week window (7d, soft) took the week questions from 3/4 to 4/4: KPK 0/5 -> 5/5 this week's cards, IHSG 3/5 -> 5/5, with 0 regressions.
+  - The relative gate is worse. δ 0.10: 2 regressions (banjir, Antam) and week questions down to 2/4. δ 0.15: 1 regression.
+  - Window + "now" window + gate 0.10: Menkeu 0/3 -> 2/3, Iran's top 3 3/3 -> 2/3.
+  - A "now" window of 3d: Menkeu 2/5 -> 0/5.
+  - **"Apa keputusan BI terbaru soal suku bunga?" is 0/3 under every setting.** Its 7 on-topic candidates score semantic 0.43-0.53, below the 0.55 floor. The long-form question ("Bank Indonesia ... terbaru") gets 3/3.
+  - Live after the change (`probe_rag_rank_breakdown.py --replay`): KPK cards 8-11 Oct (were 18 Sep-30 Jul), IHSG 10-12 Oct; every other replay question unchanged.
+- **Conclusion / do not repeat:** ship the week window only (owner). A relevance gate tuned on these questions trades one question for another. SYS-112's causes are not recency: an abbreviation the encoder does not expand ("BI"), and an old paragraph with a high cosine (Menkeu: a Hanura piece, 0.81). Returned to QA/owner with this evidence.
+- **Links:** SYS-138 (#317), SYS-112 (#289), ADR-012, commit 62296a2, `scripts/experiments/probe_recency_tuning.py`
+
+### 2026-10-12 — SYS-142: overlap-tail windows on production
+- **Question / hypothesis:** the chunker's last window can be almost all overlap (81 words -> [80, 21]). How many stored L2 rows are such tails?
+- **Method:** `venv\Scripts\python.exe scripts\experiments\probe_overlap_tails.py` (read-only). An L2 row with `chunk_index > 0`, fewer than 40 words, whose first 20 words equal the previous row's last 20.
+- **Result:**
+  - 45,741 of 828,477 served L2 rows (**5.52%**), on 39,662 articles.
+  - New words per tail: 1-5: 17,034; 6-10: 12,426; 11-19: 16,281.
+- **Conclusion / do not repeat:** material. The audit's `start = len - max` fix still gives a near-duplicate (81 words -> [0:80], [1:81]). Even windows (`k = ceil((n-o)/(m-o))`, each `(n-o)/k + o` words: 81 -> 2 x ~50) are never short, never mostly duplicate and never over the cap. The chunker change waits for the owner's call on when to re-chunk.
+- **Links:** SYS-142 (#324), `scripts/experiments/probe_overlap_tails.py`
+
+### 2026-10-12 — SYS-137: VIVA's queued June chunks dropped, adopted ones re-chunked (production write, owner-approved)
+- **Question / hypothesis:** remove every L2 row longer than CHUNK_MAX_TOKENS: the queued sitemaps' (dropped, the crawl chunks them fresh) and the adopted articles' (re-chunked).
+- **Method:** all 12:15-12:24 WIB, between the 12:00 newsletter and the 19:00 crawl:
+  1. `scripts/backup_db.py` (`newsaggregator_20261012T051536Z.dump`).
+  2. `scripts/experiments/probe_oversized_l2.py` (before).
+  3. `drop_oversized_queued_chunks.py --source VIVA --apply` (L2 only, first version).
+  4. `rechunk_stale_chunks.py --all --source VIVA --apply --until 18:30`.
+  5. `check_store_consistency.py`.
+  6. `drop_oversized_queued_chunks.py --source VIVA --apply` again, both levels (fixed version).
+- **Result:**
+  - Before: VIVA only. 611 saved articles / 2,265 L2 rows, 2,003 pending / 6,702, 168 rejected_filter / 468; max 450 words, all created 2026-06-02; 0 mentions on article-less rows.
+  - Drop 1: 2,171 sitemaps, 9,016 L2 vectors = 9,016 rows.
+  - Re-chunk: 612 articles, L2 2,805 -> 4,641, 0 failed. Its deferred block also re-embedded VIVA's 4,198 rows left without vectors by the SYS-139 kills, so `embedding_id IS NULL` = 0.
+  - The store check then read `l1_not_in_l2` 2,171 (the L1 that drop 1 kept). Drop 2 removed those 2,171 L1 vectors and rows.
+  - After: `l2_over_max_tokens` 0, `l1_not_in_l2` 0, terminal no-article 169 -> 1, re-chunk dry run TOTAL 0.
+- **Conclusion / do not repeat:** a queued sitemap's chunks go whole (both levels). Backups: `backups/sys137_VIVA_20261012T051637Z`, `sys109_VIVA_20261012T051711Z`, `sys137_VIVA_20261012T052324Z`.
+- **Links:** SYS-137 (#316), commits 8b224ec, 7c1fdef, OPERATIONS.md "Queued sitemaps with chunks from an older chunker"
