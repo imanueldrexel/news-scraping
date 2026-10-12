@@ -257,3 +257,7 @@
   - about $2 is left on 10-15. The steady cost after that is ~$1.20/day (~$36/month).
 - **Owner decision (`decisions/cto/llm-budget.md`):** the project's LLM budget is ~$100, every article is extracted, and monetization is deferred.
 - **Action due 10-15:** set `KNOWLEDGE_DAILY_COST_LIMIT_USD=1.5` in `.env` before the 21:00 run. The owner tops up "later": ~$2 is left on 10-15, so **a top-up is due by ~10-16** or the 10-17 newsletter fails.
+
+## Ops 2026-10-12 08:30: SYS-139 quick relief
+- The 07:53 Telegram showed VIVA FAILED (the second kill in a row), 4,198 vectorless chunk rows (528 articles) and STORE DIVERGENT 169. The 169 are VIVA's rejected sitemaps whose vector cleanup was lost with the kills. All one cause: SYS-139 #320.
+- **Owner approved:** `.env` `SCHEDULE_SOURCE_TIMEOUTS=MEDIAINDONESIA=1500,KUMPARAN=1800,VIVA=1800`. The first run on it is 2026-10-12 19:00. The code fix (flush before the kill) is still open.

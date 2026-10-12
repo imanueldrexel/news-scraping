@@ -20,7 +20,7 @@
 
 ### For SDE, in order
 0. **SYS-139 #320 (P2, new, grows every run).** VIVA's full_text was killed at 1,200 s in its last batch on 10-11 19:00 and 10-12 07:00. 538 saved articles (4,198 chunk rows) have no vectors.
-   - Quick relief: a larger VIVA entry in `SCHEDULE_SOURCE_TIMEOUTS`.
+   - **Quick relief APPLIED 2026-10-12** (owner): `.env` `SCHEDULE_SOURCE_TIMEOUTS=MEDIAINDONESIA=1500,KUMPARAN=1800,VIVA=1800`. Remove the VIVA entry when the fix lands.
    - Fix: a soft deadline that flushes before the kill.
 1. **SYS-104 #274 (P2, sent back).** A follow-up that names a new subject is retrieved on the old one: 5/5 topic-switch pairs give 0-1 of 5 on-topic cards. The thread's recency cue leaks too.
    - Measure with `scripts/experiments/qa_2026_10_12/probe_topic_switch_followups.py` and the 7 elliptical pairs (`probe_rag_rank_breakdown.py --followups`).
@@ -41,7 +41,10 @@
 
 ### For QA next
 - **SYS-79:** the first morning a source blips.
-- **SYS-139:** the VIVA kill repeated at 07:00 (1,924 → 4,198 pending rows). Watch the 19:00 run.
+- **SYS-139:** the VIVA kill repeated at 07:00 (1,924 → 4,198 pending rows; 169 terminal sitemaps whose vectors were not removed). On the 1,800 s limit from the 19:00 run, check:
+  - VIVA completes;
+  - 0 `embedding_id IS NULL` rows;
+  - `l*_no_articles_terminal` 0.
 - **Re-verify SYS-104 and SYS-111** when they come back.
 
 ---
