@@ -276,9 +276,9 @@
 
 ## Dev 2026-10-12: QA + senior-engineer list (spec specs/2026-10-12-qa-senior-fixes-design.md)
 Owner decisions: SYS-139 soft deadline only (ADR-011); SYS-104/140 LLM rewrite of follow-ups (ADR-010); SYS-137 delete queued stale chunks (prod write approved); SYS-138/112 soft week window + relevance gate (ADR-012).
-- [ ] SYS-111 #287 deadline resolved once
-- [ ] SYS-139 #320 soft deadline
-- [ ] SYS-104 #274 + SYS-140 #322 follow-up rewrite
+- [x] SYS-111 #287 deadline resolved once (2ffdf28, ready-for-qa)
+- [x] SYS-139 #320 soft deadline (84781b2, ready-for-qa; needs 3 scheduled VIVA runs)
+- [x] SYS-104 #274 + SYS-140 #322 follow-up rewrite (f842ae7, ready-for-qa; restart :8000)
 - [ ] SYS-141 #323, DBT-66 #319, DBT-65 #318
 - [ ] SYS-137 #316 guard + store check + prod write (night window)
 - [ ] SYS-138 #317 + SYS-112 #289 recency (measure, then ADR-012 numbers)
