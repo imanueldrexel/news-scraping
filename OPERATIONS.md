@@ -331,7 +331,7 @@ The re-chunk above covers articles only. A queued sitemap (no `articles` row) ca
 
 The store check's `l2_over_max_tokens` (every crawl's summary, baseline 0) counts such rows. It covers both cases:
 - rows the crawl already adopted: re-chunk them with `rechunk_stale_chunks.py --source <S> --apply`;
-- rows still queued: drop them, and the crawl chunks those sitemaps fresh.
+- rows still queued: drop all of those sitemaps' chunks, and the crawl chunks them fresh.
 
 ```
 venv\Scripts\python.exe scripts\backup_db.py
@@ -343,7 +343,9 @@ venv\Scripts\python.exe scripts\rechunk_stale_chunks.py --source VIVA --apply --
 
 `drop_oversized_queued_chunks.py --apply`:
 1. backs up `NEWS_L2` and the rows (`backups/sys137_<source>_<stamp>/`);
-2. deletes those sitemaps' L2 vectors, then their L2 rows in one transaction. **L1 is kept.**
+2. deletes those sitemaps' vectors from both indexes, then their chunk rows in one transaction.
+
+Both levels go: a queued sitemap has no article and no mentions, and its old L1 was cut from an old extraction. A queued sitemap left with L1 and no L2 is a target too; the store check reports that state as `l1_not_in_l2`.
 
 It refuses (exit 1) if an entity mention points at a target row. A kill between steps 2a and 2b leaves rows without vectors; run it again.
 

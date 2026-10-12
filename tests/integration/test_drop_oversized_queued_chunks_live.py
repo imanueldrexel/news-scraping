@@ -2,10 +2,11 @@
 (temp-directory) FAISS store, in the production shape: chunks written by a 450-word chunker
 (VIVA's June backlog), then
 
-  * a queued sitemap (no article) loses its L2 rows and vectors; its L1 row and vector stay;
+  * a queued sitemap (no article) loses its chunk rows and vectors, both levels;
+  * so does one that an earlier run left with L1 only (the 2026-10-12 first run's state);
   * a saved article with the same old chunks is untouched (rechunk_stale_chunks.py owns it);
   * a queued sitemap whose L2 rows fit the limit is untouched;
-  * the crawl's own save then writes that sitemap's L2 fresh, every row within CHUNK_MAX_TOKENS;
+  * the crawl's own save then writes that sitemap's chunks fresh, every L2 row within CHUNK_MAX_TOKENS;
   * a second run finds nothing; the dry run writes nothing.
 
 Uses temp FAISS, backup and lock paths, never the real NEWS_L1/NEWS_L2 or backups/."""
@@ -124,12 +125,12 @@ class TestDropOversizedQueuedChunksLive:
         assert max(_rows(client, fits, 2)) <= 80
         before_saved = (_rows(client, saved, 1), _rows(client, saved, 2), _vectors(saved, 2))
         before_fits = (_rows(client, fits, 2), _vectors(fits, 2))
-        queued_l1 = (_rows(client, queued, 1), _vectors(queued, 1))
+        assert _vectors(queued, 1) == 1
 
         assert scripts.drop.apply(SimpleNamespace(source=SOURCE), client=client) == 0
 
         assert _rows(client, queued, 2) == [] and _vectors(queued, 2) == 0
-        assert (_rows(client, queued, 1), _vectors(queued, 1)) == queued_l1, "L1 is kept"
+        assert _rows(client, queued, 1) == [] and _vectors(queued, 1) == 0, "both levels go"
         assert (_rows(client, saved, 1), _rows(client, saved, 2), _vectors(saved, 2)) == before_saved
         assert (_rows(client, fits, 2), _vectors(fits, 2)) == before_fits
         assert scripts.drop.load(client, SOURCE) == [], "a second run finds nothing"
@@ -146,6 +147,22 @@ class TestDropOversizedQueuedChunksLive:
             assert repo.save_chunk_data(HierarchicalChunker().chunk(news)) == [queued]
         l2 = _rows(client, queued, 2)
         assert l2 and max(l2) <= 80 and _vectors(queued, 2) == len(l2)
+        assert len(_rows(client, queued, 1)) == 1 and _vectors(queued, 1) == 1
+
+    def test_a_queued_sitemap_left_with_l1_only_is_a_target(self, client, env, scripts):
+        """The first production run dropped L2 only; what it left is finished by the next run."""
+        half = _sitemap(client, LONG_BODY, "pending")
+        _chunk_like_june(client)
+        _unsave(client, half)
+        with client.get_session() as s:
+            s.execute(text("DELETE FROM chunks WHERE sitemap_id = :i AND chunk_level = 2"), {"i": half})
+            s.commit()
+        assert [t.sitemap_id for t in scripts.drop.load(client, SOURCE)] == [half]
+
+        assert scripts.drop.apply(SimpleNamespace(source=SOURCE), client=client) == 0
+
+        assert _rows(client, half, 1) == [] and _vectors(half, 1) == 0
+        assert scripts.drop.load(client, SOURCE) == []
 
     def test_the_dry_run_writes_nothing(self, client, env, scripts, monkeypatch, capsys):
         queued = _sitemap(client, LONG_BODY, "pending")
@@ -154,5 +171,5 @@ class TestDropOversizedQueuedChunksLive:
         before = (_rows(client, queued, 2), _vectors(queued, 2))
         monkeypatch.setattr(scripts.drop, "SQLAlchemyClient", lambda: client)
         assert scripts.drop.main(["--source", SOURCE]) == 0
-        assert "1 queued sitemap(s) with L2 rows over 80 words" in capsys.readouterr().out
+        assert "1 queued sitemap(s) with stale chunks" in capsys.readouterr().out
         assert (_rows(client, queued, 2), _vectors(queued, 2)) == before
