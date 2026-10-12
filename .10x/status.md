@@ -314,3 +314,8 @@ Design approved by the owner. Order:
 - **The one failure is INVESTORID's sitemap 404,** on every run since 10-06. That is the open SRC-59 #260, nothing new.
 - **The 21:00 extraction started on time.** Recent full runs took 4-5 h, so it ends ~01:00-02:00.
 - **The 11 DBT-67 mutants run after it,** or tomorrow before the 07:00 crawl. Then tear down `%TEMP%\mutwt` (junction first).
+
+## Dev 2026-10-12 night: SRC-59, DBT-60, SYS-91 (spec: specs/2026-10-12-src59-dbt60-sys91-design.md; owner approved)
+- [ ] DBT-60 date rule
+- [ ] SRC-59 INVESTORID sitemap_post.xml
+- [ ] SYS-91 repair script + dry run (apply ~06:00 10-13, owner-approved)
