@@ -161,6 +161,7 @@ One line each; read this before starting on a scraper or pipeline problem.
 - **A mutation worktree under the session scratchpad is past Windows' 260-character path limit (2026-10-12):** through the venv junction, `transformers/models/...` reached 264 characters, so the unmutated baseline failed to import (`FileNotFoundError`) and every mutant read "KILLED". Put the worktree at a short path (`%TEMP%\mutwt`) and read the baseline line before any mutant line.
 - **A recency cue cannot fix a question whose real cause is the encoder (SYS-112, 2026-10-12):** 'Apa keputusan BI terbaru...' is 0/3 under every weight, gate and window. Its decision stories score 0.43-0.53 because MiniLM does not read 'BI' as Bank Indonesia; the long form gets 3/3. Measure with `probe_recency_tuning.py` before touching a recency knob. -> 2026-10-12 entry
 - **Dropping one chunk level of a queued sitemap leaves `l1_not_in_l2` (SYS-137, 2026-10-12):** a queued sitemap has no article and no mentions, so drop BOTH levels (`drop_oversized_queued_chunks.py`); keeping its L1 kept June's extraction and made the store check read 2,171 divergent sitemaps.
+- **The RAG floor is a tail filter, not a lead filter (SYS-138 send-back, 2026-10-12):** it admits a semantic-only hit at 0.55 with no keyword. A rule that puts a subset first whenever its hits "pass the floor" (the week window) led 2/10 held-out week questions with a keyword-coverage-0 off-topic card. Measure such a rule with `scripts/experiments/qa_2026_10_12b/probe_week_window_lead.py` on questions it was not tuned on. -> 2026-10-12 QA second-pass entry
 ## Log
 
 ### 2026-09-19 — SYS-31 fix: does a category deny-list + off-topic-anchor margin actually fix filter precision?
@@ -2406,3 +2407,44 @@ SINDONEWS   old 12 new 12 | lost [] | gained []   links identical: True
   - After: `l2_over_max_tokens` 0, `l1_not_in_l2` 0, terminal no-article 169 -> 1, re-chunk dry run TOTAL 0.
 - **Conclusion / do not repeat:** a queued sitemap's chunks go whole (both levels). Backups: `backups/sys137_VIVA_20261012T051637Z`, `sys109_VIVA_20261012T051711Z`, `sys137_VIVA_20261012T052324Z`.
 - **Links:** SYS-137 (#316), commits 8b224ec, 7c1fdef, OPERATIONS.md "Queued sitemaps with chunks from an older chunker"
+
+### 2026-10-12 — QA (second pass) of the dev's fixes: SYS-111/139/104/140/141/137/138, DBT-65/66, OPS-49, on QA's own tests and held-out questions
+- **Question / hypothesis:** do the 10 ready-for-qa fixes hold beyond the dev's own tests and the dev's own question sets?
+- **Method:**
+  - Suites on the live tree.
+  - QA's own tests from each Done-when: `scripts/experiments/qa_2026_10_12b/test_qa_fixes.py`.
+    - SYS-139 through a **real SourceWorker child**: the real CrawlerAPI and batch loop, 10 batches of 0.6 s against a 4 s timeout; factory in `qa_worker_stubs.py`.
+    - Refusal and `-nya` adverbs for the follow-up rewrite; SYS-140's ticket example on its df values; a reload during the query embedding; the week window with picked dates, a thin week, a below-floor week.
+  - Mutants in `%TEMP%\mutwt`, baseline green first: the dev's 37 registered ones for these tickets plus QA's `qa1012b_*`.
+  - Production, read-only:
+    - `probe_qa_followup_pairs.py --fallback`: 10 pairs written before the run, $0.0009;
+    - `probe_week_window_lead.py`: 10 week questions, served vs unwindowed;
+    - `probe_rag_rank_breakdown.py --replay`;
+    - store SQL and `check_store_consistency.py`;
+    - `drop_oversized_queued_chunks.py` (dry run);
+    - `docker inspect` and `audit_filter_drift.py --dry-run --days 7|30`.
+- **Result:**
+  - **Suites:** unit 2871 passed, 5 skipped; integration 214 passed, 1 skipped. QA's 10-12 first-pass file: 45 passed, plus the 3 `retrieval_text` tests that fail by design (ADR-010).
+  - **SYS-139:** with the 1.5 s margin the real worker returns `ok` and the deferred block's flush ran; without it the same source is `timeout` and never flushes. A batch ending exactly at the deadline still runs. 95 rows stopped before batch 5 note "55 rows left".
+  - **SYS-104 rewrite:**
+    - QA switch pairs: rewrite 18/22 = alone 18/22, all `kept`.
+    - QA elliptical pairs: rewrite 15/25 (alone 0/25, fallback 16/25). "Bagaimana dampaknya ke rupiah?" after The Fed was `kept` and got 0/5, while the fallback got 5/5 (SYS-145). Korupsi timah is a corpus gap.
+    - Fallback on the 3 switch pairs with *sebenarnya / selanjutnya / akhirnya*: 0/5, 1/5, 0/5 (SYS-144).
+    - `followup.check` passes "Maaf, saya tidak dapat menulis ulang…" (SYS-143).
+  - **SYS-138:** KPK 5/5 and IHSG 5/5 this week; BI-Rate replay unchanged. But in 2 of 10 held-out week questions, a this-week card with keyword coverage 0 leads:
+    - Danantara: a Primbon piece, 0.402, above Danantara articles at 0.450;
+    - Harvey Moeis: a Pemko Medan piece, 0.402, above 0.668.
+    - Garuda loses ~2 on-topic cards. The window leads with anything over the floor when the week is thin.
+  - **SYS-137:** L2 rows over 80 words are 0 on articles and 0 overall. Dry run: 0 targets. Store check 11/12 OK; `l*_no_articles_terminal` 1 is the known leftover for VIVA's next sweep.
+  - **OPS-49:** ShmSize 1 GiB, `/dev/shm` 1.0G in the container. The audit dry run completes at 7 and at 30 days (107,556 + 44,264 rows). No "shared memory" line in the Postgres log since the recreate.
+  - **DBT-65:** line 159 bytes `<wt>\venv`; no C0 control character in any tracked `*.md`.
+  - **Hygiene:** an AST scan of `tests/**` finds one shadowed test class, `test_source_worker.py::TestSoftDeadline` twice (DBT-68).
+  - **Mutants, full `tests/unit`:** 38/42 KILLED, including all 34 of the dev's for these tickets.
+    - Survivors: `qa1012b_deadline_at_equal_stops` (equivalent), `qa1012b_unusable_reply_not_counted` (DBT-69), and SYS-138's `qa1012b_picked_dates_ignored` and `qa1012b_window_leads_below_floor`. QA's tests kill all four.
+    - Integration: `qa1012b_drop_ignores_source` and `qa1012b_drop_at_the_cap` survive `test_drop_oversized_queued_chunks_live.py` (DBT-69).
+    - Worktree torn down junction first; `pip freeze` = requirements.txt.
+- **Conclusion / do not repeat:**
+  - A retrieval rule must be measured on held-out questions it was not tuned on. The dev's 15 tuning questions showed 0 regressions for the week window; 10 new ones showed 3.
+  - A "prefer X when it passes the floor" rule inherits the floor's leniency: the floor admits semantic-only hits at 0.55 with no keyword, which is fine at the tail of a list and wrong at its head.
+  - For an LLM step with a deterministic fallback, probe the fallback on the same pairs: it is the path served whenever the key or balance fails (10-08..10-12).
+- **Links:** SYS-138 (#317) sent back; SYS-143 #326, SYS-144 #327, SYS-145 #328, DBT-68 #329, DBT-69 #330 filed; `.10x/reviews/2026-10-12-qa-report-2.md`

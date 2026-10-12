@@ -1384,6 +1384,28 @@ M = [
   'ranked = inside + [h for h in everything if h.get("sitemap_id") not in seen]', 'ranked = everything'),
  ('sys140_names_on_joined_text', 'newscrawler/web/keywords.py',
   '    for one in (question,) + more:\n', '    for one in (" ".join((question,) + more),):\n'),
+ # QA 2026-10-12 (second pass), against tests/unit and scripts/experiments/qa_2026_10_12b/test_qa_fixes.py.
+ ('qa1012b_deadline_at_equal_stops', 'newscrawler/domain/services/crawler_service_impl.py',
+  'now + longest_batch_s > deadline:', 'now + longest_batch_s >= deadline:'),
+ ('qa1012b_margin_not_subtracted', 'newscrawler/tools/source_worker.py',
+  'max(0.0, timeout - self._soft_margin_s)', 'float(timeout)'),
+ ('qa1012b_unusable_reply_not_counted', 'newscrawler/web/query_processor.py',
+  '        if reply is not None:\n', '        if rewritten is not None:\n'),
+ ('qa1012b_picked_dates_ignored', 'newscrawler/web/query_processor.py',
+  'if cue is None or not cue.window or filters.days or filters.date_from or filters.date_to:',
+  'if cue is None or not cue.window or filters.days:'),
+ ('qa1012b_window_6_days', 'newscrawler/web/keywords.py', 'RecencyCue(3, 0.2, 7)', 'RecencyCue(3, 0.2, 6)'),
+ ('qa1012b_fill_only_when_empty', 'newscrawler/web/query_processor.py',
+  'if len(inside) < RAG_TOP_K:', 'if not inside:'),
+ ('qa1012b_window_leads_below_floor', 'newscrawler/web/query_processor.py',
+  'inside = [h for h in ranked if passes_floor(h)]', 'inside = list(ranked)'),
+ ('qa1012b_store_check_any_level', 'scripts/check_store_consistency.py',
+  'FROM chunks WHERE chunk_level = 2 AND token_count > :m', 'FROM chunks WHERE token_count > :m'),
+ # Integration only (QA_MUTANT_TESTS=tests/integration/test_drop_oversized_queued_chunks_live.py; the test DB).
+ ('qa1012b_drop_ignores_source', 'scripts/drop_oversized_queued_chunks.py',
+  'WHERE (CAST(:source AS text) IS NULL OR s.sources = :source)', 'WHERE (CAST(:source AS text) IS NULL OR TRUE)'),
+ ('qa1012b_drop_at_the_cap', 'scripts/drop_oversized_queued_chunks.py',
+  'AND c.chunk_level = 2 AND c.token_count > :m)', 'AND c.chunk_level = 2 AND c.token_count >= :m)'),
 ]
 only = sys.argv[1:]
 # The tests each mutant runs (default: all of tests/unit). QA_MUTANT_TESTS narrows it to the files that

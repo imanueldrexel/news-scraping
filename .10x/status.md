@@ -1,8 +1,8 @@
 # Project Status
 
 ## Project: NewsAggregator
-**Current Phase:** Implementation complete (dev), handed to QA: the 2026-10-12 QA + senior-engineer list; spec `specs/2026-10-12-qa-senior-fixes-design.md`, ADR-010/011/012.
-**Last Updated:** 2026-10-12 by dev (principal)
+**Current Phase:** Verification (QA second pass) complete for the 2026-10-12 list: 8 closed, SYS-138 sent back, SYS-139 held for scheduled runs, 5 P3s filed. Back to dev.
+**Last Updated:** 2026-10-12 ~15:30 WIB by QA
 **Health:** On Track
 
 ## Progress
@@ -284,3 +284,14 @@ Owner decisions: SYS-139 soft deadline only (ADR-011); SYS-104/140 LLM rewrite o
 - [x] SYS-138 #317 week window (62296a2): ready-for-qa. SYS-112 #289 measured, not recency: back to QA/owner
 - [x] SYS-142 #324 measured (5.5% tails); fix timing = owner decision
 - [ ] DBT-67 #325 blocked on QA closing SYS-111 (include drop_oversized_queued_chunks.py)
+
+## QA 2026-10-12 (second pass, afternoon): the dev's fixes verified on QA's own tests + held-out questions
+Report: reviews/2026-10-12-qa-report-2.md; decisions/qa/qa-pass-2026-10-12b.md.
+- **Suites:** unit 2871/5 skipped; integration 214/1 skipped.
+- **Mutants:** 38/42 KILLED on the full unit suite. Every survivor is killed by QA's tests or ticketed.
+- **Closed (8):** SYS-111, SYS-104, SYS-140, SYS-141, SYS-137, DBT-65, DBT-66, OPS-49.
+- **Sent back:** SYS-138. On a thin week, the window leads with an off-topic card (2/10 held-out week questions: Danantara, Harvey Moeis), and Garuda loses on-topic cards.
+- **Held:** SYS-139, its unit part verified with a real-worker kill test. It waits for 3 VIVA runs (19:00 tonight first).
+- **Filed (P3):** SYS-143 #326, SYS-144 #327, SYS-145 #328, DBT-68 #329, DBT-69 #330.
+- **DBT-67 #325 is unblocked** (SYS-111 closed).
+- **Security:** no blocker (reviews/2026-10-12-security-review-2.md).

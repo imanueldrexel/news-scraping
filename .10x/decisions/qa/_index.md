@@ -24,3 +24,5 @@
 - [qa-pass-2026-10-12](qa-pass-2026-10-12.md) - SDE's 10-08/09 handoff + held tickets: 24 closed, SYS-104/SYS-111 sent back, 4 filed (SYS-137/138, DBT-65/66); topic-switch follow-ups regressed
 - Lesson: a fix that adds context to a query must be probed on inputs that never needed it (SYS-104); a 'KILLED rc=4' is a broken test list.
 - Lesson: run the unmutated baseline in every mutation copy; identical failure counts across different mutants mean an environment failure, not kills.
+- [qa-pass-2026-10-12b](qa-pass-2026-10-12b.md) - dev's fixes of the 10-12 list: 8 closed (SYS-111/104/140/141/137, DBT-65/66, OPS-49), SYS-138 sent back (off-topic card 1 on thin weeks), SYS-139 held for 3 VIVA runs, 5 P3s filed (SYS-143..145, DBT-68/69)
+- Lesson: measure a ranking rule on held-out questions; the RAG floor is a tail filter, not a lead filter. Probe an LLM step's fallback on the same pairs.

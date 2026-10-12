@@ -1,5 +1,50 @@
 # Current Handoff
 
+## From: QA (second pass of the 2026-10-12 list) -> To: SDE (1 send-back, 5 new P3s, DBT-67 unblocked), owner (1 choice)
+**Date:** 2026-10-12 (~15:30 WIB)
+**Read first:**
+- `.10x/reviews/2026-10-12-qa-report-2.md`;
+- `.10x/decisions/qa/qa-pass-2026-10-12b.md`;
+- EXPERIMENTS.md "2026-10-12 — QA (second pass) …";
+- the QA comment on each ticket.
+
+QA's tests and probes: `scripts/experiments/qa_2026_10_12b/`.
+
+### Verdicts
+- **Closed (8):** SYS-111, SYS-104, SYS-140, SYS-141, SYS-137, DBT-65, DBT-66, OPS-49.
+- **Sent back:** SYS-138 #317.
+- **Held:** SYS-139 #320 (3 scheduled VIVA runs). Still held from earlier: SYS-79, SYS-82/83, OPS-42, SYS-40.
+
+### For SDE, in order
+1. **SYS-138 #317 (sent back).** The week window leads with any this-week hit over the floor:
+   - "Apa kabar Danantara pekan ini?" → card 1 is a Primbon piece (keyword coverage 0);
+   - Harvey Moeis → card 1 is a Pemko Medan piece;
+   - Garuda loses on-topic cards.
+
+   A window hit must be *relevant* to lead. Measure on `probe_week_window_lead.py` (10 held-out questions) and `probe_recency_tuning.py`.
+   - Repro: `test_qa_fixes.py::TestSys138WeekWindow::test_a_keywordless_week_paragraph_does_not_lead_a_relevant_older_one`.
+   - Also add tests for picked dates and below-floor week hits (2 mutants survive `tests/unit`).
+2. **SYS-143 #326:** `followup.check` passes a refusal (ADR-010 decision 3).
+3. **SYS-144 #327:** `-nya` adverbs (sebenarnya, selanjutnya, akhirnya…) are back-references on the fallback. Fix this before SYS-145.
+4. **SYS-145 #328:** "Bagaimana dampaknya ke rupiah?" after The Fed is `kept`: 0/5 Fed cards, while the fallback gets 5/5.
+5. **DBT-69 #330:** 3 surviving mutants: the drop script's `--source` scope, its 80-word boundary, and an unusable rewrite still counted.
+6. **DBT-68 #329:** the duplicate `TestSoftDeadline`, plus a hygiene test.
+7. **DBT-67 #325:** unblocked (SYS-111 closed). Include `drop_oversized_queued_chunks.py`.
+
+QA's `test_qa_fixes.py` has 9 expected failures today: SYS-143 ×3, SYS-144 ×5, SYS-138 ×1. They should pass as each lands.
+
+### Owner
+- **SYS-138's thin-week lead is live on :8000.** Leave it until the rework, or ask dev to revert the window now. QA recommends leaving it: it only affects week-cue questions, and it helps KPK/IHSG.
+- `.env` still has `VIVA=1800` (SYS-139 relief). Remove it after QA closes SYS-139.
+
+### For QA next
+- **SYS-139:** VIVA full_text at 19:00 tonight, then 07:00 and 19:00 on 10-13. Each must be `completed` (a `stopped early (SYS-139)` note passes). After a completed run, `embedding_id IS NULL` must be 0 and `l*_no_articles_terminal` 0 (now 1). Check the log for a run whose deadline passed before batch 1 (ADR-011's accepted risk).
+- Re-verify SYS-138 when it comes back, on the held-out questions, not the dev's.
+
+---
+
+## Previous (superseded)
+
 ## From: SDE (principal; the 2026-10-12 QA + senior list) -> To: QA (verify, close), owner (2 decisions)
 **Date:** 2026-10-12 (~12:40 WIB)
 **Read first:** `.10x/decisions/sde/qa-senior-fixes-2026-10-12.md`; ADR-010/011/012; EXPERIMENTS.md 2026-10-12 entries; the evidence comment on each ticket.
