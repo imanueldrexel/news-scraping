@@ -179,3 +179,63 @@ class TestDescribeExitCode:
         from newscrawler.tools.source_worker import describe_exit_code, is_native_crash
         assert describe_exit_code(7) == "7" and not is_native_crash(7)
         assert describe_exit_code(None) == "None" and not is_native_crash(None)
+
+
+class TestSoftDeadline:
+    """SYS-139 (#320, ADR-011): the job carries the source's soft budget, and the child hands
+    `crawl_website` the monotonic deadline it gives, `soft_margin_s` before the kill."""
+
+    def test_the_child_gets_a_deadline_margin_seconds_before_the_timeout(self, tmp_path):
+        w = SourceWorker(factory=stubs.stub_factory, init_timeout=60, soft_margin_s=180)
+        try:
+            out = tmp_path / "deadline.txt"
+            assert w.run("DEADLINE:%s" % out, "full_text", timeout=1200) == ("ok", "")
+            left = float(out.read_text())
+            assert 1020 - EPSILON < left <= 1020
+        finally:
+            w.close()
+
+    def test_a_timeout_shorter_than_the_margin_gives_a_deadline_now(self, tmp_path):
+        """The first batch still runs (the service always starts one); no later batch does."""
+        w = SourceWorker(factory=stubs.stub_factory, init_timeout=60, soft_margin_s=180)
+        try:
+            out = tmp_path / "deadline.txt"
+            w.run("DEADLINE:%s" % out, "full_text", timeout=60)
+            assert float(out.read_text()) <= 0.0
+        finally:
+            w.close()
+
+    def test_without_a_margin_there_is_no_deadline(self, worker, tmp_path):
+        out = tmp_path / "deadline.txt"
+        worker.run("DEADLINE:%s" % out, "full_text", timeout=1200)
+        assert out.read_text() == "None"
+
+
+class TestSoftDeadline:
+    """SYS-139 (#320, ADR-011): the job carries the source's soft budget, and the child hands
+    `crawl_website` the monotonic deadline it gives, `soft_margin_s` before the kill."""
+
+    def test_the_child_gets_a_deadline_margin_seconds_before_the_timeout(self, tmp_path):
+        w = SourceWorker(factory=stubs.stub_factory, init_timeout=60, soft_margin_s=180)
+        try:
+            out = tmp_path / "deadline.txt"
+            assert w.run("DEADLINE:%s" % out, "full_text", timeout=1200) == ("ok", "")
+            left = float(out.read_text())
+            assert 1020 - EPSILON < left <= 1020
+        finally:
+            w.close()
+
+    def test_a_timeout_shorter_than_the_margin_gives_a_deadline_now(self, tmp_path):
+        """The first batch still runs (the service always starts one); no later batch does."""
+        w = SourceWorker(factory=stubs.stub_factory, init_timeout=60, soft_margin_s=180)
+        try:
+            out = tmp_path / "deadline.txt"
+            w.run("DEADLINE:%s" % out, "full_text", timeout=60)
+            assert float(out.read_text()) <= 0.0
+        finally:
+            w.close()
+
+    def test_without_a_margin_there_is_no_deadline(self, worker, tmp_path):
+        out = tmp_path / "deadline.txt"
+        worker.run("DEADLINE:%s" % out, "full_text", timeout=1200)
+        assert out.read_text() == "None"

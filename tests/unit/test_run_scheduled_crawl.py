@@ -824,3 +824,15 @@ class TestSitemapRetryInTheRun:
         worker = _FlakyWorker({("CNBC", "full_text"): [("failed", "OSError: Connection aborted.")]})
         seen = harness(worker=worker, argv=("--phase", "both"))
         assert worker.calls.count(("CNBC", "full_text")) == 1 and "FAILED: CNBC" in seen["notified"][-1]
+
+
+class TestSoftDeadlineMargin:
+    """SYS-139 (#320, ADR-011): the scheduled crawl's worker gives every source a soft deadline
+    SCHEDULE_SOFT_DEADLINE_MARGIN_S before its kill."""
+
+    def test_the_production_worker_has_the_margin(self):
+        assert rc._make_worker()._soft_margin_s == rc.SOFT_DEADLINE_MARGIN_S == 180
+
+    def test_the_margin_leaves_a_healthy_capped_source_its_time(self):
+        """A capped source takes 580-950 s (OPS-28); its soft deadline must not trim it."""
+        assert rc.SOURCE_TIMEOUT - rc.SOFT_DEADLINE_MARGIN_S >= 950

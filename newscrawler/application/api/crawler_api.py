@@ -31,11 +31,13 @@ class CrawlerAPI:
     def __init__(self, crawler_service: CrawlerService):
         self.crawler_service = crawler_service
 
-    def crawl_website(self, website_name: str, task: str, target_date=None):
+    def crawl_website(self, website_name: str, task: str, target_date=None, deadline=None):
+        """`deadline` (SYS-139): a time.monotonic() value; the full-text crawl starts no batch that
+        would end after it. None (every caller but the scheduled crawl's worker): no soft limit."""
         if task == "sitemap":
             self.crawler_service.crawl_sitemaps(website_name=website_name)
         elif task == "full_text":
-            self.crawler_service.crawl_newsdetails(website_name=website_name)
+            self.crawler_service.crawl_newsdetails(website_name=website_name, deadline=deadline)
         elif task == "all":
             self.crawler_service.crawl_sitemaps(website_name=website_name)
             # SYS-07: don't hand crawl_sitemaps' own return value to crawl_newsdetails
@@ -48,7 +50,7 @@ class CrawlerAPI:
             # after it, wasted full-text fetches forever). Passing no specific_sitemaps
             # makes crawl_newsdetails load from the DB instead, which gives the
             # cooldown + no-article filter + 1,000-row limit for free.
-            self.crawler_service.crawl_newsdetails(website_name=website_name)
+            self.crawler_service.crawl_newsdetails(website_name=website_name, deadline=deadline)
         elif task == "extract_knowledge":
             # website-agnostic: processes all pending articles across all sources
             self.crawler_service.extract_knowledge()

@@ -22,7 +22,7 @@ class TestAllTaskDoesNotBypassTheDbFilter:
         api.crawl_website(website_name="KOMPAS", task="all")
 
         svc.crawl_sitemaps.assert_called_once_with(website_name="KOMPAS")
-        svc.crawl_newsdetails.assert_called_once_with(website_name="KOMPAS")
+        svc.crawl_newsdetails.assert_called_once_with(website_name="KOMPAS", deadline=None)
         # The regression: specific_sitemaps must not be passed at all (not even as
         # crawl_sitemaps' return value) so crawl_newsdetails falls through to its own
         # load_sitemap_data(website, n_limit) branch.

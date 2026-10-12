@@ -1323,6 +1323,22 @@ M = [
  ('sys111_resolved_twice', 'scripts/repair_boilerplate_bodies.py',
   'rechunk(client, source, args.block, deadline, make_repo)',
   'rechunk(client, source, args.block, parse_until(args.until), make_repo)'),
+ ('sys139_never_stops', 'newscrawler/domain/services/crawler_service_impl.py',
+  'if deadline is not None and previous_start is not None and now + longest_batch_s > deadline:',
+  'if False:'),
+ ('sys139_no_estimate', 'newscrawler/domain/services/crawler_service_impl.py',
+  'and now + longest_batch_s > deadline:', 'and now > deadline:'),
+ ('sys139_last_batch_estimate', 'newscrawler/domain/services/crawler_service_impl.py',
+  'longest_batch_s = max(longest_batch_s, now - previous_start)', 'longest_batch_s = now - previous_start'),
+ ('sys139_unreached_counted', 'newscrawler/domain/services/crawler_service_impl.py',
+  '            attempted -= unreached\n', '            attempted -= 0\n'),
+ ('sys139_child_ignores_budget', 'newscrawler/tools/source_worker.py',
+  'deadline = None if budget_s is None else time.monotonic() + budget_s', 'deadline = None'),
+ ('sys139_api_drops_deadline', 'newscrawler/application/api/crawler_api.py',
+  '        elif task == "full_text":\n            self.crawler_service.crawl_newsdetails(website_name=website_name, deadline=deadline)',
+  '        elif task == "full_text":\n            self.crawler_service.crawl_newsdetails(website_name=website_name, deadline=None)'),
+ ('sys139_no_margin_in_production', 'scripts/run_scheduled_crawl.py',
+  'log_path=log_path, soft_margin_s=SOFT_DEADLINE_MARGIN_S)', 'log_path=log_path)'),
 ]
 only = sys.argv[1:]
 # The tests each mutant runs (default: all of tests/unit). QA_MUTANT_TESTS narrows it to the files that

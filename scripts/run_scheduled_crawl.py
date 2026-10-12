@@ -161,6 +161,10 @@ GAP_ALERT_HOURS = int(os.getenv("SCHEDULE_GAP_ALERT_HOURS", "36"))
 # OPS-22: seconds the whole run may take. It must stay below the Task Scheduler
 # ExecutionTimeLimit (4 h) by at least one SOURCE_TIMEOUT plus the reporting time.
 RUN_BUDGET = int(os.getenv("SCHEDULE_RUN_BUDGET", str(3 * 3600 + 1800)))
+# SYS-139 (ADR-011): a source's soft deadline falls this long before its kill. It covers the
+# end of a full-text run after its last batch: SYS-09's failure records, SYS-54's discard and the
+# one FAISS flush (VIVA 24 s on 2026-10-11), plus a batch slower than the slowest one so far.
+SOFT_DEADLINE_MARGIN_S = int(os.getenv("SCHEDULE_SOFT_DEADLINE_MARGIN_S", "180"))
 # How long the child may take to build the crawler before the start counts as failed.
 INIT_TIMEOUT = int(os.getenv("SCHEDULE_INIT_TIMEOUT", "1200"))
 # OPS-32 (#193): a crawler that cannot be built is not one source's problem. On
@@ -675,7 +679,7 @@ def _run(args, log_path=None) -> int:
 def _make_worker(log_path=None):
     """Seam for the tests: the production worker builds the real crawler in its child."""
     from newscrawler.tools.source_worker import SourceWorker
-    return SourceWorker(init_timeout=INIT_TIMEOUT, log_path=log_path)
+    return SourceWorker(init_timeout=INIT_TIMEOUT, log_path=log_path, soft_margin_s=SOFT_DEADLINE_MARGIN_S)
 
 
 def _healthy_list():

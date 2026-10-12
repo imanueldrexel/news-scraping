@@ -3,6 +3,7 @@ import dataclasses
 import logging
 import math
 import re
+import time
 from typing import List, Optional
 from newscrawler.core.chunker import HierarchicalChunker
 from newscrawler.core.crawler_dict_list import CRAWLER_DICT
@@ -113,7 +114,14 @@ class CrawlerServiceImpl(CrawlerService):
             self.data_flow_repo.log_crawl_failed(log_id, str(e))
             raise
 
-    def crawl_newsdetails(self, website_name: str, specific_sitemaps: List[SitemapDTO] = None):
+    # SYS-139: the clock of the soft deadline (time.monotonic, comparable with the deadline the
+    # source worker computes); a test replaces it.
+    _clock = staticmethod(time.monotonic)
+
+    def crawl_newsdetails(self, website_name: str, specific_sitemaps: List[SitemapDTO] = None,
+                          deadline: Optional[float] = None):
+        """`deadline` (SYS-139, ADR-011): a `_clock()` value after which no batch is started, so the
+        run ends, flushes its vectors and completes before the scheduler's hard kill."""
         log_id = self.data_flow_repo.log_crawl_start(website_name, "full_text")
         # OPS-16 (c): `_record_fetch_failures` decides whether this run was a
         # source-wide failure, and that verdict has to outlive the log line. The
@@ -123,22 +131,24 @@ class CrawlerServiceImpl(CrawlerService):
         # handler, so under Task Scheduler the ERROR line was gone too.
         self._source_failure_verdict = None
         try:
-            total_saved = self._crawl_newsdetails_inner(website_name, specific_sitemaps)
+            total_saved = self._crawl_newsdetails_inner(website_name, specific_sitemaps, deadline)
             self.data_flow_repo.log_crawl_complete(log_id, total_saved, note=self._source_failure_verdict)
         except Exception as e:
             self.data_flow_repo.log_crawl_failed(log_id, str(e))
             raise
 
-    def _crawl_newsdetails_inner(self, website_name: str, specific_sitemaps: List[SitemapDTO] = None) -> int:
+    def _crawl_newsdetails_inner(self, website_name: str, specific_sitemaps: List[SitemapDTO] = None,
+                                 deadline: Optional[float] = None) -> int:
         # DBT-10 (#45): one vector-store save per source run, not one per batch.
         with self.data_flow_repo.deferred_embeddings(website_name):
             # SYS-57 (#191): a run of this source killed before its end (OPS-22's
             # timeout, a worker crash) had settled sitemaps as terminal without
             # removing their vectors. The store still says so; clean up first.
             self._discard_terminal_embeddings(website_name, "an earlier run settled terminal (SYS-57)")
-            return self._crawl_newsdetails_batches(website_name, specific_sitemaps)
+            return self._crawl_newsdetails_batches(website_name, specific_sitemaps, deadline)
 
-    def _crawl_newsdetails_batches(self, website_name: str, specific_sitemaps: List[SitemapDTO] = None) -> int:
+    def _crawl_newsdetails_batches(self, website_name: str, specific_sitemaps: List[SitemapDTO] = None,
+                                   deadline: Optional[float] = None) -> int:
         web_crawler: Crawler = self.crawler_dict.get(website_name)
         if specific_sitemaps:
             target_news = specific_sitemaps
@@ -202,10 +212,23 @@ class CrawlerServiceImpl(CrawlerService):
         throttle = ThrottleGuard(SOURCE_THROTTLE_STREAK)
         not_fetched = set()
         rows_offered = 0
+        # SYS-139 (ADR-011): no batch starts unless the longest one so far still fits before the
+        # deadline. The first batch always runs; the hard kill stays the backstop.
+        batch_starts = range(0, min(len(target_news), batch_size * 10), batch_size)
+        longest_batch_s = 0.0
+        previous_start = None
+        stopped_before = None
 
-        for i in range(0, min(len(target_news), batch_size * 10), batch_size):
+        for batch_no, i in enumerate(batch_starts, 1):
+            now = self._clock()
+            if previous_start is not None:
+                longest_batch_s = max(longest_batch_s, now - previous_start)
             if throttle.tripped:
                 break
+            if deadline is not None and previous_start is not None and now + longest_batch_s > deadline:
+                stopped_before = batch_no
+                break
+            previous_start = now
             logger.info(f"Processing batch {i//batch_size+1} for {website_name}")
             batch = target_news[i:i+batch_size]
             rows_offered += len(batch)
@@ -359,8 +382,18 @@ class CrawlerServiceImpl(CrawlerService):
             unreached = len(target_news) - rows_offered + len(not_fetched)
             attempted -= len(released) + unreached
             throttle_note = self._log_throttle_stop(website_name, throttle, released, unreached)
+        deadline_note = None
+        if stopped_before is not None:
+            # Rows never offered were not attempted: no strike, no cooldown, not in OPS-16's ratio.
+            unreached = len(target_news) - rows_offered
+            attempted -= unreached
+            deadline_note = (f"stopped early (SYS-139): {stopped_before - 1} of {len(batch_starts)} batches "
+                             f"before the soft deadline (longest {longest_batch_s:.0f}s); "
+                             f"{unreached} rows left for the next run")
+            logger.warning(f"{website_name}: {deadline_note}")
         failure_note = self._record_fetch_failures(website_name, attempted, run_failures)
-        self._source_failure_verdict = "; ".join(n for n in (throttle_note, failure_note) if n) or None
+        self._source_failure_verdict = "; ".join(
+            n for n in (throttle_note, deadline_note, failure_note) if n) or None
         # After _record_fetch_failures, so a failure that reached the cap counts.
         self._discard_terminal_embeddings(website_name, "settled terminal this run (SYS-54)")
         self._log_filter_stats(website_name, gate_counts, allow_total, allow_score_passed, uncertain)
@@ -369,6 +402,7 @@ class CrawlerServiceImpl(CrawlerService):
             f"Full-text crawl finished for {website_name}: "
             f"pre_denied={len(pre_denied_ids)} attempted={attempted} extracted={extracted_total} "
             f"throttled_stop={'yes' if throttle.tripped else 'no'} "
+            f"deadline_stop={'yes' if stopped_before is not None else 'no'} "
             f"passed_filter={passed_filter_total} saved={saved_total}"
         )
         return saved_total

@@ -17,6 +17,11 @@ A process can be killed. The contract:
   to a freshly spawned child, which reloads the stores from disk. So a timed-out
   source cannot write concurrently with the next one: by the time `run()`
   returns, its process no longer exists.
+* **A soft deadline comes before the kill** (SYS-139, ADR-011). Given
+  `soft_margin_s`, a job carries `timeout - soft_margin_s` seconds; the child
+  hands `crawl_website` the `time.monotonic()` deadline that gives, and the
+  full-text crawl starts no batch that would end after it. The run then
+  flushes its vectors and completes; the kill is for a batch that overran.
 * **A kill is safe for the stores.** FAISS saves are atomic (DBT-10: tmp dir +
   `os.replace`). Chunk dedup is keyed on SQL rather than FAISS (SYS-17/SYS-25),
   so a kill between the FAISS save and the SQL insert is re-inserted on the
@@ -131,10 +136,11 @@ def _worker_loop(conn, factory, log_path=None):
             return
         if job is None:
             return
-        website, task = job
+        website, task, budget_s = job
+        deadline = None if budget_s is None else time.monotonic() + budget_s
         logger.info("%s/%s: started in worker pid %d", website, task, os.getpid())
         try:
-            api.crawl_website(website, task)
+            api.crawl_website(website, task, deadline=deadline)
             conn.send(("ok", ""))
         except BaseException as e:  # noqa: BLE001 -- the next source must still run
             # The stack goes to the log file; crawl_log keeps 200 chars of message.
@@ -148,8 +154,11 @@ class SourceWorker:
     not the source's fault, and the caller stops after a few in a row).
     Never raises for a source's own failure. Raises WorkerInitError only from `start()`."""
 
-    def __init__(self, factory=build_crawler_api, init_timeout=1200, log_path=None):
+    def __init__(self, factory=build_crawler_api, init_timeout=1200, log_path=None, soft_margin_s=None):
+        """`soft_margin_s` (SYS-139): how long before the kill the source's soft deadline falls;
+        None, no soft deadline."""
         self._factory = factory
+        self._soft_margin_s = soft_margin_s
         self._init_timeout = init_timeout
         self._log_path = log_path
         self._ctx = multiprocessing.get_context("spawn")
@@ -191,7 +200,8 @@ class SourceWorker:
             self.start()
         except WorkerInitError as e:
             return "init_failed", "crawler could not start: %s" % e
-        self._conn.send((website, task))
+        budget_s = None if self._soft_margin_s is None else max(0.0, timeout - self._soft_margin_s)
+        self._conn.send((website, task, budget_s))
         if not self._conn.poll(timeout):
             # The kill is the point: nothing of this source may still be running
             # when the next one starts.

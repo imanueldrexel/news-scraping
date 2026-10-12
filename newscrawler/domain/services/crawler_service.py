@@ -1,5 +1,5 @@
 from abc import abstractmethod
-from typing import Union, List
+from typing import List, Optional, Union
 
 from newscrawler.domain.dtos.dataflow.news_information_dto import NewsInformationDTO
 from newscrawler.infrastructure.datasource.dataflow.model.news_information_model import (
@@ -13,7 +13,8 @@ class CrawlerService:
         raise NotImplementedError
 
     @abstractmethod
-    def crawl_newsdetails(self, website_name: str, specific_sitemaps: List[NewsInformationDTO] = None):
+    def crawl_newsdetails(self, website_name: str, specific_sitemaps: List[NewsInformationDTO] = None,
+                          deadline: Optional[float] = None):
         raise NotImplementedError
 
     @abstractmethod
