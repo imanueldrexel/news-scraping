@@ -295,3 +295,14 @@ Report: reviews/2026-10-12-qa-report-2.md; decisions/qa/qa-pass-2026-10-12b.md.
 - **Filed (P3):** SYS-143 #326, SYS-144 #327, SYS-145 #328, DBT-68 #329, DBT-69 #330.
 - **DBT-67 #325 is unblocked** (SYS-111 closed).
 - **Security:** no blocker (reviews/2026-10-12-security-review-2.md).
+
+## Dev 2026-10-12 evening: QA second-pass list (spec: specs/2026-10-12-qa-second-pass-fixes-design.md, ADR-013/014/015)
+Design approved by the owner. Order:
+- [ ] SYS-144 #327 -nya adverbs
+- [ ] SYS-143 #326 refusal/list check
+- [ ] SYS-145 #328 kept-thread (ADR-014)
+- [ ] SYS-138 #317 subject gate (ADR-013)
+- [ ] DBT-69 #330 three tests
+- [ ] DBT-68 #329 duplicate class + hygiene test
+- [ ] DBT-67 #325 store_repair module (ADR-015)
+- [ ] Live re-measurement, EXPERIMENTS.md, ticket evidence

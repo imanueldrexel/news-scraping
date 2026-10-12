@@ -1,6 +1,7 @@
 # ADR-010: A follow-up is rewritten into a standalone question by one LLM call before retrieval; a deterministic rule is the fallback
 
 **Status:** Accepted 2026-10-12 (owner, as CTO/PM, chose the rewrite over a rule-only gate and over merging two retrievals)
+**Superseded in part by:** ADR-014 (decision 4, for a `kept` rewrite of a follow-up that refers back).
 **Date:** 2026-10-12
 **Feature:** qa-senior-fixes-2026-10-12 (SYS-104 #274, SYS-140 #322)
 **Supersedes:** ADR-007 decision 4 ("a follow-up is retrieved with its thread"). ADR-007's other decisions stand.

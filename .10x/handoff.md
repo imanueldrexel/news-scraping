@@ -1,5 +1,15 @@
 # Current Handoff
 
+## From: Architect/EM/Senior (planning of QA's second-pass list) -> To: SDE (same session)
+**Date:** 2026-10-12 (evening)
+**Read first:** `.10x/specs/2026-10-12-qa-second-pass-fixes-design.md`; ADR-013 (week-window subject gate), ADR-014 (kept-thread), ADR-015 (store_repair module); `.10x/decisions/senior-engineer/qa-second-pass-fixes-2026-10-12.md`.
+Order: SYS-144 -> SYS-143 -> SYS-145 -> SYS-138 -> DBT-69 -> DBT-68 -> DBT-67 -> live measurement.
+QA's Danantara repro test has a fixture defect (its older hit's keyword_score is overwritten to 0 by the `_coverage` stub): explain on SYS-138, write a correct test in `tests/unit`.
+
+---
+
+## Previous (superseded)
+
 ## From: QA (second pass of the 2026-10-12 list) -> To: SDE (1 send-back, 5 new P3s, DBT-67 unblocked), owner (1 choice)
 **Date:** 2026-10-12 (~15:30 WIB)
 **Read first:**

@@ -1,6 +1,7 @@
 # ADR-012: "This week" questions prefer the last 7 days (a soft window); a relevance gate for freshness was measured and rejected
 
 **Status:** Accepted 2026-10-12. The owner chose the shape (as CTO/PM); after the measurement the owner chose "week window only".
+**Superseded in part by:** ADR-013 (decision 1, its lead rule only).
 **Date:** 2026-10-12
 **Feature:** qa-senior-fixes-2026-10-12 (SYS-138 #317; SYS-112 #289 measured, not fixed here)
 **Supersedes:** ADR-007 decision 3 for the week cue only. Its weights, its other cues and the keyword half's newest-first rule stay.
