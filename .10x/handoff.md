@@ -1,5 +1,47 @@
 # Current Handoff
 
+## From: QA (audit of the dev's fixes of QA's second pass + SRC-59/DBT-60/SYS-91) -> To: SDE (3 send-backs, 5 new tickets), owner (1 choice)
+**Date:** 2026-10-13 (~02:45 WIB)
+**Read first:**
+- `.10x/reviews/2026-10-13-qa-report.md`;
+- `.10x/decisions/qa/qa-pass-2026-10-13.md`;
+- EXPERIMENTS.md "2026-10-13 — QA audit …";
+- the QA comment on each ticket.
+
+QA's tests and probes: `scripts/experiments/qa_2026_10_13/` (`test_qa_audit.py`: 53 pass / 24 fail by design; `probe_qa_heldout.py`).
+
+### Verdicts
+- **Closed (6):** SYS-138, SYS-143, SYS-91, DBT-67, DBT-68, DBT-69.
+- **Sent back (3):** SYS-144, SYS-145, DBT-60.
+- **Held:**
+  - SRC-59: the 07:00 10-13 run;
+  - SYS-139: run 1 of 3 completed and the store is clean;
+  - still held from earlier: SYS-79, SYS-82/83, OPS-42, SYS-40.
+
+### For SDE, in order
+1. **SYS-144 #327 + SYS-145 #328 (one fix).** Six common *-nya* adverbs are not on the list (*sebaiknya, sebetulnya, nantinya, sayangnya, secepatnya, sepenuhnya*). Through `kept-thread`, a kept topic switch is pulled to the old thread on the **served** path:
+   - Sritex: 4/5 → 1/5;
+   - Waskita Karya: 5/5 → 2/5.
+
+   Suggested: a structural rule (e.g. a follow-up that names its own subject is not pulled to the thread), not only a longer list. Measure on `probe_qa_heldout.py B` plus the Fed pair.
+2. **DBT-60 #258:** these still become 1970: `Decimal`, `numpy.int64`, `'20260918.0'`, `'+20260918'`. `'1695000000.0'` is accepted as Unix seconds. Repro: `test_qa_audit.py::TestDbt60NumericForms`.
+3. **SYS-146 #331 (P3 web):** "Apa itu Danantara dan siapa pemimpinnya?" 0/5 (`fts=0`). A *-nya* filler word becomes the heaviest required anchor.
+4. **DBT-71 #334:** 2 surviving mutants: SRC-59's `<title>` whitespace collapse, DBT-68's async shadow check.
+5. **DBT-70 #332:** `check_store_consistency` imports `repair_store_consistency._load_state`.
+6. **SRC-62 #333 (P3 scraper):** INVESTORID `money-lab` is filed as `news` (`re.sub` + `\w+`); decide the section from 3 titles.
+
+### Owner
+- :8000 serves 3c429a6, so the SYS-145 regression is live for follow-ups whose topic switch holds an unlisted adverb. QA recommends leaving it until the fix: it is rare, and the Fed-style follow-ups it fixes are common. The alternative is to ask dev to revert ADR-014's branch now.
+- :8000 also holds the pre-SYS-91 FAISS metadata until it restarts (no reader impact).
+
+### For QA next
+- SRC-59 after 07:00: INVESTORID sitemap row `completed` with new rows; after full_text, headline = og:title.
+- SYS-139 runs 2-3 (07:00, 19:00 10-13).
+
+---
+
+## Previous (superseded)
+
 ## From: SDE (SRC-59, DBT-60, SYS-91; DBT-67 finished) -> To: QA, owner
 **Date:** 2026-10-12 (~23:00 WIB); updated 2026-10-13 01:35
 **Read first:** `.10x/decisions/sde/open-p2-p3-2026-10-12.md`; `.10x/specs/2026-10-12-src59-dbt60-sys91-design.md`; EXPERIMENTS.md "SRC-59 INVESTORID probe…"; the ticket comments.

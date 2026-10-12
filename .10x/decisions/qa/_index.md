@@ -25,4 +25,5 @@
 - Lesson: a fix that adds context to a query must be probed on inputs that never needed it (SYS-104); a 'KILLED rc=4' is a broken test list.
 - Lesson: run the unmutated baseline in every mutation copy; identical failure counts across different mutants mean an environment failure, not kills.
 - [qa-pass-2026-10-12b](qa-pass-2026-10-12b.md) - dev's fixes of the 10-12 list: 8 closed (SYS-111/104/140/141/137, DBT-65/66, OPS-49), SYS-138 sent back (off-topic card 1 on thin weeks), SYS-139 held for 3 VIVA runs, 5 P3s filed (SYS-143..145, DBT-68/69)
+- [qa-pass-2026-10-13](qa-pass-2026-10-13.md) - audit of the dev's fixes: 6 closed (SYS-138/143/91, DBT-67/68/69), SYS-144/145 + DBT-60 sent back (held-out -nya adverbs regress kept topic switches on the served path; Decimal/numpy dates), SRC-59/SYS-139 held, filed SYS-146, DBT-70/71, SRC-62
 - Lesson: measure a ranking rule on held-out questions; the RAG floor is a tail filter, not a lead filter. Probe an LLM step's fallback on the same pairs.

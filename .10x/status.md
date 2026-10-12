@@ -1,8 +1,8 @@
 # Project Status
 
 ## Project: NewsAggregator
-**Current Phase:** Implementation complete for QA's second-pass list (SYS-138/143/144/145, DBT-67/68/69, all ready-for-qa). Back to QA.
-**Last Updated:** 2026-10-12 night by SDE
+**Current Phase:** QA audit 2026-10-13 done: 6 closed, 3 sent back (SYS-144/145, DBT-60), SRC-59/SYS-139 held, 5 filed. Back to SDE.
+**Last Updated:** 2026-10-13 ~02:45 WIB by QA
 **Health:** On Track
 
 ## Progress
@@ -321,3 +321,14 @@ Design approved by the owner. Order:
 - [x] SYS-91 repair script; NEWS_L1 dry run 88 CNBC 19xx + 4 TRIBUN empty
 - [x] SYS-91 `--apply --all-mismatches` 01:30 10-13 (owner moved it up after the extraction finished, and approved the TRIBUN empties): L1 92 + L2 32 rewritten, backup `backups/sys91_ALL_20261012T182959Z`; scan 0 `19xx`/empty; ready-for-qa
 - [x] DBT-67: 13/13 mutants KILLED, ready-for-qa
+
+## QA audit 2026-10-13 (~02:45 WIB): dev fixes of QA's second pass + SRC-59/DBT-60/SYS-91
+- Suites: unit 2963 / integration 223 (= dev). QA `test_qa_audit.py`: 53 pass, 24 fail (findings).
+- Closed: SYS-138, SYS-143, SYS-91 (per-document diff vs `.bak`, 974,375 docs agree with DB), DBT-67, DBT-68, DBT-69.
+- Sent back:
+  - SYS-144/145: the held-out *-nya* adverbs regress kept topic switches on the served path, Sritex 4/5→1/5;
+  - DBT-60: Decimal/numpy/'20260918.0' still become 1970.
+- Held: SRC-59 (07:00 run), SYS-139 (1/3 runs, store check OK).
+- Filed: SYS-146 #331, DBT-70 #332, SRC-62 #333, DBT-71 #334.
+- Mutants: 21/24 unit (1 equivalent, 2 survivors → DBT-71) + 2/2 integration KILLED. Worktree torn down junction-first; venv intact.
+- Report: reviews/2026-10-13-qa-report.md

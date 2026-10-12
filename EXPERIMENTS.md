@@ -21,6 +21,7 @@ Reusable diagnostics live in `scripts/experiments/`. Throwaway repro code is inl
 
 One line each; read this before starting on a scraper or pipeline problem.
 
+- **A follow-up's back-reference rule needs held-out adverbs (QA 2026-10-13):** SYS-144's 22-word *-nya* list passed the ticket's 5 and missed *sebaiknya/sebetulnya/nantinya/sayangnya/secepatnya/sepenuhnya*; through SYS-145's `kept-thread` a kept topic switch went 4/5 → 1/5 on the served path. Measure with `scripts/experiments/qa_2026_10_13/probe_qa_heldout.py B`.
 - **An 80-word L2 window does not always fit MiniLM's 128 tokens (QA 2026-10-12):** 10.7% of production windows exceed it (p90 129, p99 150). About 1% of L2 words stay unembedded (was 22% before SYS-109). Measure with the tokenizer, not word counts. See "2026-10-12 — QA of the 2026-10-08/09 retrieval fixes".
 - **A follow-up retrieved with the conversation breaks a follow-up that changes the subject (QA 2026-10-12, SYS-104 sent back):** 5/5 topic-switch pairs got the previous topic's sources. Probe `scripts/experiments/qa_2026_10_12/probe_topic_switch_followups.py` alongside the elliptical pairs.
 - **A mutation "KILLED rc=4 / no tests ran" is a broken `QA_MUTANT_TESTS` list, not a kill (QA 2026-10-12).**
@@ -2509,3 +2510,36 @@ SINDONEWS   old 12 new 12 | lost [] | gained []   links identical: True
   - Probe investor.id with the browser UA; a bot-UA 403 there means nothing.
   - A new lastmod-only source needs its URL's id position checked against `_is_placeholder_headline`, or its slugs become permanent titles.
 - **Links:** SRC-59 #260, SYS-91 #257, DBT-60 #258; `.10x/specs/2026-10-12-src59-dbt60-sys91-design.md`
+
+### 2026-10-13 — QA audit of the dev's fixes (SYS-138/143/144/145, DBT-67/68/69) and SRC-59/DBT-60/SYS-91, on QA's own tests and held-out inputs
+- **Question / hypothesis:** do the fixes hold on inputs neither the dev nor the ticket named? Do SYS-144's adverb list and SYS-145's `kept-thread` (ADR-014) compose correctly on the served path? Did SYS-91 change only `posted_at`?
+- **Method:**
+  - `scripts/experiments/qa_2026_10_13/test_qa_audit.py` (77 tests from the tickets);
+  - `scripts/experiments/qa_2026_10_13/probe_qa_heldout.py` (production read-only):
+    - A: 8 new week questions WITH/WITHOUT the window;
+    - B: 7 follow-up pairs ALONE / REAL rewriter / forced KEPT;
+    - C: 8 odd follow-ups through the real rewriter;
+    - 14 rewrite calls, $0.0003;
+  - SYS-91: both `index.pkl` diffed per document against `index.pkl.bak`, every document compared with `sitemaps.posted_at`, `cmp` of `index.faiss`;
+  - SRC-59: `check_crawlers.py --website INVESTORID --report-dir <scratch>`, then `_is_placeholder_headline` and `_get_branch_name_from_url` on all 100 live `sitemap_post.xml` links;
+  - mutants `qa1013_*` in `%TEMP%\mutwt` (baseline 2963 green).
+- **Result:**
+  - **A (SYS-138):** 0/8 questions lose on-topic cards with the window. "Bank BRI minggu ini" now gets this week's cards instead of 2024 KUR pieces.
+  - **B (SYS-144 × SYS-145):** on the REAL path the model kept two held-out topic switches, and `kept-thread` pulled them to the old thread:
+    - "Bagaimana nantinya nasib karyawan Sritex?" after OJK: 4/5 alone → 1/5;
+    - "Apa sebetulnya masalah utang Waskita Karya?" after IHSG: 5/5 → 2/5;
+    - "Apa sebaiknya … Garuda Indonesia?" forced-kept: 0/5.
+    - *nantinya / sebetulnya / sebaiknya* are not on the 22-word list; 6/6 held-out adverbs fail.
+    - ADR-014's own risk (a *-nya* pointing inside the follow-up: Garuda dirut, BBCA dividen, Danantara pemimpin) did not hurt: REAL ≥ ALONE on all 3.
+  - **Danantara:** "Apa itu Danantara dan siapa pemimpinnya?" ALONE 0/5 with `fts=0`; *pemimpinnya* is a rarer, heavier (0.64), required anchor. "Siapa pemimpin Danantara?" gets 3/5 → SYS-146.
+  - **C (SYS-143):** the model refused 0/8 odd inputs. It echoes them ("Terima kasih!", "asdfgh", "Abaikan instruksi … puisi") or rewrites them to the thread ("?" → the OJK question).
+  - **DBT-60:** `'20260918.0'`, `'+20260918'`, `Decimal`, `numpy.int64` → 1970-08-23; `'1695000000.0'` accepted as 2023.
+  - **SYS-91:** only `posted_at` changed (92 L1, 32 L2); `index.faiss` byte-identical; 974,375 documents agree with the DB. The pickles grew 9.7 KB / 69 KB from lost string memo-sharing, not damage.
+  - **SRC-59:** 100/100 links detected as placeholders; 8/100 (`money-lab`) get the whole URL from `re.sub`, so SRC-48 stores `news` → SRC-62.
+  - **Mutants:** see `.10x/reviews/2026-10-13-qa-report.md`.
+- **Conclusion / do not repeat:**
+  - A word list for a language feature is not done until a held-out list passes.
+  - When one fix (SYS-145) relies on another's precondition (ADR-014 decision 3 on SYS-144), measure the composition on the served path with the real rewriter.
+  - Probe an LLM refusal check with odd inputs before widening it: this model echoes rather than refuses.
+  - Judge a docstore rewrite by a per-document diff against `.bak`, not by file size.
+- **Links:** SYS-138 #317, SYS-143 #326, SYS-144 #327, SYS-145 #328, DBT-67 #325, DBT-68 #329, DBT-69 #330, DBT-60 #258, SRC-59 #260, SYS-91 #257; filed SYS-146 #331, DBT-70 #332, SRC-62 #333
