@@ -1,18 +1,15 @@
 # Current Handoff
 
 ## From: SDE (SRC-59, DBT-60, SYS-91; DBT-67 finished) -> To: QA, owner
-**Date:** 2026-10-12 (~23:00 WIB)
+**Date:** 2026-10-12 (~23:00 WIB); updated 2026-10-13 01:35
 **Read first:** `.10x/decisions/sde/open-p2-p3-2026-10-12.md`; `.10x/specs/2026-10-12-src59-dbt60-sys91-design.md`; EXPERIMENTS.md "SRC-59 INVESTORID probe…"; the ticket comments.
 
 ### Ready for QA
 - **DBT-67 #325:** all 13 mutants KILLED.
 - **DBT-60 #258.**
 - **SRC-59 #260:** the scheduled-run evidence is the 07:00 10-13 run (INVESTORID sitemap row `completed`, new rows, og:title headlines after full_text).
+- **SYS-91 #257:** applied 01:30 10-13 with `--all-mismatches` (owner-approved: moved up from 06:00, TRIBUN empties included). L1 92 + L2 32 rewritten; backup `backups/sys91_ALL_20261012T182959Z` (4.2 GB, the rollback); a fresh scan finds 0 `19xx`/empty in either index. :8000 still holds the pre-repair metadata until it restarts (display uses DB dates).
 - Plus the earlier six: SYS-138/143/144/145, DBT-68/69.
-
-### Not yet
-- **SYS-91 #257:** `scriptsepair_faiss_posted_at.py --apply` at ~06:00 10-13, before the 07:00 crawl (owner-approved; it backs up first). Then the scan (0 `19xx` in both indexes) and the label.
-- **Owner:** should `--all-mismatches` also fill the 4 TRIBUN empty dates?
 
 ---
 

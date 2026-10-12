@@ -319,5 +319,5 @@ Design approved by the owner. Order:
 - [x] DBT-60 date rule (ready-for-qa)
 - [x] SRC-59 INVESTORID sitemap_post.xml + id-segment placeholder hook (ready-for-qa; QA needs the 07:00 run)
 - [x] SYS-91 repair script; NEWS_L1 dry run 88 CNBC 19xx + 4 TRIBUN empty
-- [ ] SYS-91 `--apply` ~06:00 10-13 (owner-approved), then the Done-when scan and the label
+- [x] SYS-91 `--apply --all-mismatches` 01:30 10-13 (owner moved it up after the extraction finished, and approved the TRIBUN empties): L1 92 + L2 32 rewritten, backup `backups/sys91_ALL_20261012T182959Z`; scan 0 `19xx`/empty; ready-for-qa
 - [x] DBT-67: 13/13 mutants KILLED, ready-for-qa

@@ -2504,6 +2504,7 @@ SINDONEWS   old 12 new 12 | lost [] | gained []   links identical: True
   - **Trap: the slug headline would have stayed the title.** investor.id puts the article id in its own segment (`/business/457702/<slug>`), so SYS-33's "id at the slug's tail" test never saw a placeholder. "Medcoenergi Akuisisi 10 Hak…" stayed instead of the og:title "MedcoEnergi Akuisisi 10% Hak…". Fixed with a per-crawler hook, `_link_has_article_id`.
   - **Not one rule for every shape:** KOMPAS's `/<id>/<slug>` would turn thousands of genuine slug-equal headlines into "placeholders". og:title also had `&nbsp; ` (a double space), now collapsed.
   - **NEWS_L1:** 92 documents disagree. 88 are CNBC `19700823` (the ticket's 88); 4 are TRIBUN with an empty `posted_at` (sitemaps say 20260917).
+  - **NEWS_L2 (2026-10-13 01:27, after the extraction, 8.4 GB free):** 32 disagree, all CNBC `19700823`. QA counted 104 on 10-06; SYS-109's re-chunk re-embedded the rest with the right date. The owner approved `--all-mismatches`, applied 01:30 (124 rewritten, backup 4.2 GB); a fresh scan finds 0 `19xx`/empty in 121,078 + 853,297 documents.
 - **Conclusion / do not repeat:**
   - Probe investor.id with the browser UA; a bot-UA 403 there means nothing.
   - A new lastmod-only source needs its URL's id position checked against `_is_placeholder_headline`, or its slugs become permanent titles.
