@@ -17,6 +17,15 @@
 - **SYS-142 #324:** 45,741 overlap tails (5.5% of served L2). Even-window fix proposed. **Owner: change the chunker now, or with the next planned re-chunk?**
 - **DBT-67 #325:** waits for QA to close SYS-111; it must include `drop_oversized_queued_chunks.py`.
 
+### Web app restarted 2026-10-12 ~12:47 WIB (owner closed the old one)
+- `venv\Scripts\python.exe -m uvicorn newscrawler.web.app:app --port 8000`: health ok, warm-up 17 s, NEWS_L1 117,863 / NEWS_L2 830,333 (the post-SYS-137 counts).
+- Live smoke (`/api/query`, 4 questions, $0.0013):
+  - KPK minggu ini: `window=7d`, cards 8-11 Oct;
+  - OJK -> "Berapa target pertumbuhannya tahun depan?": `rewrite=llm`, credit-growth cards;
+  - -> "Apa itu Danantara?": `rewrite=kept`;
+  - all answers ok.
+- **For QA (dev files no tickets from testing):** Danantara card 4 is JPNN "Petir India" (sitemap 13278, 26 Feb 2026), a Disway opinion column under JPNN's `news` branch. It names Danantara, so it is a keyword-only hit. It is not caused by today's changes (chunked 10-08). It is the SYS-49 opinion-column policy at article level.
+
 ### Suites at handoff
 - unit 2871 passed / 5 skipped;
 - integration: see the SYS-137 comment.
