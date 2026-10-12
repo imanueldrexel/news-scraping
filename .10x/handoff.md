@@ -1,5 +1,49 @@
 # Current Handoff
 
+## From: QA (independent pass of the 2026-10-09 SDE handoff + held tickets) -> To: SDE (2 send-backs, 4 new P3s), owner (SumoPod key)
+**Date:** 2026-10-12
+**Read first:**
+- `.10x/reviews/2026-10-12-qa-report.md`;
+- `.10x/decisions/qa/qa-pass-2026-10-12.md`;
+- EXPERIMENTS.md "2026-10-12 — QA of the 2026-10-08/09 retrieval fixes and SYS-109 …";
+- the QA comment on each ticket.
+
+### Verdicts
+- **Closed (24):**
+  - SYS-105..SYS-110, SRC-60/61;
+  - DBT-61..64, OPS-46/47;
+  - OPS-43, OPS-20, SYS-39, SRC-57, SYS-64, SYS-66, SYS-70, OPS-40, DBT-51/52.
+- **Held:**
+  - SYS-79 (no real blip in 16 runs);
+  - SYS-82/83, OPS-42 (owner reads);
+  - SYS-40 (owner + SRC-34).
+
+### For SDE, in order
+1. **SYS-104 #274 (P2, sent back).** A follow-up that names a new subject is retrieved on the old one: 5/5 topic-switch pairs give 0-1 of 5 on-topic cards. The thread's recency cue leaks too.
+   - Measure with `scripts/experiments/qa_2026_10_12/probe_topic_switch_followups.py` and the 7 elliptical pairs (`probe_rag_rank_breakdown.py --followups`).
+2. **SYS-111 #287 (P1, sent back).** `repair_boilerplate_bodies._apply_locked` calls `parse_until` again after the deletes. Resolve the deadline once.
+   - QA's repro: `scripts/experiments/qa_2026_10_12/test_qa_tickets.py::TestSys111DeadlineResolvedOnce`.
+3. **SYS-137 #316 (P3).** VIVA's queued June chunks (≤ 450 words) are adopted when the crawl saves those articles. Repairing the queued rows is a production write: owner approval.
+4. **SYS-138 #317 (P3)** with SYS-112 #289. Unfiltered "minggu ini" questions get weeks-old articles. Re-tune both on one measurement.
+5. **DBT-66 #319 (P3).** 4 untested thresholds (`qa1012_*` mutants).
+6. **DBT-65 #318 (P3).** A control character in the OPS-47 trap line; add a hygiene test.
+
+### Owner
+- **SumoPod:**
+  - the account budget ($22.50) ran out on 10-10 at 01:04 and the key has been blocked since 10-11;
+  - the 12:00 newsletter (no edition on 10-11), the 21:00 extraction and the search answers are degraded until it is topped up or unblocked;
+  - nightly extraction spends ~$5-7 against that balance (~50k articles pending).
+- Restart :8000 if not done since 10-09.
+
+### For QA next
+- **SYS-79:** the first morning a source blips.
+- **The VIVA pending vectors** from the 10-11 19:00 kill should be re-embedded by VIVA's next full_text (DBT-10 self-heal): `SELECT count(*) FROM chunks WHERE embedding_id IS NULL` after a completed VIVA run.
+- **Re-verify SYS-104 and SYS-111** when they come back.
+
+---
+
+## Previous (superseded)
+
 ## From: SDE (SYS-109 built and run on production) -> To: QA (verify, close), owner (restart :8000, SumoPod key)
 **Date:** 2026-10-09 (00:50)
 **Read first:**

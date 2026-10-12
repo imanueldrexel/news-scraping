@@ -228,3 +228,20 @@
   - SYS-120 PriceSource is blocked on the owner (DB access + 4 facts).
   - No code written yet.
 - **Parked by the owner on 2026-10-12 ("leave it for now").** Resume at SYS-113 when the owner picks it up again.
+
+## QA 2026-10-12: SDE's 2026-10-08/09 handoff + held tickets verified independently
+- **Closed (24):**
+  - SYS-105/106/107/108/109/110, SRC-60/61;
+  - DBT-61/62/63/64, OPS-46/47;
+  - OPS-43, OPS-20, SYS-39, SRC-57, SYS-64, SYS-66, SYS-70, OPS-40, DBT-51/52.
+- **Sent back (2):**
+  - SYS-104: a follow-up that changes topic retrieves the old topic, 5/5 pairs;
+  - SYS-111: `repair_boilerplate_bodies` re-resolves `--until` after the deletes.
+- **Held:** SYS-79 (no blip yet), SYS-82/83 + OPS-42 (owner reads), SYS-40 (owner + SRC-34).
+- **Filed:** SYS-137 #316, SYS-138 #317, DBT-65 #318, DBT-66 #319 (all P3).
+- **Tests:**
+  - unit 2,770; integration 210, run under a held real run lock;
+  - dev mutants 116/120 killed (2 equivalents, 1 killed by the full suite, 1 stale and retargeted);
+  - QA's 48 own tests (1 = the SYS-111 repro); QA mutants: 4 real gaps → DBT-66.
+- **Owner:** the SumoPod key has been blocked since 10-11 (account budget $22.50 exhausted by extraction). The newsletter, extraction and search answers degrade until it is unblocked or topped up.
+- Report: `reviews/2026-10-12-qa-report.md`.

@@ -21,6 +21,10 @@ Reusable diagnostics live in `scripts/experiments/`. Throwaway repro code is inl
 
 One line each; read this before starting on a scraper or pipeline problem.
 
+- **An 80-word L2 window does not always fit MiniLM's 128 tokens (QA 2026-10-12):** 10.7% of production windows exceed it (p90 129, p99 150). About 1% of L2 words stay unembedded (was 22% before SYS-109). Measure with the tokenizer, not word counts. See "2026-10-12 — QA of the 2026-10-08/09 retrieval fixes".
+- **A follow-up retrieved with the conversation breaks a follow-up that changes the subject (QA 2026-10-12, SYS-104 sent back):** 5/5 topic-switch pairs got the previous topic's sources. Probe `scripts/experiments/qa_2026_10_12/probe_topic_switch_followups.py` alongside the elliptical pairs.
+- **A mutation "KILLED rc=4 / no tests ran" is a broken `QA_MUTANT_TESTS` list, not a kill (QA 2026-10-12).**
+
 - **A retriever's candidate count is not its contribution to the answer (QA 2026-10-07).** SYS-103 raised `fts` from 0-1 to 20 per question, yet 0 of 95 top-5 cards were keyword-only: the re-rank caps them at 0.40 (SYS-106 #276). Measure the top 5 by origin with `scripts/experiments/probe_rag_rank_breakdown.py --replay`.
 - **A 1-word chunk is a MiniLM hub: it scores ~0.78 against unrelated questions (0.665 as a true cosine, SYS-110)** (SYS-105 #275). "(jon)" / "--" sign-offs beat real articles for "Apa itu Danantara?". Never let a fragment chunk into the index or the candidates.
 - **`page_loader.get_url_with_reason` returns the response for ANY HTTP status, a 404 included; only `get_soup_with_reason` checks it.** A probe that treats a non-None response as "live" reports dead URLs as alive (SRC-29's first host probe: 342/342 "alive", truly 333/342 HTTP 404). Probe with `get_soup_with_reason`, the call the article crawl makes. → [2026-09-25 SRC-29 entry](#2026-09-25--src-29-inewss-dead-backlog-is-199-articles-listed-on-112-mirror-hosts-not-113-dead-hosts)
@@ -2281,3 +2285,52 @@ SINDONEWS   old 12 new 12 | lost [] | gained []   links identical: True
   - External: IDX/KSEI publish all shareholders > 1% of every issuer monthly since 2026-03 (structured ownership, beats news for owns/group edges). Precedent for the thesis: Cohen & Frazzini (customer->supplier returns lag ~1 month), Scherbina & Schlusche (news co-mentions cross-predict returns).
 - **Conclusion / do not repeat:** supplier/customer edges from news are sparse (3%) -- second-order exposure will start thin and grow; ownership/group edges should come from the KSEI > 1% file, not news. A historical backtest of >= 50 signals per detector is not possible on 6 dense weeks: the gate has to be a forward test. Store the publication timestamp before any price alignment is built.
 - **Links:** design in progress (`.10x/specs/2026-10-11-entity-links-design.md`, not yet written).
+
+### 2026-10-12 — QA of the 2026-10-08/09 retrieval fixes and SYS-109: what holds on production, a follow-up that changes topic, and how much of an 80-word window MiniLM really sees
+- **Question / hypothesis:** do SYS-104..111, SRC-60/61, DBT-61..64 and OPS-46/47 hold independently of the dev's own tests, on today's production data, and do the held tickets have their scheduled-run evidence?
+- **Method:**
+  - suites on the live tree before the 07:00 crawl. Integration ran while a separate process held the real repo-root run lock (`RunLock(purpose='QA DBT-61 verification')`).
+  - QA's own tests from the tickets' wording: `scripts/experiments/qa_2026_10_12/test_qa_tickets.py` (48).
+  - mutants in a fresh worktree (`subst Q:` → scratchpad, `venv` junction, unmutated baseline first): the dev's 120 on the RAG/chunker/cleaner/KUMPARAN/repair test files, plus 11 QA `qa1012_*` / `dbt51_*`. Survivors re-run on the full `tests/unit`.
+  - production read-only:
+    - SQL behind each Done-when;
+    - MiniLM's own tokenizer on a 3% random sample of L2 rows (24,371);
+    - `probe_late_recall_live.py --measure scripts/experiments/late_recall_sample_2026-10-08.json`;
+    - `probe_rag_rank_breakdown.py --replay --followups --detail 5` + 8 QA questions;
+    - `qa_2026_10_12/probe_topic_switch_followups.py` (5 follow-ups that change the subject);
+    - one answer through Gemini (`qa_2026_10_12/answer_gold_with_gemini.py`; the SumoPod key is blocked).
+- **Result:**
+  - **Suites:** unit 2,770 passed / 5 skipped. Integration 210 passed / 1 skipped **under the held real lock**, and `logs/telegram_outbox.jsonl` absent before and after.
+  - **Mutants:** dev 116/120 killed. The survivors are the two DBT-62 equivalents and `qa1007_complete_counts_usage` (narrowed set). `sys105_rechunk_any_layout` is stale (SYS-109 rewrote `select_targets`); its retarget `qa1012_rechunk_any_layout` is KILLED. QA's `qa1012_*`: see the report for the full-suite survivors.
+    - A first QA run "killed" all 11 with `rc=4 no tests ran`: one file in `QA_MUTANT_TESTS` did not exist. **Check the rc, not just "KILLED".**
+  - **SYS-109 on production:**
+    - late recall @1 / @5 / @20 = 0.355 / 0.570 / 0.720, early 0.580 / 0.780 / 0.865 (dev: 0.360 late @1; NEWS_L2 has grown 750,871 → 829,239 since);
+    - 0 L2 rows over 80 words created since the re-chunk;
+    - **MiniLM tokens of ≤ 80-word windows: 10.7% exceed 128** (p50 92, p90 129, p99 150, max 567), worst BISNIS/TEMPO/INEWS/MERDEKA ~35–44%. About 1.0% of L2 words are still past the window (was 22%). ADR-008's own table (70 words fit 95%) predicted this.
+  - **The re-chunk's scope missed queued sitemaps:** VIVA's June backlog chunks (450 words, 2026-06-02) are adopted as the crawl saves those articles. 536 articles since 10-09; 2,165 queued sitemaps still hold 7,193 such L2 rows → SYS-137 #316.
+  - **SYS-104:** the 7 elliptical pairs replicate (OJK 4/5). But **every topic-switch follow-up is retrieved on the previous subject:** "Apa itu Danantara?" after an OJK question gives 0/5 Danantara (5/5 alone); floods after Iran 0/5; UU Ketenagakerjaan after rupiah 0/5. The thread's "pekan ini" cue leaks too → sent back.
+  - **SYS-111:** `repair_boilerplate_bodies._apply_locked` calls `parse_until` a second time after the deletes. Fake clock 06:00 → rewrite ends 06:25 with `--until 06:20` → the re-chunk's deadline is 2026-10-13 06:20 → sent back.
+  - **SYS-105/106/107 live:**
+    - Danantara 5/5 (4 keyword-only); gibberish 0 cards; 0 fragment cards;
+    - 48 of 170 cards keyword-only;
+    - the BI-Rate decision fills the top 5;
+    - the gold question unfiltered cites 11 Oct articles only (the latest stored day).
+    - "KPK … minggu ini" asked unfiltered gets 18 Sep–30 Jul articles while 141 KPK case articles of 5–11 Oct exist → SYS-138 #317.
+  - **SRC-60/61 since 10-08:**
+    - every KUMPARAN full run notes 193–250 reader URLs out of scope;
+    - only desk accounts + `pandangan-jogja` saved;
+    - 0 bodies with the disclaimer or "waktu baca".
+  - **Held tickets:**
+    - OPS-43: 3 valid 12:00 runs (10-07, 10-09, 10-10);
+    - SYS-64: 0 WinError rows in 8 days, 10 retries all recovered;
+    - SRC-57: 0 never-attempted, 0 403 strikes;
+    - SYS-66: every struck PIKIRANRAKYAT row is on a dead DNS subdomain, 0 on the live host;
+    - OPS-20/SYS-39: finance first, then the rest; 19,998 for $6.81 on 10-09.
+  - **SumoPod:** the account's own budget ($22.50) ran out at 10-10 01:04 (429 `ExceededBudget`), then the key was blocked (401) from 10-11. The 10-11 newsletter and extraction degraded as designed.
+- **Conclusion / do not repeat:**
+  - Word counts are not encoder tokens: measure the tokenizer before claiming a window fits.
+  - A fix that adds context to a query must be probed on inputs that did not need it (topic switches), not only on the ones it targets.
+  - Resolve a "next occurrence" deadline once per run.
+  - Scope a corpus migration by the rows it rewrites, not by the rows served today.
+  - A mutation "kill" with rc=4 is a broken test list.
+- **Links:** SYS-104 #274 and SYS-111 #287 (sent back); SYS-137 #316, SYS-138 #317, DBT-65 #318 (filed); `.10x/reviews/2026-10-12-qa-report.md`.

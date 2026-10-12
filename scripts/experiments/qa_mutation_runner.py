@@ -1294,6 +1294,31 @@ M = [
   'return False'),
  ('sys111_too_close_at_the_margin', 'scripts/repair_boilerplate_bodies.py',
   '< timedelta(minutes=MIN_RUN_MINUTES)', '<= timedelta(minutes=MIN_RUN_MINUTES)'),
+ # QA 2026-10-12: QA's own mutants for the 2026-10-08/09 tickets, from the tickets' wording
+ # (scripts/experiments/qa_2026_10_12/). Neighbouring boundaries the dev's mutants do not touch.
+ ('qa1012_no_clamp', 'newscrawler/infrastructure/datasource/dataflow/write/faiss/chunk_faiss_data_source.py',
+  'semantic_score = max(0.0, 1.0 - float(score) / 2.0)', 'semantic_score = 1.0 - float(score) / 2.0'),
+ ('qa1012_similarity_no_clamp', 'newscrawler/infrastructure/datasource/dataflow/write/faiss/chunk_faiss_data_source.py',
+  'return [max(0.0, float(np.dot(v, query))) for v in vectors]', 'return [float(np.dot(v, query)) for v in vectors]'),
+ ('qa1012_gate_strict', 'newscrawler/web/query_processor.py',
+  'cue.weight if semantic >= RAG_MIN_SEMANTIC_SCORE else 0.0', 'cue.weight if semantic > RAG_MIN_SEMANTIC_SCORE else 0.0'),
+ ('qa1012_thread_three', 'newscrawler/web/query_processor.py',
+  'FOLLOWUP_CONTEXT_TURNS = 2', 'FOLLOWUP_CONTEXT_TURNS = 3'),
+ ('qa1012_min_words_10', 'newscrawler/web/query_processor.py',
+  'MIN_PARAGRAPH_WORDS = 15', 'MIN_PARAGRAPH_WORDS = 10'),
+ ('qa1012_header_any_length', 'newscrawler/core/utils/utils.py',
+  'HEADER_LINE_MAX_WORDS = 25', 'HEADER_LINE_MAX_WORDS = 250'),
+ ('qa1012_prose_quote_not_stripped', 'newscrawler/core/utils/utils.py',
+  'not above.rstrip("\\"\'\\u201d\\u2019)").endswith(".")', 'not above.endswith(".")'),
+ ('qa1012_account_case_sensitive', 'newscrawler/infrastructure/datasource/scrapers/kumparan/kumparan_crawler.py',
+  'account = urlparse(link or "").path.strip("/").split("/")[0].lower()',
+  'account = urlparse(link or "").path.strip("/").split("/")[0]'),
+ ('qa1012_recency_cue_no_word_boundary', 'newscrawler/web/keywords.py',
+  'r"\\b(?:hari\\s+ini|sekarang|saat\\s+ini|kini|barusan)\\b"', 'r"(?:hari\\s+ini|sekarang|saat\\s+ini|kini|barusan)"'),
+ # sys105_rechunk_any_layout is stale since SYS-109 rewrote select_targets (PATTERN NOT FOUND at 1c45a65);
+ # the same mutation on the current guard:
+ ('qa1012_rechunk_any_layout', 'scripts/rechunk_stale_chunks.py',
+  '        if new and list(stored or []) != new:\n', '        if new:\n'),
 ]
 only = sys.argv[1:]
 # The tests each mutant runs (default: all of tests/unit). QA_MUTANT_TESTS narrows it to the files that

@@ -21,4 +21,6 @@
 - [rag-search-redesign](rag-search-redesign.md) — dev-side verification of tracker #272; gaps for independent QA
 - [qa-pass-2026-10-07-rag](qa-pass-2026-10-07-rag.md) - independent QA of #272 + SYS-103: 13 closed (incl. SRC-58), 8 filed (SYS-104..108, SRC-60/61, DBT-61) + test gaps; keyword-only hits never reach the top 5
 - Lesson: a retriever's candidate count is not its contribution; count the top-5 cards by origin (`probe_rag_rank_breakdown.py`).
+- [qa-pass-2026-10-12](qa-pass-2026-10-12.md) - SDE's 10-08/09 handoff + held tickets: 24 closed, SYS-104/SYS-111 sent back, 4 filed (SYS-137/138, DBT-65/66); topic-switch follow-ups regressed
+- Lesson: a fix that adds context to a query must be probed on inputs that never needed it (SYS-104); a 'KILLED rc=4' is a broken test list.
 - Lesson: run the unmutated baseline in every mutation copy; identical failure counts across different mutants mean an environment failure, not kills.
