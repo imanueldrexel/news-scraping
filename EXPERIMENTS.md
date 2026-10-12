@@ -2326,6 +2326,7 @@ SINDONEWS   old 12 new 12 | lost [] | gained []   links identical: True
     - SRC-57: 0 never-attempted, 0 403 strikes;
     - SYS-66: every struck PIKIRANRAKYAT row is on a dead DNS subdomain, 0 on the live host;
     - OPS-20/SYS-39: finance first, then the rest; 19,998 for $6.81 on 10-09.
+  - **VIVA full_text was killed at 1,200 s on 10-11 19:00 and again on 10-12 07:00**, both in batch 10 of 10. Batches took 2.0–2.7 min (1.2–1.5 before). The deferred flush is lost, and vectorless rows went 1,924 → 4,198 (538 articles) → SYS-139 #320.
   - **SumoPod:** the account's own budget ($22.50) ran out at 10-10 01:04 (429 `ExceededBudget`), then the key was blocked (401) from 10-11. The 10-11 newsletter and extraction degraded as designed.
 - **Conclusion / do not repeat:**
   - Word counts are not encoder tokens: measure the tokenizer before claiming a window fits.

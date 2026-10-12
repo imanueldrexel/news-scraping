@@ -19,6 +19,9 @@
   - SYS-40 (owner + SRC-34).
 
 ### For SDE, in order
+0. **SYS-139 #320 (P2, new, grows every run).** VIVA's full_text was killed at 1,200 s in its last batch on 10-11 19:00 and 10-12 07:00. 538 saved articles (4,198 chunk rows) have no vectors.
+   - Quick relief: a larger VIVA entry in `SCHEDULE_SOURCE_TIMEOUTS`.
+   - Fix: a soft deadline that flushes before the kill.
 1. **SYS-104 #274 (P2, sent back).** A follow-up that names a new subject is retrieved on the old one: 5/5 topic-switch pairs give 0-1 of 5 on-topic cards. The thread's recency cue leaks too.
    - Measure with `scripts/experiments/qa_2026_10_12/probe_topic_switch_followups.py` and the 7 elliptical pairs (`probe_rag_rank_breakdown.py --followups`).
 2. **SYS-111 #287 (P1, sent back).** `repair_boilerplate_bodies._apply_locked` calls `parse_until` again after the deletes. Resolve the deadline once.
@@ -37,7 +40,7 @@
 
 ### For QA next
 - **SYS-79:** the first morning a source blips.
-- **The VIVA pending vectors** from the 10-11 19:00 kill should be re-embedded by VIVA's next full_text (DBT-10 self-heal): `SELECT count(*) FROM chunks WHERE embedding_id IS NULL` after a completed VIVA run.
+- **SYS-139:** the VIVA kill repeated at 07:00 (1,924 → 4,198 pending rows). Watch the 19:00 run.
 - **Re-verify SYS-104 and SYS-111** when they come back.
 
 ---

@@ -238,7 +238,9 @@
   - SYS-104: a follow-up that changes topic retrieves the old topic, 5/5 pairs;
   - SYS-111: `repair_boilerplate_bodies` re-resolves `--until` after the deletes.
 - **Held:** SYS-79 (no blip yet), SYS-82/83 + OPS-42 (owner reads), SYS-40 (owner + SRC-34).
-- **Filed:** SYS-137 #316, SYS-138 #317, DBT-65 #318, DBT-66 #319 (all P3).
+- **Filed:**
+  - SYS-137 #316, SYS-138 #317, DBT-65 #318, DBT-66 #319 (all P3);
+  - **SYS-139 #320 (P2):** VIVA full_text killed at 1,200 s two runs in a row (last batch); 538 saved articles have no vectors.
 - **Tests:**
   - unit 2,770; integration 210, run under a held real run lock;
   - dev mutants 116/120 killed (2 equivalents, 1 killed by the full suite, 1 stale and retargeted);
