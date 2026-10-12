@@ -30,3 +30,4 @@
 - [ops-49-postgres-shm](ops-49-postgres-shm.md) — 2026-10-12: Postgres container shm_size 1gb (filter-drift audit DiskFull = 64 MB /dev/shm); recreated, counts identical, audit re-run
 - [qa-senior-fixes-2026-10-12](qa-senior-fixes-2026-10-12.md) — 2026-10-12: SYS-111, SYS-139 (soft deadline, ADR-011), SYS-104+140 (LLM follow-up rewrite, ADR-010) ready-for-qa; rest in progress
 - [qa-second-pass-fixes-2026-10-12](qa-second-pass-fixes-2026-10-12.md) — 2026-10-12 night: SYS-138 subject gate (ADR-013), SYS-143/144/145 (ADR-014), DBT-68/69, DBT-67 store_repair module (ADR-015); all ready-for-qa
+- [open-p2-p3-2026-10-12](open-p2-p3-2026-10-12.md) — 2026-10-12 night: SRC-59 INVESTORID sitemap_post + id-segment placeholder hook, DBT-60 date rule, SYS-91 repair script (apply ~06:00)

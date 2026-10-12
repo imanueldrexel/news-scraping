@@ -1,5 +1,23 @@
 # Current Handoff
 
+## From: SDE (SRC-59, DBT-60, SYS-91; DBT-67 finished) -> To: QA, owner
+**Date:** 2026-10-12 (~23:00 WIB)
+**Read first:** `.10x/decisions/sde/open-p2-p3-2026-10-12.md`; `.10x/specs/2026-10-12-src59-dbt60-sys91-design.md`; EXPERIMENTS.md "SRC-59 INVESTORID probe…"; the ticket comments.
+
+### Ready for QA
+- **DBT-67 #325:** all 13 mutants KILLED.
+- **DBT-60 #258.**
+- **SRC-59 #260:** the scheduled-run evidence is the 07:00 10-13 run (INVESTORID sitemap row `completed`, new rows, og:title headlines after full_text).
+- Plus the earlier six: SYS-138/143/144/145, DBT-68/69.
+
+### Not yet
+- **SYS-91 #257:** `scriptsepair_faiss_posted_at.py --apply` at ~06:00 10-13, before the 07:00 crawl (owner-approved; it backs up first). Then the scan (0 `19xx` in both indexes) and the label.
+- **Owner:** should `--all-mismatches` also fill the 4 TRIBUN empty dates?
+
+---
+
+## Previous (superseded)
+
 ## From: SDE (principal; QA's second-pass list) -> To: QA (verify, close), owner (restart :8000)
 **Date:** 2026-10-12 (night)
 **Read first:**

@@ -316,6 +316,8 @@ Design approved by the owner. Order:
 - **The 11 DBT-67 mutants run after it,** or tomorrow before the 07:00 crawl. Then tear down `%TEMP%\mutwt` (junction first).
 
 ## Dev 2026-10-12 night: SRC-59, DBT-60, SYS-91 (spec: specs/2026-10-12-src59-dbt60-sys91-design.md; owner approved)
-- [ ] DBT-60 date rule
-- [ ] SRC-59 INVESTORID sitemap_post.xml
-- [ ] SYS-91 repair script + dry run (apply ~06:00 10-13, owner-approved)
+- [x] DBT-60 date rule (ready-for-qa)
+- [x] SRC-59 INVESTORID sitemap_post.xml + id-segment placeholder hook (ready-for-qa; QA needs the 07:00 run)
+- [x] SYS-91 repair script; NEWS_L1 dry run 88 CNBC 19xx + 4 TRIBUN empty
+- [ ] SYS-91 `--apply` ~06:00 10-13 (owner-approved), then the Done-when scan and the label
+- [x] DBT-67: 13/13 mutants KILLED, ready-for-qa
