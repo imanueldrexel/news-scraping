@@ -11,3 +11,4 @@
 - When a change feeds new input into an existing function (joined thread → `terms`), add one test of the composed path; mutation testing does not find untested seams.
 - A reader that can see a swapped attribute (`vs_l2` under `refresh_stale`) captures it once per call.
 - Scripts never import scripts: shared repair steps live in `newscrawler/tools/` (DBT-67).
+- [qa-senior-fixes-2026-10-12](qa-senior-fixes-2026-10-12.md) — 2026-10-12 QA + senior list: SYS-111/139/104/140/141/137/138/112/142, DBT-65/66/67; owner decisions; ADR-010/011/012

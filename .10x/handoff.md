@@ -1,5 +1,14 @@
 # Current Handoff
 
+## From: Architect/EM/Senior (planning of the 2026-10-12 QA + senior list) -> To: SDE (same session)
+**Date:** 2026-10-12
+**Read first:** `.10x/specs/2026-10-12-qa-senior-fixes-design.md`; ADR-010 (follow-up rewrite), ADR-011 (soft deadline), ADR-012 (recency window); `.10x/decisions/senior-engineer/qa-senior-fixes-2026-10-12.md` (approach per ticket).
+Order: SYS-111 → SYS-139 → SYS-104+140 → SYS-141, DBT-66, DBT-65 → SYS-137 (prod write at night) → SYS-138+112 → SYS-142 (measure) → DBT-67 (after QA closes SYS-111).
+
+---
+
+## Previous (superseded)
+
 ## From: Senior Engineer (code-quality audit of c69d34d..f7f8672) -> To: SDE
 **Date:** 2026-10-12
 **Read first:** `.10x/reviews/2026-10-12-senior-code-quality-audit.md`; `.10x/decisions/senior-engineer/code-quality-audit-2026-10-12.md` (approach per ticket).

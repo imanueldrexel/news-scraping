@@ -1,8 +1,8 @@
 # Project Status
 
 ## Project: NewsAggregator
-**Current Phase:** Implementation (dev): P1/P2 fixes + newsletter. Design approved by owner choice of DeepSeek; spec + ADR-001 written.
-**Last Updated:** 2026-10-08 (evening) by sde
+**Current Phase:** Planning complete (dev): the 2026-10-12 QA + senior-engineer list; spec `specs/2026-10-12-qa-senior-fixes-design.md`, ADR-010/011/012.
+**Last Updated:** 2026-10-12 by dev (principal)
 **Health:** On Track
 
 ## Progress
@@ -273,3 +273,14 @@
 
 ## Senior-engineer audit 2026-10-12 (code quality, c69d34d..f7f8672)
 - Unit 2,770 passed. Filed: SYS-140 #322 (P2, follow-up's earlier questions' first words become required name anchors), SYS-141 #323 (P3, similarity reads vs_l2 twice under reload; stale docstring), SYS-142 #324 (P3, overlap tail window), DBT-67 #325 (repair scripts import each other's privates). Report: reviews/2026-10-12-senior-code-quality-audit.md
+
+## Dev 2026-10-12: QA + senior-engineer list (spec specs/2026-10-12-qa-senior-fixes-design.md)
+Owner decisions: SYS-139 soft deadline only (ADR-011); SYS-104/140 LLM rewrite of follow-ups (ADR-010); SYS-137 delete queued stale chunks (prod write approved); SYS-138/112 soft week window + relevance gate (ADR-012).
+- [ ] SYS-111 #287 deadline resolved once
+- [ ] SYS-139 #320 soft deadline
+- [ ] SYS-104 #274 + SYS-140 #322 follow-up rewrite
+- [ ] SYS-141 #323, DBT-66 #319, DBT-65 #318
+- [ ] SYS-137 #316 guard + store check + prod write (night window)
+- [ ] SYS-138 #317 + SYS-112 #289 recency (measure, then ADR-012 numbers)
+- [ ] SYS-142 #324 measurement only
+- [ ] DBT-67 #325 blocked on QA closing SYS-111
