@@ -231,6 +231,11 @@ RAG_LLM_PROVIDER = os.getenv("RAG_LLM_PROVIDER", "openai").strip().lower()
 RAG_DAILY_COST_LIMIT_USD = float(os.getenv("RAG_DAILY_COST_LIMIT_USD", 1.0))
 RAG_ANSWER_TIMEOUT_S = float(os.getenv("RAG_ANSWER_TIMEOUT_S", 30))
 RAG_ANSWER_MAX_TOKENS = int(os.getenv("RAG_ANSWER_MAX_TOKENS", 600))
+# SYS-104 (ADR-010): a follow-up is rewritten into a standalone question by one call before its
+# cards are retrieved. The cards wait for it, so it gets one short attempt (no SDK retry, no wait
+# on a rate limit); past this the page falls back to the deterministic rule.
+RAG_REWRITE_TIMEOUT_S = float(os.getenv("RAG_REWRITE_TIMEOUT_S", 6))
+RAG_REWRITE_MAX_TOKENS = int(os.getenv("RAG_REWRITE_MAX_TOKENS", 80))
 # SYS-92/SYS-100: with a topic / portal / date filter the FAISS search over-fetches this
 # many paragraphs before filtering on the database's metadata (a flat index costs the same).
 RAG_FILTERED_K = int(os.getenv("RAG_FILTERED_K", 200))

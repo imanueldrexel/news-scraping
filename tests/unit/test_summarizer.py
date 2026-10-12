@@ -254,3 +254,21 @@ class TestCompleteReturnsTokensWithoutCounting:
         monkeypatch.setattr(sm, "OpenAICompatSummarizer", lambda *a, **k: seen.update(k) or "s")
         sm.build_summarizer(provider="openai", timeout_s=30, max_tokens=600)
         assert seen["timeout_s"] == 30 and seen["max_tokens"] == 600
+
+
+class TestSdkRetries:
+    """ADR-010: the search page's rewrite waits on its call, so it turns the SDK's own retries off
+    (a 6 s timeout would otherwise be ~3 attempts with backoff). Everyone else keeps the default."""
+
+    def _built(self, monkeypatch, **options):
+        import openai
+        seen = {}
+        monkeypatch.setattr(openai, "OpenAI", lambda **kw: seen.update(kw) or MagicMock())
+        sm.OpenAICompatSummarizer("m", "k", base_url="u", **options)
+        return seen
+
+    def test_max_retries_is_passed_when_set(self, monkeypatch):
+        assert self._built(monkeypatch, max_retries=0, timeout_s=6)["max_retries"] == 0
+
+    def test_the_default_is_the_sdks(self, monkeypatch):
+        assert "max_retries" not in self._built(monkeypatch)

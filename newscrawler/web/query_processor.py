@@ -4,7 +4,8 @@
 merged per article, given their headline / link / portal / date / topic from
 the database (SYS-92: FAISS metadata is neither the topic nor always the right
 date, SYS-91), filtered (SYS-100), scored on both signals (SYS-106), re-ranked,
-cut at the relevance floor. A follow-up is retrieved with the thread (SYS-104).
+cut at the relevance floor. A follow-up is first rewritten into a standalone question by one
+model call, with a deterministic fallback (`followup`, ADR-010).
 
 `answer` writes the answer through the shared Summarizer (SYS-98) and returns a
 state, never an error as text (SYS-94): `ok`, `unavailable` (no provider, a
@@ -31,6 +32,8 @@ from newscrawler.core.constants import (
     RAG_MIN_KEYWORD_COVERAGE,
     RAG_MIN_SEMANTIC_SCORE,
     RAG_RECENCY_WEIGHT,
+    RAG_REWRITE_MAX_TOKENS,
+    RAG_REWRITE_TIMEOUT_S,
     RAG_SEMANTIC_WEIGHT,
     RAG_TOP_K,
 )
@@ -38,7 +41,7 @@ from newscrawler.core.newsletter_copy import outlet
 from newscrawler.core.peak_hours import cost_usd, is_peak
 from newscrawler.core.summarizer import QuotaExhausted, SummarizerError, build_summarizer
 from newscrawler.web import answer as answer_text
-from newscrawler.web import keywords
+from newscrawler.web import followup, keywords
 from newscrawler.web.filters import Filters
 
 logger = logging.getLogger(__name__)
@@ -51,7 +54,6 @@ SEMANTIC_K = 100
 # SYS-105 (#275): a matched paragraph shorter than this is a sign-off, a caption or a credit line,
 # never an answer; and a vector of a few words lies near every question (a "hub").
 MIN_PARAGRAPH_WORDS = 15
-FOLLOWUP_CONTEXT_TURNS = 2  # SYS-104 (#274): a follow-up is retrieved with this many previous questions
 SNIPPET_CHARS = 280
 USAGE_PREFIX = "web:"       # api_usage_log key of the page's calls: never the extraction's own key
 
@@ -77,16 +79,6 @@ def posted_date(value) -> Optional[date]:
         return datetime.strptime(str(value)[:8], "%Y%m%d").date()
     except (TypeError, ValueError):
         return None
-
-
-def retrieval_text(question: str, history: Sequence[dict] = ()) -> str:
-    """SYS-104 (#274): what a turn is retrieved on. A follow-up is often elliptical ("Berapa target
-    pertumbuhannya tahun depan?"): its own words name the wrong subject or none. It is retrieved
-    with the thread's last questions, newest first. Its own words come first, so they lead the
-    keyword terms and survive the encoder's length cut. Without history (the search box, the
-    first turn) a question is retrieved on its own text."""
-    previous = [t["question"].strip() for t in history if (t.get("question") or "").strip()]
-    return " ".join([question.strip()] + previous[::-1][:FOLLOWUP_CONTEXT_TURNS])
 
 
 def substantial(hits: List[dict]) -> List[dict]:
@@ -143,11 +135,21 @@ def card(n: int, hit: dict) -> dict:
     }
 
 
+def _no_wait(seconds: float) -> None:
+    """The rewrite's summarizer never sleeps on a rate limit: the cards are waiting (ADR-010)."""
+    raise SummarizerError(f"rate limited (retry in {seconds:.0f}s); not waiting")
+
+
 class QueryProcessor:
-    def __init__(self, faiss_datasource, db_client, summarizer=_FROM_CONFIG, usage=_FROM_CONFIG):
+    rewriter = None     # no rewrite call: every follow-up takes the fallback (ADR-010)
+
+    def __init__(self, faiss_datasource, db_client, summarizer=_FROM_CONFIG, usage=_FROM_CONFIG,
+                 rewriter=_FROM_CONFIG):
         """summarizer: anything with `name`, `priced` and `complete(prompt)` (ADR-005); left out,
         it is built from RAG_LLM_PROVIDER. usage: anything with `increment_api_call_count` and
-        `get_today_api_usage` (api_usage_log); left out, the knowledge datasource on this client."""
+        `get_today_api_usage` (api_usage_log); left out, the knowledge datasource on this client.
+        rewriter: the same kind of object, for a follow-up's one-line rewrite (ADR-010); left out,
+        RAG_LLM_PROVIDER's with the rewrite's short timeout, no retry and no wait."""
         self.faiss_ds = faiss_datasource
         self.client = db_client
         self.keyword_df = keywords.DocFrequency(db_client)
@@ -162,15 +164,20 @@ class QueryProcessor:
                 SQLAlchemyKnowledgeDataSource,
             )
             usage = SQLAlchemyKnowledgeDataSource(db_client)
+        if rewriter is _FROM_CONFIG:
+            rewriter = build_summarizer(provider=RAG_LLM_PROVIDER, setting="RAG_LLM_PROVIDER",
+                                        timeout_s=RAG_REWRITE_TIMEOUT_S, max_tokens=RAG_REWRITE_MAX_TOKENS,
+                                        sleep=_no_wait, max_retries=0)
         self.summarizer = summarizer
         self.usage = usage
+        self.rewriter = rewriter
 
     # ── Retrieval ────────────────────────────────────────────────────────────
 
     def retrieve(self, question: str, filters: Optional[Filters] = None, today: Optional[date] = None,
                  history: Sequence[dict] = ()) -> List[dict]:
         """The relevant articles, best first, at most RAG_TOP_K, each with `n` (1-based). `history` is
-        the conversation so far: a follow-up is retrieved with its previous questions (SYS-104)."""
+        the conversation so far: a follow-up is resolved against its previous questions (ADR-010)."""
         filters = filters or Filters()
         today = today or date.today()
         start = time.monotonic()
@@ -181,15 +188,17 @@ class QueryProcessor:
         logger.info(f"rag retrieve ms={int((time.monotonic() - start) * 1000)} semantic={counts['semantic']} "
                     f"fts={counts['fts']} articles={len(ranked)} kept={len(relevant)} "
                     f"keyword_only={sum(1 for h in relevant if h.get('origin') == KEYWORD)} "
-                    f"recent={counts['recent']} followup={bool(history)} filters={filters.describe()}")
+                    f"recent={counts['recent']} followup={bool(history)} rewrite={counts['rewrite']} "
+                    f"filters={filters.describe()}")
         return relevant
 
     def candidates(self, question: str, filters: Filters, today: date, history: Sequence[dict] = ()):
         """Every candidate article, scored on both signals and ranked, before the floor and the cut
-        (ADR-007). Returns (ranked hits, {"semantic", "fts", "recent"} for the log)."""
-        text_ = retrieval_text(question, history)
-        cue = keywords.recency_cue(text_)
-        kq = self._keyword_query(text_)
+        (ADR-007). Returns (ranked hits, {"semantic", "fts", "recent", "rewrite"} for the log)."""
+        query = self.resolve(question, history)
+        text_ = query.text
+        cue = keywords.recency_cue(query.cue_text)
+        kq = self._keyword_query(*query.questions)
         semantic_hits = substantial(self.faiss_ds.search_l2(text_, k=RAG_FILTERED_K if filters.active else SEMANTIC_K))
         fts_hits = (substantial(self._fts_search(kq, SEARCH_K, filters, today, cue is not None))
                     if kq is not None else [])
@@ -198,13 +207,34 @@ class QueryProcessor:
             merged = self._apply_filters(merged, filters, today)
         self._complete_scores(text_, kq, merged)
         return self._re_rank(merged, today, cue), {"semantic": len(semantic_hits), "fts": len(fts_hits),
-                                                   "recent": f"{cue.days}d" if cue else None}
+                                                   "recent": f"{cue.days}d" if cue else None,
+                                                   "rewrite": query.how}
 
-    def _keyword_query(self, text_: str) -> Optional["keywords.KeywordQuery"]:
-        """The question's weighted words (ADR-006), or None: no content word, every word a typo, or
-        the df lookup failed (the semantic half still answers)."""
+    def resolve(self, question: str, history: Sequence[dict] = ()) -> "followup.Retrieval":
+        """What this turn is retrieved on (ADR-010): a question without a thread as it is; a follow-up
+        rewritten into a standalone question by one call, or by the deterministic fallback. The call
+        is counted under `web:<model>` and capped by the page's daily spend, like the answer."""
+        previous = followup.previous_questions(history)
+        if not previous:
+            return followup.alone(question)
+        complete = None
+        if self.rewriter is not None and not self._over_daily_cap(USAGE_PREFIX + self.rewriter.name, "rewrite"):
+            complete = self.rewriter.complete
+        rewritten, reply, ms, why = followup.rewrite(complete, question, previous)
+        if reply is not None:
+            dollars = (cost_usd(reply.input_tokens, reply.output_tokens, is_peak())
+                       if self.rewriter.priced else 0.0)
+            self._record(USAGE_PREFIX + self.rewriter.name, reply.input_tokens, reply.output_tokens, dollars)
+        query = followup.resolve(question, previous, rewritten)
+        logger.info(f"rag follow-up rewrite={query.how} ms={ms}"
+                    + (f" fallback_because={why!r}" if why else "") + f" query={query.text[:200]!r}")
+        return query
+
+    def _keyword_query(self, question: str, *more: str) -> Optional["keywords.KeywordQuery"]:
+        """The questions' weighted words (ADR-006), or None: no content word, every word a typo, or
+        the df lookup failed (the semantic half still answers). Names are judged per question (SYS-140)."""
         try:
-            question_terms = keywords.terms(text_)
+            question_terms = keywords.terms(question, *more)
             if not question_terms:
                 return None
             return keywords.KeywordQuery.build(question_terms, self.keyword_df.get([t.word for t in question_terms]))
@@ -455,14 +485,14 @@ class QueryProcessor:
                     f"words={len(cleaned.split())} unverified={unverified!r}")
         return AnswerResult(OK, cleaned, blocks, unverified, reply.input_tokens, reply.output_tokens, dollars)
 
-    def _over_daily_cap(self, key: str) -> bool:
+    def _over_daily_cap(self, key: str, what: str = "answer") -> bool:
         try:
             spent = self.usage.get_today_api_usage(key).cost_usd
         except Exception as e:  # noqa: BLE001 -- an unreadable ledger must not hide every answer
             logger.warning(f"Could not read today's {key} spend; answering anyway: {type(e).__name__}: {e}")
             return False
         if spent >= RAG_DAILY_COST_LIMIT_USD:
-            logger.warning(f"rag answer unavailable: {key} spent ${spent:.4f} today, "
+            logger.warning(f"rag {what} unavailable: {key} spent ${spent:.4f} today, "
                            f"RAG_DAILY_COST_LIMIT_USD={RAG_DAILY_COST_LIMIT_USD}")
             return True
         return False

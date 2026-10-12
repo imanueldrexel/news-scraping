@@ -144,7 +144,7 @@ The article-crawl queue (`load_all_sitemaps`) = sitemaps with no `articles` row 
     - Topic / portal / date filters are applied in the FTS SQL; the semantic search over-fetches `RAG_FILTERED_K` and filters after.
     - The keyword half (`web/keywords.py`, SYS-103, ADR-006) matches the question's rare words (anchors) and scores IDF-weighted coverage; df from `pg_stats` + exact counts for rare words. A keyword hit survives the semantic floor at `RAG_MIN_KEYWORD_COVERAGE`.
     - ADR-007: a matched paragraph under 15 words is skipped. An article one retriever found is scored on the other signal too (its stored NEWS_L2 vector's cosine, or its coverage), so the weighted sum compares like with like. `semantic_score` is the cosine, `1 - d/2` of FAISS's squared distance (SYS-110).
-    - A recency cue (`keywords.recency_cue`: "hari ini" 1 day/0.3, "pekan ini" 3/0.2, "terbaru" 7/0.1) weighs recency for articles relevant by meaning only. A follow-up is retrieved with the session's last two questions, answered or not (SYS-104).
+    - A recency cue (`keywords.recency_cue`: "hari ini" 1 day/0.3, "pekan ini" 3/0.2, "terbaru" 7/0.1) weighs recency for articles relevant by meaning only. A follow-up is first rewritten into a standalone question by one model call over the session's last two questions, answered or not (`web/followup.py`, ADR-010, SYS-104); without a usable rewrite, a back-reference (`-nya`, *dia*, *tersebut*) is retrieved with the thread (keyword names judged per question, SYS-140) and anything else on its own words.
     - Results are re-ranked and cut at the floor.
     - The source cards render at once.
   - `answer`: through the shared `Summarizer` (`RAG_LLM_PROVIDER`, DeepSeek by owner decision).

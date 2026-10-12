@@ -57,6 +57,29 @@ class TestTerms:
         assert [t.word for t in terms("BI-Rate 5,75%?")] == ["bi-rate", "5,75"]
 
 
+class TestTermsOfSeveralQuestions:
+    """SYS-140 (#322): a follow-up's thread is passed question by question. A name is judged within
+    its own question, so an earlier question's capitalised first word is not one."""
+
+    def test_each_questions_first_word_is_judged_in_its_question(self):
+        got = terms("Apa dampaknya ke kredit?", "Kebijakan OJK soal suku bunga?")
+        assert Term("kebijakan", False) in got and Term("ojk", True) in got
+
+    def test_the_joined_text_would_have_made_it_a_name(self):
+        """The bug, kept as the contrast: joined, 'Kebijakan' sits past the first word."""
+        assert Term("kebijakan", True) in terms("Apa dampaknya ke kredit? Kebijakan OJK soal suku bunga?")
+
+    def test_order_first_question_first_and_duplicates_once(self):
+        got = [t.word for t in terms("Dampaknya ke kredit?", "Kredit OJK naik?")]
+        assert got == ["dampaknya", "kredit", "ojk", "naik"]
+
+    def test_at_most_max_terms_across_questions(self):
+        first = " ".join(f"satu{i}x" for i in range(8))
+        second = " ".join(f"dua{i}x" for i in range(8))
+        got = terms(first, second)
+        assert len(got) == keywords.MAX_TERMS and got[-1].word == "dua3x"
+
+
 class TestLexeme:
     def test_quoted_operand(self):
         assert keywords.lexeme("bi-rate") == "'bi-rate'"

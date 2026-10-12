@@ -135,17 +135,20 @@ class TestUsage:
 
 class TestProviderFromConfig:
     def test_rag_llm_provider_selects_the_summarizer(self, monkeypatch):
-        seen = {}
+        calls = []
 
         def fake_build(**kwargs):
-            seen.update(kwargs)
+            calls.append(kwargs)
             return SimpleNamespace(name="m", priced=True)
         monkeypatch.setattr(qp_mod, "build_summarizer", fake_build)
         monkeypatch.setattr(qp_mod, "RAG_LLM_PROVIDER", "openai")
         QueryProcessor(MagicMock(), MagicMock(), usage=MagicMock())
-        assert seen["provider"] == "openai" and seen["setting"] == "RAG_LLM_PROVIDER"
-        assert seen["timeout_s"] == qp_mod.RAG_ANSWER_TIMEOUT_S and "usage" not in seen, \
-            "the summarizer must not count calls itself: the page counts them under web:<model>"
+        answer, rewrite = calls     # the answer's summarizer, then the follow-up rewrite's (ADR-010)
+        for seen in (answer, rewrite):
+            assert seen["provider"] == "openai" and seen["setting"] == "RAG_LLM_PROVIDER"
+            assert "usage" not in seen, \
+                "the summarizer must not count calls itself: the page counts them under web:<model>"
+        assert answer["timeout_s"] == qp_mod.RAG_ANSWER_TIMEOUT_S
 
     def test_no_key_means_no_summarizer_and_a_warning(self, monkeypatch, caplog):
         monkeypatch.setattr(qp_mod, "build_summarizer", lambda **k: None)

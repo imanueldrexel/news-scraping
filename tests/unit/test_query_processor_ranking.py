@@ -7,10 +7,12 @@ Search-ranking regressions for QueryProcessor:
   - SYS-105: a sign-off paragraph ("(jon)") is never a source, however similar.
   - SYS-106: an article one retriever found is scored on the other signal too.
   - SYS-107: a question that asks for the latest news prefers recent articles.
-  - SYS-104: a follow-up is retrieved with the thread's questions.
+  - SYS-104/SYS-140 (ADR-010): a follow-up is rewritten into a standalone question, with a
+    deterministic fallback; keyword names are judged per question.
 """
 import logging
 from datetime import date, timedelta
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
@@ -18,9 +20,11 @@ import pytest
 import newscrawler.web.query_processor as qp_mod
 from newscrawler.web import keywords
 from newscrawler.web.filters import Filters
-from newscrawler.web.query_processor import QueryProcessor, recency, retrieval_text
+from newscrawler.core.summarizer import Reply, SummarizerError
+from newscrawler.web.query_processor import QueryProcessor, recency
 from newscrawler.core.constants import (
     RAG_BM25_WEIGHT,
+    RAG_DAILY_COST_LIMIT_USD,
     RAG_MIN_KEYWORD_COVERAGE,
     RAG_MIN_SEMANTIC_SCORE,
     RAG_RECENCY_WEIGHT,
@@ -264,41 +268,157 @@ class TestRecency:
         assert qp.faiss_ds.search_l2.call_args.kwargs["k"] == qp_mod.SEMANTIC_K == 100
 
 
+class _Rewriter:
+    """A rewrite model: returns `text` (or raises `error`), and records the prompts it was given."""
+    name = "deepseek-v4-flash"
+    priced = True
+
+    def __init__(self, text=None, error=None):
+        self.text, self.error, self.prompts = text, error, []
+
+    def complete(self, prompt):
+        self.prompts.append(prompt)
+        if self.error is not None:
+            raise self.error
+        return Reply(self.text, 150, 20)
+
+
+def _usage(spent=0.0):
+    usage = MagicMock()
+    usage.get_today_api_usage.return_value = SimpleNamespace(cost_usd=spent)
+    return usage
+
+
 class TestFollowUp:
-    """SYS-104 (#274): 'Berapa target pertumbuhannya tahun depan?' after an OJK credit question
-    returned and answered GDP growth 2027."""
-    HISTORY = [{"question": "Apa kata OJK soal kredit perbankan?", "answer": "OJK menyebut ..."}]
+    """SYS-104 (#274) + SYS-140 (#322), ADR-010: a follow-up is rewritten into a standalone question
+    by one call and retrieved on it; without a usable rewrite, a deterministic fallback."""
+    OJK = [{"question": "Apa kata OJK soal kredit perbankan?", "answer": "OJK menyebut ..."}]
+    RUPIAH_THIS_WEEK = [{"question": "Kenapa rupiah melemah pekan ini?", "answer": "-"}]
 
-    def test_a_follow_up_carries_the_previous_question(self):
-        assert retrieval_text("Berapa target pertumbuhannya tahun depan?", self.HISTORY) == (
-            "Berapa target pertumbuhannya tahun depan? Apa kata OJK soal kredit perbankan?")
-
-    def test_the_newest_questions_follow_its_own_words(self):
-        history = [{"question": f"q{i}", "answer": "a"} for i in range(1, 5)]
-        assert retrieval_text("lanjut?", history) == "lanjut? q4 q3"
-
-    def test_without_history_a_question_is_retrieved_on_its_own_text(self):
-        assert retrieval_text("  Apa itu Danantara?  ", []) == "Apa itu Danantara?"
-        assert retrieval_text("Apa itu Danantara?", [{"question": " ", "answer": "a"}]) == "Apa itu Danantara?"
-
-    def test_both_retrievers_and_the_scores_get_the_threads_subject(self):
+    def _qp(self, rewriter=None, spent=0.0):
         qp = _qp(semantic=[_hit(1, semantic=0.9)], fts=[_hit(2, keyword=1.0)])
-        qp.retrieve("Berapa target pertumbuhannya tahun depan?", Filters(), TODAY, history=self.HISTORY)
-        expected = "Berapa target pertumbuhannya tahun depan? Apa kata OJK soal kredit perbankan?"
-        assert qp.faiss_ds.search_l2.call_args.args[0] == expected
-        qp._keyword_query.assert_called_once_with(expected)
-        assert qp.faiss_ds.similarity.call_args.args[0] == expected
+        qp.rewriter = rewriter
+        qp.usage = _usage(spent)
+        return qp
 
-    def test_query_retrieves_with_the_session_history(self):
-        qp = _qp(semantic=[_hit(1, semantic=0.9)])
-        qp.query("Dampaknya?", session_history=self.HISTORY)
+    def test_a_topic_switch_is_retrieved_on_its_own_subject(self):
+        """QA's send-back: 'Apa itu Danantara?' after an OJK question got 5 OJK cards. The model
+        keeps a question that names its own subject; both retrievers and the scores read it alone."""
+        qp = self._qp(_Rewriter("Apa itu Danantara?"))
+        _, counts = qp.candidates("Apa itu Danantara?", Filters(), TODAY, self.OJK)
+        assert qp.faiss_ds.search_l2.call_args.args[0] == "Apa itu Danantara?"
+        qp._keyword_query.assert_called_once_with("Apa itu Danantara?")
+        assert qp.faiss_ds.similarity.call_args.args[0] == "Apa itu Danantara?"
+        assert counts["rewrite"] == "kept"
+
+    def test_an_elliptical_follow_up_is_retrieved_on_its_rewrite(self):
+        rewritten = "Berapa target pertumbuhan kredit perbankan menurut OJK tahun depan?"
+        qp = self._qp(_Rewriter(rewritten))
+        _, counts = qp.candidates("Berapa target pertumbuhannya tahun depan?", Filters(), TODAY, self.OJK)
+        assert qp.faiss_ds.search_l2.call_args.args[0] == rewritten
+        qp._keyword_query.assert_called_once_with(rewritten)
+        assert counts["rewrite"] == "llm"
+
+    def test_the_prompt_holds_the_last_two_questions_oldest_first_and_the_follow_up(self):
+        rewriter = _Rewriter("x?")
+        history = [{"question": f"q{i}", "answer": "a"} for i in range(1, 5)]
+        self._qp(rewriter).candidates("lanjut?", Filters(), TODAY, history)
+        prompt = rewriter.prompts[0]
+        assert '1. "q3"' in prompt and '2. "q4"' in prompt and "q2" not in prompt
+        assert 'Pertanyaan lanjutan: "lanjut?"' in prompt
+
+    def test_the_recency_cue_comes_from_the_rewrite(self):
+        """The model carries 'pekan ini' only for the same event; what it returns is what counts."""
+        qp = self._qp(_Rewriter("Apa yang dilakukan BI terhadap pelemahan rupiah pekan ini?"))
+        _, counts = qp.candidates("Apa yang dilakukan BI?", Filters(), TODAY, self.RUPIAH_THIS_WEEK)
+        assert counts["recent"] == "3d"
+        qp = self._qp(_Rewriter("Apa isi UU Ketenagakerjaan yang baru?"))
+        _, counts = qp.candidates("Apa isi UU Ketenagakerjaan yang baru?", Filters(), TODAY, self.RUPIAH_THIS_WEEK)
+        assert counts["recent"] is None
+
+    def test_the_rewrite_is_counted_under_the_pages_key(self):
+        qp = self._qp(_Rewriter("x?"))
+        qp.candidates("Dampaknya?", Filters(), TODAY, self.OJK)
+        key, = qp.usage.increment_api_call_count.call_args.args
+        assert key == "web:deepseek-v4-flash"
+        kwargs = qp.usage.increment_api_call_count.call_args.kwargs
+        assert kwargs["input_tokens"] == 150 and kwargs["output_tokens"] == 20 and kwargs["cost_usd"] > 0
+
+    def test_over_the_daily_cap_no_call_is_made(self):
+        rewriter = _Rewriter("x?")
+        qp = self._qp(rewriter, spent=RAG_DAILY_COST_LIMIT_USD)
+        _, counts = qp.candidates("Dampaknya?", Filters(), TODAY, self.OJK)
+        assert rewriter.prompts == [] and counts["rewrite"] == "fallback-thread"
+
+    @pytest.mark.parametrize("rewriter", [None, _Rewriter(error=SummarizerError("ReadTimeout")),
+                                          _Rewriter(""), _Rewriter("satu\ndua")])
+    def test_a_follow_up_that_refers_back_falls_back_to_the_thread(self, rewriter):
+        """No provider, a failed call, or an unusable output: '-nya' points back, so the thread is used,
+        its keyword terms question by question (SYS-140), the recency cue from the follow-up alone."""
+        qp = self._qp(rewriter)
+        _, counts = qp.candidates("Apa dampaknya ke kredit?", Filters(), TODAY, self.RUPIAH_THIS_WEEK)
+        assert qp.faiss_ds.search_l2.call_args.args[0] == "Apa dampaknya ke kredit? Kenapa rupiah melemah pekan ini?"
+        qp._keyword_query.assert_called_once_with("Apa dampaknya ke kredit?", "Kenapa rupiah melemah pekan ini?")
+        assert counts["rewrite"] == "fallback-thread" and counts["recent"] is None
+
+    def test_a_follow_up_that_names_its_subject_falls_back_to_its_own_words(self):
+        qp = self._qp(None)
+        _, counts = qp.candidates("Di mana terjadi banjir minggu ini?", Filters(), TODAY, self.OJK)
+        assert qp.faiss_ds.search_l2.call_args.args[0] == "Di mana terjadi banjir minggu ini?"
+        assert counts["rewrite"] == "fallback-own" and counts["recent"] == "3d"
+
+    def test_the_search_box_makes_no_call(self):
+        rewriter = _Rewriter("x?")
+        qp = self._qp(rewriter)
+        _, counts = qp.candidates("Apa itu Danantara?", Filters(), TODAY, [])
+        assert rewriter.prompts == [] and counts["rewrite"] == "alone"
+
+    def test_the_retrieve_log_names_the_rewrite(self, caplog):
+        qp = self._qp(_Rewriter("Apa itu Danantara?"))
+        with caplog.at_level(logging.INFO, logger="newscrawler.web.query_processor"):
+            qp.retrieve("Apa itu Danantara?", Filters(), TODAY, history=self.OJK)
+        assert "rewrite=kept" in caplog.text and "query='Apa itu Danantara?'" in caplog.text
+
+    def test_query_resolves_with_the_session_history(self):
+        qp = self._qp(None)
+        qp.query("Dampaknya?", session_history=self.OJK)
         assert "OJK" in qp.faiss_ds.search_l2.call_args.args[0]
 
-    def test_query_retrieves_with_the_thread_when_given(self):
-        """SYS-104: the JSON API passes every question asked; the prompt keeps the answered turns."""
-        qp = _qp(semantic=[_hit(1, semantic=0.9)])
-        qp.query("Dampaknya?", session_history=[], thread=self.HISTORY)
+    def test_query_resolves_with_the_thread_when_given(self):
+        """The JSON API passes every question asked; the prompt keeps the answered turns."""
+        qp = self._qp(None)
+        qp.query("Dampaknya?", session_history=[], thread=self.OJK)
         assert "OJK" in qp.faiss_ds.search_l2.call_args.args[0]
+
+
+class TestTheRewriterFromConfig:
+    """ADR-010: left out, the rewriter is RAG_LLM_PROVIDER's with the rewrite's short timeout, no SDK
+    retry and no wait on a rate limit."""
+
+    def test_built_with_the_rewrite_options(self, monkeypatch):
+        calls = []
+        monkeypatch.setattr(qp_mod, "build_summarizer", lambda **kw: calls.append(kw) or MagicMock())
+        QueryProcessor(MagicMock(), MagicMock(), summarizer=None, usage=MagicMock())
+        rewrite, = [c for c in calls if c.get("max_retries") == 0]
+        assert rewrite["timeout_s"] == qp_mod.RAG_REWRITE_TIMEOUT_S == 6
+        assert rewrite["max_tokens"] == qp_mod.RAG_REWRITE_MAX_TOKENS
+        assert rewrite["provider"] == qp_mod.RAG_LLM_PROVIDER
+        with pytest.raises(SummarizerError):
+            rewrite["sleep"](30)
+
+
+class TestFollowUpKeywordNames:
+    """SYS-140 (#322), the composed path: the fallback's thread reaches the real `_keyword_query`. An
+    earlier question's capitalised first word ('Kebijakan', df 4.8%) is not a name, so it is not
+    required in every keyword hit; a real name in the thread ('OJK') still is one."""
+
+    def test_names_are_judged_per_question(self):
+        qp = QueryProcessor.__new__(QueryProcessor)
+        qp.keyword_df = MagicMock()
+        qp.keyword_df.get.side_effect = lambda words: {w: 0.048 for w in words}
+        kq = qp._keyword_query("Apa dampaknya ke kredit?", "Kebijakan OJK soal suku bunga?")
+        assert "kebijakan" not in kq.names
+        assert "ojk" in kq.names
 
 
 class TestSessionMemories:

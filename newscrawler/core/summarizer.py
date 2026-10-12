@@ -172,14 +172,18 @@ class OpenAICompatSummarizer:
     def __init__(self, model_name: str, api_key: str, base_url: Optional[str] = None,
                  usage: Optional[UsageCounter] = None, client=None,
                  timeout_s: float = NEWSLETTER_SUMMARY_TIMEOUT_S,
-                 max_tokens: int = NEWSLETTER_SUMMARY_MAX_TOKENS, sleep=time.sleep):
+                 max_tokens: int = NEWSLETTER_SUMMARY_MAX_TOKENS, sleep=time.sleep,
+                 max_retries: Optional[int] = None):
+        """`max_retries`: the SDK's own retries of a timeout / 429 / 5xx (None: its default, 2).
+        A caller that waits on the call (the search page's rewrite) sets 0."""
         self.name = model_name
         self._sleep = sleep
         self._usage = usage
         self._max_tokens = max_tokens
         if client is None:
             from openai import OpenAI
-            client = OpenAI(api_key=api_key, base_url=base_url, timeout=timeout_s)
+            options = {} if max_retries is None else {"max_retries": max_retries}
+            client = OpenAI(api_key=api_key, base_url=base_url, timeout=timeout_s, **options)
         self._client = client
 
     def complete(self, prompt: str) -> Reply:
@@ -248,7 +252,8 @@ def build_summarizer(usage: Optional[UsageCounter] = None, provider: Optional[st
     if provider not in ("", "openai", "gemini"):
         raise ValueError(f"{setting} must be openai, gemini or empty, not {provider!r}")
     if provider in ("", "openai") and OPENAI_API_KEY:
-        # openai_options: timeout_s / max_tokens (the RAG page waits less than a digest run).
+        # openai_options: timeout_s / max_tokens / sleep / max_retries (the RAG page waits less
+        # than a digest run).
         return OpenAICompatSummarizer(OPENAI_MODEL, OPENAI_API_KEY, OPENAI_BASE_URL, usage=usage, **openai_options)
     if provider in ("", "gemini") and GEMINI_API_KEY:
         return GeminiSummarizer(GEMINI_MODEL, GEMINI_API_KEY, usage=usage)

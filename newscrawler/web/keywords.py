@@ -63,21 +63,24 @@ class Term(NamedTuple):
     name: bool
 
 
-def terms(question: str) -> List[Term]:
-    """The question's content words, in order, without duplicates, at most MAX_TERMS.
-    A name is upper case ("KPK"), holds a digit ("2026"), or is capitalised past the first word."""
+def terms(question: str, *more: str) -> List[Term]:
+    """The questions' content words, in order (`question` first, then `more`), without duplicates, at
+    most MAX_TERMS. A name is upper case ("KPK"), holds a digit ("2026"), or is capitalised past the
+    first word *of its own question* (SYS-140: in a joined thread every question's capitalised
+    first word, "Kebijakan", would read as a name and become a required anchor)."""
     out: List[Term] = []
     seen = set()
-    for m in _TOKEN.finditer(question or ""):
-        word = m.group(0).strip(".,-")
-        low = word.lower()
-        if len(low) < 2 or low in STOPWORDS or low in QUESTION_WORDS or low in seen or "_" in low:
-            continue
-        seen.add(low)
-        name = word.isupper() or any(c.isdigit() for c in word) or (m.start() > 0 and word[0].isupper())
-        out.append(Term(low, name))
-        if len(out) == MAX_TERMS:
-            break
+    for one in (question,) + more:
+        for m in _TOKEN.finditer(one or ""):
+            word = m.group(0).strip(".,-")
+            low = word.lower()
+            if len(low) < 2 or low in STOPWORDS or low in QUESTION_WORDS or low in seen or "_" in low:
+                continue
+            seen.add(low)
+            name = word.isupper() or any(c.isdigit() for c in word) or (m.start() > 0 and word[0].isupper())
+            out.append(Term(low, name))
+            if len(out) == MAX_TERMS:
+                return out
     return out
 
 
