@@ -2335,3 +2335,18 @@ SINDONEWS   old 12 new 12 | lost [] | gained []   links identical: True
   - Scope a corpus migration by the rows it rewrites, not by the rows served today.
   - A mutation "kill" with rc=4 is a broken test list.
 - **Links:** SYS-104 #274 and SYS-111 #287 (sent back); SYS-137 #316, SYS-138 #317, DBT-65 #318 (filed); `.10x/reviews/2026-10-12-qa-report.md`.
+
+### 2026-10-12 — Senior-engineer code-quality audit of c69d34d..f7f8672: two retrieval defects and a chunk-window tail, found by probing the code
+- **Question / hypothesis:** Does the code behind SYS-103..111/SRC-60/61 do what its comments claim at the seams the tests do not cover: the joined follow-up thread, a reload during a search, and the last overlap window?
+- **Method:** Read the diff (16 production files, about 1,100 lines). Probes run inline, read-only, from the venv:
+  - `keywords.terms(retrieval_text('Berapa targetnya tahun depan?', [{'question': 'Kebijakan subsidi energi pemerintah'}]))`, then `KeywordQuery.build` with production `DocFrequency`;
+  - `chunker._split_with_overlap` on 81/85/100/161 synthetic words at 80/20;
+  - `tests/unit` (2,770 passed, 5 skipped).
+- **Result:**
+  - Follow-up names: `kebijakan` is `name=False` alone but `name=True` in the joined thread. With production df (kebijakan 0.0481), the KeywordQuery becomes `anchors ['targetnya','kebijakan','subsidi'], names ['kebijakan']`, so every keyword hit must contain "kebijakan" → SYS-140 (#322).
+  - Overlap tail: 81 → [80, 21] (1 new word), 85 → [80, 25], 100 → [80, 40] → SYS-142 (#324). Not yet counted on the store.
+  - Read only, not run: `ChunkFAISSDatasource.similarity` takes positions from one `vs_l2` and reconstructs from a re-read `self.vs_l2` → SYS-141 (#323).
+  - The repair scripts import each other's private helpers, and their copies of one flow already drifted (SYS-111's send-back) → DBT-67 (#325).
+  - Checked and safe: `rechunk_articles`' group retry. A failed group's vectors are re-found by key, and SQL decides "already saved" (SYS-17), so the per-article retry neither duplicates vectors nor skips rows.
+- **Conclusion / do not repeat:** `keywords.terms` judges a name by position in the string it gets. Anything that feeds it joined text (threads, title + body) must call it per segment. A reader that reads a swappable attribute twice in one call breaks `refresh_stale`'s "a running search keeps its object". Capture it once.
+- **Links:** SYS-140 (#322), SYS-141 (#323), SYS-142 (#324), DBT-67 (#325); `.10x/reviews/2026-10-12-senior-code-quality-audit.md`.

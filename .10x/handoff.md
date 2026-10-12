@@ -1,5 +1,23 @@
 # Current Handoff
 
+## From: Senior Engineer (code-quality audit of c69d34d..f7f8672) -> To: SDE
+**Date:** 2026-10-12
+**Read first:** `.10x/reviews/2026-10-12-senior-code-quality-audit.md`; `.10x/decisions/senior-engineer/code-quality-audit-2026-10-12.md` (approach per ticket).
+
+The QA list below still comes first. The audit adds four tickets and places them in that order:
+1. SYS-111 #287 (P1, QA send-back): unchanged, first.
+2. **SYS-104 #274 + SYS-140 #322 (P2) together.**
+   - `keywords.terms` judges a name by position in the joined thread, so `kebijakan` from an earlier question becomes a required anchor.
+   - Take the terms per question (`terms(questions)`), follow-up first.
+   - Test the composed path.
+3. **SYS-141 #323 (P3):** `ChunkFAISSDatasource.similarity`: capture `vs = self.vs_l2` once; fix the `1 - d^2/2` docstring.
+4. **DBT-67 #325:** move the shared repair steps to `newscrawler/tools/store_repair.py`, only after SYS-111 closes, with no behaviour change.
+5. **SYS-142 #324 (P3):** measure the overlap-tail rows only; any fix rides the next re-chunk.
+
+---
+
+## Previous (superseded)
+
 ## From: QA (independent pass of the 2026-10-09 SDE handoff + held tickets) -> To: SDE (2 send-backs, 4 new P3s), owner (SumoPod key)
 **Date:** 2026-10-12
 **Read first:**

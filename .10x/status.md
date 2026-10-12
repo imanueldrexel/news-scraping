@@ -270,3 +270,6 @@
   - container recreated (~40 s), counts identical.
 - The audit was re-run: saved 0.95, rejected 0.78, no alerts.
 - OPS-49 #321 is `status: ready-for-qa`.
+
+## Senior-engineer audit 2026-10-12 (code quality, c69d34d..f7f8672)
+- Unit 2,770 passed. Filed: SYS-140 #322 (P2, follow-up's earlier questions' first words become required name anchors), SYS-141 #323 (P3, similarity reads vs_l2 twice under reload; stale docstring), SYS-142 #324 (P3, overlap tail window), DBT-67 #325 (repair scripts import each other's privates). Report: reviews/2026-10-12-senior-code-quality-audit.md
