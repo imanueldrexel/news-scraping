@@ -29,3 +29,4 @@
 - [chunks-fit-encoder-window](chunks-fit-encoder-window.md) — SYS-109: L2 windows of ≤ 80 words (ADR-008), L2-only corpus re-chunk, DBT-64 indexes; production re-chunk done 2026-10-09 00:30; SYS-109/DBT-64/SYS-111/OPS-47 ready-for-qa, SYS-112 open
 - [ops-49-postgres-shm](ops-49-postgres-shm.md) — 2026-10-12: Postgres container shm_size 1gb (filter-drift audit DiskFull = 64 MB /dev/shm); recreated, counts identical, audit re-run
 - [qa-senior-fixes-2026-10-12](qa-senior-fixes-2026-10-12.md) — 2026-10-12: SYS-111, SYS-139 (soft deadline, ADR-011), SYS-104+140 (LLM follow-up rewrite, ADR-010) ready-for-qa; rest in progress
+- [qa-second-pass-fixes-2026-10-12](qa-second-pass-fixes-2026-10-12.md) — 2026-10-12 night: SYS-138 subject gate (ADR-013), SYS-143/144/145 (ADR-014), DBT-68/69, DBT-67 store_repair module (ADR-015); all ready-for-qa

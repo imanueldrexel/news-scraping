@@ -8,6 +8,8 @@ from types import SimpleNamespace
 
 import pytest
 
+from newscrawler.tools import store_repair
+
 SCRIPT = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
                       "scripts", "repair_boilerplate_bodies.py")
 
@@ -120,9 +122,9 @@ class TestOneDeadlinePerRun:
             seen["deadline"] = deadline
             return 1, 0, 0, 0
 
-        monkeypatch.setattr(repair, "datetime", FakeDatetime)
-        monkeypatch.setattr(repair, "_faiss_dirs", lambda: ())
-        monkeypatch.setattr(repair, "_crawl_running", lambda session: 0)
+        monkeypatch.setattr(store_repair, "datetime", FakeDatetime)     # parse_until / too_close (DBT-67)
+        monkeypatch.setattr(repair, "faiss_dirs", lambda: ())
+        monkeypatch.setattr(repair, "crawl_running", lambda session: 0)
         monkeypatch.setattr(repair, "select_targets", lambda rows: [(1, "body")])
         monkeypatch.setattr(repair, "backup", lambda *a, **k: "backup-path")
         monkeypatch.setattr(repair, "delete_vectors", lambda *a, **k: {})
@@ -148,7 +150,7 @@ class TestOneDeadlinePerRun:
         """Resolved first, a bad value stops the run before the dirs, the backup or a delete --
         under --rechunk-only too, which used to reach the re-chunk's own parse."""
         touched = []
-        monkeypatch.setattr(repair, "_faiss_dirs", lambda: touched.append("dirs"))
+        monkeypatch.setattr(repair, "faiss_dirs", lambda: touched.append("dirs"))
         monkeypatch.setattr(repair, "backup", lambda *a, **k: touched.append("backup"))
         for rechunk_only in (False, True):
             with pytest.raises(ValueError):

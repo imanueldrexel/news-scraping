@@ -45,7 +45,6 @@ from datetime import datetime, timezone
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from dotenv import load_dotenv  # noqa: E402
 
@@ -57,6 +56,11 @@ from newscrawler.core import constants  # noqa: E402
 from newscrawler.core.chunker import HierarchicalChunker  # noqa: E402
 from newscrawler.domain.dtos.dataflow.details.news_details_dto import NewsDetailsDTO  # noqa: E402
 from newscrawler.infrastructure.network.clients.sqlalchemy_client import SQLAlchemyClient  # noqa: E402
+from newscrawler.tools import store_repair  # noqa: E402
+# DBT-67 (ADR-015): the shared repair steps, imported by name (redirect store_repair.BACKUP_DIR, not a copy).
+from newscrawler.tools.store_repair import (  # noqa: E402
+    MIN_RUN_MINUTES, crawl_running, delete_vectors, faiss_dirs, parse_until, rechunk, too_close,
+)
 
 logging.basicConfig(format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -159,10 +163,7 @@ def load_targets(client, source, min_words, all_articles=False):
 
 def backup_l2(client, ids, l2_dir, path):
     """A copy of NEWS_L2 and the L2 rows about to be deleted (JSON lines), under `path`."""
-    from repair_boilerplate_bodies import MIN_FREE_GB_FOR_BACKUP
-    free_gb = shutil.disk_usage(os.path.dirname(path) if os.path.isdir(os.path.dirname(path)) else ROOT).free / 1e9
-    if free_gb < MIN_FREE_GB_FOR_BACKUP:
-        raise RuntimeError("only %.1f GB free; the backup needs about %d" % (free_gb, MIN_FREE_GB_FOR_BACKUP))
+    store_repair.require_free_disk(os.path.dirname(path))
     os.makedirs(path, exist_ok=True)
     shutil.copytree(l2_dir, os.path.join(path, os.path.basename(l2_dir.rstrip("/\\"))))
     n = 0
@@ -190,18 +191,17 @@ def apply(args, client=None, make_repo=None) -> int:
 
 
 def _apply_locked(args, client, make_repo) -> int:
-    import repair_boilerplate_bodies as sys73
-    _, l2_dir = sys73._faiss_dirs()
+    _, l2_dir = faiss_dirs()
     with client.get_session() as session:
         logger.info("database: %s", session.execute(text("SELECT current_database()")).scalar())
-        if sys73._crawl_running(session):
+        if crawl_running(session):
             logger.error("a crawl_log row is 'started' in the last 4 h; refusing to rewrite FAISS under a running crawl")
             return 2
     source = args.source.upper() if args.source else None
-    deadline = sys73.parse_until(args.until)
-    if not args.resume and sys73.too_close(deadline):
+    deadline = parse_until(args.until)
+    if not args.resume and too_close(deadline):
         logger.error("--until %s is less than %d minutes away; refusing before any backup or delete (SYS-111)",
-                     args.until, sys73.MIN_RUN_MINUTES)
+                     args.until, MIN_RUN_MINUTES)
         return 2
     summary = {"articles": 0, "l2_rows_deleted": 0, "vectors_deleted": 0}
     if not args.resume:
@@ -213,8 +213,8 @@ def _apply_locked(args, client, make_repo) -> int:
             stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
             tag = "sys109" if args.all else "sys105"
             summary["backup"] = backup_l2(client, ids, l2_dir,
-                                          os.path.join(sys73.BACKUP_DIR, "%s_%s_%s" % (tag, source or "ALL", stamp)))
-            summary["vectors_deleted"] = sum(sys73.delete_vectors([(sid, None) for sid in ids], [l2_dir]).values())
+                                          os.path.join(store_repair.BACKUP_DIR, "%s_%s_%s" % (tag, source or "ALL", stamp)))
+            summary["vectors_deleted"] = sum(delete_vectors([(sid, None) for sid in ids], [l2_dir]).values())
             with client.get_session() as session:
                 summary["l2_rows_deleted"] = session.execute(DELETE_L2_SQL, {"ids": ids}).rowcount
                 session.commit()
@@ -236,7 +236,7 @@ def _apply_locked(args, client, make_repo) -> int:
         sources = [r[0] for r in session.execute(SOURCES_SQL, {"source": source}).fetchall()]
     failed = left = reattached = 0
     for src in sources:
-        repaired, empty, f, lft = sys73.rechunk(client, src, args.block, deadline, shared_repo, group_size=args.group)
+        repaired, empty, f, lft = rechunk(client, src, args.block, deadline, shared_repo, group_size=args.group)
         failed, left = failed + f, left + lft
         with client.get_session() as session:
             reattached += session.execute(REATTACH_SQL, {"source": src}).rowcount

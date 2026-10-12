@@ -32,111 +32,22 @@ import argparse
 import logging
 import os
 import sys
-from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from dotenv import load_dotenv
 load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env"))
 
-from sqlalchemy import text
-
 from newscrawler.core.chunker import HierarchicalChunker
-from newscrawler.domain.dtos.dataflow.details.news_details_dto import NewsDetailsDTO
-from newscrawler.domain.dtos.dataflow.details.site_map_dto import SitemapDTO
 from newscrawler.infrastructure.network.clients.sqlalchemy_client import SQLAlchemyClient
 from newscrawler.infrastructure.repositories.dataflow.data_flow_repository_impl import (
     DataFlowRepositoryImpl,
 )
+# DBT-67 (ADR-015): the re-embed loop every store repair shares, and its selection.
+from newscrawler.tools.store_repair import ORPHAN_ARTICLES_SQL as _FETCH_SQL, rechunk_articles  # noqa: E402
 
 logging.basicConfig(format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
-
-_FETCH_SQL = text("""
-    SELECT a.sitemap_id, a.extracted_text, a.writer,
-           s.headline, s.sources, s.category, s.posted_at
-    FROM articles a
-    JOIN sitemaps s ON s.sitemap_id = a.sitemap_id
-    WHERE (
-        NOT EXISTS (SELECT 1 FROM chunks c WHERE c.sitemap_id = a.sitemap_id AND c.chunk_level = 1)
-        OR NOT EXISTS (SELECT 1 FROM chunks c WHERE c.sitemap_id = a.sitemap_id AND c.chunk_level = 2)
-      )
-      AND (:website IS NULL OR s.sources = :website)
-    ORDER BY a.sitemap_id
-""")
-
-
-def rechunk_articles(repo, chunker, rows, group_size=1):
-    """Re-chunk and save `rows` (articles with an `articles` row but missing chunks) from
-    their stored text. Returns (repaired, empty, failed). Used by this script and by
-    scripts/repair_boilerplate_bodies.py (SYS-73), which wraps it in `deferred_embeddings`
-    so a block of articles costs one FAISS save instead of one per article.
-
-    `group_size`: articles per `save_chunk_data` call, so their chunks are embedded in one batch
-    (SYS-109: the whole corpus at ~8 windows an article). A group that fails is saved again
-    article by article, so one bad article fails alone."""
-    repaired, empty, failed = 0, 0, 0
-    group = []
-
-    def save_group():
-        nonlocal repaired, failed
-        if not group:
-            return
-        try:
-            repo.save_chunk_data([c for _, chunks in group for c in chunks])
-            repaired += len(group)
-        except Exception as e:
-            if len(group) == 1:
-                logger.error("sitemap_id %d: failed to save chunks: %s", group[0][0], e)
-                failed += 1
-            else:
-                logger.warning("a group of %d articles failed to save (%s); saving them one by one", len(group), e)
-                for sitemap_id, chunks in group:
-                    try:
-                        repo.save_chunk_data(chunks)
-                        repaired += 1
-                    except Exception as e1:
-                        logger.error("sitemap_id %d: failed to save chunks: %s", sitemap_id, e1)
-                        failed += 1
-        group.clear()
-
-    for row in rows:
-        # SYS-18: extracted_text is prose joined with "\n\n" at the write boundary
-        # (sql_alchemy_articles_data_source.save_newsdetails); split it the same way.
-        paragraphs = [p for p in (row.extracted_text or "").split("\n\n") if p.strip()]
-        if not paragraphs:
-            logger.warning("sitemap_id %d: extracted_text is empty, skipping", row.sitemap_id)
-            empty += 1
-            continue
-
-        if not row.posted_at:
-            logger.warning("sitemap_id %d: no posted_at, skipping", row.sitemap_id)
-            empty += 1
-            continue
-        posted_at_dt = datetime.strptime(str(row.posted_at), "%Y%m%d")
-
-        news = NewsDetailsDTO(
-            sitemap_id=row.sitemap_id,
-            extracted_text=paragraphs,
-            reporter=row.writer,
-            meta_data={"title": row.headline, "posted_at": row.posted_at},
-        )
-        sitemap = SitemapDTO(
-            headline=row.headline, link="", sources=row.sources, category=row.category,
-            timestamp=posted_at_dt, sitemap_id=row.sitemap_id,
-        )
-        chunks = chunker.chunk(news, sitemap)
-        if not chunks:
-            logger.warning("sitemap_id %d: chunker produced 0 chunks, skipping", row.sitemap_id)
-            empty += 1
-            continue
-
-        group.append((row.sitemap_id, chunks))
-        if len(group) >= group_size:
-            save_group()
-    save_group()
-    return repaired, empty, failed
-
 
 def main(argv=None) -> dict:
     """Returns {"selected", "repaired", "empty", "failed"} so the integration test

@@ -25,6 +25,8 @@ import pytest
 psycopg2 = pytest.importorskip("psycopg2", reason="psycopg2 not installed")
 from sqlalchemy import text  # noqa: E402
 
+from newscrawler.tools import store_repair  # noqa: E402
+
 SOURCE = "SYS73TEST"
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 SCRIPTS = os.path.join(ROOT, "scripts")
@@ -79,17 +81,13 @@ def client():
 
 @pytest.fixture
 def env(monkeypatch, repair):
-    """Temp FAISS, backup and lock paths, and the recount script's backup directory."""
+    """Temp FAISS, backup (the repair's and the recount's) and lock paths."""
     tmp = tempfile.mkdtemp(prefix="sys73_")
     import newscrawler.infrastructure.datasource.dataflow.write.faiss.chunk_faiss_data_source as cfd
     from newscrawler.tools import run_lock
-    import sys
-    sys.path.insert(0, SCRIPTS)
-    import recount_entity_mentions
     monkeypatch.setattr(cfd, "VECTOR_DB_NAME_L1", f"{tmp}/L1")
     monkeypatch.setattr(cfd, "VECTOR_DB_NAME_L2", f"{tmp}/L2")
-    monkeypatch.setattr(repair, "BACKUP_DIR", f"{tmp}/backups")
-    monkeypatch.setattr(recount_entity_mentions, "BACKUP_DIR", f"{tmp}/recount")
+    monkeypatch.setattr(store_repair, "BACKUP_DIR", f"{tmp}/backups")
     monkeypatch.setattr(run_lock, "LOCK_PATH", f"{tmp}/scheduled_crawl.lock")
     yield SimpleNamespace(tmp=tmp, lock=f"{tmp}/scheduled_crawl.lock")
     shutil.rmtree(tmp, ignore_errors=True)
@@ -238,7 +236,9 @@ class TestApply:
     def test_the_backup_has_the_old_text_and_the_old_faiss(self, repair, client, env, seeded):
         import json
         repair.apply_source(_args(), client=client)
-        (backup,) = [os.path.join(repair.BACKUP_DIR, d) for d in os.listdir(repair.BACKUP_DIR)]
+        # The recount's sys20_*.json shares the directory since DBT-67 (one BACKUP_DIR for the toolkit).
+        (backup,) = [os.path.join(store_repair.BACKUP_DIR, d) for d in os.listdir(store_repair.BACKUP_DIR)
+                     if d.startswith("sys73_")]
         assert os.path.isdir(os.path.join(backup, "L1")) and os.path.isdir(os.path.join(backup, "L2"))
         dump = json.load(open(os.path.join(backup, "rows.json"), encoding="utf-8"))
         old = {a["sitemap_id"]: a["extracted_text"] for a in dump["articles"]}
@@ -263,7 +263,7 @@ class TestApply:
         before = _text(client, seeded.polluted), _chunks(client, seeded.polluted), _vector_ids(seeded.polluted)
         assert repair.apply_source(_args(until=soon), client=client) == 2
         assert (_text(client, seeded.polluted), _chunks(client, seeded.polluted), _vector_ids(seeded.polluted)) == before
-        assert not os.path.isdir(repair.BACKUP_DIR) or not os.listdir(repair.BACKUP_DIR), "no backup taken"
+        assert not os.path.isdir(store_repair.BACKUP_DIR) or not os.listdir(store_repair.BACKUP_DIR), "no backup taken"
 
     @pytest.mark.parametrize("block, saves", [(2, 4), (1, 6)])
     def test_faiss_is_saved_once_per_block_not_once_per_article(self, repair, client, env, seeded, monkeypatch,

@@ -36,8 +36,8 @@ def scripts():
     import sys
     sys.path.insert(0, SCRIPTS)
     import drop_oversized_queued_chunks
-    import repair_boilerplate_bodies
-    return SimpleNamespace(drop=drop_oversized_queued_chunks, sys73=repair_boilerplate_bodies)
+    from newscrawler.tools import store_repair
+    return SimpleNamespace(drop=drop_oversized_queued_chunks, store_repair=store_repair)
 
 
 @pytest.fixture
@@ -65,7 +65,7 @@ def env(monkeypatch, scripts):
     import newscrawler.infrastructure.datasource.dataflow.write.faiss.chunk_faiss_data_source as cfd
     monkeypatch.setattr(cfd, "VECTOR_DB_NAME_L1", f"{tmp}/L1")
     monkeypatch.setattr(cfd, "VECTOR_DB_NAME_L2", f"{tmp}/L2")
-    monkeypatch.setattr(scripts.sys73, "BACKUP_DIR", f"{tmp}/backups")
+    monkeypatch.setattr(scripts.store_repair, "BACKUP_DIR", f"{tmp}/backups")
     yield SimpleNamespace(tmp=tmp)
     shutil.rmtree(tmp, ignore_errors=True)
 

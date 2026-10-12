@@ -23,7 +23,7 @@ The sequence is: refuse while the crawl runs → resolve the deadline once → b
 2. `rechunk_stale_chunks.backup_l2` uses the module's free-disk guard instead of its copy.
 3. Entity-mention recounting gets a callable function. `settle_out_of_scope_links` stops running another script's CLI.
 4. Scripts keep their CLI, dry run, target selection and report. No script imports another script; a unit test enforces this.
-5. `repair_boilerplate_bodies` re-exports nothing. Its tests and the mutant registry are pointed at the module.
+5. A script imports the steps it calls by name from the module, so a test that patches the script's name still patches that script's call. Other scripts never reach a step through another script. Values a test redirects (`BACKUP_DIR`) are read as `store_repair.BACKUP_DIR`, never copied into a script, so redirecting it once covers every caller. The tests and the mutant registry are pointed at the module.
 
 ## Alternatives Considered
 | Alternative | Pros | Cons | Why not |

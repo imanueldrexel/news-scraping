@@ -41,8 +41,8 @@ def scripts():
     import sys
     sys.path.insert(0, SCRIPTS)
     import rechunk_stale_chunks
-    import repair_boilerplate_bodies
-    return SimpleNamespace(rechunk=rechunk_stale_chunks, sys73=repair_boilerplate_bodies)
+    from newscrawler.tools import store_repair
+    return SimpleNamespace(rechunk=rechunk_stale_chunks, store_repair=store_repair)
 
 
 @pytest.fixture
@@ -72,7 +72,7 @@ def env(monkeypatch, scripts):
     import newscrawler.infrastructure.datasource.dataflow.write.faiss.chunk_faiss_data_source as cfd
     monkeypatch.setattr(cfd, "VECTOR_DB_NAME_L1", f"{tmp}/L1")
     monkeypatch.setattr(cfd, "VECTOR_DB_NAME_L2", f"{tmp}/L2")
-    monkeypatch.setattr(scripts.sys73, "BACKUP_DIR", f"{tmp}/backups")
+    monkeypatch.setattr(scripts.store_repair, "BACKUP_DIR", f"{tmp}/backups")
     yield SimpleNamespace(tmp=tmp, backups=f"{tmp}/backups")
     shutil.rmtree(tmp, ignore_errors=True)
 
@@ -219,11 +219,11 @@ class TestRechunkToTheEncoderWindowLive:
         long_ = _article(client, LONG)
         _store_as_production_did(client, monkeypatch)
         before = _snapshot(client, long_)
-        rechunk = scripts.sys73.rechunk
-        monkeypatch.setattr(scripts.sys73, "rechunk", functools.partial(rechunk, now=lambda: datetime.max))
+        rechunk = scripts.rechunk.rechunk
+        monkeypatch.setattr(scripts.rechunk, "rechunk", functools.partial(rechunk, now=lambda: datetime.max))
         later = (datetime.now() + timedelta(hours=2)).strftime("%H:%M")
         assert scripts.rechunk.apply(_args(all=True, until=later), client=client) == 3
-        monkeypatch.setattr(scripts.sys73, "rechunk", rechunk)
+        monkeypatch.setattr(scripts.rechunk, "rechunk", rechunk)
         assert _rows(client, long_, 2) == [], "stopped after the deletes, before the re-chunk"
         assert scripts.rechunk.apply(_args(resume=True), client=client) == 0
         assert max(r.token_count for r in _assert_l2_consistent(client, long_)) <= 80
@@ -237,7 +237,7 @@ class TestRechunkToTheEncoderWindowLive:
         long_ = _article(client, LONG)
         _store_as_production_did(client, monkeypatch)
         before = _rows(client, long_, 2), _vector_ids(2, long_)
-        soon = (datetime.now() + timedelta(minutes=scripts.sys73.MIN_RUN_MINUTES - 5)).strftime("%H:%M")
+        soon = (datetime.now() + timedelta(minutes=scripts.store_repair.MIN_RUN_MINUTES - 5)).strftime("%H:%M")
         assert scripts.rechunk.apply(_args(all=True, until=soon), client=client) == 2
         assert (_rows(client, long_, 2), _vector_ids(2, long_)) == before
         assert not os.path.isdir(env.backups) or os.listdir(env.backups) == [], "no backup taken"

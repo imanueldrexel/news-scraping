@@ -49,6 +49,8 @@ load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file_
 from sqlalchemy import text  # noqa: E402
 
 from newscrawler.core.constants import SITEMAP_MAX_FETCH_FAILURES, VECTOR_DB_NAME_L1, VECTOR_DB_NAME_L2  # noqa: E402
+# DBT-67 (ADR-015): shared with the other store repairs.
+from newscrawler.tools.store_repair import NoEmbeddings as _NoEmbeddings, crawl_running as _crawl_running  # noqa: E402
 
 logging.basicConfig(format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -126,21 +128,6 @@ def _load_state(session, sitemap_ids):
         else:
             state[r.sitemap_id] = "queued"
     return state
-
-
-def _crawl_running(session):
-    return session.execute(text(
-        "SELECT count(*) FROM crawl_log WHERE status = 'started' AND task IN ('sitemap', 'full_text', 'all') "
-        "AND started_at > NOW() - INTERVAL '4 hours'")).scalar()
-
-
-class _NoEmbeddings:
-    """FAISS.load_local needs an embeddings object; deleting never embeds."""
-    def embed_documents(self, texts):
-        raise RuntimeError("repair must not embed")
-
-    def embed_query(self, text_):
-        raise RuntimeError("repair must not embed")
 
 
 def main(argv=None) -> int:

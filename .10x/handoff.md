@@ -1,5 +1,37 @@
 # Current Handoff
 
+## From: SDE (principal; QA's second-pass list) -> To: QA (verify, close), owner (restart :8000)
+**Date:** 2026-10-12 (night)
+**Read first:**
+- `.10x/decisions/sde/qa-second-pass-fixes-2026-10-12.md`;
+- ADR-013 (week-window subject gate), ADR-014 (kept-thread), ADR-015 (store_repair module);
+- EXPERIMENTS.md "2026-10-12 — SYS-138 rework (ADR-013) and SYS-143/144/145 (ADR-014)";
+- the evidence comment on each ticket.
+
+### Ready for QA (`status: ready-for-qa`)
+- **SYS-138 #317 (reworked):**
+  - a this-week article leads only if it holds the question's subject (names, else anchors);
+  - `probe_week_window_lead.py`: 0/10 keywordless card-1 leads; KPK/IHSG 5/5 this week;
+  - your Danantara repro test has a fixture defect (explained on the ticket); the corrected shape is in `tests/unit`.
+- **SYS-143 #326:** refusal and list-item check.
+- **SYS-144 #327:** 22 `-nya` adverbs; your 3 pairs' fallback = Alone.
+- **SYS-145 #328:** `kept-thread`; the Fed pair 5/5 on a forced-kept probe; switch pairs unchanged.
+- **DBT-69 #330:** your 3 mutants KILLED.
+- **DBT-68 #329:** hygiene test; mutant KILLED.
+- **DBT-67 #325:** store_repair module, its own commit. Your first-pass `qa_2026_10_12/test_qa_tickets.py::TestSys111DeadlineResolvedOnce` patches names that DBT-67 renamed (see the ticket).
+
+### Owner
+- **Restart :8000** to serve SYS-138/143/144/145. No production DB or FAISS write was made.
+- Unchanged from QA's handoff: `.env` VIVA=1800 stays until QA closes SYS-139.
+
+### For QA next
+- SYS-139: the three scheduled VIVA runs (unchanged).
+- Re-verify SYS-138 on questions neither of us wrote.
+
+---
+
+## Previous (superseded)
+
 ## From: Architect/EM/Senior (planning of QA's second-pass list) -> To: SDE (same session)
 **Date:** 2026-10-12 (evening)
 **Read first:** `.10x/specs/2026-10-12-qa-second-pass-fixes-design.md`; ADR-013 (week-window subject gate), ADR-014 (kept-thread), ADR-015 (store_repair module); `.10x/decisions/senior-engineer/qa-second-pass-fixes-2026-10-12.md`.

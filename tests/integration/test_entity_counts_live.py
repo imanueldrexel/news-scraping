@@ -15,6 +15,8 @@ import pytest
 psycopg2 = pytest.importorskip("psycopg2", reason="psycopg2 not installed")
 from sqlalchemy import text  # noqa: E402
 
+from newscrawler.tools import store_repair  # noqa: E402
+
 SOURCE = "SYS20"
 
 
@@ -91,7 +93,7 @@ def _entity(client, normalized):
 def _drift(client):
     """The script's selection, narrowed to this test's entities by name."""
     with client.get_session() as s:
-        rows = s.execute(_recount_script().DRIFT_SQL).fetchall()
+        rows = s.execute(store_repair.ENTITY_DRIFT_SQL).fetchall()
     return [r.name for r in rows if r.name.lower().startswith("sys20")]
 
 
@@ -158,7 +160,7 @@ class TestRecountScript:
         assert not _no_drift(client)
 
         mod = _recount_script()
-        monkeypatch.setattr(mod, "BACKUP_DIR", str(tmp_path))
+        monkeypatch.setattr(store_repair, "BACKUP_DIR", str(tmp_path))
 
         assert mod.main(["--dry-run"]) == 0
         assert not _no_drift(client) and os.listdir(tmp_path) == []
@@ -188,7 +190,7 @@ class TestRecountSelectsEachKindOfDrift:
         assert _drift(client) == ["Sys20 Bank"], f"drift in {column} alone must be selected"
 
         mod = _recount_script()
-        monkeypatch.setattr(mod, "BACKUP_DIR", str(tmp_path))
+        monkeypatch.setattr(store_repair, "BACKUP_DIR", str(tmp_path))
         assert mod.main([]) == 0
         assert _no_drift(client)
 

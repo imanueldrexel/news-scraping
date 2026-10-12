@@ -1281,18 +1281,18 @@ M = [
   '        if new and list(stored or []) != new:\n', '        if new and stored and list(stored) != new:\n'),
  ('sys109_report_overlong_not_counted', 'scripts/rechunk_stale_chunks.py',
   'for w in s if w > max_words),', 'for w in s if w > max_words * 9),'),
- ('sys109_group_never_batches', 'scripts/backfill_orphan_chunks.py',
+ ('sys109_group_never_batches', 'newscrawler/tools/store_repair.py',
   '        if len(group) >= group_size:\n', '        if True:\n'),
- ('sys109_failed_group_not_retried', 'scripts/backfill_orphan_chunks.py',
+ ('sys109_failed_group_not_retried', 'newscrawler/tools/store_repair.py',
   '            if len(group) == 1:\n                logger.error', '            if True:\n                logger.error'),
  # SDE 2026-10-08: SYS-111 (a deadline already past today is tomorrow; refuse a too-close one before deleting).
  # The guards' removal is killed by tests/integration (test_*_live.py::*too_close*), not by this runner.
- ('sys111_past_deadline_is_today', 'scripts/repair_boilerplate_bodies.py',
+ ('sys111_past_deadline_is_today', 'newscrawler/tools/store_repair.py',
   'return deadline if deadline > now else deadline + timedelta(days=1)', 'return deadline'),
- ('sys111_too_close_never', 'scripts/repair_boilerplate_bodies.py',
+ ('sys111_too_close_never', 'newscrawler/tools/store_repair.py',
   'return deadline is not None and deadline - (now or datetime.now()) < timedelta(minutes=MIN_RUN_MINUTES)',
   'return False'),
- ('sys111_too_close_at_the_margin', 'scripts/repair_boilerplate_bodies.py',
+ ('sys111_too_close_at_the_margin', 'newscrawler/tools/store_repair.py',
   '< timedelta(minutes=MIN_RUN_MINUTES)', '<= timedelta(minutes=MIN_RUN_MINUTES)'),
  # QA 2026-10-12: QA's own mutants for the 2026-10-08/09 tickets, from the tickets' wording
  # (scripts/experiments/qa_2026_10_12/). Neighbouring boundaries the dev's mutants do not touch.
@@ -1440,6 +1440,17 @@ M = [
  ('sys145_kept_thread_cue_leaks', 'newscrawler/web/followup.py',
   'return Retrieval(" ".join((q,) + newest_first), (q,) + newest_first, q, how)',
   'return Retrieval(" ".join((q,) + newest_first), (q,) + newest_first, " ".join((q,) + newest_first), how)'),
+ # DBT-67 (ADR-015): the toolkit's boundary (tests/unit/test_store_repair_module.py).
+ ('dbt67_script_imports_a_script', 'scripts/settle_out_of_scope_links.py',
+  '    source = args.source.upper()\n    with client.get_session() as session:',
+  '    import repair_boilerplate_bodies as sys73  # noqa: F401\n    source = args.source.upper()\n'
+  '    with client.get_session() as session:'),
+ ('dbt67_a_script_copies_a_step', 'scripts/repair_boilerplate_bodies.py',
+  'def rewrite_rows(session, targets):', 'def parse_until(value, now=None):\n    return None\n\n\ndef rewrite_rows(session, targets):'),
+ ('dbt67_backup_dir_copied', 'scripts/drop_oversized_queued_chunks.py',
+  'from newscrawler.tools.store_repair import backup, crawl_running, delete_vectors, faiss_dirs  # noqa: E402\n',
+  'from newscrawler.tools.store_repair import backup, crawl_running, delete_vectors, faiss_dirs  # noqa: E402\n'
+  'BACKUP_DIR = os.path.join(ROOT, "backups")\n'),
  # QA_MUTANT_TESTS=tests/unit/test_repo_hygiene.py is enough for this one.
  ('dbt68_duplicate_class_back', 'tests/unit/test_source_worker.py',
   'class TestSoftDeadline:', 'class TestSoftDeadline:\n    pass\n\n\nclass TestSoftDeadline:'),

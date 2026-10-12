@@ -1,8 +1,8 @@
 # Project Status
 
 ## Project: NewsAggregator
-**Current Phase:** Verification (QA second pass) complete for the 2026-10-12 list: 8 closed, SYS-138 sent back, SYS-139 held for scheduled runs, 5 P3s filed. Back to dev.
-**Last Updated:** 2026-10-12 ~15:30 WIB by QA
+**Current Phase:** Implementation complete for QA's second-pass list (SYS-138/143/144/145, DBT-67/68/69, all ready-for-qa). Back to QA.
+**Last Updated:** 2026-10-12 night by SDE
 **Health:** On Track
 
 ## Progress
@@ -298,11 +298,12 @@ Report: reviews/2026-10-12-qa-report-2.md; decisions/qa/qa-pass-2026-10-12b.md.
 
 ## Dev 2026-10-12 evening: QA second-pass list (spec: specs/2026-10-12-qa-second-pass-fixes-design.md, ADR-013/014/015)
 Design approved by the owner. Order:
-- [ ] SYS-144 #327 -nya adverbs
-- [ ] SYS-143 #326 refusal/list check
-- [ ] SYS-145 #328 kept-thread (ADR-014)
-- [ ] SYS-138 #317 subject gate (ADR-013)
-- [ ] DBT-69 #330 three tests
-- [ ] DBT-68 #329 duplicate class + hygiene test
-- [ ] DBT-67 #325 store_repair module (ADR-015)
-- [ ] Live re-measurement, EXPERIMENTS.md, ticket evidence
+- [x] SYS-144 #327 -nya adverbs
+- [x] SYS-143 #326 refusal/list check
+- [x] SYS-145 #328 kept-thread (ADR-014)
+- [x] SYS-138 #317 subject gate (ADR-013)
+- [x] DBT-69 #330 three tests
+- [x] DBT-68 #329 duplicate class + hygiene test
+- [x] DBT-67 #325 store_repair module (ADR-015)
+- [x] Live re-measurement, EXPERIMENTS.md, ticket evidence
+- All 7 `status: ready-for-qa`. Commits 3c429a6 (bugs) and the DBT-67 commit. Mutants: 22 of 22 KILLED for the bug list (see the DBT-67 comment for its own run). Owner: restart :8000.

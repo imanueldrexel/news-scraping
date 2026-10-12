@@ -51,6 +51,10 @@ from sqlalchemy import text  # noqa: E402
 
 from newscrawler.core.constants import VECTOR_DB_NAME_L1, VECTOR_DB_NAME_L2  # noqa: E402
 from newscrawler.core.utils.utils import is_cascaded  # noqa: E402
+# DBT-67 (ADR-015): shared with the other store repairs.
+from newscrawler.tools.store_repair import (  # noqa: E402
+    NoEmbeddings, crawl_running as _crawl_running, vector_ids_for,
+)
 
 logging.basicConfig(format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -65,19 +69,6 @@ def select_cascaded(rows):
     stored body cascades. Stored bodies are paragraphs joined by a blank line
     (SYS-18)."""
     return sorted(sid for sid, body in rows if is_cascaded((body or "").split("\n\n")))
-
-
-def vector_ids_for(docstore_dict, sitemap_ids):
-    """Pure. Docstore ids of every vector belonging to one of `sitemap_ids`."""
-    wanted = set(sitemap_ids)
-    return [doc_id for doc_id, doc in docstore_dict.items()
-            if doc.metadata.get("sitemap_id") is not None and int(doc.metadata["sitemap_id"]) in wanted]
-
-
-def _crawl_running(session):
-    return session.execute(text(
-        "SELECT count(*) FROM crawl_log WHERE status = 'started' AND task IN ('sitemap', 'full_text', 'all') "
-        "AND started_at > NOW() - INTERVAL '4 hours'")).scalar()
 
 
 def main(argv=None) -> int:
@@ -114,11 +105,9 @@ def main(argv=None) -> int:
 
     from newscrawler.infrastructure.datasource.dataflow.write.faiss.index_generation import load_index
     from newscrawler.infrastructure.datasource.dataflow.write.faiss.chunk_faiss_data_source import ChunkFAISSDatasource
-    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-    from repair_store_consistency import _NoEmbeddings
 
     # SYS-53: load_index records the generation read; the save refuses if it changed.
-    stores = {db: load_index(db, _NoEmbeddings())
+    stores = {db: load_index(db, NoEmbeddings())
               for db in (VECTOR_DB_NAME_L1, VECTOR_DB_NAME_L2)}
     doomed_vectors = {db: vector_ids_for(vs.docstore._dict, targets) for db, vs in stores.items()}
     for db, ids in doomed_vectors.items():

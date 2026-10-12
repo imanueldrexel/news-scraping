@@ -43,7 +43,7 @@ import os
 import re
 import sys
 from collections import Counter, defaultdict
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
@@ -56,9 +56,14 @@ from sqlalchemy import text  # noqa: E402
 
 from newscrawler.core.utils.utils import clean_body_paragraphs, is_boilerplate_line  # noqa: E402
 from newscrawler.infrastructure.network.clients.sqlalchemy_client import SQLAlchemyClient  # noqa: E402
+# DBT-67 (ADR-015): the shared repair steps. Imported by name, so a test that patches this script's
+# name patches this script's call; BACKUP_DIR is read in the module (redirect store_repair.BACKUP_DIR).
+from newscrawler.tools.store_repair import (  # noqa: E402
+    DEFAULT_BLOCK, MIN_RUN_MINUTES, backup, crawl_running, delete_vectors, faiss_dirs, parse_until, rechunk,
+    recount_entity_counts, too_close,
+)
 
 REPORT_DIR = os.path.join(ROOT, "crawler_health")
-BACKUP_DIR = os.path.join(ROOT, "backups")
 
 logging.basicConfig(format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -173,10 +178,6 @@ def render(report, chunks, top):
 
 # ── SYS-73 step 2: the write path ────────────────────────────────────────────
 
-MIN_FREE_GB_FOR_BACKUP = 8       # the FAISS directories are ~2.1 GB and the backup copies them
-DEFAULT_BLOCK = 1000             # articles per FAISS flush while re-chunking
-
-
 def select_targets(rows):
     """Pure. `rows`: (sitemap_id, stored body). [(sitemap_id, cleaned body)] for the articles whose
     cleaned body differs from the stored one. An article the cleaner would empty is not rewritten
@@ -190,34 +191,6 @@ def select_targets(rows):
             # runs here, in rows that are being rewritten anyway (a clean body is never touched).
             out.append((sitemap_id, BLANK_RUNS.sub("\n\n", cleaned)))
     return out
-
-
-# SYS-111 (#287): a write path refuses to start its destructive step with less time than this
-# before its deadline; it would delete everything it targets and then stop at once.
-MIN_RUN_MINUTES = 15
-
-
-def parse_until(value, now=None):
-    """'HH:MM' (local time) -> the next such time: today if still ahead, otherwise tomorrow; None
-    without a value. SYS-111 (#287): it used to mean today even when passed, so an evening run
-    with --until 06:15 stopped at once, after its deletes."""
-    if not value:
-        return None
-    hour, minute = (int(x) for x in value.split(":"))
-    now = now or datetime.now()
-    deadline = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
-    return deadline if deadline > now else deadline + timedelta(days=1)
-
-
-def too_close(deadline, now=None) -> bool:
-    """SYS-111: True when a run with this deadline must not start its destructive step."""
-    return deadline is not None and deadline - (now or datetime.now()) < timedelta(minutes=MIN_RUN_MINUTES)
-
-
-def _crawl_running(session):
-    return session.execute(text(
-        "SELECT count(*) FROM crawl_log WHERE status = 'started' AND task IN ('sitemap', 'full_text', 'all') "
-        "AND started_at > NOW() - INTERVAL '4 hours'")).scalar()
 
 
 def rewrite_rows(session, targets):
@@ -241,93 +214,6 @@ def rewrite_rows(session, targets):
     return n_mentions, n_reset, n_chunks, len(targets)
 
 
-def _faiss_dirs():
-    import newscrawler.infrastructure.datasource.dataflow.write.faiss.chunk_faiss_data_source as cfd
-    return cfd.VECTOR_DB_NAME_L1, cfd.VECTOR_DB_NAME_L2
-
-
-def backup(client, source, targets, dirs, stamp, tag="sys73"):
-    """FAISS directories and the rows about to change, under backups/<tag>_<source>_<stamp>/.
-    `targets`: (sitemap_id, anything) pairs. Shared by the SYS-105 / SRC-60 repairs (their tags)."""
-    import shutil
-    free_gb = shutil.disk_usage(BACKUP_DIR if os.path.isdir(BACKUP_DIR) else ROOT).free / 1e9
-    if free_gb < MIN_FREE_GB_FOR_BACKUP:
-        raise RuntimeError("only %.1f GB free; the backup needs about %d" % (free_gb, MIN_FREE_GB_FOR_BACKUP))
-    path = os.path.join(BACKUP_DIR, "%s_%s_%s" % (tag, source, stamp))
-    for db in dirs:
-        shutil.copytree(db, os.path.join(path, os.path.basename(db.rstrip("/\\"))))
-    ids = [sid for sid, _ in targets]
-    with client.get_session() as session:
-        dump = {
-            "articles": [dict(r._mapping) for r in session.execute(text(
-                "SELECT * FROM articles WHERE sitemap_id = ANY(:i)"), {"i": ids})],
-            "chunks": [dict(r._mapping) for r in session.execute(text(
-                "SELECT chunk_id, sitemap_id, article_id, chunk_level, chunk_index, chunk_total, is_first_chunk, "
-                "is_last_chunk, text_content, token_count, embedding_id, chunk_status FROM chunks "
-                "WHERE sitemap_id = ANY(:i)"), {"i": ids})],
-            "entity_mentions": [dict(r._mapping) for r in session.execute(text(
-                "SELECT * FROM entity_mentions WHERE sitemap_id = ANY(:i)"), {"i": ids})],
-        }
-    with open(os.path.join(path, "rows.json"), "w", encoding="utf-8") as f:
-        json.dump(dump, f, default=str)
-    logger.info("backup: %s (FAISS + %d article, %d chunk, %d mention rows)", path, len(dump["articles"]),
-                len(dump["chunks"]), len(dump["entity_mentions"]))
-    return path
-
-
-def delete_vectors(targets, dirs):
-    """Remove the targets' vectors from NEWS_L1/NEWS_L2: atomic save, generation-checked (SYS-53/56).
-    They must go before the new chunks are embedded: the reuse path (SYS-17) finds an existing vector by
-    (sitemap, level, index) and would link the new rows to the old, polluted ones."""
-    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-    from repair_store_consistency import _NoEmbeddings
-    from requeue_cascaded_articles import vector_ids_for
-    from newscrawler.infrastructure.datasource.dataflow.write.faiss.chunk_faiss_data_source import ChunkFAISSDatasource
-    from newscrawler.infrastructure.datasource.dataflow.write.faiss.index_generation import load_index
-    ids = [sid for sid, _ in targets]
-    deleted = {}
-    for db in dirs:
-        store = load_index(db, _NoEmbeddings())
-        doomed = vector_ids_for(store.docstore._dict, ids)
-        if doomed:
-            store.delete(doomed)
-            ChunkFAISSDatasource._atomic_save_local(store, db)
-        deleted[db] = len(doomed)
-        logger.info("%s: deleted %d vector(s), saved", db, len(doomed))
-    return deleted
-
-
-def rechunk(client, source, block, deadline, make_repo=None, now=datetime.now, group_size=1):
-    """Re-chunk and re-embed this source's articles that have no chunks, `block` articles per FAISS
-    flush (`deferred_embeddings`: without it every article would rewrite the 2 GB index). Stops starting
-    blocks at the deadline. Returns (repaired, empty, failed, left)."""
-    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-    from backfill_orphan_chunks import _FETCH_SQL, rechunk_articles
-    from newscrawler.core.chunker import HierarchicalChunker
-    with client.get_session() as session:
-        orphans = session.execute(_FETCH_SQL, {"website": source}).fetchall()
-    logger.info("%s: %d article(s) to re-chunk", source, len(orphans))
-    if not orphans:
-        return 0, 0, 0, 0
-    if make_repo is None:
-        from newscrawler.infrastructure.repositories.dataflow.data_flow_repository_impl import DataFlowRepositoryImpl
-        make_repo = DataFlowRepositoryImpl
-    repo = make_repo(client)
-    chunker = HierarchicalChunker()
-    repaired = empty = failed = 0
-    for start in range(0, len(orphans), block):
-        if deadline is not None and now() >= deadline:
-            logger.warning("deadline %s reached: %d article(s) not re-chunked yet (run again with --rechunk-only)",
-                           deadline.strftime("%H:%M"), len(orphans) - start)
-            return repaired, empty, failed, len(orphans) - start
-        with repo.deferred_embeddings(source):
-            r, e, f = rechunk_articles(repo, chunker, orphans[start:start + block], group_size=group_size)
-        repaired, empty, failed = repaired + r, empty + e, failed + f
-        logger.info("%s: %d/%d re-chunked (%d empty, %d failed)", source, start + len(orphans[start:start + block]),
-                    len(orphans), empty, failed)
-    return repaired, empty, failed, 0
-
-
 def apply_source(args, client=None, make_repo=None) -> int:
     """The write step for one source. Holds the run lock (a crawl, the newsletter and the extraction
     all wait or refuse meanwhile). Exit: 0 done, 1 failures, 2 refused, 3 stopped at the deadline."""
@@ -346,14 +232,14 @@ def _apply_locked(args, source, client, make_repo) -> int:
     # SYS-111: one deadline for the whole run. Resolved again after a rewrite that outlasted it,
     # "HH:MM" would mean tomorrow and the re-chunk would never stop.
     deadline = parse_until(args.until)
-    dirs = _faiss_dirs()
+    dirs = faiss_dirs()
     if not args.rechunk_only and too_close(deadline):
         logger.error("--until %s is less than %d minutes away; refusing before any backup or delete (SYS-111)",
                      args.until, MIN_RUN_MINUTES)
         return 2
     with client.get_session() as session:
         logger.info("database: %s", session.execute(text("SELECT current_database()")).scalar())
-        if _crawl_running(session):
+        if crawl_running(session):
             logger.error("a crawl_log row is 'started' in the last 4 h; refusing to rewrite FAISS under a running crawl")
             return 2
         rows = session.execute(text(
@@ -375,9 +261,7 @@ def _apply_locked(args, source, client, make_repo) -> int:
     repaired, empty, failed, left = rechunk(client, source, args.block, deadline, make_repo)
     summary.update(rechunked=repaired, empty=empty, failed=failed, left=left)
     if summary["mentions_deleted"]:
-        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-        import recount_entity_mentions
-        recount_entity_mentions.main([])     # SYS-20: the counters of entities that lost mentions
+        recount_entity_counts(client)        # SYS-20: the counters of entities that lost mentions
     logger.info("SUMMARY %s: %s", source, json.dumps(summary))
     _notify("Boilerplate repair %s: %d articles rewritten, %d re-chunked, %d failed, %d left%s" % (
         source, summary["rewritten"], repaired, failed, left, " (stopped at the deadline)" if left else ""))

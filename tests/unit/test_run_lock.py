@@ -258,8 +258,8 @@ def _live_foreign_pid():
 # the repository or the crawl service.
 FAISS_WRITER_MARKERS = ("_atomic_save_local", "ChunkFAISSDatasource", "DataFlowRepositoryImpl", "load_index",
                         "init_crawler", "process_event",
-                        # SYS-105/SRC-60: a repair that writes through the SYS-73 script's helpers
-                        "import repair_boilerplate_bodies")
+                        # SYS-105/SRC-60/DBT-67: a repair that writes through store_repair's FAISS steps
+                        "delete_vectors(", "rechunk(", "rechunk_articles(")
 # It takes the lock itself; its worker is the lock owner's child.
 LOCK_OWNER = "run_scheduled_crawl.py"
 

@@ -39,7 +39,6 @@ from urllib.parse import urlparse
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from dotenv import load_dotenv  # noqa: E402
 
@@ -48,6 +47,10 @@ load_dotenv(os.path.join(ROOT, ".env"))
 from sqlalchemy import text  # noqa: E402
 
 from newscrawler.infrastructure.network.clients.sqlalchemy_client import SQLAlchemyClient  # noqa: E402
+# DBT-67 (ADR-015): the shared repair steps, imported by name (redirect store_repair.BACKUP_DIR, not a copy).
+from newscrawler.tools.store_repair import (  # noqa: E402
+    backup, crawl_running, delete_vectors, faiss_dirs, recount_entity_counts,
+)
 
 logging.basicConfig(format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -133,11 +136,10 @@ def apply(args, client=None) -> int:
 
 
 def _apply_locked(args, client) -> int:
-    import repair_boilerplate_bodies as sys73
     source = args.source.upper()
     with client.get_session() as session:
         logger.info("database: %s", session.execute(text("SELECT current_database()")).scalar())
-        if sys73._crawl_running(session):
+        if crawl_running(session):
             logger.error("a crawl_log row is 'started' in the last 4 h; refusing to rewrite FAISS under a running crawl")
             return 2
     rows, targets = load(client, source)
@@ -145,16 +147,15 @@ def _apply_locked(args, client) -> int:
     ids = [r.sitemap_id for r, _ in targets]
     summary = {"sitemaps": len(ids)}
     if ids:
-        dirs = sys73._faiss_dirs()
+        dirs = faiss_dirs()
         stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-        summary["backup"] = sys73.backup(client, source, [(sid, None) for sid in ids], dirs, stamp, tag="src60")
-        summary["vectors_deleted"] = sum(sys73.delete_vectors([(sid, None) for sid in ids], dirs).values())
+        summary["backup"] = backup(client, source, [(sid, None) for sid in ids], dirs, stamp, tag="src60")
+        summary["vectors_deleted"] = sum(delete_vectors([(sid, None) for sid in ids], dirs).values())
         with client.get_session() as session:
             m, c, a, s = settle_rows(session, ids)
         summary.update(mentions_deleted=m, chunk_rows_deleted=c, articles_deleted=a, sitemaps_settled=s)
         if m:
-            import recount_entity_mentions
-            recount_entity_mentions.main([])     # SYS-20: the counters of entities that lost mentions
+            recount_entity_counts(client)        # SYS-20: the counters of entities that lost mentions
     logger.info("SUMMARY %s: %s", source, json.dumps(summary))
     return 0
 
