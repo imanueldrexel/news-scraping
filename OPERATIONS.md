@@ -172,6 +172,12 @@ Production Postgres is a Docker container on port **5431**, database `newsaggreg
 
 **Backup.** `scripts/backup_db.py` runs `pg_dump -Fc` *inside* the container, so client and server versions always match and the host needs no Postgres install. It writes `backups/pg_dump/newsaggregator_<UTC stamp>.dump` (gitignored) and verifies it with `pg_restore --list`, which must show a TABLE DATA entry for sitemaps, articles, chunks, entities, entity_mentions and crawl_log. Only then does it prune to the newest `DB_BACKUP_KEEP` (default 14). A dump that fails verification is deleted, prunes nothing, sends a Telegram alert and exits 1. It finds the container as the one running container publishing `POSTGRES_DB_PORT`; set `DB_CONTAINER` to override. Registered daily at 05:00 as **"NewsAggregator DB Backup"**, with the same battery/wake settings as OPS-01 (command in the script's docstring). The 05:30 health check alerts when the newest dump is missing or older than `DB_BACKUP_MAX_AGE_HOURS` (default 48), because a backup job cannot report that it stopped firing. `venv\Scripts\python.exe scripts\backup_db.py --check` gives the same answer by hand. A dump is ~60 MB (2026-09-25: 152,928 sitemaps, 11,847 articles, 99,221 chunks). The FAISS indexes (`NEWS_L1/`, `NEWS_L2/`) are **not** in the dump. They can be rebuilt from `chunks` (`scripts/reset_faiss_index.py`) but are slow to re-embed, so copy them alongside a dump before any risky operation.
 
+**Shared memory (OPS-49).** The service sets `shm_size: 1gb`. Postgres puts parallel-query memory in `/dev/shm`, and Docker's default is 64 MB. When that runs out, a query fails with `could not resize shared memory segment ... No space left on device`. psycopg2 reports it as `DiskFull`, but the disk is not full. On 2026-10-12 the weekly filter-drift audit failed this way. Fixed the same morning, owner-approved:
+- `backup_db.py` dump first;
+- `docker compose -f docker/docker-compose.yaml up -d` recreated the container (~40 s), on the same named volume;
+- row counts identical before and after.
+Check it with `docker inspect newsaggregator-postgres --format '{{.HostConfig.ShmSize}}'` (1073741824).
+
 **Restore check** (safe, does not touch `newsaggregator` or the integration DB `newsaggregator_test`):
 
 ```bash

@@ -261,3 +261,12 @@
 ## Ops 2026-10-12 08:30: SYS-139 quick relief
 - The 07:53 Telegram showed VIVA FAILED (the second kill in a row), 4,198 vectorless chunk rows (528 articles) and STORE DIVERGENT 169. The 169 are VIVA's rejected sitemaps whose vector cleanup was lost with the kills. All one cause: SYS-139 #320.
 - **Owner approved:** `.env` `SCHEDULE_SOURCE_TIMEOUTS=MEDIAINDONESIA=1500,KUMPARAN=1800,VIVA=1800`. The first run on it is 2026-10-12 19:00. The code fix (flush before the kill) is still open.
+
+## Ops 2026-10-12 08:05: OPS-49 fixed (Postgres shared memory)
+- The 05:30 filter-drift audit failed with "DiskFull: could not resize shared memory segment". That is Docker's default 64 MB `/dev/shm`, not the disk (20% used).
+- **Owner approved the fix:**
+  - backup `newsaggregator_20261012T010159Z.dump`;
+  - `shm_size: 1gb` in `docker/docker-compose.yaml`;
+  - container recreated (~40 s), counts identical.
+- The audit was re-run: saved 0.95, rejected 0.78, no alerts.
+- OPS-49 #321 is `status: ready-for-qa`.

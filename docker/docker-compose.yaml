@@ -21,6 +21,11 @@ services:
     image: postgres:12.2-alpine
     container_name: newsaggregator-postgres
     restart: unless-stopped
+    # OPS-49 (#321): Postgres puts parallel-query memory in /dev/shm, and Docker's
+    # default is 64 MB. On 2026-10-12 the weekly filter-drift audit's join failed
+    # with "could not resize shared memory segment ... No space left on device"
+    # (reported as DiskFull; the disk was 20% used).
+    shm_size: 1gb
     ports:
       - "5431:5432"
     environment:
