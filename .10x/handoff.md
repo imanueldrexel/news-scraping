@@ -32,7 +32,7 @@
 6. **DBT-65 #318 (P3).** A control character in the OPS-47 trap line; add a hygiene test.
 
 ### Owner
-- **2026-10-12 update:** topped up to $22.50 and the key works. Backlog clears by 10-15 at the $8 cap. **By 10-15, top up again (~$36/month) or set `KNOWLEDGE_DAILY_COST_LIMIT_USD=1.5`** (see status.md, "Ops 2026-10-12").
+- **2026-10-12 update:** topped up to $22.50 and the key works. Backlog clears by 10-15 at the $8 cap. **On 10-15 set `KNOWLEDGE_DAILY_COST_LIMIT_USD=1.5`** (owner: every article, ~$36/month, budget ~$100: `decisions/cto/llm-budget.md`). **A top-up is due by ~10-16** (see status.md, "Ops 2026-10-12").
 - **SumoPod (before the top-up):**
   - the account budget ($22.50) ran out on 10-10 at 01:04 and the key has been blocked since 10-11;
   - the 12:00 newsletter (no edition on 10-11), the 21:00 extraction and the search answers are degraded until it is topped up or unblocked;

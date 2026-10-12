@@ -255,4 +255,5 @@
   - `KNOWLEDGE_DAILY_COST_LIMIT_USD` stays at 8;
   - nights 10-12/13/14 extract ~20k each (`KNOWLEDGE_MAX_PER_RUN`), ~$20.5 in total, which clears the backlog (50,462 + new);
   - about $2 is left on 10-15. The steady cost after that is ~$1.20/day (~$36/month).
-- **Action due 10-15:** either the owner tops up again, or set `KNOWLEDGE_DAILY_COST_LIMIT_USD=1.5` in `.env` before the 10-15 21:00 run. Otherwise extraction spends the last of the balance and the 10-16 12:00 newsletter fails.
+- **Owner decision (`decisions/cto/llm-budget.md`):** the project's LLM budget is ~$100, every article is extracted, and monetization is deferred.
+- **Action due 10-15:** set `KNOWLEDGE_DAILY_COST_LIMIT_USD=1.5` in `.env` before the 21:00 run. The owner tops up "later": ~$2 is left on 10-15, so **a top-up is due by ~10-16** or the 10-17 newsletter fails.
