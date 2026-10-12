@@ -343,8 +343,11 @@ def apply_source(args, client=None, make_repo=None) -> int:
 
 
 def _apply_locked(args, source, client, make_repo) -> int:
+    # SYS-111: one deadline for the whole run. Resolved again after a rewrite that outlasted it,
+    # "HH:MM" would mean tomorrow and the re-chunk would never stop.
+    deadline = parse_until(args.until)
     dirs = _faiss_dirs()
-    if not args.rechunk_only and too_close(parse_until(args.until)):
+    if not args.rechunk_only and too_close(deadline):
         logger.error("--until %s is less than %d minutes away; refusing before any backup or delete (SYS-111)",
                      args.until, MIN_RUN_MINUTES)
         return 2
@@ -369,7 +372,7 @@ def _apply_locked(args, source, client, make_repo) -> int:
         summary.update(mentions_deleted=m, reset_for_extraction=reset, chunk_rows_deleted=c, rewritten=n)
         logger.info("rewrote %d article(s); deleted %d chunk row(s) and %d mention(s); %d reset for extraction",
                     n, c, m, reset)
-    repaired, empty, failed, left = rechunk(client, source, args.block, parse_until(args.until), make_repo)
+    repaired, empty, failed, left = rechunk(client, source, args.block, deadline, make_repo)
     summary.update(rechunked=repaired, empty=empty, failed=failed, left=left)
     if summary["mentions_deleted"]:
         sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))

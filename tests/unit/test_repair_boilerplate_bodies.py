@@ -4,6 +4,7 @@ tests/integration/test_repair_boilerplate_bodies_live.py."""
 import importlib.util
 import os
 from datetime import datetime
+from types import SimpleNamespace
 
 import pytest
 
@@ -82,3 +83,75 @@ class TestTooClose:
     def test_the_evening_run_that_lost_its_l2_may_start(self, repair):
         now = datetime(2026, 10, 8, 20, 4)
         assert not repair.too_close(repair.parse_until("06:15", now=now), now=now)
+
+
+class _Session:
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def execute(self, *a, **k):
+        return SimpleNamespace(scalar=lambda: 0, fetchall=lambda: [])
+
+
+class TestOneDeadlinePerRun:
+    """SYS-111 (#287, QA send-back): `--until` is resolved once, when the run starts. The re-chunk
+    gets that deadline however long the backup, deletes and rewrite took; resolved again after a
+    rewrite that ran past it, "06:20" would mean tomorrow and the re-chunk would hold the run lock
+    through the 07:00 crawl."""
+
+    def _run(self, repair, monkeypatch, until, rechunk_only=False):
+        clock = {"now": datetime(2026, 10, 12, 6, 0)}
+
+        class FakeDatetime(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return datetime.now(tz) if tz is not None else clock["now"]
+
+        def rewrite_that_takes_25_minutes(session, targets):
+            clock["now"] = datetime(2026, 10, 12, 6, 25)
+            return 0, 0, 0, len(targets)
+
+        seen = {}
+
+        def fake_rechunk(client, source, block, deadline, make_repo=None, **kw):
+            seen["deadline"] = deadline
+            return 1, 0, 0, 0
+
+        monkeypatch.setattr(repair, "datetime", FakeDatetime)
+        monkeypatch.setattr(repair, "_faiss_dirs", lambda: ())
+        monkeypatch.setattr(repair, "_crawl_running", lambda session: 0)
+        monkeypatch.setattr(repair, "select_targets", lambda rows: [(1, "body")])
+        monkeypatch.setattr(repair, "backup", lambda *a, **k: "backup-path")
+        monkeypatch.setattr(repair, "delete_vectors", lambda *a, **k: {})
+        monkeypatch.setattr(repair, "rewrite_rows", rewrite_that_takes_25_minutes)
+        monkeypatch.setattr(repair, "rechunk", fake_rechunk)
+        monkeypatch.setattr(repair, "_notify", lambda message: None)
+        client = SimpleNamespace(get_session=_Session)
+        args = SimpleNamespace(rechunk_only=rechunk_only, until=until, block=1000)
+        code = repair._apply_locked(args, "X", client, None)
+        return code, seen
+
+    def test_the_rechunk_gets_the_deadline_the_run_started_with(self, repair, monkeypatch):
+        code, seen = self._run(repair, monkeypatch, "06:20")
+        assert code == 0
+        assert seen["deadline"] == datetime(2026, 10, 12, 6, 20)
+
+    def test_without_until_the_rechunk_has_no_deadline(self, repair, monkeypatch):
+        _, seen = self._run(repair, monkeypatch, None)
+        assert seen["deadline"] is None
+
+    @pytest.mark.parametrize("value", ["24:00", "6:60", "06:15:00", "0615"])
+    def test_a_malformed_until_fails_before_anything_runs(self, repair, monkeypatch, value):
+        """Resolved first, a bad value stops the run before the dirs, the backup or a delete --
+        under --rechunk-only too, which used to reach the re-chunk's own parse."""
+        touched = []
+        monkeypatch.setattr(repair, "_faiss_dirs", lambda: touched.append("dirs"))
+        monkeypatch.setattr(repair, "backup", lambda *a, **k: touched.append("backup"))
+        for rechunk_only in (False, True):
+            with pytest.raises(ValueError):
+                repair._apply_locked(SimpleNamespace(rechunk_only=rechunk_only, until=value, block=1),
+                                     "X", None, None)
+        assert touched == []

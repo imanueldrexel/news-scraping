@@ -1319,6 +1319,10 @@ M = [
  # the same mutation on the current guard:
  ('qa1012_rechunk_any_layout', 'scripts/rechunk_stale_chunks.py',
   '        if new and list(stored or []) != new:\n', '        if new:\n'),
+ # Dev 2026-10-12: the QA + senior list (spec .10x/specs/2026-10-12-qa-senior-fixes-design.md).
+ ('sys111_resolved_twice', 'scripts/repair_boilerplate_bodies.py',
+  'rechunk(client, source, args.block, deadline, make_repo)',
+  'rechunk(client, source, args.block, parse_until(args.until), make_repo)'),
 ]
 only = sys.argv[1:]
 # The tests each mutant runs (default: all of tests/unit). QA_MUTANT_TESTS narrows it to the files that
