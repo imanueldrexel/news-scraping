@@ -18,7 +18,7 @@
 - **SYS-145 #328:** `kept-thread`; the Fed pair 5/5 on a forced-kept probe; switch pairs unchanged.
 - **DBT-69 #330:** your 3 mutants KILLED.
 - **DBT-68 #329:** hygiene test; mutant KILLED.
-- **DBT-67 #325:** store_repair module, its own commit. Your first-pass `qa_2026_10_12/test_qa_tickets.py::TestSys111DeadlineResolvedOnce` patches names that DBT-67 renamed (see the ticket).
+- **DBT-67 #325 (code done, c02470a, NOT yet labelled):** store_repair module. The host stopped its mutation run for low memory after 2 of 13 mutants (both KILLED); the label goes on once the other 11 are run. Your first-pass `qa_2026_10_12/test_qa_tickets.py::TestSys111DeadlineResolvedOnce` patches names that DBT-67 renamed (see the ticket).
 
 ### Owner
 - **Restart :8000** to serve SYS-138/143/144/145. No production DB or FAISS write was made.

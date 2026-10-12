@@ -306,4 +306,4 @@ Design approved by the owner. Order:
 - [x] DBT-68 #329 duplicate class + hygiene test
 - [x] DBT-67 #325 store_repair module (ADR-015)
 - [x] Live re-measurement, EXPERIMENTS.md, ticket evidence
-- All 7 `status: ready-for-qa`. Commits 3c429a6 (bugs) and the DBT-67 commit. Mutants: 22 of 22 KILLED for the bug list (see the DBT-67 comment for its own run). Owner: restart :8000.
+- 6 are `status: ready-for-qa`; DBT-67 waits for 11 of its 13 mutants (run stopped by the host for low memory). The :8000 app was also stopped for memory; the owner restarts it. Commits 3c429a6 (bugs) and the DBT-67 commit. Mutants: 22 of 22 KILLED for the bug list (see the DBT-67 comment for its own run). Owner: restart :8000.
