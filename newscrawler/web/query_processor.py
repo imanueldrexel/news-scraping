@@ -4,7 +4,8 @@
 merged per article, given their headline / link / portal / date / topic from
 the database (SYS-92: FAISS metadata is neither the topic nor always the right
 date, SYS-91), filtered (SYS-100), scored on both signals (SYS-106), re-ranked,
-cut at the relevance floor. A follow-up is first rewritten into a standalone question by one
+cut at the relevance floor. A "this week" question prefers the last 7 days (a soft window,
+ADR-012). A follow-up is first rewritten into a standalone question by one
 model call, with a deterministic fallback (`followup`, ADR-010).
 
 `answer` writes the answer through the shared Summarizer (SYS-98) and returns a
@@ -13,6 +14,7 @@ daily quota, or the page's own daily cap), `failed` (this call failed; retry),
 `no_hits` (nothing relevant, so no call is made). Its usage is counted under
 `web:<model>` with tokens and dollars, apart from the extraction's budget.
 """
+import dataclasses
 import logging
 import time
 from dataclasses import dataclass, field
@@ -188,17 +190,41 @@ class QueryProcessor:
         logger.info(f"rag retrieve ms={int((time.monotonic() - start) * 1000)} semantic={counts['semantic']} "
                     f"fts={counts['fts']} articles={len(ranked)} kept={len(relevant)} "
                     f"keyword_only={sum(1 for h in relevant if h.get('origin') == KEYWORD)} "
-                    f"recent={counts['recent']} followup={bool(history)} rewrite={counts['rewrite']} "
+                    f"recent={counts['recent']} window={counts['window']} followup={bool(history)} "
+                    f"rewrite={counts['rewrite']} "
                     f"filters={filters.describe()}")
         return relevant
 
     def candidates(self, question: str, filters: Filters, today: date, history: Sequence[dict] = ()):
         """Every candidate article, scored on both signals and ranked, before the floor and the cut
-        (ADR-007). Returns (ranked hits, {"semantic", "fts", "recent", "rewrite"} for the log)."""
+        (ADR-007). Returns (ranked hits, {"semantic", "fts", "recent", "window", "rewrite"} for the log).
+
+        SYS-138 (ADR-012): a cue with a window ("pekan ini": 7 days) and no date filter of the
+        reader's is retrieved within the window first. When fewer than RAG_TOP_K of its articles
+        pass the floor, they come first and the unwindowed ranking fills the rest."""
         query = self.resolve(question, history)
-        text_ = query.text
         cue = keywords.recency_cue(query.cue_text)
         kq = self._keyword_query(*query.questions)
+        window = self._soft_window(cue, filters)
+        if window is None:
+            ranked, counts = self._ranked(query.text, kq, filters, today, cue)
+            counts["window"] = None
+        else:
+            ranked, counts = self._ranked(query.text, kq, window, today, cue)
+            inside = [h for h in ranked if passes_floor(h)]
+            counts["window"] = f"{window.days}d"
+            if len(inside) < RAG_TOP_K:
+                seen = {h.get("sitemap_id") for h in inside}
+                everything, counts_all = self._ranked(query.text, kq, filters, today, cue)
+                ranked = inside + [h for h in everything if h.get("sitemap_id") not in seen]
+                counts = dict(counts_all, window=f"{window.days}d+{len(inside)}")
+        counts.update(recent=f"{cue.days}d" if cue else None, rewrite=query.how)
+        return ranked, counts
+
+    def _ranked(self, text_: str, kq: Optional["keywords.KeywordQuery"], filters: Filters, today: date,
+                cue: Optional["keywords.RecencyCue"]):
+        """Both retrievers under `filters`, merged per article, filtered, scored on both signals and
+        ranked. Returns (ranked hits, {"semantic", "fts"})."""
         semantic_hits = substantial(self.faiss_ds.search_l2(text_, k=RAG_FILTERED_K if filters.active else SEMANTIC_K))
         fts_hits = (substantial(self._fts_search(kq, SEARCH_K, filters, today, cue is not None))
                     if kq is not None else [])
@@ -206,9 +232,15 @@ class QueryProcessor:
         if filters.active:
             merged = self._apply_filters(merged, filters, today)
         self._complete_scores(text_, kq, merged)
-        return self._re_rank(merged, today, cue), {"semantic": len(semantic_hits), "fts": len(fts_hits),
-                                                   "recent": f"{cue.days}d" if cue else None,
-                                                   "rewrite": query.how}
+        return self._re_rank(merged, today, cue), {"semantic": len(semantic_hits), "fts": len(fts_hits)}
+
+    @staticmethod
+    def _soft_window(cue: Optional["keywords.RecencyCue"], filters: Filters) -> Optional[Filters]:
+        """SYS-138 (ADR-012): the filters of the cue's window, or None. A reader's own date filter
+        (a range chip, a date) always wins over the cue."""
+        if cue is None or not cue.window or filters.days or filters.date_from or filters.date_to:
+            return None
+        return dataclasses.replace(filters, days=cue.window)
 
     def resolve(self, question: str, history: Sequence[dict] = ()) -> "followup.Retrieval":
         """What this turn is retrieved on (ADR-010): a question without a thread as it is; a follow-up

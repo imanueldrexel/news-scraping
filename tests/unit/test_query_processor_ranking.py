@@ -400,6 +400,69 @@ class TestFollowUp:
         assert "OJK" in qp.faiss_ds.search_l2.call_args.args[0]
 
 
+class TestWeekWindow:
+    """SYS-138 (#317, ADR-012): 'KPK minggu ini' from the search box got 5 cards of 18 Sep-30 Jul
+    while the week's 141 KPK articles were stored. A "this week" question prefers the last 7 days;
+    the rest of the corpus only fills what the week cannot."""
+
+    @staticmethod
+    def _dated(sid, days_old, semantic):
+        d = TODAY - timedelta(days=days_old)
+        return _hit(sid, semantic=semantic, posted_at=d.strftime("%Y%m%d"), posted_date=d)
+
+    def test_a_3_day_old_paragraph_outranks_a_20_day_old_closer_one(self):
+        """The ticket's unit test: semantic 0.70 three days old over 0.80 twenty days old."""
+        qp = _qp(semantic=[self._dated(1, 20, 0.80), self._dated(2, 3, 0.70)])
+        hits = qp.retrieve("Apa perkembangan kasus KPK minggu ini?", Filters(), TODAY)
+        assert [h["sitemap_id"] for h in hits] == [2, 1]
+
+    def test_the_week_beats_a_closer_paragraph_the_cue_weight_alone_cannot_lift(self):
+        """QA's arithmetic, the shape that failed: 4 days at 0.70 scores 0.42 + 0.086, 24 days at 0.85
+        scores 0.51 + 0.022. Without the window the old one leads; with it, the week's does."""
+        qp = _qp(semantic=[self._dated(1, 24, 0.85), self._dated(2, 4, 0.70)])
+        hits = qp.retrieve("Apa perkembangan kasus KPK minggu ini?", Filters(), TODAY)
+        assert [h["sitemap_id"] for h in hits] == [2, 1]
+
+    def test_a_full_week_is_the_whole_result(self):
+        week = [self._dated(i, i, 0.70) for i in range(1, 6)]
+        qp = _qp(semantic=week + [self._dated(9, 20, 0.95)])
+        hits = qp.retrieve("Bagaimana kinerja IHSG pekan ini?", Filters(), TODAY)
+        assert sorted(h["sitemap_id"] for h in hits) == [1, 2, 3, 4, 5]
+
+    def test_the_window_is_seven_days_inclusive(self):
+        week = [self._dated(i, 6, 0.70) for i in range(1, 6)]
+        qp = _qp(semantic=week + [self._dated(9, 7, 0.95)])
+        assert 9 not in [h["sitemap_id"] for h in qp.retrieve("IHSG pekan ini?", Filters(), TODAY)]
+
+    def test_a_readers_own_date_filter_wins(self):
+        qp = _qp(semantic=[self._dated(1, 24, 0.85), self._dated(2, 4, 0.70)])
+        hits = qp.retrieve("Apa perkembangan kasus KPK minggu ini?", Filters(days=30), TODAY)
+        assert [h["sitemap_id"] for h in hits] == [1, 2]
+
+    @pytest.mark.parametrize("question", ["Berapa harga emas Antam hari ini?", "Harga minyak terbaru?",
+                                          "Siapa Menteri Keuangan sekarang?", "Apa itu Danantara?"])
+    def test_only_the_week_cue_has_a_window(self, question):
+        """ADR-012 measured a window for 'sekarang' and a relevance gate: neither met SYS-112's
+        goal, and the gate cost other questions. Only "this week" gets one."""
+        qp = _qp(semantic=[self._dated(1, 20, 0.95), self._dated(2, 3, 0.60)])
+        _, counts = qp.candidates(question, Filters(), TODAY)
+        assert counts["window"] is None
+        assert qp.faiss_ds.search_l2.call_count == 1
+
+    def test_one_rewrite_one_keyword_query_and_the_log_names_the_window(self, caplog):
+        qp = _qp(semantic=[self._dated(1, 20, 0.80), self._dated(2, 3, 0.70)])
+        with caplog.at_level(logging.INFO, logger="newscrawler.web.query_processor"):
+            qp.retrieve("KPK minggu ini?", Filters(), TODAY)
+        qp._keyword_query.assert_called_once()
+        assert "window=7d+1 " in caplog.text and "recent=3d " in caplog.text
+
+    def test_the_window_keeps_the_readers_topic(self):
+        qp = _qp(semantic=[self._dated(1, 2, 0.80)])
+        qp.candidates("IHSG pekan ini?", Filters(topic="markets"), TODAY)
+        windowed = qp._fts_search.call_args_list[0].args[2]
+        assert windowed == Filters(topic="markets", days=7)
+
+
 class TestTheRewriterFromConfig:
     """ADR-010: left out, the rewriter is RAG_LLM_PROVIDER's with the rewrite's short timeout, no SDK
     retry and no wait on a rate limit."""

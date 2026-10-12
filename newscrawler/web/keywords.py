@@ -34,6 +34,7 @@ _TOKEN = re.compile(r"\w[\w.,-]*\w|\w", re.UNICODE)
 class RecencyCue(NamedTuple):
     days: int           # recency halves at this age
     weight: float       # its weight in the re-rank (the default recency weighs RAG_RECENCY_WEIGHT)
+    window: Optional[int] = None    # SYS-138 (ADR-012): prefer the articles of the last N days
 
 
 # SYS-107 (#277, ADR-007): how a question asks for recent news, and how much it means it. "Hari
@@ -41,10 +42,12 @@ class RecencyCue(NamedTuple):
 # for this week; "terbaru" for the latest there is, which may be weeks old (a BI rate decision
 # is monthly), so recency only breaks near-ties. Measured on the replay (EXPERIMENTS.md
 # 2026-10-08): one weight for all three put today's market outlooks above the BI decision.
+# SYS-138 (ADR-012): "this week" also gets a soft 7-day window. A weight cannot do it: an article
+# 4 days old gained 0.064 over one 24 days old, less than a small semantic gap.
 # Not a topic: QUESTION_WORDS keeps these words out of the keyword match.
 _RECENCY_CUES = (
     (re.compile(r"\b(?:hari\s+ini|sekarang|saat\s+ini|kini|barusan)\b", re.IGNORECASE), RecencyCue(1, 0.3)),
-    (re.compile(r"\b(?:pekan\s+ini|minggu\s+ini|sepekan\s+terakhir)\b", re.IGNORECASE), RecencyCue(3, 0.2)),
+    (re.compile(r"\b(?:pekan\s+ini|minggu\s+ini|sepekan\s+terakhir)\b", re.IGNORECASE), RecencyCue(3, 0.2, 7)),
     (re.compile(r"\b(?:terbaru|terkini)\b", re.IGNORECASE), RecencyCue(7, 0.1)),
 )
 

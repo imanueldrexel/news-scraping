@@ -1,32 +1,52 @@
-# ADR-012: "This week" questions prefer the last 7 days (a soft window); "now / today" freshness counts only for an article about the question
+# ADR-012: "This week" questions prefer the last 7 days (a soft window); a relevance gate for freshness was measured and rejected
 
-**Status:** Proposed 2026-10-12. The shape was owner-chosen; the numbers are filled in from the measurement, then this becomes Accepted.
+**Status:** Accepted 2026-10-12. The owner chose the shape (as CTO/PM); after the measurement the owner chose "week window only".
 **Date:** 2026-10-12
-**Feature:** qa-senior-fixes-2026-10-12 (SYS-138 #317, SYS-112 #289)
-**Supersedes:** ADR-007 decision 3's weights for the week cue and its recency gate. Its cue table and the keyword half's newest-first rule stay.
+**Feature:** qa-senior-fixes-2026-10-12 (SYS-138 #317; SYS-112 #289 measured, not fixed here)
+**Supersedes:** ADR-007 decision 3 for the week cue only. Its weights, its other cues and the keyword half's newest-first rule stay.
 
 ## Context
 - **SYS-138.** "pekan ini / minggu ini" from the search box (no date filter) gets 2-10-week-old articles. A weight of 0.2 with a 3-day horizon gives a 4-day-old article only 0.064 over a 24-day-old one, less than a small semantic gap. The week's articles exist (141 KPK, 359 IHSG).
-- **SYS-112.** After SYS-109's 80-word windows, "Siapa Menteri Keuangan sekarang?" leads with same-day Danantara stories that only mention the minister. They clear the 0.55 recency gate, get the 0.3 "sekarang" weight, and outrank the cabinet story (semantic 0.776 vs 0.645).
-- The two pull in opposite directions, so they are tuned on one measurement.
+- **SYS-112.** "Siapa Menteri Keuangan sekarang?" and "Apa keputusan BI terbaru soal suku bunga?" lead with off-topic cards. The ticket's working theory was that same-day passing mentions win through the "sekarang" weight.
 
-## Decision (shape)
-1. **Soft window for the week cue.** A "pekan ini / minggu ini / sepekan terakhir" question without a date filter:
-   - is retrieved first with a 7-day window (`from_day = today - 6`, the same path as the `rentang` filter: FTS SQL filter, FAISS over-fetch then filter);
-   - when that yields at least `RAG_TOP_K` hits over the floor, those are the result;
-   - otherwise the window's hits come first and the unwindowed ranking fills the rest.
-   - A reader's own date filter overrides the window.
-2. **Relevance gate for freshness.** Under any cue, recency counts only for an article whose semantic score is at least the floor **and** within `RECENCY_GATE_DELTA` of the best candidate's semantic score. "About the question", relative to what the corpus offers, not a fixed cosine.
-3. **The numbers** (the window's days, `RECENCY_GATE_DELTA`, any weight change) are chosen offline on the replay set plus QA's SYS-138 questions asked unfiltered, then recorded here.
+## Decision
+1. **Soft window for the week cue.** `keywords.RecencyCue` gains `window`, and "pekan ini / minggu ini / sepekan terakhir" gets 7 days. A question with that cue and no date filter of the reader's is retrieved under `Filters(days=7)`, the same path as the reader's own range chip.
+   - When at least `RAG_TOP_K` of the window's articles pass the floor, those are the result.
+   - Otherwise they come first, and the unwindowed ranking fills the rest.
+   - The rewrite and the keyword query run once; only the two retrievals repeat.
+   - A reader's own date filter wins. The log reads `window=7d`, or `window=7d+N` when it was filled.
+2. **No relevance gate, and no window for "sekarang / hari ini / terbaru".**
+
+## Measurement
+Offline, from one candidate dump of 15 questions: `scripts/experiments/probe_recency_tuning.py`, production 2026-10-12 ~12:00 WIB, EXPERIMENTS.md.
+
+| Setting | Week questions ≥ 3/5 this week | "now" top-3 on-topic (sum) | Questions losing on-topic cards |
+|---|---|---|---|
+| current | 3/4 (KPK 0/5) | 10 | — |
+| **week window 7d** | **4/4 (KPK 5/5, IHSG 5/5)** | 10 | **0** |
+| gate δ 0.10 | 2/4 | 10 | 2 (banjir, Antam) |
+| gate δ 0.15 | 3/4 | 11 | 1 (banjir) |
+| week 7d + now 7d + gate 0.10 | 4/4 | 11 (Menkeu 0→2/3, Iran 3→2/3) | 0 |
+| week 7d + now 3d | 4/4 | 10 | 1 (Menkeu 2→0) |
+
+Live, read-only on the replay after the change:
+- KPK "minggu ini": cards 8-11 Oct (were 18 Sep-30 Jul);
+- IHSG: 10-12 Oct;
+- every other replay question unchanged (Danantara, gibberish 0 cards, Antam today, BI-Rate, Iran).
+
+**SYS-112 is not a recency problem:**
+- "Apa keputusan **BI** terbaru…" is 0/3 under every setting. Its decision stories score semantic 0.43-0.53, below the 0.55 floor, because MiniLM does not read "BI" as Bank Indonesia; the long-form question gets 3/3.
+- Menkeu's top paragraph by cosine (0.81) is a 26-day-old Hanura piece. Only a "now" window plus a gate lifts it to 2/3, and that costs Iran a top-3 card.
 
 ## Alternatives Considered
 | Alternative | Why not |
 |---|---|
-| Larger week weight only | QA's arithmetic: to lift a 4-day-old article over a 0.1-closer 24-day-old one the weight must be ≥ 0.5, which puts any same-week mention above the BI decision (ADR-007's measured failure) |
+| Larger week weight only | To lift a 4-day-old article over a 24-day-old one 0.15 closer, the weight must be ≥ 0.5. That puts any same-week mention above the BI decision (ADR-007's measured failure). |
 | Hard 7-day filter | A quiet topic would return nothing for "minggu ini" |
-| Gate on keyword coverage | The Danantara stories had coverage 1.0: coverage can't tell a mention from the subject |
+| Relative relevance gate (δ 0.10-0.20) | Measured above: regressions (banjir, Antam, Iran) and no Done-when met |
+| Window for "sekarang" too | Tuned on one question (Menkeu); changes what "sekarang" means for every question |
 
 ## Consequences
-- **Positive:** "this week" means this week when the week has answers; a passing mention can't ride the freshness bonus.
-- **Negative:** a second retrieval pass for week-cue questions whose window is thin (+~100-600 ms).
-- **Risk:** the delta is a corpus-relative judgment, tuned on ~20 questions. The probe's questions are the regression set.
+- **Positive:** "this week" means this week when the week has answers. Nothing else changes.
+- **Negative:** a thin week runs two retrievals (+~100-600 ms).
+- **Open:** SYS-112's two real causes, abbreviations and old high-cosine passing mentions, are returned to QA/owner with this evidence.
