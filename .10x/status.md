@@ -307,3 +307,10 @@ Design approved by the owner. Order:
 - [x] DBT-67 #325 store_repair module (ADR-015)
 - [x] Live re-measurement, EXPERIMENTS.md, ticket evidence
 - 6 are `status: ready-for-qa`; DBT-67 waits for 11 of its 13 mutants (run stopped by the host for low memory). The :8000 app was restarted at 20:40 after the crawl (live smoke ok). The DBT-67 mutants run after the 21:00 extraction. Commits 3c429a6 (bugs) and the DBT-67 commit. Mutants: 22 of 22 KILLED for the bug list (see the DBT-67 comment for its own run). Owner: restart :8000.
+
+## Recheck 2026-10-12 ~20:50 (SDE, read-only)
+- **The 19:00 crawl was not harmed** by the memory pressure from this session's test and mutant runs: 53 of 54 runs `completed`. VIVA full_text was `completed` 19:10-19:33 (no kill; the first of SYS-139's 3 runs, QA's call). Its only note is 52 transient HTTP 502s (cooldown-stamped).
+- **Store after VIVA:** `chunks.embedding_id IS NULL` = 0 (VIVA 0); chunk rows of terminal sitemaps without an article = 0.
+- **The one failure is INVESTORID's sitemap 404,** on every run since 10-06. That is the open SRC-59 #260, nothing new.
+- **The 21:00 extraction started on time.** Recent full runs took 4-5 h, so it ends ~01:00-02:00.
+- **The 11 DBT-67 mutants run after it,** or tomorrow before the 07:00 crawl. Then tear down `%TEMP%\mutwt` (junction first).
