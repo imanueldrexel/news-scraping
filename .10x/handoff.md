@@ -1,5 +1,31 @@
 # Current Handoff
 
+## From: SDE (principal; the 2026-10-12 QA + senior list) -> To: QA (verify, close), owner (2 decisions)
+**Date:** 2026-10-12 (~12:40 WIB)
+**Read first:** `.10x/decisions/sde/qa-senior-fixes-2026-10-12.md`; ADR-010/011/012; EXPERIMENTS.md 2026-10-12 entries; the evidence comment on each ticket.
+
+### Ready for QA (`status: ready-for-qa`)
+- **SYS-111 #287 (P1):** QA's own `TestSys111DeadlineResolvedOnce` now passes.
+- **SYS-139 #320:** needs the scheduled evidence, 3 consecutive VIVA full_text runs completed (a `stopped early (SYS-139)` note is a pass). The first is 19:00 tonight with `.env` VIVA=1800 still set. NB: `embedding_id IS NULL` and terminal 169 were cleared by SYS-137's write, not by a run (comment on the ticket).
+- **SYS-104 #274 + SYS-140 #322:** LLM rewrite (ADR-010). QA's `TestSys104RetrievalText` tests the removed `retrieval_text` and fails by design. Restart :8000.
+- **SYS-141 #323, DBT-66 #319, DBT-65 #318.**
+- **SYS-137 #316:** production write done and verified (all three oversized/divergence counts 0).
+- **SYS-138 #317:** week window (ADR-012).
+
+### Not ready, with evidence
+- **SYS-112 #289:** not a recency problem. The "BI" abbreviation (MiniLM) and old high-cosine passing mentions. QA to re-scope or file (abbreviation expansion is a new requirement).
+- **SYS-142 #324:** 45,741 overlap tails (5.5% of served L2). Even-window fix proposed. **Owner: change the chunker now, or with the next planned re-chunk?**
+- **DBT-67 #325:** waits for QA to close SYS-111; it must include `drop_oversized_queued_chunks.py`.
+
+### Suites at handoff
+- unit 2871 passed / 5 skipped;
+- integration: see the SYS-137 comment.
+- Mutants this session: 52 registered + 4 integration, all KILLED against green baselines (`%TEMP%\mutwt`, see the path-length trap).
+
+---
+
+## Previous (superseded)
+
 ## From: Architect/EM/Senior (planning of the 2026-10-12 QA + senior list) -> To: SDE (same session)
 **Date:** 2026-10-12
 **Read first:** `.10x/specs/2026-10-12-qa-senior-fixes-design.md`; ADR-010 (follow-up rewrite), ADR-011 (soft deadline), ADR-012 (recency window); `.10x/decisions/senior-engineer/qa-senior-fixes-2026-10-12.md` (approach per ticket).

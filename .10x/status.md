@@ -1,7 +1,7 @@
 # Project Status
 
 ## Project: NewsAggregator
-**Current Phase:** Planning complete (dev): the 2026-10-12 QA + senior-engineer list; spec `specs/2026-10-12-qa-senior-fixes-design.md`, ADR-010/011/012.
+**Current Phase:** Implementation complete (dev), handed to QA: the 2026-10-12 QA + senior-engineer list; spec `specs/2026-10-12-qa-senior-fixes-design.md`, ADR-010/011/012.
 **Last Updated:** 2026-10-12 by dev (principal)
 **Health:** On Track
 
@@ -279,8 +279,8 @@ Owner decisions: SYS-139 soft deadline only (ADR-011); SYS-104/140 LLM rewrite o
 - [x] SYS-111 #287 deadline resolved once (2ffdf28, ready-for-qa)
 - [x] SYS-139 #320 soft deadline (84781b2, ready-for-qa; needs 3 scheduled VIVA runs)
 - [x] SYS-104 #274 + SYS-140 #322 follow-up rewrite (f842ae7, ready-for-qa; restart :8000)
-- [ ] SYS-141 #323, DBT-66 #319, DBT-65 #318
-- [ ] SYS-137 #316 guard + store check + prod write (night window)
-- [ ] SYS-138 #317 + SYS-112 #289 recency (measure, then ADR-012 numbers)
-- [ ] SYS-142 #324 measurement only
-- [ ] DBT-67 #325 blocked on QA closing SYS-111
+- [x] SYS-141 #323 (e12e8e9), DBT-66 #319 + DBT-65 #318 (4392b9f): ready-for-qa
+- [x] SYS-137 #316 store check + drop script + prod write DONE 12:15-12:24 WIB (8b224ec, 7c1fdef): ready-for-qa
+- [x] SYS-138 #317 week window (62296a2): ready-for-qa. SYS-112 #289 measured, not recency: back to QA/owner
+- [x] SYS-142 #324 measured (5.5% tails); fix timing = owner decision
+- [ ] DBT-67 #325 blocked on QA closing SYS-111 (include drop_oversized_queued_chunks.py)
