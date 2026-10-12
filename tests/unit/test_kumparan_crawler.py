@@ -113,6 +113,15 @@ class TestReaderPostsAreNotNews:
         assert KumparanCrawler().out_of_scope_reason(link) is None
 
     @pytest.mark.parametrize("link", [
+        "https://kumparan.com/KumparanNews/komjak-minta-ruu-perampasan-aset-28KSwanHaCI",
+        "https://kumparan.com/kumparanBISNIS/x-1",
+        "https://kumparan.com/Pandangan-Jogja/x-2",
+    ])
+    def test_a_capitalised_newsroom_account_is_kept(self, link):
+        """DBT-66 (#319): an account is matched case-insensitively; a capitalised desk is the newsroom."""
+        assert KumparanCrawler().out_of_scope_reason(link) is None
+
+    @pytest.mark.parametrize("link", [
         "https://kumparan.com/tyasafira031/menjaga-pertumbuhan-ekonomi-indonesia-28K?page=all",
         "https://kumparan.com/halizasalda24/kredit-umkm-terus-didorong-28K",
         "https://kumparan.com/user-13082024092310/reforma-agraria-28K",

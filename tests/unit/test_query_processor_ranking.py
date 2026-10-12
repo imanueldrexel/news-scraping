@@ -154,6 +154,15 @@ class TestShortParagraphs:
                  fts=[_hit(2, keyword=1.0, text_content=" ".join(["kata"] * (n - 1)))])
         assert [h["sitemap_id"] for h in qp.retrieve("q", Filters(), TODAY)] == [1]
 
+    def test_the_minimum_is_fifteen_words(self):
+        """DBT-66 (#319): SYS-105 chose 15 on evidence ("15, not 8 ... 10-14-word DETIK sign-offs were
+        hubs too"). A 12-word sign-off is not a source; a 15-word paragraph is."""
+        sign_off = "Baca berita terbaru lainnya di kanal ekonomi kami hari ini (ega/ega) --"
+        assert len(sign_off.split()) == 12
+        fifteen = " ".join(["kata"] * 15)
+        qp = _qp(semantic=[_hit(1, semantic=0.9, text_content=fifteen), _hit(2, semantic=0.95, text_content=sign_off)])
+        assert [h["sitemap_id"] for h in qp.retrieve("q", Filters(), TODAY)] == [1]
+
 
 class TestBothSignalsScored:
     """SYS-106 (#276): a missing score used to count as 0, so a keyword-only hit scored at most

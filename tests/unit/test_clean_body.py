@@ -347,6 +347,20 @@ class TestKumparanReadingTimeHeader:
         body = ["Judul Berita", "Berita Bisnis", PROSE_1, "·waktu baca 2 menit", "Paragraf kedua berita ini."]
         assert clean_body_paragraphs(body) == [PROSE_1, "Paragraf kedua berita ini."]
 
+    def test_a_line_longer_than_a_header_stays(self):
+        """DBT-66 (#319): a header line has at most 25 words. A 26-word line without a full stop
+        above the reading-time line is prose (a lead with no stop), and stays; a 25-word one goes."""
+        lead_26 = " ".join(["kata"] * 26)
+        line_25 = " ".join(["kata"] * 25)
+        assert clean_body_paragraphs(["Judul", lead_26, "·waktu baca 2 menit", PROSE_1]) == [lead_26, PROSE_1]
+        assert clean_body_paragraphs(["Judul", line_25, "·waktu baca 2 menit", PROSE_1]) == [PROSE_1]
+
+    @pytest.mark.parametrize("closing", ['"', "\u201d", "\u2019", ")"])
+    def test_a_quote_closed_lead_is_prose_and_stays(self, closing):
+        """DBT-66: a lead that ends '...kata dia."' ends in a full stop inside its closing quote."""
+        lead = "Ia berkata, \u201cKredit UMKM terus kami dorong tahun ini." + closing
+        assert clean_body_paragraphs(["Judul", lead, "·waktu baca 2 menit", PROSE_1]) == [lead, PROSE_1]
+
     def test_without_a_reading_time_line_nothing_is_cut(self):
         body = ["Judul Berita", "kumparanNEWS", PROSE_1]
         assert clean_body_paragraphs(body) == body

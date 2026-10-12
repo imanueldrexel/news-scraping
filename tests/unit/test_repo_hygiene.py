@@ -33,3 +33,17 @@ def test_no_bare_carriage_return_in_tracked_markdown():
         if hits:
             offenders[os.path.relpath(path, REPO)] = hits
     assert offenders == {}
+
+
+def test_no_control_characters_in_tracked_markdown():
+    r"""DBT-65 (#318): EXPERIMENTS.md's OPS-47 trap line read `rmdir <wt>?env`: the `\v` of
+    `<wt>\venv` was written through a string that made it a vertical tab (0x0B). The one instruction
+    for the incident that deleted the venv named the wrong directory. Tab, LF and CR are text;
+    no other C0 control character belongs in a document."""
+    offenders = {}
+    for path in _tracked("*.md"):
+        data = open(path, "rb").read()
+        hits = [(m.start(), m.group(0)) for m in re.finditer(rb"[\x00-\x08\x0b\x0c\x0e-\x1f]", data)]
+        if hits:
+            offenders[os.path.relpath(path, REPO)] = hits
+    assert offenders == {}
