@@ -24,7 +24,7 @@
 - [rag-search-redesign](rag-search-redesign.md) — tracker #272: all 11 built, ready-for-qa; 42 mutants; SYS-103 found
 - [rag-keyword-search](rag-keyword-search.md) — SYS-103: IDF-weighted keyword match built (ADR-006), ready-for-qa; 25 mutants
 - [rag-retrieval-quality](rag-retrieval-quality.md) — QA's 2026-10-07 findings: SYS-104..108, SRC-60/61, DBT-61/62, OPS-46 ready-for-qa; SYS-110/DBT-63 found+fixed, SYS-109 filed; 3 owner-approved prod repairs 2026-10-08 (ADR-007)
-- Git Bash `date` prints UTC; local (WIB) = +7. Read the time from a log stamp or `date -u` + 7 before planning around the 07:00/12:00/19:00/21:00 jobs.
+- Read the clock with PowerShell `Get-Date` (local, +07:00) or `date -u`. On 2026-10-12 Git Bash's plain `date` printed LOCAL time, and reading it as UTC put the session 7 h late. Plan around the 07:00/12:00/19:00/21:00 jobs from `Get-Date`.
 - A mutation worktree made before DBT-63 checks fixtures out with CRLF: its unmutated baseline fails `test_repo_hygiene` (`1 failed, 1775 passed`), so a full-suite "kill" with that count is void. Run the baseline first.
 - [chunks-fit-encoder-window](chunks-fit-encoder-window.md) — SYS-109: L2 windows of ≤ 80 words (ADR-008), L2-only corpus re-chunk, DBT-64 indexes; production re-chunk done 2026-10-09 00:30; SYS-109/DBT-64/SYS-111/OPS-47 ready-for-qa, SYS-112 open
 - [ops-49-postgres-shm](ops-49-postgres-shm.md) — 2026-10-12: Postgres container shm_size 1gb (filter-drift audit DiskFull = 64 MB /dev/shm); recreated, counts identical, audit re-run
