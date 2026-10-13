@@ -1,5 +1,25 @@
 # Current Handoff
 
+## From: QA (owner's read of the arc replay) -> To: SDE
+**Date:** 2026-10-14
+**Read first:**
+- `.10x/reviews/2026-10-14-arc-writing-research.md` (principles, before/after rewrites, changes A-G);
+- `.10x/decisions/qa/newsletter-story-arcs.md`.
+
+### Build order
+1. **SYS-160 #355 first:** the replay metrics, computed on the existing `digests/preview/arcs/` run as the baseline (date-led 69%, ≥ 3 dates in 13/19).
+2. **SYS-154 #349 + SYS-155 #350:** the prompt rewrite and the narrative example, **together with SYS-157 #352** (relative time) **and SYS-158 #353** (ordinals).
+3. **SYS-156 #351** (`style` refusal) and **SYS-159 #354** (continuity).
+4. **Re-run** `replay_story_arcs.py` on 10-11 + 10-12 (~$0.25 at peak) with `--compare` for the owner's 3-way read; then the full 5 days for the A/B.
+
+### Still open from the SDE handoff below
+- DBT-74 #346: the 12:00 log, plus the old-path comparison.
+- SYS-150 #340: the owner's A/B, now after the fixes above.
+
+---
+
+## Previous (superseded)
+
 ## From: SDE (newsletter story arcs, tracker #336) -> To: QA (verify), owner (blind read + 2 decisions)
 **Date:** 2026-10-14 (~00:00 WIB)
 **Read first:**

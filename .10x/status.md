@@ -389,3 +389,9 @@ Design approved by the owner. Order:
   - SYS-148 ready-for-qa.
   - The owner's blind read + hand-check are next (handoff.md).
   - Mutant worktree torn down; venv intact.
+
+## QA 2026-10-14: owner's read of the arc replay -- arcs read as a chronicle
+- Measured on the 5 replayed days: 69% of latar sentences date-led; 13/19 latar with ≥ 3 dates.
+- Root cause: `story_arc.PROMPT` ("setiap fakta bertanggal", chronicle-style example). Research: `reviews/2026-10-14-arc-writing-research.md`.
+- Filed: SYS-154 #349 (bug P2), SYS-155..160 #350..#355. SYS-157/158 land with SYS-154 (the trust bar).
+- SYS-150's ship gate now waits on them; `NEWSLETTER_ARCS` stays 0.
