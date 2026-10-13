@@ -2590,3 +2590,22 @@ SINDONEWS   old 12 new 12 | lost [] | gained []   links identical: True
   - Older replay files (before the SYS-82 v5 capture) have no raw `answer` on refusals, so they cannot be replayed this way.
   - Keep `Capture` writing the raw answers (DBT-75 moves it into `Edition.trace`).
 - **Links:** DBT-73 #345, commits 130c1e3, f929ded
+
+### 2026-10-13 — SYS-147/DBT-74: the thread finder on 2026-10-12's leads, through the newsletter's own composition root
+- **Question / hypothesis:**
+  - Does `thread_finder.find_thread` (window before the date, floor 0.70, one item per day, ≤ 12 days, earliest kept) return the back-story the probe found?
+  - What does `build_newsletter_service()` cost against `init_crawler()`?
+- **Method:** `scripts/experiments/probe_newsletter_setup.py --path new --date 2026-10-12 --out-dir digests/preview/dbt74 --arcs digests/2026-10-12-ringkas.md`. Read-only: no summarizer and no LLM call; `save_digest` is stubbed; NEWS_L1 is loaded through `load_index` and never saved. The centroid is the lead article's L1 vector.
+- **Result:**
+  - **Cost:** build 11.5 s; RSS 1.21 GB after the build, 1.67 GB peak; headline-only digest 78.7 s. `--path old` was **not run tonight**: 10.2 GB of 31.4 GB was free with the 21:00 extraction running, and the old path loads NEWS_L2 (~7.6 GB) + e5-large (2.2 GB). Its build in the 2026-10-13 12:00 log took ~17 s (12:00:10.7 → 12:00:27.5).
+  - **Karhutla:** 12 days. Includes 09-23 "Prabowo Dapat Laporan 209 Ha Lahan Masih Terbakar", 09-24 "Prabowo Pimpin Ratas Pencegahan Karhutla" (0.889, 28 that day), 09-25 the experts and 09-28 the peat experts. It also includes unrelated Prabowo items (09-12 Anindya Bakrie speech, 09-15 Khofifah, 10-02 Wantimpres).
+  - **Houthi:** 9 days. Includes 09-20 "Riyadh Diserang Houthi", 10-06 Jazan/Najran, and 10-07..10-11 the Riyadh attacks.
+  - **Emas / IHSG:** 12 days each of the daily series.
+  - **Lobster:** 1 loose item (09-26 a KKP video on lobster farming).
+  - **Daya beli:** 12 loose items (transport, rupiah, World Bank).
+  - **Tests:** unit 3,025; integration `test_timeline_rows_live.py` 2/2; mutants 13/13 killed (`sys147_*`, `dbt74_*`).
+- **Conclusion / do not repeat:**
+  - The finder finds the threads, and also the noise the probe predicted. Membership is the arc writer's (SYS-148): its `alur` check must drop the unrelated items. Do not tighten the floor to remove them (it cuts Houthi's 09-20).
+  - "Always keep the earliest day" can keep a weak early item (karhutla 09-12, 0.724). The arc writer's subject check handles it, and SYS-150's hand-check measures it.
+  - **Trap found while wiring DBT-74:** a unit test that patched only `init_crawler` ran the real `build_newsletter_service()` against a mocked DB and **overwrote `digests/2026-10-03.md`** (gitignored) with an empty-day page. It was restored from `digests/preview/before-2026-10-04-qa/2026-10-03.md` (2,052 articles, 320 clusters, 94/94 summaries; generated 10:18 WIB, while the DB row says 08:58, so possibly not the last production write). The tests now patch `build_newsletter_service` and make `init_crawler` raise.
+- **Links:** SYS-147 #337, DBT-74 #346, commit d56551c
