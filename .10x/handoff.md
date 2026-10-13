@@ -1,5 +1,40 @@
 # Current Handoff
 
+## From: 10x-team (EM + Staff Engineer: story arcs re-prioritised) -> To: SDE
+**Date:** 2026-10-13 (~22:00 WIB)
+**Read first:**
+- `.10x/decisions/engineering-manager/newsletter-story-arcs.md` (sequence, gates);
+- `.10x/decisions/staff-engineer/newsletter-story-arcs.md` (rules, reuse map);
+- ADR-016 + ADR-017;
+- the "Re-scope 2026-10-13" section at the bottom of each SYS ticket;
+- `memory/HANDOVER-2026-10-13-2137.md`.
+
+### Start here
+1. **DBT-72 #344, `core/source_check.py`:** move the guards from `story_summary.py:170-256`, add `dates_in` (fixes SYS-153 #343), and migrate the summary, editor and `web/answer.py`. Gate: guard tests and retargeted mutants green; replay ±2 pts.
+2. **DBT-73 #345, `core/llm_json.ask_json`.**
+3. **SYS-147 #337 with DBT-74 #346.** Steps 1-2 and 3 can run in parallel.
+4. **SYS-148 #338.**
+5. **DBT-75 #347.**
+6. **SYS-149 #339 (+ EditorPolicy).**
+7. **SYS-150 #340:** the owner's blind A/B is the ship gate.
+
+### Rules
+- Issue-first for any bug found.
+- `Refs #N`.
+- Each ticket goes to `status: ready-for-qa` with evidence; dev never closes.
+- Pure moves must be byte-identical on a fixture day.
+- EXPERIMENTS.md for every replay and measurement.
+- Run mutants outside 07:00/19:00/21:00.
+- No production DB writes.
+
+### Owner
+- Confirm "≥ 1 non-finance in 3-4 slots" (SYS-149).
+- Read the 5 blind pairs when SYS-150 is ready.
+
+---
+
+## Previous (superseded)
+
 ## From: Principal Architect (/deepen review of the newsletter path) -> To: 10x-team (re-scope tickets, re-prioritise), then SDE
 **Date:** 2026-10-13 (~21:40 WIB)
 **Read first:** `memory/HANDOVER-2026-10-13-2137.md`, its table "/deepen findings → what the 10x-team should change".

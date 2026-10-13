@@ -1,6 +1,6 @@
 # Newsletter story arcs: architecture (2026-10-13)
 
-Status: **Accepted 2026-10-13** (ADR-016). Tracker #336; P0 SYS-147 #337 thread finder, SYS-148 #338 arc writer, SYS-149 #339 edition stage, SYS-150 #340 replay + A/B (ship gate); P1 SYS-151 #341 story memory, SYS-152 #342 causal check. Requirements: `.10x/decisions/product-manager/newsletter-story-arcs.md`. Evidence: EXPERIMENTS.md "2026-10-13 — Newsletter story arcs".
+Status: **Accepted 2026-10-13** (ADR-016). Tracker #336; P0 SYS-147 #337 thread finder, SYS-148 #338 arc writer, SYS-149 #339 edition stage, SYS-150 #340 replay + A/B (ship gate); P1 SYS-151 #341 story memory, SYS-152 #342 causal check. **Re-scoped 2026-10-13 by ADR-017:** DBT-72 #344 source_check, DBT-73 #345 ask_json, DBT-74 #346 newsletter-only setup (NEWS_L1 loaded explicitly — the "already in memory" note below describes init_crawler, which the 12:00 job stops using), DBT-75 #347 plan/build + Story; order in decisions/engineering-manager/newsletter-story-arcs.md. Requirements: `.10x/decisions/product-manager/newsletter-story-arcs.md`. Evidence: EXPERIMENTS.md "2026-10-13 — Newsletter story arcs".
 
 ## Requirements (from PM, owner-aligned)
 **Functional**

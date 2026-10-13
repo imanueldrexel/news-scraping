@@ -357,3 +357,14 @@ Design approved by the owner. Order:
   - P0: SYS-147 #337, SYS-148 #338, SYS-149 #339, SYS-150 #340 (ship gate: arcs win ≥ 4/5 blind days).
   - P1: SYS-151 #341, SYS-152 #342.
 - Found: the editor's rule check fell back on 2 of the last 6 days (10-08, 10-12). This is a known design fallback, not filed; SYS-149 rewrites those rules.
+
+## 10x-team 2026-10-13 (~22:00): story arcs re-prioritised after the /deepen review (ADR-017)
+- Filed:
+  - DBT-72 #344 source_check (fixes SYS-153 #343);
+  - DBT-73 #345 ask_json;
+  - DBT-74 #346 newsletter-only setup (no NEWS_L2/e5-large at 12:00);
+  - DBT-75 #347 plan/build split + typed Story.
+- Re-scoped SYS-147..150 (dependencies, EditorPolicy in SYS-149, phone-PDF check in SYS-150); tracker #336 re-ordered.
+- Order: DBT-72 → DBT-73 → SYS-147+DBT-74 → SYS-148 → DBT-75 → SYS-149 → SYS-150 (ship gate). P0 ≈ 6-7 dev sessions.
+- ADR-017 accepted (amends ADR-016's in-memory premise). Decisions: staff-engineer/ and engineering-manager/newsletter-story-arcs.md.
+- Phase: Planning Complete → SDE. No code written.

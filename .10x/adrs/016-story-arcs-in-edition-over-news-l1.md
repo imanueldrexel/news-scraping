@@ -1,6 +1,6 @@
 # ADR-016: Story arcs are an in-edition stage over NEWS_L1, confirmed by the model and checked by code; no thread store
 
-**Status:** Accepted 2026-10-13 (owner approved the design; tracker #336, SYS-147..152 = #337..#342)
+**Status:** Accepted 2026-10-13 (owner approved the design; tracker #336, SYS-147..152 = #337..#342). **Amended by ADR-017:** NEWS_L1 is loaded explicitly by the newsletter's own composition root (DBT-74), not inherited from `init_crawler()`; guards and the LLM loop come from `source_check`/`llm_json`.
 **Date:** 2026-10-13
 **Feature:** newsletter-story-arcs (`.10x/decisions/architect/newsletter-story-arcs.md`, PM `.10x/decisions/product-manager/newsletter-story-arcs.md`)
 **Author:** 10x-Team (PM + Principal Architect)
