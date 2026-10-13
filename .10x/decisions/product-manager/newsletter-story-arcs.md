@@ -1,6 +1,6 @@
 # Newsletter story arcs (PM, 2026-10-13)
 
-Status: **owner aligned 2026-10-13** (recommended scope, pure-prose layout) → principal architect. Successor to [newsletter-5min-edition](newsletter-5min-edition.md) (tracker #244). That scope stands except where this file replaces it.
+Status: **owner aligned 2026-10-13** (recommended scope, pure-prose layout); architecture ADR-016 accepted; tracker #336, SYS-147..152 = #337..#342. Successor to [newsletter-5min-edition](newsletter-5min-edition.md) (tracker #244). That scope stands except where this file replaces it.
 
 ## Problem
 The owner says the edition is "too pointy, not storytelling", and that news is not aggregated across time ("instead of one day, see the n-past weeks, so we see the whole picture").

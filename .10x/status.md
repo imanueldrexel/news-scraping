@@ -346,3 +346,14 @@ Design approved by the owner. Order:
   - corpus probe (EXPERIMENTS.md 2026-10-13, `scripts/experiments/probe_story_arcs.py`): L1 vectors find real arcs for 4/6 of 10-12's leads; KB entities fail on concept stories and drift; no cosine floor separates thread from topic;
   - precedents: Axios, Semafor, NYT The Morning, Full Coverage/Particle, Indonesian "Kronologi".
 - Next: principal architect (thread finder, arc writer, guards, replay harness, story memory as P1) → ADR → tracker + tickets → SDE. No code written.
+
+## Architect 2026-10-13 (evening): newsletter story arcs designed, ADR-016 accepted, tickets filed
+- Design: `decisions/architect/newsletter-story-arcs.md`.
+  - In-edition arc stage: `thread_finder` over NEWS_L1 (already in memory at 12:00), then `story_arc` (1 call + retry, the model picks `alur`, code guards numbers/dates/subject/agenda), then a pure-prose render.
+  - `NEWSLETTER_ARCS` default 0, so the output is byte-identical to today's.
+  - No thread store; `_edition.stories` JSON is P1's input.
+- Owner: approved, and chose "replace after the A/B, keep a switch".
+- Tickets: tracker #336.
+  - P0: SYS-147 #337, SYS-148 #338, SYS-149 #339, SYS-150 #340 (ship gate: arcs win ≥ 4/5 blind days).
+  - P1: SYS-151 #341, SYS-152 #342.
+- Found: the editor's rule check fell back on 2 of the last 6 days (10-08, 10-12). This is a known design fallback, not filed; SYS-149 rewrites those rules.

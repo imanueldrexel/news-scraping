@@ -1,5 +1,39 @@
 # Current Handoff
 
+## From: Principal Architect (newsletter story arcs) -> To: SDE (build P0), owner (the A/B)
+**Date:** 2026-10-13 (~22:00 WIB)
+**Read first:**
+- `.10x/decisions/architect/newsletter-story-arcs.md`;
+- `.10x/adrs/016-story-arcs-in-edition-over-news-l1.md`;
+- `.10x/decisions/product-manager/newsletter-story-arcs.md` (copy, the arc prompt, success criteria);
+- EXPERIMENTS.md "2026-10-13 — Newsletter story arcs".
+
+### Build order (tracker #336)
+1. **SYS-147 #337, thread finder:**
+   - `core/thread_finder.py` (pure; `search`/`lookup` injected);
+   - `SQLAlchemyNewsletterDataSource.get_timeline_rows`;
+   - the vs_l1 adapter.
+2. **SYS-148 #338, arc writer:** `core/story_arc.py`, with the PM prompt verbatim and guards for number / date / subject / alur / agenda / empty history.
+3. **SYS-149 #339, edition stage:**
+   - behind `NEWSLETTER_ARCS` (default 0, byte-identical);
+   - 3-4 picks and ≥ 1 non-finance (a scaled default: confirm with the owner);
+   - pure-prose render, budget, `_edition.arcs` / `_edition.stories`, generator wiring.
+4. **SYS-150 #340, replay harness:** `replay_story_arcs.py`, blind X/Y on 10-08..10-12, `handcheck.csv`, metrics. **This is the ship gate.**
+5. **P1, only after SYS-150's numbers:** SYS-151 #341 story memory (if repetition > 30%); SYS-152 #342 causal check (P0 if the hand-check finds an unattributed cause).
+
+### Owner
+- Read 5 blind pairs on the phone when SYS-150 is ready. Ship if arcs win ≥ 4/5.
+- On a pass, set `NEWSLETTER_ARCS=1` in `.env` (owner-chosen rollout: replace, keep the switch).
+
+### Notes
+- NEWS_L1 is already in memory in the 12:00 job (`init_crawler`, 1.4 s load). The search is read-only: no run lock, no save.
+- Reuse `story_summary.unsupported_number`, `_date_in`, `off_subject` and `story_words`; do not fork them.
+- Issue-first holds for any bug found while building. Commit footers use `Refs #N`; dev leaves tickets `status: ready-for-qa`.
+
+---
+
+## Previous (superseded)
+
 ## From: PM (newsletter story arcs) -> To: Principal Architect
 **Date:** 2026-10-13 (~21:30 WIB)
 **Read first:** `.10x/decisions/product-manager/newsletter-story-arcs.md` (requirements, P0/P1, success criteria, copy, the draft arc prompt); EXPERIMENTS.md "2026-10-13 — Newsletter story arcs"; `scripts/experiments/probe_story_arcs.py`.

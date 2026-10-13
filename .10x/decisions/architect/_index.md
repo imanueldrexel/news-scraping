@@ -8,3 +8,4 @@
 - [qa-senior-fixes-2026-10-12](qa-senior-fixes-2026-10-12.md) — 2026-10-12 QA + senior list: SYS-111/139/104/140/141/137/138/112/142, DBT-65/66/67; owner decisions; ADR-010/011/012
 - [qa-second-pass-fixes-2026-10-12](qa-second-pass-fixes-2026-10-12.md) — QA second pass 2026-10-12: SYS-138 subject gate (ADR-013), SYS-143/144/145 (ADR-014), DBT-68/69, DBT-67 store_repair module (ADR-015)
 - [open-p2-p3-2026-10-12](open-p2-p3-2026-10-12.md) — SRC-59 INVESTORID via sitemap_post.xml, DBT-60 date rule, SYS-91 FAISS posted_at repair
+- [newsletter-story-arcs](newsletter-story-arcs.md) — top 3-4 stories as pure-prose arcs: in-edition stage, NEWS_L1 thread finder, model-confirmed `alur` + code guards, `NEWSLETTER_ARCS` switch, no thread store (ADR-016); tracker #336
