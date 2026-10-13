@@ -658,8 +658,8 @@ M = [
   '        bad = unsupported_number(value, source)\n        if bad:', '        bad = unsupported_number(value, source)\n        if False:'),
  ('sys82_length_check_dropped', 'newscrawler/core/story_summary.py',
   '        if words(value) > limit:', '        if False:'),
- ('sys82_long_poin_kept_on_retry', 'newscrawler/core/story_summary.py',
-  '                         drop_long_poin=True, demote_strays=True)', '                         drop_long_poin=False, demote_strays=True)'),
+ ('sys82_long_poin_kept_on_retry', 'newscrawler/core/story_summary.py',   # DBT-73: the retry is attempt 1
+  'drop_long_poin=attempt > 0, demote_strays=attempt > 0)', 'drop_long_poin=False, demote_strays=attempt > 0)'),
  ('sys82_poin_cut_instead_of_dropped', 'newscrawler/core/story_summary.py',
   'kept = [p for p in poin if words(p) <= LIMITS["poin"]][:MAX_POIN]',
   'kept = [" ".join(p.split()[:LIMITS["poin"]]) for p in poin][:MAX_POIN]'),
@@ -669,8 +669,8 @@ M = [
   '    if any(not 0 <= i < n for i in value):', '    if False:'),
  ('sys82_every_article_once_unchecked', 'newscrawler/core/story_summary.py',
   '    if set(terkait) & set(tidak) or len(terkait) + len(tidak) != n:', '    if False:'),
- ('sys82_retry_without_reason', 'newscrawler/core/story_summary.py',
-  'summarizer.summarize(prompt + RETRY.format(detail=first.detail))', 'summarizer.summarize(prompt)'),
+ ('sys82_retry_without_reason', 'newscrawler/core/llm_json.py',          # DBT-73: the loop moved
+  '            ask = prompt + RETRY.format(detail=r.detail)', '            ask = prompt'),
  ('sys82_any_short_date_passes', 'newscrawler/core/source_check.py',
   '    return bool(re.search(rf"(?<!\\d)0?{day}\\s+{names}\\b", source, re.IGNORECASE))', '    return True'),
  ('sys82_rejections_not_counted', 'newscrawler/core/newsletter_generator.py',
@@ -752,8 +752,8 @@ M = [
   'ANCHOR_MIN_JUDUL_WORDS = 2 ', 'ANCHOR_MIN_JUDUL_WORDS = 99 '),
  ('sys80_one_judul_word_anchors', 'newscrawler/core/source_check.py',
   'ANCHOR_MIN_JUDUL_WORDS = 2 ', 'ANCHOR_MIN_JUDUL_WORDS = 1 '),
- ('sys80_retry_refuses_strays', 'newscrawler/core/story_summary.py',
-  '                         drop_long_poin=True, demote_strays=True)', '                         drop_long_poin=True)'),
+ ('sys80_retry_refuses_strays', 'newscrawler/core/story_summary.py',     # DBT-73: the retry is attempt 1
+  'drop_long_poin=attempt > 0, demote_strays=attempt > 0)', 'drop_long_poin=attempt > 0, demote_strays=False)'),
  ('sys80_demoted_not_counted', 'newscrawler/core/newsletter_generator.py',
   '                stats.strays_demoted += story.demoted', '                pass'),
  ('sys80_numbers_checked_before_demotion', 'newscrawler/core/story_summary.py',
@@ -843,8 +843,8 @@ M = [
  ('sys83_headline_only_in_sekilas', 'newscrawler/core/newsletter_edition.py',
   '        if not c.summarized or c.id in choice.utama or group in utama_groups or group in seen_groups:',
   '        if c.summarized and (c.id in choice.utama or group in utama_groups or group in seen_groups):'),
- ('sys83_quota_retried', 'newscrawler/core/newsletter_edition.py',
-  '            reasons.append("quota")\n            break', '            reasons.append("quota")'),
+ ('sys83_quota_retried', 'newscrawler/core/llm_json.py',                 # DBT-73: the loop moved
+  '            reasons.append("quota")\n            break', '            reasons.append("quota")\n            continue'),
  ('sys83_stale_edition_kept', 'newscrawler/core/newsletter_generator.py',
   '        if os.path.exists(path):\n            os.remove(path)\n        return result, None', '        return result, None'),
  ('sys83_edition_failure_kills_the_digest', 'newscrawler/core/newsletter_generator.py',
@@ -1538,6 +1538,20 @@ M = [
   ' for _, day, month, _ in _dates(text) if 1 <= month <= 12]', ' for _, day, month, _ in _dates(text)]'),
  ('dbt72_dates_not_in_text_order', 'newscrawler/core/source_check.py',
   '    return sorted(found)\n', '    return found\n'),
+ # DBT-73 (#345) ask_json. QA_MUTANT_TESTS="tests/unit/test_llm_json.py tests/unit/test_story_summary.py
+ #   tests/unit/test_newsletter_edition.py tests/unit/test_story_grouping.py tests/unit/test_newsletter_summaries.py"
+ ('dbt73_raise_mode_swallows_errors', 'newscrawler/core/llm_json.py',
+  '                raise\n            reasons.append("error")', '                pass\n            reasons.append("error")'),
+ ('dbt73_refusals_not_attached', 'newscrawler/core/llm_json.py',
+  '                e.refusals = list(reasons)\n                raise\n            reasons.append("quota")',
+  '                raise\n            reasons.append("quota")'),
+ ('dbt73_no_retry', 'newscrawler/core/llm_json.py', '    for attempt in range(retries + 1):', '    for attempt in range(1):'),
+ ('dbt73_answers_not_recorded', 'newscrawler/core/llm_json.py', '        answers.append(answer)\n', ''),
+ ('dbt73_failed_call_not_counted', 'newscrawler/core/llm_json.py', '        calls += 1\n', ''),
+ ('dbt73_list_is_an_object', 'newscrawler/core/llm_json.py',
+  '    if not isinstance(data, dict):\n        raise Rejected("json", "JSON harus berupa objek")', ''),
+ ('dbt73_grouping_list_refused', 'newscrawler/core/llm_json.py',
+  r'pattern: str = r"\{.*\}|\[.*\]") -> Any:', r'pattern: str = r"\{.*\}") -> Any:'),
 ]
 only = sys.argv[1:]
 # The tests each mutant runs (default: all of tests/unit). QA_MUTANT_TESTS narrows it to the files that

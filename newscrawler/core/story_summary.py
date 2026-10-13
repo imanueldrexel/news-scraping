@@ -27,15 +27,15 @@ article are drawn from what it marked `terkait`; an article it did not see canno
 be judged and is kept, as the clusterer grouped it (it still counts towards the
 portal count, never towards a link).
 """
-import json
 import logging
-import re
 from dataclasses import dataclass
 from typing import List, Optional, Sequence, Union
 
 from newscrawler.core import newsletter_copy as copy
 from newscrawler.core.constants import SOURCE_AUTHORITY
+from newscrawler.core.llm_json import Rejected, ask_json, json_object
 from newscrawler.core.source_check import off_subject, unsupported_number
+from newscrawler.core.summarizer import SummarizerError
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -103,19 +103,6 @@ PROMPT = (
     "{articles}"
 )
 
-RETRY = "\n\nJawaban sebelumnya ditolak: {detail}. Perbaiki dan balas HANYA dengan JSON valid."
-
-
-class Rejected(Exception):
-    """An answer that breaks a rule. `reason` is one of REASONS; `detail` is the
-    one line the retry tells the model."""
-
-    def __init__(self, reason: str, detail: str):
-        super().__init__(f"{reason}: {detail}")
-        self.reason = reason
-        self.detail = detail
-
-
 @dataclass(frozen=True)
 class StorySummary:
     judul: str
@@ -174,19 +161,6 @@ def words(text: str) -> int:
     return len(text.split())
 
 
-def _json_object(answer: Optional[str]) -> dict:
-    match = re.search(r"\{.*\}", answer or "", re.DOTALL)
-    if not match:
-        raise Rejected("json", "jawaban bukan JSON")
-    try:
-        data = json.loads(match.group(0))
-    except ValueError:
-        raise Rejected("json", "JSON tidak valid")
-    if not isinstance(data, dict):
-        raise Rejected("json", "JSON harus berupa objek")
-    return data
-
-
 def _text(data: dict, key: str, required: bool = True) -> str:
     value = data.get(key)
     if value is None and not required:
@@ -235,7 +209,7 @@ def parse(answer: Optional[str], n: int, sources: Union[str, Sequence[str]],
     texts = [sources] if isinstance(sources, str) else list(sources)
     if len(texts) != n:
         raise ValueError(f"{len(texts)} article texts for {n} articles")
-    data = _json_object(answer)
+    data = json_object(answer)
     judul, inti, sekilas = _text(data, "judul"), _text(data, "inti"), _text(data, "sekilas")
     mengapa = _text(data, "mengapa_penting", required=False)
     poin = data.get("poin")
@@ -282,21 +256,21 @@ def parse(answer: Optional[str], n: int, sources: Union[str, Sequence[str]],
 
 
 def summarize_story(summarizer, shown: Sequence[dict], rejections: list) -> Optional[StorySummary]:
-    """Ask once, and once more with the reason if the answer is refused. Each
-    refusal's reason is appended to `rejections` as it happens (so a failed
-    second call still leaves the first counted). None after two refusals.
-    The summarizer's own errors (QuotaExhausted, SummarizerError) pass through."""
+    """Ask once, and once more with the reason if the answer is refused
+    (`llm_json.ask_json`); the retry drops long poin and demotes strays. Each
+    refusal's reason is appended to `rejections` (a failed second call still
+    leaves the first counted). None after two refusals. The summarizer's own
+    errors (QuotaExhausted, SummarizerError) pass through."""
     sources = [guard_text(a) for a in shown]
-    prompt = build_prompt(shown)
+
+    def check(answer: str, attempt: int) -> StorySummary:
+        return parse(answer, len(shown), sources, drop_long_poin=attempt > 0, demote_strays=attempt > 0)
+
     try:
-        return parse(summarizer.summarize(prompt), len(shown), sources)
-    except Rejected as first:
-        rejections.append(first.reason)
-        logger.info(f"Summary refused, asking again ({first}) -- {shown[0]['headline'][:80]!r}")
-        try:
-            return parse(summarizer.summarize(prompt + RETRY.format(detail=first.detail)), len(shown), sources,
-                         drop_long_poin=True, demote_strays=True)
-        except Rejected as second:
-            rejections.append(second.reason)
-            logger.info(f"Summary refused again ({second}) -- {shown[0]['headline'][:80]!r}")
-            return None
+        outcome = ask_json(summarizer, build_prompt(shown), check, on_error="raise",
+                           label=f"Summary of {shown[0]['headline'][:80]!r}")
+    except SummarizerError as e:
+        rejections.extend(getattr(e, "refusals", []))
+        raise
+    rejections.extend(outcome.reasons)
+    return outcome.value

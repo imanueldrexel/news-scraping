@@ -17,7 +17,6 @@ The full digest is unchanged by this module: it stays the archive, the edition
 is a second file, digests/YYYY-MM-DD-ringkas.md, in the same markdown grammar
 (newsletter_pdf renders it for a phone, OPS-42).
 """
-import json
 import logging
 import os
 import re
@@ -28,9 +27,9 @@ from typing import Dict, List, NamedTuple, Optional, Sequence, Tuple
 from newscrawler.core import newsletter_copy as copy
 from newscrawler.core import story_words
 from newscrawler.core.filter_rubric import TOPICS_FINANCE
+from newscrawler.core.llm_json import Rejected, ask_json, json_object
 from newscrawler.core.source_check import unsupported_number
-from newscrawler.core.story_summary import RETRY, Rejected, words
-from newscrawler.core.summarizer import QuotaExhausted, SummarizerError
+from newscrawler.core.story_summary import words
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -241,13 +240,7 @@ def _ids(value, known: set, what: str) -> List[int]:
 
 def parse_editor(answer: Optional[str], cands: Sequence[Candidate]) -> Choice:
     """The editor's answer as a Choice, or Rejected (reason json, rules, length or number)."""
-    match = re.search(r"\{.*\}", answer or "", re.DOTALL)
-    try:
-        data = json.loads(match.group(0)) if match else None
-    except ValueError:
-        data = None
-    if not isinstance(data, dict):
-        raise Rejected("json", "jawaban bukan objek JSON")
+    data = json_object(answer)
     by_id: Dict[int, Candidate] = {c.id: c for c in cands if c.summarized}
     known = set(by_id)
 
@@ -305,27 +298,16 @@ def parse_editor(answer: Optional[str], cands: Sequence[Candidate]) -> Choice:
 def choose(summarizer, cands: Sequence[Candidate], digest_date: date,
            no_call_reason: str = "no_provider") -> Tuple[Choice, bool, List[str]]:
     """(choice, fallback used, reasons). One editor call, one retry with the
-    reason; a daily quota stops at once. No summarizer: the fallback, no call,
-    and `no_call_reason` says why (no provider, or the summaries' calls stopped)."""
-    reasons: List[str] = []
+    reason (a failed call is retried without one); a daily quota stops at once
+    (`llm_json.ask_json`, on_error="retry"). No summarizer: the fallback, no
+    call, and `no_call_reason` says why (no provider, or the summaries' calls stopped)."""
     if summarizer is None:
         return deterministic(cands), True, [no_call_reason]
-    prompt = build_prompt(cands, digest_date)
-    ask = prompt
-    for _ in (1, 2):
-        try:
-            return parse_editor(summarizer.summarize(ask), cands), False, reasons
-        except QuotaExhausted:
-            reasons.append("quota")
-            break
-        except SummarizerError as e:
-            reasons.append("error")
-            logger.warning(f"Editor call failed: {e}")
-            ask = prompt
-        except Rejected as r:
-            reasons.append(r.reason)
-            logger.warning(f"Editor answer refused ({r})")
-            ask = prompt + RETRY.format(detail=r.detail)
+    outcome = ask_json(summarizer, build_prompt(cands, digest_date), lambda answer, attempt: parse_editor(answer, cands),
+                       on_error="retry", label="Editor answer")
+    reasons = outcome.reasons
+    if outcome.value is not None:
+        return outcome.value, False, reasons
     logger.warning(f"Editor fell back to the portal-count ranking ({', '.join(reasons)}).")
     return deterministic(cands), True, reasons
 

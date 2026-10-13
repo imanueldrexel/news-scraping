@@ -13,11 +13,10 @@ NEWSLETTER_MAX_CLUSTERS_PER_STORY of each.
 A failed or unusable answer raises `SummarizerError`: the caller keeps the
 section as it was, and counts the failure.
 """
-import json
 import logging
-import re
 from typing import List, Optional, Sequence
 
+from newscrawler.core.llm_json import Rejected, json_value
 from newscrawler.core.summarizer import Summarizer, SummarizerError
 
 logger = logging.getLogger(__name__)
@@ -53,12 +52,9 @@ def parse_groups(answer: str, n: int) -> Optional[List[List[int]]]:
     """The model's groups as lists of indexes, or None unless the answer is
     JSON (a bare list or {"grup": [...]}, possibly fenced or surrounded by text)
     in which every index 0..n-1 appears exactly once."""
-    match = re.search(r"\{.*\}|\[.*\]", answer or "", re.DOTALL)
-    if not match:
-        return None
     try:
-        data = json.loads(match.group(0))
-    except ValueError:
+        data = json_value(answer)
+    except Rejected:
         return None
     groups = data.get("grup") if isinstance(data, dict) else data
     if not isinstance(groups, list) or not all(isinstance(g, list) for g in groups):
