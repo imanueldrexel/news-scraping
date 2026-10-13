@@ -2577,3 +2577,16 @@ SINDONEWS   old 12 new 12 | lost [] | gained []   links identical: True
   - A date regex over prose must anchor at a word start: "M2", "Q3" and "H1" precede month names in economic copy.
   - Stored replay answers (`*-stories.json`) are enough to measure a guard change; no LLM spend is needed.
 - **Links:** DBT-72 #344, SYS-153 #343, commit 223352b
+
+### 2026-10-13 — DBT-73: does moving the summary's retry loop into ask_json change any refusal or story?
+- **Question / hypothesis:** `story_summary.summarize_story` now runs through `llm_json.ask_json` (the retry is `attempt == 1`, so it drops long poin and demotes strays). Its behaviour should be identical.
+- **Method:** stored answers replayed through both versions at zero cost: the old `summarize_story` (`git show 223352b:newscrawler/core/story_summary.py`) and the new one. A scripted summarizer answers each stored call with its refused answers in order, then the accepted story as JSON. Every call in `digests/preview/replay*/*-stories.json` whose refusals kept the raw answer was replayed. The script was inline in the session (`cmp_ask_json.py`).
+- **Result:**
+  - **710 of 710 calls identical:** the same refusal lists, and the same judul/terkait/tidak_terkait/poin/demoted;
+  - unit 3,000 passed;
+  - mutants 14/14 killed (7 `dbt73_*` + 4 retargeted retry mutants + 4 editor/summary guards);
+  - one equivalent mutant (a dict check after parsing a `{...}` span) removed together with the dead check.
+- **Conclusion / do not repeat:**
+  - Older replay files (before the SYS-82 v5 capture) have no raw `answer` on refusals, so they cannot be replayed this way.
+  - Keep `Capture` writing the raw answers (DBT-75 moves it into `Edition.trace`).
+- **Links:** DBT-73 #345, commits 130c1e3, f929ded
