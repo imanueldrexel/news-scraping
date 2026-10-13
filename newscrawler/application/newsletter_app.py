@@ -81,7 +81,9 @@ def load_l1_search(embeddings):
     return l1_search(load_index(VECTOR_DB_NAME_L1, embeddings))
 
 
-def build_newsletter_service(with_l1: bool = True, client=None) -> NewsletterService:
+def build_newsletter_service(with_l1: bool = True, client=None, summarizer=None) -> NewsletterService:
+    """`summarizer`: a replay's own (SYS-150: metered, its calls not counted in
+    api_usage_log); None builds the configured one, its calls counted (ADR-001)."""
     from langchain_community.embeddings import HuggingFaceEmbeddings
 
     from newscrawler.core.constants import EMBEDDING_MODEL_HF
@@ -106,8 +108,9 @@ def build_newsletter_service(with_l1: bool = True, client=None) -> NewsletterSer
     )
     search = load_l1_search(embeddings) if with_l1 else None
     newsletter_ds = SQLAlchemyNewsletterDataSource(client)
+    own = {} if summarizer is None else {"summarizer": summarizer}
     generator = NewsletterGenerator(newsletter_ds, embed_documents=embeddings.embed_documents,
-                                    usage=SQLAlchemyKnowledgeDataSource(client), search_l1=search)
+                                    usage=SQLAlchemyKnowledgeDataSource(client), search_l1=search, **own)
     return NewsletterService(NewsletterRepo(generator, SQLAlchemyArticleDataSource(client)))
 
 
