@@ -1550,6 +1550,34 @@ M = [
  ('dbt73_failed_call_not_counted', 'newscrawler/core/llm_json.py', '        calls += 1\n', ''),
  ('dbt73_grouping_list_refused', 'newscrawler/core/llm_json.py',
   r'pattern: str = r"\{.*\}|\[.*\]") -> Any:', r'pattern: str = r"\{.*\}") -> Any:'),
+ # SYS-147 (#337) thread finder + DBT-74 (#346) composition root. QA_MUTANT_TESTS="tests/unit/test_thread_finder.py
+ #   tests/unit/test_scheduled_newsletter.py tests/unit/test_run_lock.py"
+ ('sys147_peeks_at_the_day', 'newscrawler/core/thread_finder.py',
+  'not lo <= posted_at < hi', 'not lo <= posted_at <= hi'),
+ ('sys147_window_one_day_short', 'newscrawler/core/thread_finder.py',
+  'not lo <= posted_at < hi', 'not lo < posted_at < hi'),
+ ('sys147_floor_ignored', 'newscrawler/core/thread_finder.py', ' or cosine < floor:', ':'),
+ ('sys147_every_item_of_a_day', 'newscrawler/core/thread_finder.py',
+  '        if posted_at not in best or cosine > best[posted_at][0]:', '        if posted_at not in best:'),
+ ('sys147_earliest_day_dropped', 'newscrawler/core/thread_finder.py',
+  '    if earliest not in kept:\n        kept[-1] = earliest\n', ''),
+ ('sys147_today_not_excluded', 'newscrawler/core/thread_finder.py',
+  '        if sitemap_id in exclude or sitemap_id in seen', '        if sitemap_id in seen'),
+ ('sys147_not_chronological', 'newscrawler/core/thread_finder.py', '    for p in sorted(kept):', '    for p in kept:'),
+ ('sys147_byline_kept', 'newscrawler/core/thread_finder.py',
+  '        stripped = _BYLINE.sub("", text, count=1)', '        stripped = text'),
+ ('sys147_l1_cosine_is_distance', 'newscrawler/infrastructure/datasource/dataflow/write/faiss/l1_search.py',
+  '1.0 - float(distance) / 2.0', '1.0 - float(distance)'),
+ ('dbt74_failure_not_logged', 'newscrawler/application/newsletter_app.py',
+  '        repo.log_crawl_failed(log_id, str(e)[:500])\n', ''),
+ ('dbt74_script_builds_the_crawler', 'scripts/run_scheduled_newsletter.py',
+  '    path = build_newsletter_service().generate_newsletter(target_date)',
+  '    from newscrawler.application.api.lambda_function.lambda_handler import init_crawler\n'
+  '    path = init_crawler().crawler_service.generate_newsletter(target_date)'),
+ ('dbt74_event_builds_the_crawler', 'newscrawler/application/api/lambda_function/lambda_handler.py',
+  '    if task == "newsletter":\n        # DBT-74', '    if False:\n        # DBT-74'),
+ ('dbt74_l1_not_passed', 'newscrawler/application/newsletter_app.py',
+  'usage=SQLAlchemyKnowledgeDataSource(client), search_l1=search)', 'usage=SQLAlchemyKnowledgeDataSource(client))'),
 ]
 only = sys.argv[1:]
 # The tests each mutant runs (default: all of tests/unit). QA_MUTANT_TESTS narrows it to the files that

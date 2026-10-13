@@ -46,9 +46,10 @@ class TestDateOnTheTask:
         assert svc.method_calls == []
 
     def test_process_event_passes_the_parsed_date(self):
-        api = MagicMock()
-        with patch.object(lambda_handler, "init_crawler", return_value=api):
+        api, service = MagicMock(), MagicMock()
+        with patch("newscrawler.application.newsletter_app.build_newsletter_service", return_value=service),                 patch.object(lambda_handler, "CrawlerAPI", return_value=api) as crawler_api,                 patch.object(lambda_handler, "init_crawler", side_effect=AssertionError("built the whole crawler")):
             lambda_handler.process_event({"task": "newsletter", "date": "2026-10-03"}, None)
+        crawler_api.assert_called_once_with(service)           # DBT-74: the newsletter's own composition root
         api.crawl_websites_in_batch.assert_called_once_with(website_names=[], task="newsletter",
                                                             target_date=date(2026, 10, 3))
 
@@ -59,7 +60,8 @@ class TestDateOnTheTask:
     ])
     def test_a_bad_or_misplaced_date_fails_before_the_crawler_is_built(self, event):
         with patch.object(lambda_handler, "init_crawler",
-                          side_effect=AssertionError("built the crawler for a bad event")):
+                          side_effect=AssertionError("built the crawler for a bad event")),                 patch("newscrawler.application.newsletter_app.build_newsletter_service",
+                      side_effect=AssertionError("built the newsletter for a bad event")):
             with pytest.raises(ValueError):
                 lambda_handler.process_event(event, None)
 
@@ -326,8 +328,10 @@ def _wire(script, monkeypatch, row, note=None, fail=None, edition=None):
     else:
         path = type("P", (str,), {"note": note, "edition": edition})("digests/2026-10-03.md")
         service.generate_newsletter.return_value = path
+    # DBT-74: the script builds the newsletter's own composition root, never the whole crawler.
+    monkeypatch.setattr("newscrawler.application.newsletter_app.build_newsletter_service", lambda: service)
     monkeypatch.setattr("newscrawler.application.api.lambda_function.lambda_handler.init_crawler",
-                        lambda: SimpleNamespace(crawler_service=service))
+                        lambda: (_ for _ in ()).throw(AssertionError("the newsletter built the whole crawler")))
     monkeypatch.setattr("newscrawler.infrastructure.network.clients.sqlalchemy_client.SQLAlchemyClient",
                         lambda: MagicMock(get_session=MagicMock(return_value=MagicMock(
                             __enter__=lambda s: MagicMock(), __exit__=lambda s, *a: False))))

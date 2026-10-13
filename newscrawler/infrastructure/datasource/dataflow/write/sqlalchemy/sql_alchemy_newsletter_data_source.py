@@ -47,6 +47,33 @@ class SQLAlchemyNewsletterDataSource:
             for row in rows
         ]
 
+    def get_timeline_rows(self, sitemap_ids) -> dict:
+        """SYS-147 (#337): {sitemap_id: {headline, source, posted_at, l1_text}}
+        for the story arcs' timeline items. Only sitemaps with an article row
+        (a vector of a settled or deleted article tells a reader nothing), and
+        headline/date from the DB, not FAISS metadata (ADR-005, SYS-91)."""
+        ids = sorted({int(i) for i in sitemap_ids})
+        if not ids:
+            return {}
+        sql = text("""
+            SELECT s.sitemap_id, s.headline, s.sources, s.posted_at, c.text_content AS l1_text
+            FROM sitemaps s
+            JOIN articles a ON a.sitemap_id = s.sitemap_id
+            LEFT JOIN chunks c ON c.sitemap_id = s.sitemap_id AND c.chunk_level = 1
+            WHERE s.sitemap_id = ANY(:ids)
+        """)
+        with self.client.get_session() as session:
+            rows = session.execute(sql, {"ids": ids}).fetchall()
+        return {
+            row.sitemap_id: {
+                "headline":  unescape_headline(row.headline or ""),
+                "source":    row.sources or "",
+                "posted_at": row.posted_at,
+                "l1_text":   row.l1_text or "",
+            }
+            for row in rows
+        }
+
     def save_digest(
         self,
         digest_date: date,

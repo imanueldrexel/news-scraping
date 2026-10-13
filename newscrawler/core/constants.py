@@ -210,6 +210,16 @@ NEWSLETTER_SUMMARY_MAX_TOKENS = int(os.getenv("NEWSLETTER_SUMMARY_MAX_TOKENS", 6
 # clusters of one story; the rest join its "and N more" line. 0 turns the grouping off.
 NEWSLETTER_MAX_CLUSTERS_PER_STORY = int(os.getenv("NEWSLETTER_MAX_CLUSTERS_PER_STORY", 2))
 
+# Story arcs (tracker #336, ADR-016). NEWSLETTER_ARCS=1 tells the edition's 3-4 top stories with their
+# back-story; 0 keeps today's edition byte for byte (SYS-149). The thread finder (SYS-147) searches
+# NEWS_L1 for the ARC_LOOKBACK_DAYS before the date, keeps items at or over ARC_FLOOR (wide on purpose:
+# the arc writer decides membership, EXPERIMENTS.md 2026-10-13), one per day, at most ARC_MAX_ITEMS days.
+NEWSLETTER_ARCS = os.getenv("NEWSLETTER_ARCS", "0").strip() == "1"
+ARC_LOOKBACK_DAYS = int(os.getenv("ARC_LOOKBACK_DAYS", 30))
+ARC_FLOOR = float(os.getenv("ARC_FLOOR", 0.70))
+ARC_FETCH_K = int(os.getenv("ARC_FETCH_K", 3000))
+ARC_MAX_ITEMS = int(os.getenv("ARC_MAX_ITEMS", 12))
+
 # ── RAG Search (Phase 4) ─────────────────────────────────────────────────────
 RAG_SEMANTIC_WEIGHT = float(os.getenv("RAG_SEMANTIC_WEIGHT", 0.6))
 RAG_BM25_WEIGHT     = float(os.getenv("RAG_BM25_WEIGHT", 0.3))    # the keyword half (ADR-006: a coverage, not BM25)

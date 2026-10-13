@@ -112,7 +112,7 @@ class DigestPath(str):
 class NewsletterGenerator:
     def __init__(self, newsletter_datasource,
                  embed_documents: Optional[Callable[[List[str]], List[List[float]]]] = None,
-                 summarizer=_FROM_CONFIG, usage=None):
+                 summarizer=_FROM_CONFIG, usage=None, search_l1=None):
         """embed_documents: DBT-02 (#21) -- the pipeline passes the FAISS
         datasource's MiniLM (`embed_documents`, normalized, batch 64), so a
         newsletter run does not load a second copy of the same model. Without
@@ -121,8 +121,12 @@ class NewsletterGenerator:
         summarizer: an object with `.name` and `.summarize(prompt)` (ADR-001).
         Left out, it is built from NEWSLETTER_LLM_PROVIDER / the API keys, its
         calls counted through `usage` (anything with increment_api_call_count);
-        None means no summaries -- the digest lists headlines and says so."""
+        None means no summaries -- the digest lists headlines and says so.
+
+        search_l1: NEWS_L1 as `thread_finder`'s search (SYS-147), for the story
+        arcs (SYS-149); None leaves them out."""
         self.ds = newsletter_datasource
+        self._search_l1 = search_l1
         self._embed_documents = embed_documents
         if summarizer is _FROM_CONFIG:
             summarizer = build_summarizer(usage=usage)

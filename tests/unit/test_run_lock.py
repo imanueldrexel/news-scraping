@@ -260,7 +260,9 @@ def _live_foreign_pid():
 FAISS_WRITER_MARKERS = ("_atomic_save_local", "ChunkFAISSDatasource", "DataFlowRepositoryImpl", "load_index",
                         "init_crawler", "process_event",
                         # SYS-105/SRC-60/DBT-67: a repair that writes through store_repair's FAISS steps
-                        "delete_vectors(", "rechunk(", "rechunk_articles(")
+                        "delete_vectors(", "rechunk(", "rechunk_articles(",
+                        # DBT-74: reads NEWS_L1 through load_index (the save lock) -- refuses during a crawl too
+                        "build_newsletter_service(")
 # It takes the lock itself; its worker is the lock owner's child.
 LOCK_OWNER = "run_scheduled_crawl.py"
 

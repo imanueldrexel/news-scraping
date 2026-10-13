@@ -65,7 +65,12 @@ def process_event(event, context):
         from newscrawler.tools.run_lock import refuse_foreign_writer
         refuse_foreign_writer()
 
-    scraper_api = init_crawler()
+    if task == "newsletter":
+        # DBT-74 (#346): the newsletter's own composition root -- no NEWS_L2, no e5-large, no crawlers.
+        from newscrawler.application.newsletter_app import build_newsletter_service
+        scraper_api = CrawlerAPI(build_newsletter_service())
+    else:
+        scraper_api = init_crawler()
     try:
         scraper_api.crawl_websites_in_batch(website_names=websites, task=task, target_date=target_date)
     except Exception:

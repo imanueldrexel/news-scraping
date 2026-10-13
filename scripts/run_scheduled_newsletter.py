@@ -151,12 +151,14 @@ def main(argv=None) -> int:
 
 
 def _run(target_date, log_path) -> int:
-    from newscrawler.application.api.lambda_function.lambda_handler import init_crawler
+    from newscrawler.application.newsletter_app import build_newsletter_service
     from newscrawler.infrastructure.network.clients.sqlalchemy_client import SQLAlchemyClient
 
     logger.info("scheduled newsletter for %s", target_date)
+    # DBT-74 (#346): the newsletter's own composition root (Postgres, MiniLM, NEWS_L1 read-only,
+    # the summarizer) -- not init_crawler(), which loaded NEWS_L2 and e5-large for nothing.
     # The service brackets the run in crawl_log (OPS-11) and re-raises a failure.
-    path = init_crawler().crawler_service.generate_newsletter(target_date)
+    path = build_newsletter_service().generate_newsletter(target_date)
     with SQLAlchemyClient().get_session() as session:
         row = digest_row(session, target_date)
     line = summary_line(target_date, path, row, getattr(path, "note", None))

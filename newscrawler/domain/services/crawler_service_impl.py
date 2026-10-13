@@ -740,19 +740,9 @@ class CrawlerServiceImpl(CrawlerService):
         return result
 
     def generate_newsletter(self, target_date=None):
-        logger.info(f"Starting newsletter generation for {target_date or 'today'}...")
-        log_id = self.data_flow_repo.log_crawl_start("ALL", "newsletter")
-        try:
-            path = self.data_flow_repo.generate_newsletter(target_date)
-        except Exception as e:
-            self.data_flow_repo.log_crawl_failed(log_id, str(e)[:500])
-            raise
-        # SYS-68 (#216): a digest whose summaries are mostly headlines is
-        # complete but degraded; the reason rides on the row (the generator's
-        # path carries it as `.note`), so crawl_log says what the file says.
-        self.data_flow_repo.log_crawl_complete(log_id, 1 if path else 0, note=getattr(path, "note", None))
-        logger.info(f"Newsletter generated: {path}")
-        return path
+        # DBT-74 (#346): the one crawl_log bracket, shared with the newsletter's own composition root.
+        from newscrawler.application.newsletter_app import run_logged
+        return run_logged(self.data_flow_repo, target_date)
 
     def save_scraped_data(self, scraped_data):
         if not scraped_data:
