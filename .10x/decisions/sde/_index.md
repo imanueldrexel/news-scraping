@@ -11,7 +11,11 @@
 
 - [p3-bug-burndown-2026-10-06](p3-bug-burndown-2026-10-06.md) — SRC-58, OPS-39, DBT-01, SYS-90 (found) ready-for-qa; two owner-approved production writes with backups; SRC-47 owner-deferred, re-measured
 
+- [newsletter-story-arcs](newsletter-story-arcs.md) — tracker #336: DBT-72..75, SYS-147..150 built 2026-10-13 night (arcs behind NEWSLETTER_ARCS=0); DBT-76 split out; SYS-150 replay for the owner's blind read
+
 ## Cross-cutting SDE notes
+- A unit test that patches only `init_crawler` while the code builds `build_newsletter_service()` runs the real generator and writes into `digests/` (2026-10-13: 2026-10-03.md overwritten). Patch the light service, make the heavy one raise.
+- Measure a guard change on stored replays first (`digests/preview/replay*/*-stories.json` hold shown articles, refused raw answers and accepted stories): zero LLM cost, exact old-vs-new counts.
 - PowerShell does not pipe a here-string into `git commit -F -`; write the message to a scratch file and pass its path.
 - A replay that spawns one process per date imports the code at each start: never edit source between dates (it mixes versions), and never run `qa_mutation_runner.py` at the same time (it mutates files in place).
 - PyMuPDF is in `py -3.11` (not the venv): `scratchpad/contact.py`-style contact sheets are the quick way to look at a whole PDF.

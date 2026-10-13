@@ -29,3 +29,7 @@ Steps 1-2 and step 3 touch disjoint files (core guards vs datasource/composition
 - **A "pure move" hides a behaviour change:** byte-identical/±2 gates on every DBT ticket.
 - **The memory-heavy test runs on this host collide with the 07:00/19:00 crawl and the 21:00 extraction:** run mutants outside those windows (see the 2026-10-12 notes).
 - **Owner time for 5 blind pairs:** schedule it when SYS-150 is ready.
+
+## EM call during the build (2026-10-13, ~23:20)
+- **The typed `Story` moved out of DBT-75 into DBT-76 #348.** It touches ~30 code sites, 11 test fixtures and QA's own `scripts/experiments/qa_*` harnesses. The arcs do not need it to be correct. Every commit tonight is also the code the 2026-10-14 12:00 run uses, so the widest diff was the wrong one to land before a live run. DBT-75 kept everything the arcs and SYS-150 need: plan/build/generate, the traces, no patching.
+- **SYS-150's replay spends LLM money.** Smoke run 1 date: $0.13 at the peak price; full run 5 dates: ~$0.66 at the peak price, less off-peak. The prepaid balance is tight until the ~10-16 top-up (status 2026-10-12). One-off and within the ~$100 budget (CTO llm-budget), so it went ahead; the measured cost goes on the ticket.

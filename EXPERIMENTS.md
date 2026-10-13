@@ -2609,3 +2609,19 @@ SINDONEWS   old 12 new 12 | lost [] | gained []   links identical: True
   - "Always keep the earliest day" can keep a weak early item (karhutla 09-12, 0.724). The arc writer's subject check handles it, and SYS-150's hand-check measures it.
   - **Trap found while wiring DBT-74:** a unit test that patched only `init_crawler` ran the real `build_newsletter_service()` against a mocked DB and **overwrote `digests/2026-10-03.md`** (gitignored) with an empty-day page. It was restored from `digests/preview/before-2026-10-04-qa/2026-10-03.md` (2,052 articles, 320 clusters, 94/94 summaries; generated 10:18 WIB, while the DB row says 08:58, so possibly not the last production write). The tests now patch `build_newsletter_service` and make `init_crawler` raise.
 - **Links:** SYS-147 #337, DBT-74 #346, commit d56551c
+
+### 2026-10-13 — DBT-75/SYS-149: are the plan/build split and the EditorPolicy refactor invisible with the arcs off?
+- **Question / hypothesis:** with `NEWSLETTER_ARCS` off, the newsletter after DBT-75 (plan/build/generate) and SYS-149 (EditorPolicy, the arc stage) should produce exactly today's files and row.
+- **Method:** a zero-cost comparison, inline in the session (`cmp_generator.py`, `cmp_editor_prompt.py`):
+  - the old generator and edition modules (`git show` of the commit before each change) run against the new ones, side by side;
+  - same fake newsroom (`tests/unit/newsletter_fakes.FakeNewsroom`), same stub clusterer;
+  - 8 fixture days: 1/3/8/14 clusters × (all valid | a refused summary and an editor fallback);
+  - compared byte for byte: the digest file, the edition file and `save_digest`'s arguments (minus `generation_ms`).
+  - The editor prompt was compared over 12 candidates: old `build_prompt` vs `build_prompt(..., POLICY_TODAY)`.
+- **Result:**
+  - **8/8 days identical**: digest, edition and row; both after DBT-75 alone and after SYS-149 (whole old path vs whole new path).
+  - **Editor prompt identical** (1,977 chars). Under `POLICY_ARCS` it reads "pilih 3-4", "paling sedikit 1", "3-4 kalimat", example `[12, 3, 5]`.
+- **Conclusion / do not repeat:**
+  - A refactor of the newsletter can be proven against the previous commit offline. Load the old module with `importlib` under its own name and register it in `sys.modules` before executing, or its dataclasses fail to resolve.
+  - Patch the old generator's `newsletter_edition` attribute to compare the whole old path, not only the generator.
+- **Links:** DBT-75 #347 (0c4b8b6), SYS-149 #339 (c1a8269)
