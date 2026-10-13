@@ -46,7 +46,8 @@ logger = logging.getLogger("replay_story_arcs")
 
 DEFAULT_DATES = [date(2026, 10, 8) + timedelta(days=k) for k in range(5)]
 CAUSAL = re.compile(r"\b(?:karena|akibat|dipicu|memicu|sehingga|imbas|lantaran)\b", re.IGNORECASE)
-ATTRIBUTION = re.compile(r"\b(?:menurut|kata|ujar|sebut|ungkap|jelas|tutur|klaim)\b", re.IGNORECASE)
+ATTRIBUTION = re.compile(r"\b(?:menurut|kata|ujar|sebut|ungkap|jelas|tutur|klaim|mengatakan|menyatakan|menyebut|"
+                         r"mengungkapkan|menjelaskan|menilai|menegaskan)\b", re.IGNORECASE)
 REPEAT_SHARE = 0.6        # a latar sentence repeats yesterday's when it shares this share of its content words
 
 

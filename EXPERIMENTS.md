@@ -2625,3 +2625,26 @@ SINDONEWS   old 12 new 12 | lost [] | gained []   links identical: True
   - A refactor of the newsletter can be proven against the previous commit offline. Load the old module with `importlib` under its own name and register it in `sys.modules` before executing, or its dataclasses fail to resolve.
   - Patch the old generator's `newsletter_edition` attribute to compare the whole old path, not only the generator.
 - **Links:** DBT-75 #347 (0c4b8b6), SYS-149 #339 (c1a8269)
+
+### 2026-10-13/14 — SYS-150: the story-arc A/B replay on 2026-10-08..10-12 (5 days, real LLM)
+- **Question / hypothesis:** do the arcs pass SYS-150's automatic gates (words ≤ 1,200, ≥ 5/6 largest stories covered, ≥ 90% arcs accepted after the retry, cost), and what goes on the owner's blind read and hand-check?
+- **Method:** `scripts/experiments/replay_story_arcs.py --out-dir digests/preview/arcs` (+ a one-date smoke run, `--dates 2026-10-12 --out-dir digests/preview/arcs-smoke --seed 1`).
+  - One plan per date (the real summaries), the edition built twice on it (arcs off / on).
+  - Read-only: NEWS_L1 via `load_index`, no row, and the summarizer metered (not counted in api_usage_log).
+  - Outputs: X/Y at random (`key.json`), phone PDFs, `handcheck.csv`, `metrics.json` (all under `digests/preview/arcs/`, gitignored).
+- **Result:**
+  - **Arcs built 19/20 (95%).** 10-10 had one fallback: a length refusal, then a number refusal, so it ran as the summary in prose.
+  - **Refusals over all arc calls:** length 3, number 1, alur 1; all but the 10-10 story were repaired on the retry.
+  - **Words:** arcs 755-856, today's 804-977; the 1,200 budget was never hit.
+  - **Coverage of the 6 largest stories:** 6/6 every day for both editions.
+  - **Timeline items per story:** 0-5 (two stories told as new: 10-10 and 10-12).
+  - **Phone PDF:** 6-8 pages; no page starts with a source/link line or ends on a section heading.
+  - **Cost:** $0.11-0.13 per date at the *peak* price, $0.60 in total. That covers both builds and ~135 summary calls; the arc stage is ~5-6 of ~140 calls a day.
+  - **Hand-check:** 52 timeline items and 5 causal sentences. One causal sentence has no attribution word (10-08 BPIH: "karena ... akibat kenaikan harga avtur, seperti diberitakan pada 25/9").
+  - **Repetition between consecutive days: inconclusive** (0 sentences measured). The rule matches a story to yesterday's only when today's timeline holds one of yesterday's exact terkait articles, and the one-item-per-day finder rarely picks that one.
+  - **Read by me on 10-12** (smoke run): the arcs carry real back-story (IHSG since 24/9; lobster seizures 1-2/10; Houthi since 20/9). Two quality notes: the lobster arc tells one 75,435-seedling seizure twice (1/10 and 2/10 items of the same event); the Houthi arc cites "3 killed" on 10/10 next to today's "12 killed" (an evolving toll, each number in its source).
+- **Conclusion / do not repeat:**
+  - The automatic gates pass. The ship decision is the owner's blind read (arcs must win ≥ 4/5), plus the hand-check: ≥ 90% same-thread and 0 unattributed causes (otherwise SYS-152 goes to P0).
+  - The repetition metric needs a match by story (e.g. shared names in the judul, or yesterday's alur ids ∩ today's) before SYS-151 can be decided on it.
+  - Sentence-attribution regexes need the verb forms (*mengatakan*, *menyatakan*), not only the roots.
+- **Links:** SYS-150 #340, SYS-148 #338, tracker #336, commits 2dae824 + this one

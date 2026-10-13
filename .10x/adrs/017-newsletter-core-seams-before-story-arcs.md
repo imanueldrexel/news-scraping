@@ -39,6 +39,10 @@ A `/deepen` review of the newsletter path (`memory/HANDOVER-2026-10-13-2137.md`)
 - **Risks:**
   - a behaviour change hidden in a "pure move". Every DBT ticket's Done-when requires byte-identical output on a fixture day, or a replayed stat within ±2 points.
 
+### Measured (2026-10-13 night, DBT-74)
+- The newsletter's own composition root: built in 11.5 s, 1.21 GB RSS after the build, 1.67 GB peak, headline-only digest of 2026-10-12 in 78.7 s (`probe_newsletter_setup.py --path new`, EXPERIMENTS.md "SYS-147/DBT-74").
+- The old path was not measured live the same night: 8-10 GB was free with the extraction running, and it also loads NEWS_L2 (~7.6 GB in memory) + e5-large (2.2 GB). Its build took ~17 s in the 2026-10-13 12:00 log.
+
 ## Dependencies
 - Constrains SYS-147/148/149/150 (their re-scope sections, 2026-10-13).
 - ADR-016 stands except for the "already in memory" premise.

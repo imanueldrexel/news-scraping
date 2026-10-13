@@ -368,3 +368,18 @@ Design approved by the owner. Order:
 - Order: DBT-72 → DBT-73 → SYS-147+DBT-74 → SYS-148 → DBT-75 → SYS-149 → SYS-150 (ship gate). P0 ≈ 6-7 dev sessions.
 - ADR-017 accepted (amends ADR-016's in-memory premise). Decisions: staff-engineer/ and engineering-manager/newsletter-story-arcs.md.
 - Phase: Planning Complete → SDE. No code written.
+
+## SDE 2026-10-13 (night): newsletter story arcs built (tracker #336, ADR-016/017)
+- [x] DBT-72 #344 source_check, fixes SYS-153 #343 (223352b): ready-for-qa.
+- [x] DBT-73 #345 ask_json (130c1e3, f929ded): ready-for-qa.
+- [x] SYS-147 #337 thread finder (d56551c): ready-for-qa.
+- [~] DBT-74 #346 newsletter-only composition root (d56551c). Waits for:
+  - the old-vs-new comparison, which needs memory headroom;
+  - the 2026-10-14 12:00 log.
+- [~] SYS-148 #338 arc writer (a26a6a5). Waits for SYS-150's ≥ 90% accepted.
+- [x] DBT-75 #347 plan/build/generate + traces (0c4b8b6): ready-for-qa. The typed Story split out as DBT-76 #348 (EM call).
+- [x] SYS-149 #339 EditorPolicy + arc stage behind NEWSLETTER_ARCS=0 (c1a8269): ready-for-qa. Owner: confirm "≥ 1 non-finance".
+- [~] SYS-150 #340 replay harness (2dae824): the 5-day replay is running; then the owner's blind read.
+- Arcs off is byte-identical (8 fixture days; the editor prompt too). The 10-14 12:00 run is today's edition on the new composition root.
+- Tests: unit 3,090+; integration 225/1 skipped. Every new mutant killed (see the SDE file).
+- **Incident:** a test overwrote `digests/2026-10-03.md`; restored from the pre-QA copy (`decisions/sde/newsletter-story-arcs.md`).
