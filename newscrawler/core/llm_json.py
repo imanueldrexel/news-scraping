@@ -54,11 +54,8 @@ class Outcome(NamedTuple):
 
 def json_object(answer: Optional[str]) -> dict:
     """The JSON object in a model's answer (possibly fenced or surrounded by
-    text), or Rejected("json")."""
-    data = json_value(answer, r"\{.*\}")
-    if not isinstance(data, dict):
-        raise Rejected("json", "JSON harus berupa objek")
-    return data
+    text), or Rejected("json"). Only a {...} span is parsed, so the value is a dict."""
+    return json_value(answer, r"\{.*\}")
 
 
 def json_value(answer: Optional[str], pattern: str = r"\{.*\}|\[.*\]") -> Any:

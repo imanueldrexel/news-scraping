@@ -1548,8 +1548,6 @@ M = [
  ('dbt73_no_retry', 'newscrawler/core/llm_json.py', '    for attempt in range(retries + 1):', '    for attempt in range(1):'),
  ('dbt73_answers_not_recorded', 'newscrawler/core/llm_json.py', '        answers.append(answer)\n', ''),
  ('dbt73_failed_call_not_counted', 'newscrawler/core/llm_json.py', '        calls += 1\n', ''),
- ('dbt73_list_is_an_object', 'newscrawler/core/llm_json.py',
-  '    if not isinstance(data, dict):\n        raise Rejected("json", "JSON harus berupa objek")', ''),
  ('dbt73_grouping_list_refused', 'newscrawler/core/llm_json.py',
   r'pattern: str = r"\{.*\}|\[.*\]") -> Any:', r'pattern: str = r"\{.*\}") -> Any:'),
 ]
