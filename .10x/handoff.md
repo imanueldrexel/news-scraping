@@ -1,5 +1,36 @@
 # Current Handoff
 
+## From: Principal Architect (/deepen review of the newsletter path) -> To: 10x-team (re-scope tickets, re-prioritise), then SDE
+**Date:** 2026-10-13 (~21:40 WIB)
+**Read first:** `memory/HANDOVER-2026-10-13-2137.md`, its table "/deepen findings → what the 10x-team should change".
+
+### Asked of the 10x-team
+- File DBT tickets:
+  - `core/source_check.py` (it absorbs SYS-153 #343);
+  - `core/llm_json.ask_json`;
+  - the plan/build split of the generator;
+  - a newsletter-only setup for the 12:00 job.
+- Edit:
+  - SYS-148 #338: depends on source_check + ask_json;
+  - SYS-149 #339: + EditorPolicy (+ optional Story dataclass);
+  - SYS-150 #340: depends on plan/build; + a phone-PDF page-break check;
+  - SYS-147 #337: + a link to the setup ticket.
+- Re-order tracker #336:
+  1. source_check;
+  2. ask_json;
+  3. SYS-147 + setup;
+  4. SYS-148;
+  5. plan/build;
+  6. SYS-149;
+  7. SYS-150;
+  8. P1 SYS-151/152.
+- Amend ADR-016's consequences (NEWS_L1 loaded explicitly by the newsletter-only setup); update the CLAUDE.md ID map and status.md; hand off to SDE.
+- The previous handoff (Architect → SDE, below) still holds for everything not changed here.
+
+---
+
+## Previous (superseded)
+
 ## From: Principal Architect (newsletter story arcs) -> To: SDE (build P0), owner (the A/B)
 **Date:** 2026-10-13 (~22:00 WIB)
 **Read first:**
