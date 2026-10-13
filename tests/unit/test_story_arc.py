@@ -18,7 +18,7 @@ SHOWN = [
                 "Rapat lanjutan dijadwalkan Kamis (15/10)."},
     {"source": "KONTAN", "headline": "Asap Karhutla Ganggu 1.673 Penerbangan",
      "l1_text": "Asap kebakaran hutan dan lahan mengganggu 1.673 penerbangan domestik, kata Kemenhub."},
-    {"source": "DETIK", "headline": "Harga Cabai Naik di Pasar Induk", "l1_text": "Harga cabai rawit naik."},
+    {"source": "DETIK", "headline": "Harga Cabai Naik di Pasar Induk", "l1_text": "Harga cabai rawit naik 37 persen."},
 ]
 TIMELINE = [
     TimelineItem(101, date(2026, 9, 23), "CNBC", "Prabowo Dapat Laporan 209 Ha Lahan Masih Terbakar",
@@ -76,7 +76,12 @@ class TestAccepted:
 
 class TestNumbersAndDates:
     def test_a_number_in_no_source(self):
-        assert _reason(_answer(hari_ini="Kebakaran mengganggu 2.000 penerbangan, Senin (12/10)."))[0] == "number"
+        reason, detail = _reason(_answer(hari_ini="Kebakaran mengganggu 2.000 penerbangan, Senin (12/10)."))
+        assert reason == "number" and detail.count("2.000") == 1          # named once, not twice
+
+    def test_a_number_only_a_tidak_terkait_article_states_is_refused(self):
+        """37 is in today's cabai article, which the answer marks tidak_terkait."""
+        assert _reason(_answer(hari_ini="Asap karhutla naik 37 persen, Senin (12/10)."))[0] == "number"
 
     def test_a_number_only_an_unchosen_item_states_is_refused(self):
         assert _reason(_answer(alur=[N + 1]))[0] == "number"          # 209 is only in item [N]
