@@ -15,7 +15,7 @@ from typing import Iterable, List, NamedTuple, Optional, Sequence
 
 from newscrawler.core import web_copy as copy
 from newscrawler.core.newsletter_copy import outlet, tanggal
-from newscrawler.core.story_summary import unsupported_number
+from newscrawler.core.source_check import unsupported_number
 
 LEAD_CHARS = 400        # the article's opening (L1 chunk): who, what, when
 MATCH_CHARS = 700       # the paragraph that matched the question (L2 chunk)

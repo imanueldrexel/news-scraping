@@ -12,6 +12,7 @@ from unittest.mock import MagicMock
 import pytest
 
 import newscrawler.core.newsletter_generator as ng
+import newscrawler.core.source_check as sc
 import newscrawler.core.story_summary as ss
 from newscrawler.core.summarizer import QuotaExhausted
 from tests.unit.newsletter_fakes import FakeNewsroom, shown_articles, story_answer
@@ -116,15 +117,15 @@ class TestParse:
         assert _reason(_answer(**{field: value})) == "number"
 
     def test_separators_do_not_matter_but_a_rewritten_number_does(self):
-        assert ss.unsupported_number("Rp2.574.000 dan 0,46%", SOURCE) is None
-        assert ss.unsupported_number("13,3 juta ton", SOURCE) == "13,3"     # the prompt says: copy verbatim
+        assert sc.unsupported_number("Rp2.574.000 dan 0,46%", SOURCE) is None
+        assert sc.unsupported_number("13,3 juta ton", SOURCE) == "13,3"     # the prompt says: copy verbatim
 
     def test_a_short_date_passes_when_the_articles_name_that_date(self):
-        assert ss.unsupported_number("Minggu (4/10)", SOURCE) is None             # 4/10/2026 and "4 Oktober"
-        assert ss.unsupported_number("Minggu (4/10)", "Laporan 4 Okt 2026") is None
-        assert ss.unsupported_number("Jumat (2/10)", SOURCE) == "2/10"
-        assert ss.unsupported_number("skor 3/13", "skor 3/13 di babak kedua") is None   # copied as it stands
-        assert ss.unsupported_number("Rabu (5/13)", "5 Desember") == "5/13"            # no month 13
+        assert sc.unsupported_number("Minggu (4/10)", SOURCE) is None             # 4/10/2026 and "4 Oktober"
+        assert sc.unsupported_number("Minggu (4/10)", "Laporan 4 Okt 2026") is None
+        assert sc.unsupported_number("Jumat (2/10)", SOURCE) == "2/10"
+        assert sc.unsupported_number("skor 3/13", "skor 3/13 di babak kedua") is None   # copied as it stands
+        assert sc.unsupported_number("Rabu (5/13)", "5 Desember") == "5/13"            # no month 13
 
     def test_words(self):
         assert ss.words("  satu  dua\ntiga ") == 3
@@ -140,7 +141,7 @@ class TestNumbersByValue:
         ("harga 13,3 juta", "harga 133 juta"),
     ])
     def test_a_shifted_decimal_is_another_number(self, summary, articles):
-        assert ss.unsupported_number(summary, articles) is not None
+        assert sc.unsupported_number(summary, articles) is not None
 
     @pytest.mark.parametrize("summary,articles", [
         ("Rp2.574.000", "Rp 2.574.000"), ("Rp2.574.000", "2,574,000"), ("2,574,000", "Rp2.574.000"),
@@ -148,12 +149,12 @@ class TestNumbersByValue:
         ("1,500 ton", "1500 ton"), ("Rp1.234.567,89", "1,234,567.89"), ("pukul 05.55", "pukul 05.55 WIB"),
     ])
     def test_the_same_value_in_another_notation_passes(self, summary, articles):
-        assert ss.unsupported_number(summary, articles) is None
+        assert sc.unsupported_number(summary, articles) is None
 
     def test_values(self):
-        assert ss.values("2.574.000") == {"2574000"} and ss.values("1,5") == {"1,5"}
-        assert ss.values("1.500") == {"1500"} and ss.values("1,500") == {"1500", "1,5"}
-        assert ss.values("007") == {"7"} and ss.values("0,125") == {"0,125"}
+        assert sc.values("2.574.000") == {"2574000"} and sc.values("1,5") == {"1,5"}
+        assert sc.values("1.500") == {"1500"} and sc.values("1,500") == {"1500", "1,5"}
+        assert sc.values("007") == {"7"} and sc.values("0,125") == {"0,125"}
 
     def test_the_outlet_name_is_not_article_text(self):
         """Liputan6's 6 is not a number its article states."""
@@ -227,7 +228,7 @@ class TestOnlyTheRelatedArticlesAreTheSource:
         texts = ["harga emas naik tipis", "emas naik pagi ini"]
         answer = json.dumps({"judul": "Harga emas naik tipis", "inti": "Harga emas naik tipis pagi ini.",
                              "sekilas": "Emas naik.", "terkait": [0, 1]})
-        assert ss.off_subject("Harga emas naik tipis", "Harga emas naik tipis pagi ini.", dict(enumerate(texts))) == \
+        assert sc.off_subject("Harga emas naik tipis", "Harga emas naik tipis pagi ini.", dict(enumerate(texts))) == \
             ([], [])
         assert ss.parse(answer, 2, texts).terkait == [0, 1]
 
@@ -235,11 +236,11 @@ class TestOnlyTheRelatedArticlesAreTheSource:
         """Replay 2026-10-05 (09-28): DETIK's short-selling piece never says "BEI" but is the same event."""
         texts = ["BEI Buka Short Selling 1 Oktober\nBursa Efek Indonesia (BEI) membuka short selling.",
                  "Short Selling Berlaku 1 Oktober, Investor Wajib Punya Rp 50 Juta\nInvestor bisa short selling."]
-        assert ss.off_subject("BEI buka short selling 1 Oktober", "BEI membuka short selling.",
+        assert sc.off_subject("BEI buka short selling 1 Oktober", "BEI membuka short selling.",
                               dict(enumerate(texts))) == (["bei"], [])
         # one judul word is not enough: the "10 Saham" list shares only "saham" with the Haji Isam judul
         mixed = json.loads(self.MIXED)
-        assert ss.off_subject(mixed["judul"], mixed["inti"], dict(enumerate(self.HAJI_ISAM)))[1] == [1]
+        assert sc.off_subject(mixed["judul"], mixed["inti"], dict(enumerate(self.HAJI_ISAM)))[1] == [1]
 
     def test_on_the_retry_a_stray_is_moved_out_instead_of_refused(self):
         """The model kept the article it was told about: on the retry it leaves the story (its link and portal),
@@ -450,7 +451,7 @@ class TestTerkaitDecidesTheStory:
         story = ss.StorySummary("Saham Haji Isam beragam", "Saham Haji Isam beragam.", [], "", "S.", [0], [1])
         ng.NewsletterGenerator(MagicMock(), summarizer=None)._apply_story(cluster, shown, story)
         assert "PACK" in cluster["source_text"] and "FORU" not in cluster["source_text"]
-        assert ss.unsupported_number("FORU turun ke Rp163", cluster["source_text"]) == "163"
+        assert sc.unsupported_number("FORU turun ke Rp163", cluster["source_text"]) == "163"
 
     def test_a_fallback_story_keeps_its_cluster_as_clustered(self, monkeypatch, tmp_path):
         _, text = _generate(monkeypatch, tmp_path, FakeNewsroom(story=["x", "x"]), HAJI_ISAM)

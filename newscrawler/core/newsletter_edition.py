@@ -28,7 +28,8 @@ from typing import Dict, List, NamedTuple, Optional, Sequence, Tuple
 from newscrawler.core import newsletter_copy as copy
 from newscrawler.core import story_words
 from newscrawler.core.filter_rubric import TOPICS_FINANCE
-from newscrawler.core.story_summary import RETRY, Rejected, unsupported_number, words
+from newscrawler.core.source_check import unsupported_number
+from newscrawler.core.story_summary import RETRY, Rejected, words
 from newscrawler.core.summarizer import QuotaExhausted, SummarizerError
 
 logger = logging.getLogger(__name__)

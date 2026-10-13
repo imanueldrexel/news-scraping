@@ -31,11 +31,11 @@ import json
 import logging
 import re
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Sequence, Set, Tuple, Union
+from typing import List, Optional, Sequence, Union
 
 from newscrawler.core import newsletter_copy as copy
-from newscrawler.core import story_words
 from newscrawler.core.constants import SOURCE_AUTHORITY
+from newscrawler.core.source_check import off_subject, unsupported_number
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -49,7 +49,6 @@ ARTICLE_CHARS = 800
 LIMITS = {"judul": 12, "inti": 25, "poin": 20, "mengapa_penting": 20, "sekilas": 15}
 JUDUL_ASKED = 10
 MAX_POIN = 2
-ANCHOR_MIN_JUDUL_WORDS = 2     # SYS-80: or a name; see off_subject
 REASONS = ("json", "length", "number", "subject")
 
 # The example answer is from a past digest (2026-10-04), never from the day being summarised.
@@ -168,91 +167,11 @@ def build_prompt(shown: Sequence[dict]) -> str:
 
 
 # ── Checks ──────────────────────────────────────────────────────────────────
-
-_NUMBER = re.compile(r"\d+(?:[.,]\d+)*")
-_SHORT_DATE = re.compile(r"(?<![\d/])(\d{1,2})/(\d{1,2})(?![\d/])")
+# The number, date and subject checks live in core/source_check.py (DBT-72 #344).
 
 
 def words(text: str) -> int:
     return len(text.split())
-
-
-def _canonical(whole: str, fraction: str = "") -> str:
-    whole, fraction = whole.lstrip("0") or "0", fraction.rstrip("0")
-    return f"{whole},{fraction}" if fraction else whole
-
-
-def values(number: str) -> Set[str]:
-    """The values a written number can stand for, canonical ('2.574.000' ->
-    {'2574000'}, '1,50' -> {'1,5'}), so separators may differ but the decimal
-    position may not (SYS-87: 'Rp1,5 triliun' is not 'Rp15 triliun').
-    Indonesian notation first ('.' thousands, ',' decimal). The English one is
-    read where Indonesian cannot be ('2,574,000', '1.5') and also where both
-    can ('1,500': 1,5 or 1500); '1.500' is 1500 only, as Indonesian prose writes it."""
-    separators = re.findall(r"[.,]", number)
-    if not separators:
-        return {_canonical(number)}
-    if len(set(separators)) == 2:                       # 2.574,5 / 2,574.5: the last one is the decimal point
-        point = max(number.rfind("."), number.rfind(","))
-        return {_canonical(re.sub(r"[.,]", "", number[:point]), number[point + 1:])}
-    parts = number.split(separators[0])
-    if len(parts) > 2:                                  # 2.574.000 / 2,574,000: thousands
-        return {_canonical("".join(parts))}
-    whole, fraction = parts
-    if len(fraction) != 3 or not whole.strip("0"):      # 1,5 / 133,88 / 1.5 / 0,125: a decimal
-        return {_canonical(whole, fraction)}
-    if separators[0] == ".":
-        return {_canonical(whole + fraction)}
-    return {_canonical(whole + fraction), _canonical(whole, fraction)}
-
-
-def _date_in(day: int, month: int, source: str) -> bool:
-    """True when the source names the date `day/month`: as 4/10, 04/10/2026, or
-    '4 Oktober' / '4 Okt'. The prompt asks for 'Minggu (4/10)', which an article
-    may have written out. (A 'd/m' copied as it stands, say a score, passes too.)"""
-    if re.search(rf"(?<!\d)0?{day}/0?{month}(?!\d)", source):
-        return True
-    if not (1 <= day <= 31 and 1 <= month <= 12):
-        return False
-    names = f"(?:{copy.MONTHS[month - 1]}|{copy.MONTHS_SHORT[month - 1]})"
-    return bool(re.search(rf"(?<!\d)0?{day}\s+{names}\b", source, re.IGNORECASE))
-
-
-def unsupported_number(text: str, source: str) -> Optional[str]:
-    """The first number in `text` that the source does not contain, or None.
-    Numbers are compared by value (`values`). A short date (4/10) passes when
-    the source names that date in any form."""
-    available = {value for number in _NUMBER.findall(source) for value in values(number)}
-    for match in _SHORT_DATE.finditer(text):
-        if not _date_in(int(match.group(1)), int(match.group(2)), source):
-            return match.group(0)
-    rest = _SHORT_DATE.sub(" ", text)
-    for number in _NUMBER.findall(rest):
-        if not values(number) & available:
-            return number
-    return None
-
-
-def off_subject(judul: str, inti: str, related: Dict[int, str]) -> Tuple[List[str], List[int]]:
-    """(anchors, strays) for SYS-80 (#236). The anchors are the summary's names
-    (`story_words.names` of judul + inti) that a related article mentions. A
-    stray is a related article that mentions none of them and fewer than
-    ANCHOR_MIN_JUDUL_WORDS of the judul's content words: it is not about the
-    story's subject (2026-10-04: "10 Saham Paling Babak Belur, FORU Paling
-    Parah" marked `terkait` under "Saham Haji Isam beragam", supplying a FORU
-    bullet; it names neither Haji Isam nor PACK, and shares only "saham" with
-    the judul). The judul's words let an article that names the subject in
-    other words pass ("short selling" without "BEI"; "Perancis" for
-    "Prancis"; replay 2026-10-05: names alone flagged ~15 related articles in
-    22 refusals). No anchor, no check: a summary without a name an article
-    states ("Harga emas naik") cannot be held to one."""
-    vocabulary = {i: story_words.vocabulary(text) for i, text in related.items()}
-    anchors = sorted(w for w in story_words.names(f"{judul}. {inti}") if any(w in v for v in vocabulary.values()))
-    if not anchors:
-        return [], []
-    judul_words = set(story_words.content_words(judul))
-    return anchors, [i for i, v in vocabulary.items()
-                     if not v.intersection(anchors) and len(judul_words & v) < ANCHOR_MIN_JUDUL_WORDS]
 
 
 def _json_object(answer: Optional[str]) -> dict:

@@ -19,7 +19,7 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, ROOT)
 
-from newscrawler.core.story_summary import off_subject  # noqa: E402
+from newscrawler.core.source_check import off_subject  # noqa: E402
 
 
 def unanchored(story: dict, shown: list) -> list:
