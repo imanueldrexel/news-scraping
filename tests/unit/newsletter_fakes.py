@@ -15,6 +15,8 @@ VALID = object()          # a script item: "answer this summary prompt validly"
 def prompt_kind(prompt: str) -> str:
     if "Kamu pemimpin redaksi" in prompt:
         return "editor"
+    if "Tugasmu menceritakan SATU berita utama" in prompt:     # SYS-148's arc writer
+        return "arc"
     if "Kamu redaktur briefing" in prompt:
         return "story"
     if "Kelompokkan nomor" in prompt:
@@ -39,6 +41,23 @@ def story_answer(prompt: str, **override) -> str:
     return json.dumps(data)
 
 
+def arc_articles(prompt: str):
+    """[(index, outlet, headline)] of an arc prompt's HARI INI block."""
+    block = prompt.rsplit("HARI INI\n", 1)[1].split("\nLINI MASA\n", 1)[0]
+    return [(int(i), outlet, headline) for i, outlet, headline in
+            re.findall(r"^\[(\d+)\] (.+?) — (.*)$", block, re.MULTILINE)]
+
+
+def arc_answer(prompt: str, **override) -> str:
+    """A valid arc: every article terkait, no alur, judul/hari_ini/sekilas from the first headline."""
+    arts = arc_articles(prompt)
+    words = arts[0][2].split()
+    data = {"judul": " ".join(words[:10]), "hari_ini": " ".join(words[:25]), "latar": "", "agenda": "",
+            "sekilas": " ".join(words[:15]), "terkait": [i for i, _, _ in arts], "tidak_terkait": [], "alur": []}
+    data.update(override)
+    return json.dumps(data)
+
+
 class FakeNewsroom:
     """A summarizer whose answers come from one script per prompt kind. A
     script item is a string (the answer), an exception (raised), VALID (a valid
@@ -48,9 +67,9 @@ class FakeNewsroom:
     keeps every cluster on its own."""
     name = "fake-model"
 
-    def __init__(self, story=(), editor=(), group=()):
-        self.scripts = {"story": list(story), "editor": list(editor), "group": list(group)}
-        self.prompts = {"story": [], "editor": [], "group": []}
+    def __init__(self, story=(), editor=(), group=(), arc=()):
+        self.scripts = {"story": list(story), "editor": list(editor), "group": list(group), "arc": list(arc)}
+        self.prompts = {"story": [], "editor": [], "group": [], "arc": []}
 
     @property
     def calls(self) -> int:
@@ -63,14 +82,14 @@ class FakeNewsroom:
         if script:
             item = script.pop(0)
         else:
-            item = {"story": VALID, "editor": "bukan json", "group": None}[kind]
+            item = {"story": VALID, "editor": "bukan json", "group": None, "arc": VALID}[kind]
         if item is None:     # grouping: every cluster its own story
             n = len(re.findall(r"^\d+: ", prompt, re.MULTILINE))
             return json.dumps({"grup": [[i] for i in range(n)]})
         if isinstance(item, Exception):
             raise item
         if item is VALID:
-            return story_answer(prompt)
+            return arc_answer(prompt) if kind == "arc" else story_answer(prompt)
         if callable(item):
             return item(prompt)
         return item

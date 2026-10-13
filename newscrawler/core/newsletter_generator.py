@@ -15,6 +15,7 @@ from newscrawler.core.constants import (
     NEWSLETTER_MAX_CONSECUTIVE_SUMMARY_ERRORS,
     NEWSLETTER_MIN_CLUSTER_SIZE,
     NEWSLETTER_MIN_SUMMARY_SHARE,
+    NEWSLETTER_ARCS,
     SOURCE_AUTHORITY,
 )
 from newscrawler.core.filter_rubric import TOPICS_FINANCE, TOPICS_NEWS
@@ -174,14 +175,35 @@ class NewsletterGenerator:
         stats = self._summarize_sections(sections, trace=calls)
         return DayPlan(target_date, articles, vectors, sections, stats, calls)
 
-    def build_edition(self, plan: DayPlan):
+    def build_edition(self, plan: DayPlan, arcs: Optional[bool] = None):
         """The 5-minute edition of a plan (SYS-83), without writing it; None when
-        no shown story has a summary. Raises what the edition raises."""
+        no shown story has a summary. Raises what the edition raises.
+        `arcs` (default NEWSLETTER_ARCS): tell the top stories as arcs (SYS-149)."""
         # once the calls stopped (quota, outage, no provider), the editor is not asked either
         editor = None if plan.stats.stopped else self._summarizer
+        use_arcs = NEWSLETTER_ARCS if arcs is None else arcs
         return newsletter_edition.build(editor, plan.sections, plan.date, len(plan.articles),
                                         len(self._unique_sources(plan.articles)),
-                                        no_call_reason=plan.stats.stopped or "no_provider")
+                                        no_call_reason=plan.stats.stopped or "no_provider",
+                                        arcs=self._arc_inputs(plan) if use_arcs else None)
+
+    def _arc_inputs(self, plan: DayPlan) -> "newsletter_edition.ArcInputs":
+        """NEWS_L1's search, the timeline lookup and a story's centroid from the plan's vectors.
+        Without a search (a standalone generator) every story is told as new (no timeline)."""
+        import numpy as np
+        rows = {id(a): k for k, a in enumerate(plan.articles)}
+        vectors = np.asarray(plan.vectors, dtype=float)
+
+        def centroid(articles):
+            v = vectors[[rows[id(a)] for a in articles if id(a) in rows]].mean(axis=0)
+            norm = np.linalg.norm(v)
+            return (v / norm if norm else v).tolist()
+
+        search = self._search_l1
+        if search is None:
+            logger.warning("NEWSLETTER_ARCS is on but this generator has no NEWS_L1 search: no timelines.")
+            search = lambda vector, k: []  # noqa: E731
+        return newsletter_edition.ArcInputs(search=search, lookup=self.ds.get_timeline_rows, centroid=centroid)
 
     def generate(self, target_date: date = None, digests_dir: Optional[str] = None) -> Optional[str]:
         """Plan the day, then write the digest, the edition and the newsletter_digests
@@ -397,6 +419,7 @@ class NewsletterGenerator:
         cluster["headline"] = self._pick_cluster_headline(related)
         cluster["sources"] = self._unique_sources([a for a in cluster["articles"] if id(a) not in unrelated])
         cluster["links"] = self._top_links(related)
+        cluster["related"] = related           # SYS-149: the story arc's centroid is of these
 
     def _summarize_sections(self, sections: list, trace: Optional[list] = None) -> SummaryStats:
         """SYS-68 (#216): summarize every shown cluster, counting the real

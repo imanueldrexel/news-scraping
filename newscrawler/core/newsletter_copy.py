@@ -141,6 +141,9 @@ RELATED = "Artikel terkait:"
 MORE_IN_SECTION = "…dan {n} berita lainnya di bagian ini."   # full digest only
 FOOTER = ("Disarikan dari {articles} artikel di {outlets} portal. "
           "Ringkasan ditulis AI dan bisa keliru; cek artikel aslinya untuk detail.")
+FOOTER_ARCS = ("Disarikan dari {articles} artikel di {outlets} portal. "
+               "Ringkasan dan alur cerita ditulis AI dari artikel 30 hari terakhir dan bisa keliru; "
+               "cek artikel aslinya.")
 FOOTER_FULL_EDITION = "Edisi lengkap memuat {n} berita."     # the edition's pointer to the archive
 DEGRADED = "Sebagian ringkasan tidak tersedia hari ini. {n} berita hanya ditampilkan judulnya."
 # The edition shows no story without a summary (its headline is a portal's, unchecked, and the
@@ -157,8 +160,10 @@ MESSAGE_NO_EDITION = "Edisi 5 menit tidak tersedia hari ini; terlampir edisi len
 CAPTION = "{title} · {tanggal}"
 
 
-def footer(articles: int, outlets: int) -> str:
-    return FOOTER.format(articles=angka(articles), outlets=angka(outlets))
+def footer(articles: int, outlets: int, arcs: bool = False) -> str:
+    """The edition's footer. With the story arcs (SYS-149) the disclosure also says the
+    stories draw on the past 30 days (PM copy, 2026-10-13)."""
+    return (FOOTER_ARCS if arcs else FOOTER).format(articles=angka(articles), outlets=angka(outlets))
 
 
 def degraded(n: int) -> str:

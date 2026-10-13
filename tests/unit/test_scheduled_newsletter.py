@@ -96,6 +96,17 @@ class TestScript:
         assert "2052 articles, 320 clusters" in sent[0] and "94/94 summaries" in sent[0]
         assert "DEGRADED" not in sent[0] and "FAILED" not in sent[0]
 
+    def test_the_arcs_are_reported_when_they_ran(self, script):
+        """SYS-149: the operator sees how many top stories were told as arcs; nothing when they are off."""
+        row = SimpleNamespace(article_count=10, cluster_count=4, categories={
+            "_summaries": {"summarized": 9, "total": 9},
+            "_edition": {"arcs": {"built": 3, "fallback": 1, "stopped": None}}})
+        assert "arcs 3/4" in script.summary_line("2026-10-12", "d.md", row)
+        row.categories["_edition"]["arcs"].update(built=0, fallback=4, stopped="quota")
+        assert "arcs 0/4 (quota)" in script.summary_line("2026-10-12", "d.md", row)
+        row.categories["_edition"] = {"built": True}
+        assert "arcs" not in script.summary_line("2026-10-12", "d.md", row)
+
     def test_a_degraded_digest_says_so(self, script, monkeypatch):
         sent = _wire(script, monkeypatch, SimpleNamespace(
             file_path="d.md", article_count=10, cluster_count=3,

@@ -84,6 +84,10 @@ def summary_line(target_date, path, row, note=None) -> str:
     parts = ["%s: %d articles, %d clusters" % (target_date, row.article_count, row.cluster_count)]
     if counts:
         parts.append("%s/%s summaries" % (counts.get("summarized", "?"), counts.get("total", "?")))
+    arcs = (categories.get("_edition") or {}).get("arcs")       # SYS-149: only when NEWSLETTER_ARCS is on
+    if arcs:
+        line = "arcs %s/%s" % (arcs.get("built", "?"), arcs.get("built", 0) + arcs.get("fallback", 0))
+        parts.append(line + (" (%s)" % arcs["stopped"] if arcs.get("stopped") else ""))
     if note:
         parts.insert(0, "DEGRADED")
         parts.append(note)
