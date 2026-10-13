@@ -2543,3 +2543,24 @@ SINDONEWS   old 12 new 12 | lost [] | gained []   links identical: True
   - Probe an LLM refusal check with odd inputs before widening it: this model echoes rather than refuses.
   - Judge a docstore rewrite by a per-document diff against `.bak`, not by file size.
 - **Links:** SYS-138 #317, SYS-143 #326, SYS-144 #327, SYS-145 #328, DBT-67 #325, DBT-68 #329, DBT-69 #330, DBT-60 #258, SRC-59 #260, SYS-91 #257; filed SYS-146 #331, DBT-70 #332, SRC-62 #333
+
+### 2026-10-13 — Newsletter story arcs: does the corpus hold a usable back-story for a day's top stories, by KB entities or by NEWS_L1 vectors?
+- **Question / hypothesis:** The owner wants each top story told as an arc (back-story over the past ≤30 days, today's change, a stated look-ahead). Can we find a story's past coverage automatically, and which route works: the knowledge base's entity mentions or the L1 vectors (title + first two paragraphs)?
+- **Method:** `scripts/experiments/probe_story_arcs.py --edition digests/2026-10-12-ringkas.md` (read-only: SELECTs + `load_index(NEWS_L1)`, no save, no LLM). For each of the 6 Berita Utama leads of 2026-10-12, looks back 30 days. Entity route: past articles sharing ≥ 2 of the lead's entities with `mention_count` ≤ 3,000. Vector route: `similarity_search_with_score(k=600)` on the lead's L1 text, cosine `1 - d/2`, run at floors 0.70 and 0.80.
+- **Result:**
+
+  | Lead (10-12) | Entity route | Vector ≥ 0.70 | Vector ≥ 0.80 | Judged by reading the hits |
+  |---|---|---|---|---|
+  | Emas Antam | 0 (1 specific entity) | 304 / 30 days | 304 / 30 days (k cap) | daily price series, all same thread |
+  | IHSG anjlok | 642 / 29 days | 344 / 29 days | 46 / 18 days | entities drift to Houthi via "Timur Tengah"; vectors = daily IHSG reports |
+  | Lobster export ban | 0 | 1 / 1 day | 0 | genuinely new: no arc |
+  | Daya beli | 0 | 45 / 19 days | 0 | loose: general consumption and retail pieces |
+  | Karhutla ratas | 1,195 / 26 days | 426 / 30 days | 27 / 14 days | vectors: a real arc (24/9 first ratas, BRIN experts, 209 ha); entities drift to Prabowo's TNI briefing |
+  | Houthi, Riyadh | 521 / 28 days | 74 / 9 days | 7 / 2 days | a real arc from 6/10 (Jeddah) at 0.70; lost at 0.80 |
+
+  Also seen: the KB holds duplicate entities across languages ("Arab Saudi"/"Saudi Arabia", "Yaman"/"Yemen"), and stories about a concept (a price, a policy, "daya beli") carry 1-2 specific entities. Some KONTAN L1 texts begin with the "Reporter: … | Editor: …" line.
+- **Conclusion / do not repeat:**
+  - Use the **L1 vectors as the primary thread finder.** They found a real arc for 4/6 leads and correctly found none for the new lobster story. Entities fail on concept stories (3/6 return 0) and drift through generic place names. Use them only as a secondary signal, after the entity-links merge (#315).
+  - **No single cosine floor works:** 0.70 over-includes (daya beli), 0.80 cuts real history (Houthi 9 → 2 days, karhutla 30 → 14). Retrieve wide (≈0.70), keep one representative per day, and let the arc writer confirm each timeline item, like today's `terkait`/`tidak_terkait`.
+  - A running series (IHSG, emas) returns hundreds of near-identical daily items. The arc needs turning points, not every day.
+- **Links:** PM decision `.10x/decisions/product-manager/newsletter-story-arcs.md`; probe `scripts/experiments/probe_story_arcs.py`

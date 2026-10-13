@@ -332,3 +332,17 @@ Design approved by the owner. Order:
 - Filed: SYS-146 #331, DBT-70 #332, SRC-62 #333, DBT-71 #334.
 - Mutants: 21/24 unit (1 equivalent, 2 survivors → DBT-71) + 2/2 integration KILLED. Worktree torn down junction-first; venv intact.
 - Report: reviews/2026-10-13-qa-report.md
+
+## PM 2026-10-13 (evening): newsletter story arcs (owner: "too pointy, not storytelling, see the past weeks")
+- Decision file: decisions/product-manager/newsletter-story-arcs.md. Owner decisions:
+  - arcs inside the daily edition;
+  - 3-4 deep stories within 5 min;
+  - adaptive lookback ≤ 30 days;
+  - importance-first selection;
+  - look-ahead only when stated;
+  - recommended scope;
+  - **pure prose, no labels**.
+- Research:
+  - corpus probe (EXPERIMENTS.md 2026-10-13, `scripts/experiments/probe_story_arcs.py`): L1 vectors find real arcs for 4/6 of 10-12's leads; KB entities fail on concept stories and drift; no cosine floor separates thread from topic;
+  - precedents: Axios, Semafor, NYT The Morning, Full Coverage/Particle, Indonesian "Kronologi".
+- Next: principal architect (thread finder, arc writer, guards, replay harness, story memory as P1) → ADR → tracker + tickets → SDE. No code written.

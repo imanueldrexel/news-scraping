@@ -1,5 +1,32 @@
 # Current Handoff
 
+## From: PM (newsletter story arcs) -> To: Principal Architect
+**Date:** 2026-10-13 (~21:30 WIB)
+**Read first:** `.10x/decisions/product-manager/newsletter-story-arcs.md` (requirements, P0/P1, success criteria, copy, the draft arc prompt); EXPERIMENTS.md "2026-10-13 — Newsletter story arcs"; `scripts/experiments/probe_story_arcs.py`.
+
+### Asked of the architect
+- **Design the P0:**
+  - thread finder: NEWS_L1, 30 days, a wide floor, one item per day;
+  - arc writer: a second LLM call for the edition's top 3-4 stories, through the shared Summarizer;
+  - guards extending `story_summary`'s:
+    - numbers ⊆ today ∪ the chosen `alur`;
+    - prose dates ⊆ the dates of the `alur` items;
+    - an `alur` subject check;
+    - `agenda` traceable;
+  - the pure-prose render in `newsletter_edition`/`newsletter_copy`;
+  - a replay harness for the owner's blind A/B on 5 days (10-08..10-12 included, for repetition).
+- **Decide where the history comes from:** raw past articles (DB headline + L1 opening) vs past delivered stories. The latter is P1 story memory: does it need a table now so P1 is not a rewrite?
+- **Load-cost question:** the newsletter does not load NEWS_L1 today. It uses MiniLM on L1 texts. NEWS_L1 is 712 MB on disk; the 12:00 job's memory and run-lock interaction (OPS-26/SYS-53: read-only, so no lock) need checking.
+- **Write:** an ADR, then the build order for tickets (issue-first; `Refs #N`).
+
+### Constraints
+- Edition ≤ 1,200 words; newsletter ≤ $0.05/day; every reader string in `core/newsletter_copy.py`.
+- The full archive digest is unchanged. #315 entity links stay parked: entities are not P0.
+
+---
+
+## Previous (superseded)
+
 ## From: QA (audit of the dev's fixes of QA's second pass + SRC-59/DBT-60/SYS-91) -> To: SDE (3 send-backs, 5 new tickets), owner (1 choice)
 **Date:** 2026-10-13 (~02:45 WIB)
 **Read first:**
