@@ -20,7 +20,7 @@ The month names come from `newsletter_copy` (the reader's tables), so a date is
 read the way the newsletter writes one.
 """
 import re
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, Iterable, List, Optional, Set, Tuple
 
 from newscrawler.core import newsletter_copy as copy
 from newscrawler.core import story_words
@@ -94,17 +94,27 @@ def dates_in(text: str) -> List[Tuple[int, int]]:
     return [(day, month) for _, day, month, _ in _dates(text) if 1 <= month <= 12]
 
 
-def unsupported_number(text: str, source: str) -> Optional[str]:
+def without_dates(text: str) -> str:
+    """`text` with every date (short or written out, with its year) blanked: what is
+    left are the numbers to compare by value. Lets a caller name a number problem
+    and a date problem in one field separately (SYS-148)."""
+    return _LONG_DATE.sub(" ", _SHORT_DATE.sub(" ", text))
+
+
+def unsupported_number(text: str, source: str, dates: Iterable[Tuple[int, int]] = ()) -> Optional[str]:
     """The first number in `text` that the source does not contain, or None.
     Numbers are compared by value (`values`). A date, short (4/10) or written
     out (4 Oktober, 4 Okt 2026), passes when the source names that date in any
-    form; its day is never checked as a bare number (SYS-153)."""
+    form, or when it is one of `dates` -- (day, month) pairs known to be right
+    that no source text states, such as a timeline item's own date (SYS-148);
+    they never make their numbers available. A date's day is never checked as
+    a bare number (SYS-153)."""
     available = {value for number in _NUMBER.findall(source) for value in values(number)}
+    known = set(dates)
     for _, day, month, written in _dates(text):
-        if not _date_in(day, month, source):
+        if (day, month) not in known and not _date_in(day, month, source):
             return written
-    rest = _LONG_DATE.sub(" ", _SHORT_DATE.sub(" ", text))
-    for number in _NUMBER.findall(rest):
+    for number in _NUMBER.findall(without_dates(text)):
         if not values(number) & available:
             return number
     return None

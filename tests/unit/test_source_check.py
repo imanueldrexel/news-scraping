@@ -52,6 +52,19 @@ class TestWrittenOutDates:
         assert sc.unsupported_number("Pada 5 Oktober dan 4/10", "tidak ada") == "5 Oktober"
 
 
+class TestKnownDates:
+    """SYS-148: a timeline item's own date is right though no text states it; it licenses the date only."""
+
+    def test_a_known_date_passes_in_either_form(self):
+        assert sc.unsupported_number("Pada 24/9 dan 24 September", "tidak ada", [(24, 9)]) is None
+
+    def test_a_known_date_does_not_make_its_digits_numbers(self):
+        assert sc.unsupported_number("24 ahli dipanggil", "tidak ada", [(24, 9)]) == "24"
+
+    def test_without_dates(self):
+        assert sc.without_dates("Pada 24/9 dan 5 Okt 2026 ada 7 rapat").split() == ["Pada", "dan", "ada", "7", "rapat"]
+
+
 class TestDatesIn:
     def test_every_form_in_the_order_written(self):
         assert sc.dates_in("Pada 24/9 rapat pertama, lalu 6 Okt dan 12 Oktober 2026.") == [(24, 9), (6, 10), (12, 10)]
