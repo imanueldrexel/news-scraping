@@ -383,3 +383,9 @@ Design approved by the owner. Order:
 - Arcs off is byte-identical (8 fixture days; the editor prompt too). The 10-14 12:00 run is today's edition on the new composition root.
 - Tests: unit 3,090+; integration 225/1 skipped. Every new mutant killed (see the SDE file).
 - **Incident:** a test overwrote `digests/2026-10-03.md`; restored from the pre-QA copy (`decisions/sde/newsletter-story-arcs.md`).
+- 2026-10-14 ~00:00: SYS-150 replay 10-08..12 done.
+  - Arcs 19/20 (95%), arc editions 755-856 words, 6/6 coverage every day, $0.60 at the peak price.
+  - Repetition metric inconclusive (the matching rule; see SYS-151).
+  - SYS-148 ready-for-qa.
+  - The owner's blind read + hand-check are next (handoff.md).
+  - Mutant worktree torn down; venv intact.

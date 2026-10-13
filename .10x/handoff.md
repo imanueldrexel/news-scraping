@@ -1,5 +1,44 @@
 # Current Handoff
 
+## From: SDE (newsletter story arcs, tracker #336) -> To: QA (verify), owner (blind read + 2 decisions)
+**Date:** 2026-10-14 (~00:00 WIB)
+**Read first:**
+- `.10x/decisions/sde/newsletter-story-arcs.md` (what was built, deviations, evidence, incident);
+- each ticket's dev comment;
+- EXPERIMENTS.md, the 2026-10-13/14 entries (DBT-72, DBT-73, SYS-147/DBT-74, DBT-75/SYS-149, SYS-150).
+
+### Ready for QA
+- DBT-72 #344 (+ SYS-153 #343);
+- DBT-73 #345;
+- SYS-147 #337;
+- SYS-148 #338;
+- DBT-75 #347;
+- SYS-149 #339.
+
+### Not yet ready
+- **DBT-74 #346:**
+  - the old-vs-new digest comparison (`scripts/experiments/probe_newsletter_setup.py --path old`) needs ~10 GB free; the host had 8 GB tonight;
+  - QA needs the **2026-10-14 12:00 log**: it must show no NEWS_L2 or e5-large load, with the same crawl_log row and Telegram line.
+- **SYS-150 #340:** the replay is done. The owner's blind read is next (below).
+
+### Owner
+1. **Read the blind pairs** on the phone: `digests/preview/arcs/<date>-X.pdf` and `-Y.pdf` for 2026-10-08..12. Note which one you would rather read each day, then open `key.json`. Arcs ship if they win ≥ 4/5.
+2. **Fill `digests/preview/arcs/handcheck.csv`:**
+   - `same_thread` y/n for 52 timeline items;
+   - `attributed` for 5 causal sentences (one is pre-flagged).
+3. **Confirm "≥ 1 non-finance in 3-4 slots"** (SYS-149, `POLICY_ARCS`).
+4. **On a pass:** `NEWSLETTER_ARCS=1` in `.env`. The next 12:00 run delivers arcs; the switch back is `0`.
+
+### For QA, notes
+- **Mutants:** run in a scratch worktree (`%TEMP%\mutwt`, torn down junction-first tonight, venv verified). `QA_MUTANT_TESTS` per ticket is in the registry comments.
+- **Registry:** 24 older mutants elsewhere no longer match their files (crawl/ops/RAG). Not from this work; QA's call to ticket.
+- **Restored file:** `digests/2026-10-03.md` was overwritten by a test and restored from the pre-QA copy (possibly not the last production write). See the SDE file.
+- **Production:** the 12:00 run on 2026-10-14 is today's edition, byte for byte (arcs off), built on DBT-74's composition root.
+
+---
+
+## Previous (superseded)
+
 ## From: 10x-team (EM + Staff Engineer: story arcs re-prioritised) -> To: SDE
 **Date:** 2026-10-13 (~22:00 WIB)
 **Read first:**
