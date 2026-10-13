@@ -2564,3 +2564,16 @@ SINDONEWS   old 12 new 12 | lost [] | gained []   links identical: True
   - **No single cosine floor works:** 0.70 over-includes (daya beli), 0.80 cuts real history (Houthi 9 → 2 days, karhutla 30 → 14). Retrieve wide (≈0.70), keep one representative per day, and let the arc writer confirm each timeline item, like today's `terkait`/`tidak_terkait`.
   - A running series (IHSG, emas) returns hundreds of near-identical daily items. The arc needs turning points, not every day.
 - **Links:** PM decision `.10x/decisions/product-manager/newsletter-story-arcs.md`; probe `scripts/experiments/probe_story_arcs.py`
+
+### 2026-10-13 — DBT-72/SYS-153: does checking written-out dates as dates refuse summaries the old guard accepted?
+- **Question / hypothesis:** `source_check.unsupported_number` now reads "24 September" / "24 Sep 2026" as a date that the source must name. Before, it read only the bare number 24. Does that raise false refusals on real model output? DBT-72's Done-when allows ±2 points.
+- **Method:** a zero-cost replay over stored answers instead of new LLM calls (the prepaid balance is tight until the ~10-16 top-up). For every accepted summary in `digests/preview/replay*/*-stories.json` (13 files, 1,006 summaries), each field (judul, inti, poin, mengapa_penting, sekilas) was run through the old guard (`git show HEAD~:newscrawler/core/story_summary.py`) and the new one, against the `terkait` guard texts. The script was inline in the session (`cmp_guard.py`: old vs new `unsupported_number`, counting summaries that are newly refused).
+- **Result:**
+  - first version: 1 of 1,006 newly refused (0.10%), 2026-09-24's "BI mencatat **M2 Agustus 2026** mencapai Rp10.448,1 triliun": the money supply M2 was read as the date "2 Agustus";
+  - after requiring that a date not start inside a word (`(?<![\w.,])`): **0 of 1,006**;
+  - 17/17 mutants killed (6 new `dbt72_*` + 11 retargeted SYS-80/82/87 guard mutants), run in the `%TEMP%\mutwt` worktree;
+  - unit 2,982 passed.
+- **Conclusion / do not repeat:**
+  - A date regex over prose must anchor at a word start: "M2", "Q3" and "H1" precede month names in economic copy.
+  - Stored replay answers (`*-stories.json`) are enough to measure a guard change; no LLM spend is needed.
+- **Links:** DBT-72 #344, SYS-153 #343, commit 223352b
