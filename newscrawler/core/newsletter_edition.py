@@ -129,6 +129,9 @@ class Edition:
     editor_rejections: List[str]  # each refused or failed editor answer's reason, in order
     sixty_trimmed: int = 0
     echoes_hidden: List[str] = field(default_factory=list)   # Sekilas lines hidden as repeats of a top story
+    # DBT-75 (#347): what the edition was built from, for replays: the candidates, the choice, the kept
+    # Sekilas lines and the ids hidden as echoes. Not part of stats() (not stored in the row).
+    trace: dict = field(default_factory=dict)
 
     def stats(self) -> dict:
         """The `_edition` entry of newsletter_digests.categories."""
@@ -451,11 +454,13 @@ def build(summarizer, sections: Sequence[dict], digest_date: date, article_count
     digest_stories = sum(len(s["clusters"]) for s in sections)
     markdown, count, sekilas = render(cands, choice, digest_date, article_count, outlet_count, digest_stories)
     by_id = {c.id: c for c in cands}
-    echoed = [by_id[i].story.sekilas for i in _sekilas(cands, choice)[1]]
+    hidden = _sekilas(cands, choice)[1]
+    echoed = [by_id[i].story.sekilas for i in hidden]
     if echoed:
         logger.info(f"Sekilas lines hidden as repeats of a top story: {echoed}")
     return Edition(markdown, count, len(choice.utama), len(sekilas), sum(1 for c in cands if not c.summarized),
-                   fallback, reasons, choice.sixty_trimmed, echoed)
+                   fallback, reasons, choice.sixty_trimmed, echoed,
+                   trace={"candidates": cands, "choice": choice, "kept": sekilas, "echoes": hidden})
 
 
 def briefing(markdown: str) -> Tuple[List[str], int]:

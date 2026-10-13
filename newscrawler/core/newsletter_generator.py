@@ -96,16 +96,32 @@ class SummaryStats:
         return asdict(self)
 
 
+@dataclass
+class DayPlan:
+    """DBT-75 (#347): a day's newsletter before anything is written -- the articles,
+    their L1 vectors, the sections (clusters with their summaries) and the
+    summary stats. `plan()` makes it (reads and LLM calls, no file or row);
+    `build_edition()` can run on it more than once; `generate()` writes.
+    `calls`: every summary call (shown articles, refusals, story) for replays."""
+    date: date
+    articles: list
+    vectors: object
+    sections: list
+    stats: "SummaryStats"
+    calls: list = field(default_factory=list)
+
+
 class DigestPath(str):
     """The digest's path, carrying `note`: what a caller must tell the operator
     about a degraded digest (None when every summary is real), and `edition`:
     the 5-minute edition's path (SYS-83; None when it was not built). Behaves
     as the plain path everywhere else."""
 
-    def __new__(cls, path: str, note: Optional[str] = None, edition: Optional[str] = None):
+    def __new__(cls, path: str, note: Optional[str] = None, edition: Optional[str] = None, trace=None):
         obj = super().__new__(cls, path)
         obj.note = note
         obj.edition = edition
+        obj.trace = trace          # DBT-75: {"plan": DayPlan, "edition": Edition or None} for replays
         return obj
 
 
@@ -140,41 +156,60 @@ class NewsletterGenerator:
 
     # ── Public entry point ───────────────────────────────────────────────────
 
-    def generate(self, target_date: date = None) -> Optional[str]:
-        start_ms = _now_ms()
-        if target_date is None:
-            target_date = date.today()
-
+    def plan(self, target_date: date) -> Optional[DayPlan]:
+        """DBT-75 (#347): the day's articles, vectors, sections and summaries --
+        reads and LLM calls, no file and no row. None when the day has no articles."""
         date_int = int(target_date.strftime("%Y%m%d"))
         logger.info(f"Generating newsletter for {target_date} (date_int={date_int})")
-
         articles = self.ds.get_articles_for_date(date_int)
         if not articles:
-            logger.warning(f"No articles found for {target_date}. Generating empty digest.")
-            return self._write_empty_digest(target_date, start_ms)
-
+            return None
         logger.info(f"Loaded {len(articles)} articles for clustering.")
-
         # SYS-40: one encode for the day, then clustering within each topic, so a big
         # political story cannot absorb the economy items next to it.
         vectors = self._encode([a["l1_text"] for a in articles])
         sections = self.build_sections(articles, vectors)
-
+        calls: list = []
         # Summaries only for the clusters that are shown.
-        stats = self._summarize_sections(sections)
+        stats = self._summarize_sections(sections, trace=calls)
+        return DayPlan(target_date, articles, vectors, sections, stats, calls)
+
+    def build_edition(self, plan: DayPlan):
+        """The 5-minute edition of a plan (SYS-83), without writing it; None when
+        no shown story has a summary. Raises what the edition raises."""
+        # once the calls stopped (quota, outage, no provider), the editor is not asked either
+        editor = None if plan.stats.stopped else self._summarizer
+        return newsletter_edition.build(editor, plan.sections, plan.date, len(plan.articles),
+                                        len(self._unique_sources(plan.articles)),
+                                        no_call_reason=plan.stats.stopped or "no_provider")
+
+    def generate(self, target_date: date = None, digests_dir: Optional[str] = None) -> Optional[str]:
+        """Plan the day, then write the digest, the edition and the newsletter_digests
+        row -- the only method with side effects. `digests_dir` (default
+        DIGESTS_DIR) is where the files go; a preview or replay passes its own."""
+        start_ms = _now_ms()
+        if target_date is None:
+            target_date = date.today()
+        digests_dir = digests_dir or DIGESTS_DIR
+
+        plan = self.plan(target_date)
+        if plan is None:
+            logger.warning(f"No articles found for {target_date}. Generating empty digest.")
+            return self._write_empty_digest(target_date, start_ms, digests_dir)
+        articles, sections, stats = plan.articles, plan.sections, plan.stats
         note = self._summary_note(stats)
 
         md_content = self._render_markdown(target_date, sections, articles, stats)
 
-        os.makedirs(DIGESTS_DIR, exist_ok=True)
+        os.makedirs(digests_dir, exist_ok=True)
         file_name = target_date.strftime("%Y-%m-%d.md")
-        file_path = os.path.join(DIGESTS_DIR, file_name)
+        file_path = os.path.join(digests_dir, file_name)
         with open(file_path, "w", encoding="utf-8") as f:
             f.write(md_content)
         logger.info(f"Digest written to {file_path}")
 
         # SYS-83: the 5-minute edition, a second file; the digest above is the archive.
-        edition_stats, edition_file = self._write_edition(target_date, sections, articles, stats, file_path)
+        edition_stats, edition_file, edition = self._write_edition(plan, file_path)
         if edition_file is None:
             missing = f"5-minute edition not built: {edition_stats.get('reason')}"
             logger.error(missing)
@@ -202,20 +237,16 @@ class NewsletterGenerator:
         logger.info(f"Newsletter generated in {generation_ms}ms: "
                     f"{cluster_count} clusters in {len(sections)} sections, {len(articles)} articles. "
                     f"{stats.describe()} | edition {edition_stats}")
-        return DigestPath(file_path, note, edition_file)
+        return DigestPath(file_path, note, edition_file, trace={"plan": plan, "edition": edition})
 
-    def _write_edition(self, target_date: date, sections: list, articles: list, stats: "SummaryStats",
-                       digest_path: str) -> Tuple[dict, Optional[str]]:
-        """(the `_edition` stats, the edition's path or None). A failure here
-        never costs the digest: it is logged and reported, and a stale edition
-        file of the same date is removed so it cannot be sent as today's."""
+    def _write_edition(self, plan: DayPlan, digest_path: str) -> Tuple[dict, Optional[str], object]:
+        """(the `_edition` stats, the edition's path or None, the Edition or None).
+        A failure here never costs the digest: it is logged and reported, and a
+        stale edition file of the same date is removed so it cannot be sent as today's."""
         path = newsletter_edition.edition_path(digest_path)
-        # once the calls stopped (quota, outage, no provider), the editor is not asked either
-        editor = None if stats.stopped else self._summarizer
+        edition = None
         try:
-            edition = newsletter_edition.build(editor, sections, target_date, len(articles),
-                                               len(self._unique_sources(articles)),
-                                               no_call_reason=stats.stopped or "no_provider")
+            edition = self.build_edition(plan)
             if edition is None:
                 result = {"built": False, "reason": "no summarized story"}
             else:
@@ -223,13 +254,13 @@ class NewsletterGenerator:
                     f.write(edition.markdown)
                 logger.info(f"Edition written to {path} ({edition.words} words, {edition.utama} top stories, "
                             f"{edition.sekilas} Sekilas lines, editor fallback: {edition.editor_fallback})")
-                return edition.stats(), path
+                return edition.stats(), path, edition
         except Exception as e:  # noqa: BLE001 -- the archive digest is already written and must be saved
             logger.exception("5-minute edition failed")
             result = {"built": False, "reason": f"{type(e).__name__}: {e}"[:300]}
         if os.path.exists(path):
             os.remove(path)
-        return result, None
+        return result, None, edition
 
     # ── Sections ──
 
@@ -340,14 +371,15 @@ class NewsletterGenerator:
         """What a cluster shows when no real summary was produced."""
         return "\n".join(f"- {a['headline']}" for a in self._top_articles(articles))
 
-    def summarize_cluster(self, cluster: dict, rejections: list) -> Optional[story_summary.StorySummary]:
+    def summarize_cluster(self, cluster: dict, rejections: list,
+                          trace: Optional[list] = None) -> Optional[story_summary.StorySummary]:
         """SYS-82 (#239): the cluster's structured summary, or None when the
         model's answer was refused twice (each refusal's reason is appended to
         `rejections`). An accepted summary is applied to the cluster (SYS-80).
         Raises QuotaExhausted or SummarizerError; the caller decides what a
         failure costs."""
         shown = story_summary.pick_articles(cluster["articles"])
-        story = story_summary.summarize_story(self._summarizer, shown, rejections)
+        story = story_summary.summarize_story(self._summarizer, shown, rejections, trace)
         if story is not None:
             self._apply_story(cluster, shown, story)
         return story
@@ -366,7 +398,7 @@ class NewsletterGenerator:
         cluster["sources"] = self._unique_sources([a for a in cluster["articles"] if id(a) not in unrelated])
         cluster["links"] = self._top_links(related)
 
-    def _summarize_sections(self, sections: list) -> SummaryStats:
+    def _summarize_sections(self, sections: list, trace: Optional[list] = None) -> SummaryStats:
         """SYS-68 (#216): summarize every shown cluster, counting the real
         summaries. A quota error stops the calls at once (the provider refuses
         all of them today); NEWSLETTER_MAX_CONSECUTIVE_SUMMARY_ERRORS failures
@@ -385,7 +417,7 @@ class NewsletterGenerator:
             story, rejections = None, []
             if not stats.stopped:
                 try:
-                    story = self.summarize_cluster(cluster, rejections)
+                    story = self.summarize_cluster(cluster, rejections, trace)
                     consecutive_errors = 0
                 except QuotaExhausted as e:
                     stats.stopped = "quota"
@@ -580,12 +612,14 @@ class NewsletterGenerator:
         lines.append(f"*{copy.footer(len(all_articles), len(self._unique_sources(all_articles)))}*")
         return "\n".join(lines) + "\n"
 
-    def _write_empty_digest(self, target_date: date, start_ms: int) -> "DigestPath":
+    def _write_empty_digest(self, target_date: date, start_ms: int,
+                            digests_dir: Optional[str] = None) -> "DigestPath":
         """SYS-84: an empty day says what it usually means (a collection
         problem), in the reader's words. No edition is built for it."""
-        os.makedirs(DIGESTS_DIR, exist_ok=True)
+        digests_dir = digests_dir or DIGESTS_DIR
+        os.makedirs(digests_dir, exist_ok=True)
         file_name = target_date.strftime("%Y-%m-%d.md")
-        file_path = os.path.join(DIGESTS_DIR, file_name)
+        file_path = os.path.join(digests_dir, file_name)
         with open(file_path, "w", encoding="utf-8") as f:
             f.write(f"# {copy.TITLE}\n\n"
                     f"> {copy.DATELINE_FULL.format(tanggal=copy.tanggal(target_date))}\n\n"

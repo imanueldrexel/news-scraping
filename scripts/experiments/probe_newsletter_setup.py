@@ -108,12 +108,10 @@ def main(argv=None):
         generator = api.crawler_service.data_flow_repo.newsletter_generator
     built_s, built_rss = round(time.time() - t0, 1), peak.now()
 
-    import newscrawler.core.newsletter_generator as ng
-    ng.DIGESTS_DIR = a.out_dir
     generator._summarizer = None                     # no LLM call: headline lists, no edition
     generator.ds.save_digest = lambda **kw: 0        # read-only
     t1 = time.time()
-    path = generator.generate(day)
+    path = generator.generate(day, digests_dir=a.out_dir)
     digest_s = round(time.time() - t1, 1)
     digest = open(str(path), "rb").read()
     peak.stop = True

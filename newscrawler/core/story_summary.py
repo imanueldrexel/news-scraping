@@ -255,7 +255,8 @@ def parse(answer: Optional[str], n: int, sources: Union[str, Sequence[str]],
     return StorySummary(judul, inti, poin, mengapa, sekilas, terkait, tidak, dropped, demoted)
 
 
-def summarize_story(summarizer, shown: Sequence[dict], rejections: list) -> Optional[StorySummary]:
+def summarize_story(summarizer, shown: Sequence[dict], rejections: list,
+                    trace: Optional[list] = None) -> Optional[StorySummary]:
     """Ask once, and once more with the reason if the answer is refused
     (`llm_json.ask_json`); the retry drops long poin and demotes strays. Each
     refusal's reason is appended to `rejections` (a failed second call still
@@ -273,4 +274,8 @@ def summarize_story(summarizer, shown: Sequence[dict], rejections: list) -> Opti
         rejections.extend(getattr(e, "refusals", []))
         raise
     rejections.extend(outcome.reasons)
+    if trace is not None:        # DBT-75: what a replay records, instead of patching parse
+        trace.append({"shown": list(shown), "story": outcome.value,
+                      "refusals": [{"reason": r.reason, "detail": r.detail, "answer": a}
+                                   for r, a in zip(outcome.refusals, outcome.answers)]})
     return outcome.value

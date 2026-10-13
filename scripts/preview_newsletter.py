@@ -53,9 +53,8 @@ def main(argv=None) -> int:
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
-    newsletter_generator.DIGESTS_DIR = args.out_dir
     generator = newsletter_generator.NewsletterGenerator(ReadOnlyNewsletterDataSource(SQLAlchemyClient()))
-    path = generator.generate(date.fromisoformat(args.date))
+    path = generator.generate(date.fromisoformat(args.date), digests_dir=args.out_dir)
     print(path)
     if getattr(path, "edition", None):
         print(path.edition)              # SYS-83: the 5-minute edition beside the full digest

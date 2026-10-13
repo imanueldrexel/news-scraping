@@ -1603,6 +1603,18 @@ M = [
   'reason = "number" if numbers else "date" if dates', 'reason = "date" if dates else "number" if numbers'),
  ('sys148_one_problem_per_field', 'newscrawler/core/story_arc.py',
   '        elif bad and not number:', '        elif bad:'),
+ # DBT-75 (#347) plan/build split. QA_MUTANT_TESTS="tests/unit/test_newsletter_plan.py tests/unit/test_newsletter_summaries.py"
+ ('dbt75_directory_ignored', 'newscrawler/core/newsletter_generator.py',
+  '        digests_dir = digests_dir or DIGESTS_DIR\n\n        plan = self.plan', '        digests_dir = DIGESTS_DIR\n\n        plan = self.plan'),
+ ('dbt75_calls_not_traced', 'newscrawler/core/newsletter_generator.py',
+  'stats = self._summarize_sections(sections, trace=calls)', 'stats = self._summarize_sections(sections)'),
+ ('dbt75_edition_not_traced', 'newscrawler/core/newsletter_generator.py',
+  'trace={"plan": plan, "edition": edition})', 'trace={"plan": plan, "edition": None})'),
+ ('dbt75_refusal_detail_lost', 'newscrawler/core/story_summary.py',
+  '"refusals": [{"reason": r.reason, "detail": r.detail, "answer": a}', '"refusals": [{"reason": r.reason, "detail": "", "answer": a}'),
+ ('dbt75_plan_saves_the_row', 'newscrawler/core/newsletter_generator.py',
+  '        return DayPlan(target_date, articles, vectors, sections, stats, calls)',
+  '        self.ds.save_digest(digest_date=target_date)\n        return DayPlan(target_date, articles, vectors, sections, stats, calls)'),
 ]
 only = sys.argv[1:]
 # The tests each mutant runs (default: all of tests/unit). QA_MUTANT_TESTS narrows it to the files that

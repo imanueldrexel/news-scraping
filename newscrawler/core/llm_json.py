@@ -50,6 +50,7 @@ class Outcome(NamedTuple):
     reasons: List[str]          # every refusal (and, under "retry", "error"/"quota"), in order
     calls: int                  # model calls made (a failed call counts)
     answers: List[str]          # the raw answers received, in order
+    refusals: List[Rejected] = []   # each refused answer's Rejected (reason + detail), in order
 
 
 def json_object(answer: Optional[str]) -> dict:
@@ -80,6 +81,7 @@ def ask_json(summarizer, prompt: str, check: Callable[[str, int], T], *, retries
         raise ValueError(f"on_error must be 'raise' or 'retry', not {on_error!r}")
     reasons: List[str] = []
     answers: List[str] = []
+    refusals: List[Rejected] = []
     calls = 0
     ask = prompt
     for attempt in range(retries + 1):
@@ -102,10 +104,11 @@ def ask_json(summarizer, prompt: str, check: Callable[[str, int], T], *, retries
             continue
         answers.append(answer)
         try:
-            return Outcome(check(answer, attempt), reasons, calls, answers)
+            return Outcome(check(answer, attempt), reasons, calls, answers, refusals)
         except Rejected as r:
             reasons.append(r.reason)
+            refusals.append(r)
             again = attempt < retries
             logger.info(f"{label} refused{', asking again' if again else ''} ({r})")
             ask = prompt + RETRY.format(detail=r.detail)
-    return Outcome(None, reasons, calls, answers)
+    return Outcome(None, reasons, calls, answers, refusals)

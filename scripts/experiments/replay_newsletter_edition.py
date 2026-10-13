@@ -64,81 +64,45 @@ def words_per_story(markdown: str) -> float:
     return round(sum(counts) / len(counts), 1) if counts else 0.0
 
 
-class Capture:
-    """What the edition was built from: the sections, the candidates and the editor's choice;
-    and, per summary call, the articles shown, every refused answer and the accepted summary."""
+def _story(s):
+    return None if s is None else {k: getattr(s, k) for k in (
+        "judul", "inti", "poin", "mengapa_penting", "sekilas", "terkait", "tidak_terkait", "demoted")}
 
-    def __init__(self):
-        self.sections = self.cands = self.choice = self.kept = None
-        self.calls = []                    # one per summarize_story: shown, refusals, story
-        real_candidates, real_choose, real_render = ne.candidates, ne.choose, ne.render
-        real_summarize, real_parse = ss.summarize_story, ss.parse
 
-        def summarize_story(summarizer, shown, rejections):
-            self.calls.append({"shown": shown, "refusals": [], "story": None})
-            story = real_summarize(summarizer, shown, rejections)
-            self.calls[-1]["story"] = story
-            return story
+def coverage(plan, edition) -> dict:
+    """Of the 6 shown clusters with the most portals, how many the edition shows (as a
+    top story, a kept Sekilas line, or through a twin: the editor's duplikat or an echo).
+    Read from the plan and the edition's trace (DBT-75: nothing is patched)."""
+    trace = edition.trace
+    clusters = [c for s in plan.sections for c in s["clusters"]]
+    top6 = sorted(clusters, key=lambda c: -len(c["sources"]))[:6]
+    id_of = {id(c.cluster): c.id for c in trace["candidates"]}
+    choice = trace["choice"]
+    shown = set(choice.utama) | {s.id for s in trace["kept"]}
+    shown |= set(trace["echoes"])                          # hidden as an echo of a top story
+    for group in choice.groups:                            # a folded duplicate is shown through its twin
+        if group & shown:
+            shown |= group
+    covered = [c for c in top6 if id_of.get(id(c)) in shown]
+    return {"top6_portals": [len(c["sources"]) for c in top6], "covered": len(covered),
+            "missed": [c.get("story").judul if c.get("story") else c["headline"]
+                       for c in top6 if id_of.get(id(c)) not in shown]}
 
-        def parse(*args, **kwargs):
-            try:
-                return real_parse(*args, **kwargs)
-            except ss.Rejected as r:
-                self.calls[-1]["refusals"].append({"reason": r.reason, "detail": r.detail,
-                                                   "answer": (args[0] if args else kwargs.get("answer")) or ""})
-                raise
 
-        ss.summarize_story, ss.parse = summarize_story, parse
-
-        def candidates(sections):
-            self.sections = sections
-            self.cands = real_candidates(sections)
-            return self.cands
-
-        def choose(*args, **kwargs):
-            result = real_choose(*args, **kwargs)
-            self.choice = result[0]
-            return result
-
-        def render(*args, **kwargs):
-            result = real_render(*args, **kwargs)
-            self.kept = result[2]                              # the Sekilas lines the budget kept
-            return result
-
-        ne.candidates, ne.choose, ne.render = candidates, choose, render
-
-    def coverage(self) -> dict:
-        """Of the 6 shown clusters with the most portals, how many the edition shows (as a
-        top story, a kept Sekilas line, or through a twin: the editor's duplikat or an echo)."""
-        clusters = [c for s in self.sections for c in s["clusters"]]
-        top6 = sorted(clusters, key=lambda c: -len(c["sources"]))[:6]
-        id_of = {id(c.cluster): c.id for c in self.cands}
-        shown = set(self.choice.utama) | {s.id for s in self.kept}
-        shown |= set(ne._sekilas(self.cands, self.choice)[1])  # hidden as an echo of a top story
-        for group in self.choice.groups:                      # a folded duplicate is shown through its twin
-            if group & shown:
-                shown |= group
-        covered = [c for c in top6 if id_of.get(id(c)) in shown]
-        return {"top6_portals": [len(c["sources"]) for c in top6], "covered": len(covered),
-                "missed": [c.get("story").judul if c.get("story") else c["headline"]
-                           for c in top6 if id_of.get(id(c)) not in shown]}
-
-    def stories(self) -> dict:
-        """The day as data, for the offline checks (SYS-80's subjects, SYS-86's echo guard):
-        every summary call, and the edition's candidates, choice, kept and hidden lines."""
-        def story(s):
-            return None if s is None else {k: getattr(s, k) for k in (
-                "judul", "inti", "poin", "mengapa_penting", "sekilas", "terkait", "tidak_terkait", "demoted")}
-        out = {"calls": [{"shown": [{"source": a["source"], "headline": a["headline"], "link": a.get("link"),
-                                     "guard_text": ss.guard_text(a)} for a in c["shown"]],
-                          "refusals": c["refusals"], "story": story(c["story"])} for c in self.calls]}
-        if self.cands is not None and self.choice is not None:
-            out["candidates"] = [{"id": c.id, "topic": c.topic, "portals": c.portals, "guaranteed": c.guaranteed,
-                                  "story": story(c.story)} for c in self.cands]
-            out["choice"] = {"utama": self.choice.utama, "groups": [sorted(g) for g in self.choice.groups]}
-            out["kept"] = [s.id for s in self.kept or []]
-            out["echoes_hidden"] = ne._sekilas(self.cands, self.choice)[1]
-        return out
+def stories(plan, edition) -> dict:
+    """The day as data, for the offline checks (SYS-80's subjects, SYS-86's echo guard):
+    every summary call, and the edition's candidates, choice, kept and hidden lines."""
+    out = {"calls": [{"shown": [{"source": a["source"], "headline": a["headline"], "link": a.get("link"),
+                                 "guard_text": ss.guard_text(a)} for a in c["shown"]],
+                      "refusals": c["refusals"], "story": _story(c["story"])} for c in plan.calls]}
+    if edition is not None:
+        trace = edition.trace
+        out["candidates"] = [{"id": c.id, "topic": c.topic, "portals": c.portals, "guaranteed": c.guaranteed,
+                              "story": _story(c.story)} for c in trace["candidates"]]
+        out["choice"] = {"utama": trace["choice"].utama, "groups": [sorted(g) for g in trace["choice"].groups]}
+        out["kept"] = [s.id for s in trace["kept"]]
+        out["echoes_hidden"] = list(trace["echoes"])
+    return out
 
 
 _ENGLISH_MONTHS = re.compile(r"\b(January|February|March|May|June|July|August|October|December)\b")
@@ -194,7 +158,6 @@ def main(argv=None) -> int:
         return 0
 
     os.makedirs(args.out_dir, exist_ok=True)
-    ng.DIGESTS_DIR = args.out_dir
     stored = {}
 
     class Recording(ReadOnlyNewsletterDataSource):
@@ -202,9 +165,9 @@ def main(argv=None) -> int:
             stored.update(kwargs)
             return 0
 
-    capture = Capture()
     generator = ng.NewsletterGenerator(Recording(SQLAlchemyClient()))
-    path = generator.generate(date.fromisoformat(args.date))
+    path = generator.generate(date.fromisoformat(args.date), digests_dir=args.out_dir)
+    plan, edition = path.trace["plan"], path.trace["edition"]
     categories = stored["categories"]
     s, e = categories[ng.SUMMARIES_KEY], categories[ng.EDITION_KEY]
     digest_md = open(path, encoding="utf-8").read()
@@ -225,12 +188,12 @@ def main(argv=None) -> int:
     if path.edition:
         pdfs.append(render_edition_pdf(path.edition))
         pages["edition_phone"] = len(PdfReader(pdfs[1]).pages)
-        result["coverage"] = capture.coverage()
+        result["coverage"] = coverage(plan, edition)
     result["pdf_pages"] = pages
     result["checks"] = document_checks([str(path)] + ([path.edition] if path.edition else []), pdfs)
     stories_path = os.path.join(args.out_dir, f"{args.date}-stories.json")
     with open(stories_path, "w", encoding="utf-8") as f:
-        json.dump(capture.stories(), f, ensure_ascii=False, indent=1)
+        json.dump(stories(plan, edition), f, ensure_ascii=False, indent=1)
     result["stories"] = stories_path
     print("REPLAY " + json.dumps(result, ensure_ascii=False))
     return 0
