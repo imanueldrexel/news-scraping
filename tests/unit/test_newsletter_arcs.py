@@ -60,13 +60,25 @@ class TestOn:
         s = FakeNewsroom()
         hits = [(1, 20260920, 0.95),            # an article of today's first story: excluded
                 (901, 20260920, 0.80)]
-        gen, plan, searched = _plan(monkeypatch, s, hits=hits, rows={901: ROW, 1: ROW})
+        today = dict(ROW, headline="Artikel hari ini sendiri")
+        gen, plan, searched = _plan(monkeypatch, s, hits=hits, rows={901: ROW, 1: today})
         gen.build_edition(plan, arcs=True)
         first = s.prompts["arc"][0]
         assert "LINI MASA\n[2] Minggu, 20 Sep · CNBC Indonesia — Lini masa: rapat pertama digelar" in first
-        assert first.count("Lini masa: rapat pertama digelar") == 1
+        assert "Artikel hari ini sendiri" not in first          # today's own article is never its back-story
         from newscrawler.core.constants import ARC_FETCH_K
         assert searched and len(searched[0][0]) == 1 and searched[0][1] == ARC_FETCH_K
+
+    def test_the_story_is_the_arcs_prose_not_the_summarys_bullets(self, monkeypatch):
+        from tests.unit.newsletter_fakes import arc_answer, story_answer
+        s = FakeNewsroom(story=[lambda p: story_answer(p, poin=["Poin ringkasan yang tidak dipakai."],
+                                                       mengapa_penting="Alasan ringkasan.")] * 20,
+                         arc=[lambda p: arc_answer(p, hari_ini="Paragraf hari ini dari arc.",
+                                                   latar="Paragraf latar dari arc.")] * 4)
+        gen, plan, _ = _plan(monkeypatch, s)
+        top = _top_stories(gen.build_edition(plan, arcs=True).markdown)
+        assert "Paragraf hari ini dari arc.\n\nParagraf latar dari arc." in top
+        assert "Poin ringkasan yang tidak dipakai." not in top and ne.copy.WHY_IT_MATTERS not in top
 
     def test_a_refused_arc_falls_back_to_its_summary_as_prose(self, monkeypatch):
         gen, plan, _ = _plan(monkeypatch, FakeNewsroom(arc=["x", "y"]))
