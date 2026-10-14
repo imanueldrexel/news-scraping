@@ -21,6 +21,8 @@ Reusable diagnostics live in `scripts/experiments/`. Throwaway repro code is inl
 
 One line each; read this before starting on a scraper or pipeline problem.
 
+- **A "running total" guard must not key on a bare "hingga" (2026-10-15, SYS-161):** the 10-11 Polri headline "Rombak 199 Personel Polri, Kakorlantas hingga Wakabaintelkam" holds the figure and "hingga" as a list. A source states a total as "hingga/sampai/per/sepanjang/sejak + a time", a total word, a change verb or "dari <number>". -> 2026-10-15 "Arc guards rework" entry
+
 - **A follow-up's back-reference rule needs held-out adverbs (QA 2026-10-13):** SYS-144's 22-word *-nya* list passed the ticket's 5 and missed *sebaiknya/sebetulnya/nantinya/sayangnya/secepatnya/sepenuhnya*; through SYS-145's `kept-thread` a kept topic switch went 4/5 → 1/5 on the served path. Measure with `scripts/experiments/qa_2026_10_13/probe_qa_heldout.py B`.
 - **An 80-word L2 window does not always fit MiniLM's 128 tokens (QA 2026-10-12):** 10.7% of production windows exceed it (p90 129, p99 150). About 1% of L2 words stay unembedded (was 22% before SYS-109). Measure with the tokenizer, not word counts. See "2026-10-12 — QA of the 2026-10-08/09 retrieval fixes".
 - **A follow-up retrieved with the conversation breaks a follow-up that changes the subject (QA 2026-10-12, SYS-104 sent back):** 5/5 topic-switch pairs got the previous topic's sources. Probe `scripts/experiments/qa_2026_10_12/probe_topic_switch_followups.py` alongside the elliptical pairs.
@@ -2748,3 +2750,30 @@ SINDONEWS   old 12 new 12 | lost [] | gained []   links identical: True
   - Once the prompt asks for relative time, a check keyed on calendar dates no longer separates a recap from a frame; count time anchors (SYS-164).
   - A QA test file with red tests at baseline makes every `-x` mutant "KILLED": count kills only on tests that pass unmutated.
 - **Links:** SYS-154..160 (#349..#355), SYS-161..164 (#356..#359), DBT-77 (#360); `.10x/reviews/2026-10-14-qa-report.md`.
+
+### 2026-10-15 — Arc guards rework (SYS-157/158 sent back, SYS-161..164, DBT-77): calibrating on real text, and what the new rules do to v5
+- **Question / hypothesis:**
+  - SYS-161: can "bertambah menjadi N" be held to the sources by one rule that refuses the Polri 199 and passes the three right year-to-date totals?
+  - SYS-163: does "same date + ≥ 50% content words" separate the El-Sisi repeat from the other agendas?
+  - SYS-164: what do the new time-anchor metrics say about v5, and why do they differ from QA's 8/51 and 3/17?
+- **Method:** all zero-cost (no LLM).
+  - DB read-only: the L1 sentences holding 199 (2026-10-11), 115,8 and 4,11 (10-09), 63.789 (10-11), 10.30 (10-10). They are now fixtures in `tests/unit/test_source_check.py` (`POLRI`, `BANSOS`, `BULOG`, `PHK`).
+  - `story_words.content_words` overlap of the three v5 agendas with their latar + hari_ini.
+  - `replay_story_arcs.py --metrics-from digests/preview/arcs-v5`. Then QA's definitions from the 2026-10-14 entry, recomputed inline on the same records: an opener of connector + optional "pada" only; anchors = `dates_in` + `relative_times` phrases not starting with "sejak".
+  - `story_arc.chronicle` on the 17 accepted v5 back-stories.
+- **Result:**
+  - **SYS-161:** a bare "hingga" would have licensed Polri. TRIBUN's headline "Kapolri Suyudi Lagi-lagi Rombak 199 Personel Polri, Kakorlantas hingga Wakabaintelkam Diganti" holds 199 and "hingga" as a list. The right totals are all stated as a running period:
+    - "Rp 115,8 triliun hingga akhir September 2026";
+    - "4,11 juta ton sampai awal Oktober 2026";
+    - "63.789 pekerja ... sepanjang Januari-September 2026, naik dari 53.490".
+    - So the marker is "hingga/sampai/per/sepanjang/sejak" **+ a time**, a total word, a change verb, or "dari <number>". Polri is refused, the other three pass, and so do the market moves.
+  - **SYS-163:** El-Sisi's agenda shares 11/10 with its latar and 7 of 9 content words (0.78). Ojol's date (31 Desember 2026) is not in its latar. BPGMN 10-12 has no date ("minggu depan"), so it is kept, although it does restate hari_ini's "pelantikan ... diharapkan minggu depan".
+  - **SYS-164 metrics on v5:** time-led **11/51 (21.6%)**; latar with ≥ 3 anchors **1/17** (Karhutla 10-11: Pekan lalu, 5/10, 8/10, Kemarin); tied 17/17. Both of QA's numbers reproduce exactly under their definition (8/51; MK 10-09, Karhutla 10-11, Rupiah 10-12). The gaps:
+    - QA counted the phrase inside a "sejak ..." frame: "sejak akhir September" yields "akhir September", which does not start with "sejak". The ticket excludes frames, so MK and Rupiah hold 2 anchors.
+    - SYS-164 also counts openings SYS-156 already took ("Per 31 Agustus 2026, ...", "Minggu (11/10) pukul ...") and date-led's mid-sentence "pada 25 September" (Bulog).
+  - **The new style rules on the accepted v5 arcs:** 2 of 17 would now be refused on the first try. Karhutla 10-11 has 4 anchors and two sentences opening on a time. Lobster 10-12 has "Akhir September, ..." then "Awal Oktober, ...". Neither has been re-run yet (see Conclusion).
+- **Conclusion / do-not-repeat:**
+  - A cumulative-figure guard keyed on a bare "hingga" passes the very case it is for. Key it on "hingga + a time".
+  - When two measurements of the "same" metric differ, recompute the other definition before arguing: here both were right about different things.
+  - Not run: the 10-11 LLM re-run SYS-161 asks for. The SumoPod balance is about $0-2 on 2026-10-15: $20.25 logged since the $22.50 top-up, plus about $1.68 of unlogged replays. The 12:00 newsletter depends on that balance. Run it after the owner's top-up: `replay_story_arcs.py --dates 2026-10-11 --out-dir digests/preview/arcs-v6` (~$0.15).
+- **Links:** SYS-157 (#352), SYS-158 (#353), SYS-161..164 (#356..#359), DBT-77 (#360); `.10x/decisions/architect/newsletter-story-arcs.md` "2026-10-15".

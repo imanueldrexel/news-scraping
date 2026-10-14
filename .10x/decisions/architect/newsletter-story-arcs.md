@@ -150,3 +150,45 @@ generate(date)
 ## Open for SDE (defaults chosen, change only with evidence)
 - `ARC_FLOOR` 0.70, `ARC_MAX_ITEMS` 12, `ARC_FETCH_K` 3000: tune on the replay.
 - The ≥ 1 non-finance rule for 3-4 slots replaces `MIN_NON_FINANCE = 2`. It is a scaled default, not an owner decision: flag it in the ticket.
+
+---
+
+# 2026-10-15: QA rework of the arc guards (SYS-157/158 sent back; SYS-161..164, DBT-77)
+
+No new ADR: every change stays inside ADR-017's seam (checks live in `source_check`, style measures in
+`arc_style`, `story_arc.parse` only wires them), and the arc's data flow is unchanged.
+
+## Decisions (dev's calls the tickets left open)
+- **SYS-157: "N pekan/bulan/hari lalu" is read with its own span, never as the shorter phrase.**
+  One count-ago entry replaces "dua pekan lalu" and "N hari lalu": hari N±1, pekan 7N±3 (N=1 keeps
+  sepekan's 7±2), bulan = the calendar month N back. A vague count ("beberapa", "puluhan", "dua puluh")
+  is matched and left unread: it occupies the text, so the shorter phrase inside it is never read.
+  Why read rather than leave unread: an unread phrase is an unchecked time claim, the hole SYS-157 closed.
+- **One phrase finder, two views.** `relative_phrases(text)` (position, phrase; no edition date needed)
+  feeds `relative_times(text, today)` (spans) and `arc_style.time_anchors` (SYS-164). Dates are blanked
+  length-preserving, so positions hold.
+- **SYS-162:** `unbacked_times` takes the stated text of today's `terkait` articles only. Dates the
+  chosen items state still back a phrase (they are absolute).
+- **SYS-158:** a record's key is the whole time phrase (structured: part + month/tahun/bulan/pekan,
+  day + month, d/m, a bare year; else up to 3 words to the next stopword/punctuation). A year after a
+  month or a date is dropped from the key: the number/date guards hold it. "N kali berturut-turut" is a
+  series. A word ordinal after a me-/di-/ber- verb, or before "belah", is collective; a short list of
+  nouns with those prefixes (menteri, diskusi, direktur, ...) stays a noun. Missing a claim costs an
+  unchecked count (the pre-SYS-158 state); a false claim costs a retry, so the rule leans to collective.
+- **SYS-161:** `source_check.change_claims(text)`: "(bertambah|naik|...) [up to ~8 words] (men)jadi
+  [sekitar] N". It passes when a source sentence holding N (by value) holds a change verb, a total word
+  ("total", "kumulatif", "akumulasi", "keseluruhan") or a cumulative period ("hingga/sampai/per/
+  sepanjang/sejak" + a time: month, date, awal/akhir, tahun, kuartal, periode, kini). Bare "hingga" is
+  not one: the 10-11 TRIBUN headline holds "199 ... Kakorlantas hingga Wakabaintelkam". Refused as
+  `number`. Applied to every prose field, like the other number checks. Prompt rule 3 says it too.
+- **SYS-163: the repeated agenda is dropped, not refused** (`agenda_dropped`): it shares a date with the
+  latar/hari_ini and >= 50% of its content words are there. By definition it adds nothing, so a retry
+  would spend a call and risk a fallback for no reader gain.
+- **SYS-164:** a time anchor = a calendar date or a non-"sejak" relative phrase. `opens_on_time`
+  (date or anchor opening; "Pada tanggal/hari", "Pada Sabtu, 3 Oktober," shapes) drives the tie and the
+  openings cap; `MAX_LATAR_ANCHORS = 3` beside `MAX_LATAR_DATES = 2`; the metric adds `time_led` and
+  `with_3_anchors_or_more`. `opens_on_date` keeps its meaning (calendar only) for `date_led`.
+
+## Failure modes accepted
+- Change claim: a source sentence that holds N and an unrelated change verb still licenses it.
+- Collective rule: a noun with a me-/di-/ber- prefix missing from the list hides a real claim (unchecked).
