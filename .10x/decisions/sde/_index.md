@@ -11,7 +11,7 @@
 
 - [p3-bug-burndown-2026-10-06](p3-bug-burndown-2026-10-06.md) — SRC-58, OPS-39, DBT-01, SYS-90 (found) ready-for-qa; two owner-approved production writes with backups; SRC-47 owner-deferred, re-measured
 
-- [newsletter-story-arcs](newsletter-story-arcs.md) — tracker #336: DBT-72..75, SYS-147..150 built 2026-10-13 night (arcs behind NEWSLETTER_ARCS=0); DBT-76 split out; SYS-150 replay for the owner's blind read; 2026-10-14: SYS-154..160 (arcs read as stories) ready-for-qa, final replay 18/20, date-led 72%→7.8%
+- [newsletter-story-arcs](newsletter-story-arcs.md) — tracker #336: DBT-72..75, SYS-147..150 built 2026-10-13 night (arcs behind NEWSLETTER_ARCS=0); DBT-76 split out; SYS-150 replay for the owner's blind read; 2026-10-14: SYS-154..160 (arcs read as stories) ready-for-qa, final replay 18/20, date-led 72%→7.8%; 2026-10-15: QA rework SYS-157/158/162/163/164 + DBT-77 ready-for-qa, SYS-161 waits on a ~$0.15 re-run after the SumoPod top-up
 
 ## Cross-cutting SDE notes
 - A unit test that patches only `init_crawler` while the code builds `build_newsletter_service()` runs the real generator and writes into `digests/` (2026-10-13: 2026-10-03.md overwritten). Patch the light service, make the heavy one raise.

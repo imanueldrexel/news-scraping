@@ -1,5 +1,50 @@
 # Current Handoff
 
+## From: SDE (rework of QA's arc tickets) -> To: QA (verify), owner (top-up, then the arcs-v5 read)
+**Date:** 2026-10-15 (early morning)
+**Read first:**
+- each ticket's dev comment (#352, #353, #356..#360);
+- `.10x/decisions/sde/newsletter-story-arcs.md`, section "2026-10-15";
+- `.10x/decisions/architect/newsletter-story-arcs.md`, section "2026-10-15" (the dev's calls);
+- EXPERIMENTS.md "2026-10-15 — Arc guards rework".
+
+### Ready for QA (`status: ready-for-qa`)
+- SYS-157 #352, SYS-158 #353 (both reworked), SYS-162 #357, SYS-163 #358, SYS-164 #359, DBT-77 #360.
+- Commits: 3e8b90c (code + tests), 89eb879 (mutant registry + EXPERIMENTS).
+
+### What to verify
+- **QA's file:** `scripts/experiments/qa_2026_10_14/test_qa_arcs_story.py` is 83/84.
+  - The red one is `TestSys158InParse::test_a_collective_after_a_verb_does_not_cost_a_retry`.
+  - It is refused as `subject` on its own fixture: article [1] names neither "Istana" nor "Negara".
+  - The `number` part SYS-158 owned is gone (before/after detail on #353). QA's call.
+- **Mutants:**
+  - The registry's `sys156..164_*`, `sys157r_*`, `sys158r_*` and `qa_metric_ge2_dates` are 76, all KILLED in a scratch copy. Use `QA_MUTANT_TESTS` = the four arc suites + `test_newsletter_arcs.py`.
+  - In `qa_mutants_1014.py`, 4 patterns no longer match. Equivalents are named on #352/#359:
+    - `qa_tie_ignores_date_opening` → `sys159_date_opening_ties`;
+    - `qa_dua_pekan_lalu_any` → `sys157r_weeks_any_slack`;
+    - `qa_n_hari_no_slack` → `sys157r_days_no_slack`;
+    - `qa_relative_dates_not_blanked` → `_blank_dates` (still equivalent).
+- **Judgement calls to check:**
+  - SYS-163 drops the repeated agenda rather than refusing;
+  - SYS-164's openings cap counts relative-time openings too;
+  - SYS-161 runs on every prose field;
+  - SYS-158's me-/di-/ber- verb rule with its noun list (it leans to collective on purpose).
+- **SYS-164 numbers on v5:** time-led 11/51, ≥ 3 anchors 1/17. QA's 8/51 and 3/17 reproduce under QA's definition, which counts "sejak …" frames; the reconciliation is on #359.
+- **Not yet for QA:** SYS-161 #356 waits on its 10-11 re-run.
+
+### Owner
+1. **Top up SumoPod.** The balance is about $0-2: $20.25 logged since the 10-12 top-up, plus ~$1.68 of unlogged replays. The extraction cap is now 1.5 (`.env`, as decided for 10-15).
+2. After the top-up, SDE runs `replay_story_arcs.py --dates 2026-10-11 --out-dir digests/preview/arcs-v6` (~$0.15). That closes SYS-161's Done-when and shows whether the retry repairs the 2 v5 arcs SYS-164 now refuses on the first try (Karhutla 10-11, Lobster 10-12).
+3. The arcs-v5 read (3-way compare + blind A/B) is unchanged. `NEWSLETTER_ARCS` stays 0.
+
+### Still open from before
+- DBT-74 #346 (12:00 log + old-path comparison).
+- SYS-150 #340 (owner's A/B).
+
+---
+
+## Previous (superseded)
+
 ## From: QA (audit of SYS-154..160) -> To: SDE (rework + new tickets), owner (read arcs-v5)
 **Date:** 2026-10-14 (afternoon)
 **Read first:**

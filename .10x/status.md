@@ -1,8 +1,8 @@
 # Project Status
 
 ## Project: NewsAggregator
-**Current Phase:** QA audit 2026-10-14 of SYS-154..160: 4 closed (SYS-155/156/159/160), SYS-157/158 sent back, SYS-154 held for the owner's read; filed SYS-161 (P2) .. SYS-164, DBT-77. Back to SDE; owner reads arcs-v5.
-**Last Updated:** 2026-10-14 (afternoon) by QA
+**Current Phase:** SDE rework 2026-10-15 of QA's arc tickets: SYS-157/158/162/163/164 + DBT-77 ready-for-qa; SYS-161 built, waits on a ~$0.15 10-11 re-run after the SumoPod top-up. Back to QA; owner: top-up, then the arcs-v5 read.
+**Last Updated:** 2026-10-15 (early morning) by SDE
 **Health:** On Track
 
 ## Progress
@@ -417,3 +417,9 @@ Design approved by the owner. Order:
 - **Next:**
   - SDE: SYS-157/158 rework, SYS-161, then the P3s;
   - owner: 3-way read + blind A/B on arcs-v5. `NEWSLETTER_ARCS` stays 0.
+
+## SDE 2026-10-15 (early morning): QA rework of the arc guards
+- [x] Ready for QA: SYS-157 #352, SYS-158 #353 (both reworked), SYS-162 #357, SYS-163 #358, SYS-164 #359, DBT-77 #360. Commits 3e8b90c, 89eb879.
+- [~] SYS-161 #356: guard + prompt + tests + 5 mutants done; the 10-11 re-run is held until the SumoPod top-up (balance ~$0-2; the 12:00 newsletter depends on it).
+- Tests: unit 3,320 passed; QA's arc file 83/84 (one fixture issue, explained on #353); 76/76 arc mutants KILLED.
+- Ops: `KNOWLEDGE_DAILY_COST_LIMIT_USD` set 8 -> 1.5 in `.env` (owner decision for 10-15).

@@ -90,3 +90,46 @@ Tracker #336 · ADR-016, ADR-017 · design: `decisions/architect/newsletter-stor
 - **Polri arc slip:** "Kini … bertambah menjadi 199 orang" reads a wave's count as a running total. No check catches it; it is for QA's hand-check. It could become a cumulative-claim guard if QA tickets it.
 - **Accepted share sits at the 90% gate.** Both fallbacks are market stories with a number the model made up. A price story with a timeline is the weak spot.
 - The stems are a heuristic (one prefix, one suffix, stems ≥ 4 letters), used only for the tie. Not a stemmer: do not reuse it for search.
+
+---
+
+# 2026-10-15 (early morning): QA rework of the arc guards -- SYS-157/158 (sent back), SYS-161..164, DBT-77
+
+Design: `.10x/decisions/architect/newsletter-story-arcs.md`, section "2026-10-15". No new ADR (inside ADR-017's seam).
+
+## Built (3e8b90c code + tests, 89eb879 registry + EXPERIMENTS)
+| Ticket | What | State |
+|---|---|---|
+| SYS-157 #352 | count-ago phrases with their own span; vague counts matched, unread; `relative_phrases` | ready-for-qa |
+| SYS-162 #357 | `unbacked_times` reads only today's terkait text (`stated_today`) | ready-for-qa |
+| SYS-158 #353 | whole-time record keys + `stated_claims` (year may drop, not change); "N kali berturut-turut"; verb/"belah" collectives | ready-for-qa |
+| SYS-161 #356 | `unbacked_changes` + prompt rule 3; calibrated on DB text | **in progress**: the 10-11 LLM re-run is held for the SumoPod top-up |
+| SYS-163 #358 | `agenda_repeats` -> dropped, not refused | ready-for-qa |
+| SYS-164 #359 | `time_anchors`, `opens_on_time`, `time_led`; MAX_LATAR_ANCHORS = 3; openings cap on time; new opening shapes; metrics | ready-for-qa |
+| DBT-77 #360 | 2-date back-story in the metric test; `qa_metric_ge2_dates` registered | ready-for-qa |
+
+## Deviations / judgement calls (each on its ticket)
+- SYS-163: dropped rather than refused (no reader gain from a retry).
+- SYS-164: `opens_on_date` keeps its name and calendar-only meaning (QA's tests call it); `opens_on_time` is new.
+  The openings cap now counts relative-time openings too ("the caps" in the handoff).
+- SYS-161: applied to every prose field, not only latar/hari_ini, like the other number checks.
+- QA's `test_a_collective_after_a_verb_does_not_cost_a_retry` stays red on its own fixture (`subject`: article [1]
+  names neither "Istana" nor "Negara"); the SYS-158 part of it is fixed. Explained on #353 for QA's call.
+
+## Evidence
+- Unit 3,320 passed (5 skipped). QA's `test_qa_arcs_story.py` 83/84 (the fixture case above).
+- Mutants: 76/76 arc mutants KILLED in a scratch copy of the working tree (`%TEMP%\...\scratchpad\mut`, plain copy,
+  no worktree/junction); 31 new, 5 retargeted. QA's `qa_mutants_1014.py`: every matching mutant KILLED; 4 no longer
+  match (named on #352/#359 with their registry equivalents).
+- v5 metrics (SYS-164 definition): time-led 11/51, >= 3 anchors 1/17; QA's 8/51 and 3/17 reproduce under QA's
+  definition (frames counted, fewer opening shapes).
+- Offline: 2 of the 17 accepted v5 arcs (Karhutla 10-11, Lobster 10-12) would now be refused on the first try.
+
+## Ops done in passing
+- `.env`: `KNOWLEDGE_DAILY_COST_LIMIT_USD` 8 -> 1.5 (owner decision recorded for 2026-10-15). Spend since the 10-12
+  top-up is $20.25 logged + ~$1.68 of unlogged replays: the balance is about $0-2.
+
+## Left
+- SYS-161's 10-11 re-run (~$0.15) after the owner's top-up; then ready-for-qa. The same run shows whether the
+  retry repairs Karhutla/Lobster under SYS-164 (the accepted share sits at the 90% gate).
+- `.env` is not in git: the cap change is recorded here and in memory only.
