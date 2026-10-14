@@ -164,6 +164,7 @@ One line each; read this before starting on a scraper or pipeline problem.
 - **Dropping one chunk level of a queued sitemap leaves `l1_not_in_l2` (SYS-137, 2026-10-12):** a queued sitemap has no article and no mentions, so drop BOTH levels (`drop_oversized_queued_chunks.py`); keeping its L1 kept June's extraction and made the store check read 2,171 divergent sitemaps.
 - **The RAG floor is a tail filter, not a lead filter (SYS-138 send-back, 2026-10-12):** it admits a semantic-only hit at 0.55 with no keyword. A rule that puts a subset first whenever its hits "pass the floor" (the week window) led 2/10 held-out week questions with a keyword-coverage-0 off-topic card. Measure such a rule with `scripts/experiments/qa_2026_10_12b/probe_week_window_lead.py` on questions it was not tuned on. -> 2026-10-12 QA second-pass entry
 - **"May this article lead?" = does its paragraph hold the question's subject word (ADR-013, 2026-10-12):** a keyword-coverage threshold (0.6) drops this week's on-topic KPK/IHSG cards (0.55-0.61), and a final-score margin cannot separate the Primbon piece (0.402) from Danantara cards (~0.41). `KeywordQuery.subject` (names, else anchors) separates every case. Don't re-try coverage or margin gates. -> 2026-10-12 "SYS-138 rework" entry
+- **A story arc's back-story stops being a date-by-date chronicle only when the timeline hands the model the relative phrase to copy (SYS-154, 2026-10-14):** the rewritten rules alone still produced "Kamis (8/10)" for every past fact (4/8 accepted). Showing "(akhir September)" beside each LINI MASA item (`source_check.relative_name`, which the SYS-157 check reads back) got 18/20 accepted and 7.8% date-led sentences (was 72%). Measure with `replay_story_arcs.py` (`style` metrics, `--metrics-from` for an old run). A time check that counts from the edition's date must not read sequence words ("sepekan sebelumnya"). -> 2026-10-14 "re-runs of the arc replay" entry
 ## Log
 
 ### 2026-09-19 — SYS-31 fix: does a category deny-list + off-topic-anchor margin actually fix filter precision?
@@ -2648,3 +2649,74 @@ SINDONEWS   old 12 new 12 | lost [] | gained []   links identical: True
   - The repetition metric needs a match by story (e.g. shared names in the judul, or yesterday's alur ids ∩ today's) before SYS-151 can be decided on it.
   - Sentence-attribution regexes need the verb forms (*mengatakan*, *menyatakan*), not only the roots.
 - **Links:** SYS-150 #340, SYS-148 #338, tracker #336, commits 2dae824 + this one
+
+### 2026-10-14 — SYS-160: the arcs' "reads as a story" metrics; baseline on the SYS-150 run, and SYS-159's rule tested on the research rewrite
+- **Question / hypothesis:** (1) what are SYS-160's metrics on the SYS-150 run that the owner read (`digests/preview/arcs/`)? QA counted by hand 69% date-led sentences (45/65) and 13/19 latar with ≥ 3 dates. (2) Does SYS-159's rule as filed (the latar's first sentence shares an *event* word with judul/hari_ini) accept the research file's own rewrite and refuse the recap?
+- **Method:** `scripts/experiments/replay_story_arcs.py --metrics-from digests/preview/arcs` (no LLM, no DB). It reads the arcs edition's top stories from the markdown. A fallback story (its prose starts with today's summary of the same link) is not counted. A story has `alur` when `handcheck.csv` lists timeline items for its judul. The definitions are `newscrawler/core/arc_style.py`, the same ones `story_arc.parse` refuses on. (2) was tested with `arc_style.tied_to_today` and an event-word-only variant, on the 19 back-stories and the research file's before/after strings (`tests/unit/test_arc_style.py`).
+- **Result:**
+  - **Baseline (code's definitions):**
+    - **date-led 47/65 sentences (72.3%)**;
+    - **dates per back-story 3.0 mean, 5 max; 14/19 with ≥ 3**;
+    - **non-event verbs 3**;
+    - **tied to today 10/17 (58.8%; 2 no-alur stories exempt)**.
+  - The code counts 2 more date-led sentences than QA's hand count (it also counts "Sebelumnya, pada 19/9, ..." and "... pada Sabtu (10/10)"), and 14 vs 13 back-stories with ≥ 3 dates (it counts today's date too).
+  - **The event-word-only rule refuses the research file's own rewrite.** "Ini gelombang kedua perombakan Polri bulan ini." shares no event word with today's "Polri memutasi 199 perwira ...": *perombakan* is not *memutasi*, and *Polri* is a name. It passes the recap "Pada 3/10, Polri memutasi 88 perwira ...", because *perwira* is shared. So the rule as filed gets both of SYS-159's examples backwards.
+  - Of the 7 untied baseline back-stories, 4 open on a past date and 3 are vague frames that share no word with today ("Pelemahan ini berlanjut sejak lama." under an "IHSG anjlok" story).
+- **Conclusion / do not repeat:**
+  - **SYS-159's tie is now:** the first sentence does not *open* on a date (after at most a connector: "Sebelumnya, pada 19/9, ..."), and it shares a *content* word, names included, with judul/hari_ini. A name ties a frame to today's actor. A recap is caught by its date opening, not by word overlap.
+  - **Word overlap has no stemming** (*pelemahan*/*melemah*), so a vague frame is refused. That is wanted: the retry asks for a frame that names today's subject.
+  - **Do not measure "date-led" by hand again:** `--metrics-from` reproduces it on any run directory.
+- **Links:** SYS-160 #355, SYS-159 #354, SYS-156 #351, tracker #336, commit fec04c3
+
+### 2026-10-14 — SYS-154..159: re-runs of the arc replay after the prompt rewrite (real LLM, 4 rounds)
+- **Question / hypothesis:** with the frame-first prompt, the narrative example and the new checks (style, relative time, ordinals, tie), do the arcs read as stories (SYS-160: date-led ≤ 25%, ≤ 2 latar with ≥ 3 dates, tie ≥ 90%) and still pass the ≥ 90% accepted gate?
+- **Method:** `scripts/experiments/replay_story_arcs.py --compare digests/preview/arcs`; each round used a new `--out-dir` (`arcs-v2`..`arcs-v5`, untracked: `digests/preview/` is not in .gitignore). The refusal details were read from the run log (`llm_json` INFO lines).
+- **Result:**
+
+  | round (commit) | dates | accepted | date-led | latar ≥ 3 dates | tied | $ at peak |
+  |---|---|---|---|---|---|---|
+  | baseline: SYS-150 run | 10-08..12 | 19/20 | 72.3% (47/65) | 14/19 | 10/17 | 0.60 |
+  | v2 (fec04c3) | 10-11, 10-12 | **4/8** | 10% (1/10) | 0/4 | 4/4 | 0.24 |
+  | v3 (841992e) | 10-11, 10-12 | 7/8 | 9.5% (2/21) | 0/7 | 6/6 | 0.24 |
+  | v4 (dcca96a) | 10-08..12 | 17/20 (85%) | 4.2% (2/48) | 0/16 | 16/16 | 0.60 |
+  | **v5 (702386c)** | 10-08..12 | **18/20 (90%)** | **7.8% (4/51)** | **0/17** | **17/17** | 0.60 |
+
+  - **v5 (final): the two fallbacks.**
+    - Both are market stories (10-08 rupiah, 10-10 IHSG weekly) where the model wrote a number no source states ("17.500"; "6.093,76", "7,95").
+    - The number guard refused them correctly, after a style retry.
+    - The length retries now converge (BPIH 78 → accepted; IHSG 10-12 89 → accepted).
+    - Non-event verbs: 1 (baseline 3). Edition words: ≤ 881.
+  - **Hand-check by me of v5's 17 accepted arcs (SYS-157/158):**
+    - Each of the 34 relative phrases spans a chosen item's date, or is stated in an article ("akhir September 2026").
+    - No ordinal or record claim appears.
+    - One content slip that no check catches: the Polri arc ends "Kini jumlah personel yang dimutasi bertambah menjadi 199 orang". That reads 199 as a running total, when it is this wave's count. It is for QA's hand-check and the owner's read.
+
+  - **v2: why 4/8.**
+    - The model still dated every past fact as "Kamis (8/10)": the prompt's own format for *today's* date, and every LINI MASA item is listed by its date.
+    - The latar ran 77-84 words: the frame sentence adds words.
+    - A length refusal named only the length, so the retry fixed that and was then refused as style.
+    - **Fixed in 841992e:**
+      - each timeline item shows its relative phrase (`source_check.relative_name`; tested to read back as a span holding the day);
+      - rule 4 says to write it;
+      - "Senin (12/10)" is for hari_ini only;
+      - the latar asks 60 words and still accepts 70;
+      - the style detail quotes the date-led sentences;
+      - a length refusal carries the style problems.
+  - **v3: two refusals were the guards' own errors.**
+    - "Sepekan sebelumnya" counts from the event just told, not from today (Padang flood).
+    - A sentence *carrying* "pada Jumat (9/10)" was counted as date-led. SYS-156 refuses sentences that *open* on a date.
+    - **Fixed in dcca96a.**
+  - **v4: the three fallbacks.**
+    - 10-08 BPIH: on the retry, a good frame was refused by the tie: "Kesepakatan ini mengakhiri pembahasan ..." vs today's "menyepakati". **Fixed in 1e56720** (word families, `arc_style.stems`; the baseline is unchanged at 10/17).
+    - 10-11 Houthi and 10-12 IHSG: the latar stayed over 70 words after a "persingkat" retry (77 → 77, 87 → 80). **Fixed in 702386c:** the retry names the cut, down to what the prompt asks.
+    - Also seen: one retry asked for "Kini kelima tersangka" (all five, now: a collective, not an ordinal). Adverbs were added to the words a collective follows (702386c).
+  - **Read by me (v2 accepted arcs):**
+    - PHK, lobster and RI–Mesir read as stories ("Angka ini melanjutkan kenaikan … Kini totalnya …").
+    - Karhutla still lists two dated meetings, within the limits.
+- **Conclusion / do not repeat:**
+  - **The prompt alone does not stop the chronicle**: DeepSeek writes past dates in today's format until the timeline hands it a relative phrase it can copy. Show the checkable phrase beside the item; do not only describe it.
+  - **A guard that counts from today must not read sequence words** ("… sebelumnya", "… kemudian"): they count from the sentence's own event.
+  - **Every refusal reason the retry might trip must be in the one retry's detail**, or the retry trades one refusal for another.
+  - A word-overlap check in Indonesian needs affix-level matching (*kesepakatan*/*disepakati*); exact overlap refuses good frames.
+  - Cost: $1.68 at the peak price across the four rounds (v2 + v3 ran off-peak, so less was billed). Replays are metered, not in api_usage_log.
+- **Links:** SYS-154 #349, SYS-155 #350, SYS-156 #351, SYS-157 #352, SYS-158 #353, SYS-159 #354, SYS-160 #355, tracker #336; commits fec04c3, 841992e, dcca96a, 1e56720, 702386c
