@@ -183,7 +183,7 @@ class TestStyle:
         (FRAME + "Seskab melaporkan 209 hektare terbakar pada 23/9, rapat digelar 24/9, dan 12/10 lagi.",
          "3 tanggal kalender"),
         (FRAME + "Pada 23/9 Seskab melaporkan 209 hektare terbakar. Pada 24/9 Prabowo menggelar rapat.",
-         "2 kalimat latar disusun dengan tanggal"),
+         "2 kalimat latar dibuka dengan tanggal"),
         ("Karhutla sudah lama di meja Presiden. Karhutla meluas sejak September.", 'dibuka dengan kata "karhutla"'),
     ])
     def test_each_rule_refuses(self, latar, detail):
@@ -201,7 +201,14 @@ class TestStyle:
         latar = ("Pada 23/9 Seskab melaporkan 209 hektare lahan masih terbakar. Pada 24/9 Prabowo menggelar rapat "
                  + " ".join(["karhutla"] * 60) + ".")
         reason, detail = _reason(_answer(latar=latar))
-        assert reason == "length" and "kalimat latar disusun dengan tanggal" in detail and sa.STYLE_ASK in detail
+        assert reason == "length" and "kalimat latar dibuka dengan tanggal" in detail and sa.STYLE_ASK in detail
+
+    def test_a_date_inside_two_sentences_is_held_only_by_the_date_count(self):
+        """Re-run 2026-10-12: '... menembus batas bawah pada 25 September' and '..., ditutup menguat
+        pada Jumat (9/10)' were refused as date-led; neither sentence opens on its date."""
+        latar = ("Karhutla sudah lama di meja Presiden, dan Seskab melaporkan 209 hektare terbakar pada 23/9. "
+                 "Prabowo menggelar rapat pertama soal karhutla pada 24 September.")
+        assert _parse(_answer(latar=latar))
 
     def test_a_latar_at_the_limits_passes(self):
         """Two dates, one date-led sentence, distinct openings, tied to today."""
@@ -220,7 +227,7 @@ class TestStyle:
         chronicle = _answer(latar=FRAME + "Pada 23/9 Seskab melapor. Pada 24/9 Prabowo menggelar rapat.")
         s, rejections = _Script(chronicle, _answer()), []
         assert sa.write_arc(s, SHOWN, TIMELINE, DAY, rejections) and rejections == ["style"]
-        assert "kalimat latar disusun dengan tanggal" in s.prompts[1] and sa.STYLE_ASK in s.prompts[1]
+        assert "kalimat latar dibuka dengan tanggal" in s.prompts[1] and sa.STYLE_ASK in s.prompts[1]
 
 
 class TestContinuity:

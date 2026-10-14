@@ -200,13 +200,13 @@ _RELATIVE = [
      lambda m, today: _whole_month(*_month_year(m.group("month"), m.group("year"), today))),
     (r"bulan\s+lalu", lambda m, today: _whole_month(*_previous_month(today))),
     (r"dua\s+pekan\s+(?:terakhir|belakangan)", _last_days(14)),
-    (r"dua\s+pekan\s+(?:lalu|sebelumnya)", _days_ago(14, slack=3)),
+    (r"dua\s+pekan\s+lalu", _days_ago(14, slack=3)),
     (r"(?:sepekan|seminggu)\s+(?:terakhir|belakangan)", _last_days(7)),
-    (r"(?:sepekan|seminggu)\s+(?:lalu|sebelumnya)", _days_ago(7, slack=2)),
+    (r"(?:sepekan|seminggu)\s+lalu", _days_ago(7, slack=2)),
     (r"pekan\s+lalu|(?-i:minggu)\s+lalu", _last_week),
     (rf"(?P<day>{'|'.join(d for d in copy.DAYS if d != 'Minggu')}|(?-i:Minggu))\s+lalu", _weekday_last),
     (r"kemarin", lambda m, today: (today - timedelta(days=1), today - timedelta(days=1))),
-    (rf"(?P<n>{'|'.join(_COUNT)}|[2-7])\s+hari\s+(?:lalu|sebelumnya)",
+    (rf"(?P<n>{'|'.join(_COUNT)}|[2-7])\s+hari\s+lalu",
      lambda m, today: _days_ago(_COUNT.get(m.group("n").lower()) or int(m.group("n")), slack=1)(m, today)),
 ]
 _RELATIVE_EACH = [(re.compile(rf"\b(?:{pattern})\b", re.IGNORECASE), span) for pattern, span in _RELATIVE]
@@ -225,7 +225,10 @@ def relative_times(text: str, today: date) -> List[Tuple[str, date, date]]:
       pekan lalu                           the previous Monday-Sunday week
       <hari> lalu                          the last such weekday before today ("Minggu lalu" is a
                                            Sunday only with a capital M; "minggu lalu" is last week)
-      kemarin; N hari lalu                 the day before; N days before, one day either way"""
+      kemarin; N hari lalu                 the day before; N days before, one day either way
+    "sepekan sebelumnya", "dua hari sebelumnya" are not read: they count from the event the
+    sentence just told, not from today (replay 2026-10-11, the Padang flood arc), and the prompt
+    lets a sequence word stand without a source."""
     text = without_dates(text)
     matches = sorted(((m.start(), -m.end(), m, span) for pattern, span in _RELATIVE_EACH
                       for m in pattern.finditer(text)), key=lambda t: t[:2])

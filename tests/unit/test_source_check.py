@@ -113,7 +113,7 @@ class TestRelativeTimes:
         ("pekan lalu", date(2026, 10, 5), date(2026, 10, 11)),
         ("minggu lalu", date(2026, 10, 5), date(2026, 10, 11)),
         ("sepekan lalu", date(2026, 10, 3), date(2026, 10, 7)),
-        ("seminggu sebelumnya", date(2026, 10, 3), date(2026, 10, 7)),
+        ("seminggu lalu", date(2026, 10, 3), date(2026, 10, 7)),
         ("dua pekan lalu", date(2026, 9, 25), date(2026, 10, 1)),
         ("sepekan terakhir", date(2026, 10, 5), date(2026, 10, 11)),
         ("dua pekan terakhir", date(2026, 9, 28), date(2026, 10, 11)),
@@ -122,7 +122,7 @@ class TestRelativeTimes:
         ("Minggu lalu", date(2026, 10, 11), date(2026, 10, 11)),
         ("kemarin", date(2026, 10, 11), date(2026, 10, 11)),
         ("tiga hari lalu", date(2026, 10, 8), date(2026, 10, 10)),
-        ("2 hari sebelumnya", date(2026, 10, 9), date(2026, 10, 11)),
+        ("2 hari lalu", date(2026, 10, 9), date(2026, 10, 11)),
     ])
     def test_each_phrase_family(self, text, first, last):
         assert sc.relative_times(f"Hal itu terjadi {text}.", TODAY) == [(text, first, last)]
@@ -132,7 +132,8 @@ class TestRelativeTimes:
             "dua pekan lalu", "awal Oktober"]
 
     @pytest.mark.parametrize("text", ["pada 24 September lalu", "sejak 24 September", "pada awal pekan",
-                                      "sepekan kemudian", "hari ini"])
+                                      "sepekan kemudian", "hari ini",
+                                      "sepekan sebelumnya", "dua hari sebelumnya", "dua pekan sebelumnya"])
     def test_not_a_relative_phrase(self, text):
         assert sc.relative_times(text, TODAY) == []
 

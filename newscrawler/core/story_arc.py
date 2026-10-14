@@ -19,7 +19,7 @@ and code checks what it wrote. The answer is JSON:
 
 `parse` refuses an answer ("json", "length", "style", "number", "date", "subject", "alur"):
 - style: the latar reads as a chronicle (`arc_style`, SYS-156): more than
-  MAX_LATAR_DATES calendar dates, more than MAX_DATE_LED date-led sentences, or
+  MAX_LATAR_DATES calendar dates, more than MAX_DATE_OPENINGS sentences opening on a date, or
   two sentences opening on the same word; or, with `alur`, its first sentence
   is not tied to today (SYS-159). The 2026-10-08..12 replay: 69% of latar
   sentences were "Pada d/m, ...";
@@ -66,7 +66,9 @@ LIMITS = {"judul": 12, "hari_ini": 60, "latar": 70, "agenda": 20, "sekilas": 15}
 REASONS = ("json", "length", "style", "number", "date", "subject", "alur")
 ALUR_MIN_EVENT_WORDS = 1
 MAX_LATAR_DATES = 2     # SYS-156: calendar dates in a latar (13 of 19 replayed latar held >= 3)
-MAX_DATE_LED = 1        # SYS-156: "Pada 24/9, ..." sentences in a latar
+# SYS-156: sentences of a latar that open on a date ("Pada 24/9, ..."). A date inside a sentence is
+# held only by MAX_LATAR_DATES: the 10-12 re-run refused "..., ditutup menguat 1,04% pada Jumat (9/10)".
+MAX_DATE_OPENINGS = 1
 STYLE_ASK = ("tulis latar sebagai cerita: satu kalimat bingkai dan paling banyak dua titik balik, dikaitkan "
              "dengan peristiwa hari ini, dengan waktu relatif (\"awal Oktober\", \"pekan lalu\")")
 # What makes an agenda a scheduled step rather than a guess (with a date or a number it is one already).
@@ -266,10 +268,10 @@ def chronicle(latar: str, judul: str, hari_ini: str, has_alur: bool) -> List[str
     dates = len(dates_in(latar))
     if dates > MAX_LATAR_DATES:
         problems.append(f"latar memuat {dates} tanggal kalender, maks {MAX_LATAR_DATES}")
-    led = [s for s in arc_style.sentences(latar) if arc_style.date_led(s)]
-    if len(led) > MAX_DATE_LED:
-        quoted = ", ".join(f'"{" ".join(s.split()[:8])} ..."' for s in led)
-        problems.append(f"{len(led)} kalimat latar disusun dengan tanggal ({quoted}), maks {MAX_DATE_LED}")
+    opened = [s for s in arc_style.sentences(latar) if arc_style.opens_on_date(s)]
+    if len(opened) > MAX_DATE_OPENINGS:
+        quoted = ", ".join(f'"{" ".join(s.split()[:8])} ..."' for s in opened)
+        problems.append(f"{len(opened)} kalimat latar dibuka dengan tanggal ({quoted}), maks {MAX_DATE_OPENINGS}")
     word = arc_style.repeated_opening(latar)
     if word:
         problems.append(f"dua kalimat latar dibuka dengan kata \"{word}\"")
