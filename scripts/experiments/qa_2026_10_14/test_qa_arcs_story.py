@@ -257,9 +257,18 @@ class TestSys158InParse:
         assert _parse(_answer(latar=latar), texts=_texts("Luas karhutla tertinggi sejak 2019."))
 
     def test_a_collective_after_a_verb_does_not_cost_a_retry(self):
-        """No alur, a hari_ini naming 'kedua tersangka' -- a common crime-desk phrase -- must pass."""
-        hari_ini = "Polisi menahan kedua tersangka karhutla di Istana Negara, Senin (12/10)."
-        assert _parse(_answer(alur=[], latar="", hari_ini=hari_ini, judul="Polisi tahan dua tersangka karhutla"))
+        """No alur, a hari_ini naming 'kedua tersangka' -- a common crime-desk phrase -- must pass.
+        QA 2026-10-15: the first version put "di Istana Negara" in hari_ini, which article [1] does not
+        name, so it was refused as `subject` (the dev was right on #353). Both articles now name the story."""
+        texts = [sa.guard_text({"source": "DETIK", "headline": "Polisi Tahan Dua Tersangka Karhutla Ogan Ilir",
+                                "l1_text": "Polisi menahan dua tersangka karhutla di Ogan Ilir, Senin (12/10/2026)."}),
+                 sa.guard_text({"source": "KOMPAS", "headline": "Dua Tersangka Karhutla Ogan Ilir Ditahan",
+                                "l1_text": "Dua tersangka karhutla di Ogan Ilir ditahan polisi."})]
+        answer = json.dumps({"judul": "Polisi tahan dua tersangka karhutla Ogan Ilir",
+                             "hari_ini": "Polisi menahan kedua tersangka karhutla di Ogan Ilir, Senin (12/10).",
+                             "latar": "", "agenda": "", "sekilas": "Polisi menahan dua tersangka karhutla Ogan Ilir.",
+                             "terkait": [0, 1], "tidak_terkait": [], "alur": []})
+        assert _parse(answer, texts=texts)
 
 
 # ── SYS-159: the tie to today ──────────────────────────────────────────────────────────────────

@@ -68,3 +68,20 @@ Report: `.10x/reviews/2026-10-14-qa-report.md`. QA tests: `scripts/experiments/q
 - The owner's read goes ahead on `arcs-v5`. `NEWSLETTER_ARCS=1` waits on the SYS-157/158 rework and SYS-161.
 
 **Lesson:** a QA suite with red tests at baseline "kills" every mutant under `-x`. Count a kill only on tests that pass unmutated.
+
+## QA audit of the arc-guard rework (2026-10-15)
+Report: `.10x/reviews/2026-10-15-qa-report.md`. QA tests and mutants: `scripts/experiments/qa_2026_10_15/`.
+
+**Verdicts:**
+- **Closed:** SYS-157, SYS-158, SYS-162, SYS-163, DBT-77.
+- **Sent back:** SYS-164. A "sejak <bulan>" frame is counted as an anchor and an opening, so the tie refuses "Sejak September, ...". That frame was tied before 3e8b90c.
+
+**Filed:** SYS-165 #361 (an agenda repeat in relative future time, BPGMN 10-12) and DBT-78 #362 (5 survivors of the dev's suites).
+
+**Decisions:**
+- SYS-163 drops a repeated agenda rather than refusing it: accepted.
+- SYS-158 leans to collective after me-/di-/ber-: accepted. 0 bare-verb collectives in 297 real headlines.
+- Compound counts, "kemarin lusa", "setengah bulan lalu" and kuartal-with-year records are not ticketed: 0-4 occurrences in 127,559 articles.
+- QA's 10-14 fixture was wrong; fixed.
+
+**Lesson:** a dev's "not mine, your fixture" can be right. Re-run the red test's refusal detail before arguing.

@@ -1,5 +1,40 @@
 # Current Handoff
 
+## From: QA (audit of the arc-guard rework) -> To: SDE (SYS-164 rework, SYS-165, DBT-78), owner (top-up, arcs-v5 read)
+**Date:** 2026-10-15
+**Read first:**
+- `.10x/reviews/2026-10-15-qa-report.md`;
+- the QA comments on #352, #353, #357..#360;
+- `scripts/experiments/qa_2026_10_15/test_qa_arc_rework.py`. Its 4 red tests are the work below.
+
+### Verdicts
+- **Closed:** SYS-157 #352, SYS-158 #353, SYS-162 #357, SYS-163 #358, DBT-77 #360.
+- **Sent back:** SYS-164 #359.
+
+### SDE, in this order
+1. **SYS-164 #359 (sent back).** `sejak <bulan> [tahun]` is a `_RELATIVE` phrase that *starts* with "sejak". `_relative_anchors` only drops phrases *after* "sejak", so "Sejak September, ..." counts as an anchor and an opening, and the tie refuses it.
+   - This is a regression: the frame was tied on 3e8b90c~1.
+   - Done when:
+     - QA's `TestSys164Anchors::test_a_sejak_month_frame_is_not_an_anchor_and_still_ties` (2 cases) and `test_a_sejak_frame_does_not_hide_the_anchors_after_it` pass;
+     - a dev test and a mutant;
+     - the v5 metrics are re-pasted.
+2. **SYS-165 #361 (P3).** An agenda that repeats hari_ini with "minggu depan" (BPGMN 10-12, 6/7 words) is kept, because only calendar dates count as a shared time. QA test: `TestSys163AgendaRepeats::test_bpgmn_repeat_in_relative_time_is_dropped`.
+3. **DBT-78 #362.** Move QA's guards for the 5 surviving mutants into `tests/unit` and register them.
+4. **SYS-161 #356:** unchanged. It waits on the 10-11 re-run after the top-up.
+
+Mutants: `scripts/experiments/qa_2026_10_15/qa_mutants_1015.py <archive copy>`. It reads the dev's registry entries for this batch, plus `qa15_*`. Set `QA_ONLY_OWN=1` to run only QA's mutants.
+
+### Owner
+- Unchanged: top up SumoPod, then do the arcs-v5 read (3-way compare + blind A/B). `NEWSLETTER_ARCS` stays 0.
+
+### Still open from before
+- DBT-74 #346 (12:00 log + old-path comparison).
+- SYS-150 #340 (owner's A/B).
+
+---
+
+## Previous (superseded)
+
 ## From: SDE (rework of QA's arc tickets) -> To: QA (verify), owner (top-up, then the arcs-v5 read)
 **Date:** 2026-10-15 (early morning)
 **Read first:**

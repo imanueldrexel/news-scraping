@@ -1,11 +1,14 @@
 # Project Status
 
 ## Project: NewsAggregator
-**Current Phase:** SDE rework 2026-10-15 of QA's arc tickets: SYS-157/158/162/163/164 + DBT-77 ready-for-qa; SYS-161 built, waits on a ~$0.15 10-11 re-run after the SumoPod top-up. Back to QA; owner: top-up, then the arcs-v5 read.
-**Last Updated:** 2026-10-15 (early morning) by SDE
+**Current Phase:** QA audit 2026-10-15 of the arc-guard rework: SYS-157/158/162/163 + DBT-77 closed; SYS-164 sent back ("sejak <bulan>" frame counted as an anchor, tie regression); SYS-165 #361 + DBT-78 #362 filed. SYS-161 still waits on its 10-11 re-run (SumoPod top-up). Owner: top-up, then the arcs-v5 read.
+**Last Updated:** 2026-10-15 by QA
 **Health:** On Track
 
 ## Progress
+
+### QA audit 2026-10-15 (arc-guard rework, 3e8b90c/89eb879)
+- Unit 3,320 pass; QA file `scripts/experiments/qa_2026_10_15/test_qa_arc_rework.py` 56/60 (4 red = SYS-164 send-back + SYS-165); dev mutants 76/76, QA mutants 11/16 by dev suites (5 -> DBT-78). Report: reviews/2026-10-15-qa-report.md
 
 ### Done
 - Project state initialized (`.10x/`).

@@ -21,6 +21,7 @@ Reusable diagnostics live in `scripts/experiments/`. Throwaway repro code is inl
 
 One line each; read this before starting on a scraper or pipeline problem.
 
+- **Count a text guard's edge case in `articles` before ticketing it (2026-10-15, QA):** compound counts, "kemarin lusa", "setengah bulan lalu" and kuartal-with-year records occur 0-4 times in 127,559 articles; an exclusion written as "preceded by sejak" misses a table phrase that starts with it (SYS-164). -> 2026-10-15 "QA audit of the arc-guard rework" entry
 - **A "running total" guard must not key on a bare "hingga" (2026-10-15, SYS-161):** the 10-11 Polri headline "Rombak 199 Personel Polri, Kakorlantas hingga Wakabaintelkam" holds the figure and "hingga" as a list. A source states a total as "hingga/sampai/per/sepanjang/sejak + a time", a total word, a change verb or "dari <number>". -> 2026-10-15 "Arc guards rework" entry
 
 - **A follow-up's back-reference rule needs held-out adverbs (QA 2026-10-13):** SYS-144's 22-word *-nya* list passed the ticket's 5 and missed *sebaiknya/sebetulnya/nantinya/sayangnya/secepatnya/sepenuhnya*; through SYS-145's `kept-thread` a kept topic switch went 4/5 → 1/5 on the served path. Measure with `scripts/experiments/qa_2026_10_13/probe_qa_heldout.py B`.
@@ -2777,3 +2778,32 @@ SINDONEWS   old 12 new 12 | lost [] | gained []   links identical: True
   - When two measurements of the "same" metric differ, recompute the other definition before arguing: here both were right about different things.
   - Not run: the 10-11 LLM re-run SYS-161 asks for. The SumoPod balance is about $0-2 on 2026-10-15: $20.25 logged since the $22.50 top-up, plus about $1.68 of unlogged replays. The 12:00 newsletter depends on that balance. Run it after the owner's top-up: `replay_story_arcs.py --dates 2026-10-11 --out-dir digests/preview/arcs-v6` (~$0.15).
 - **Links:** SYS-157 (#352), SYS-158 (#353), SYS-161..164 (#356..#359), DBT-77 (#360); `.10x/decisions/architect/newsletter-story-arcs.md` "2026-10-15".
+
+### 2026-10-15 — QA audit of the arc-guard rework: own tests, 92 mutants, and real-text frequency of each edge case
+- **Question / hypothesis:**
+  - Does the rework of SYS-157/158 and SYS-162..164 hold on inputs the dev did not use?
+  - Which of the edge cases QA can construct occur in real text often enough to ticket?
+- **Method:**
+  - `scripts/experiments/qa_2026_10_15/test_qa_arc_rework.py`: 60 tests.
+  - `qa_mutants_1015.py` in a `git archive` copy: the dev's 76 registry mutants + 16 `qa15_*`.
+  - DB read-only regex counts over `articles.extracted_text` (127,559 rows).
+  - `ordinal_claims` over the 297 `sitemaps.headline` rows (with an article) that hold a word ordinal.
+  - `time_anchors` over the back-stories of the `arcs` .. `arcs-v5` replays.
+- **Result:**
+  - Dev registry 76/76 KILLED. QA's 16: 11 KILLED by the dev's suites, 5 only by QA's file (DBT-78 #362).
+  - "Sejak September, ..." is counted as an anchor and an opening, so the tie refuses it. On 3e8b90c~1 it was tied (SYS-164 sent back). The replays hold 1 such anchor in 63 back-stories.
+  - Real-text counts (in 127,559 articles):
+
+    | phrase | read as | count |
+    |---|---|---|
+    | "dua puluh lima hari lalu" (compound count) | "lima hari lalu" | 0 |
+    | "kemarin lusa" | "kemarin" | 3 |
+    | "setengah bulan lalu" | "bulan lalu" | 4 |
+    | "sejak kuartal III 2024" (record) | key loses its year | 3 |
+  - Bare-verb collectives in 297 ordinal headlines: 0. The real non-count ordinals are ranks ("peringkat keempat", "terbesar ketiga") and "pihak ketiga".
+  - BPGMN 10-12's agenda repeats hari_ini (6/7 content words) with "minggu depan" (SYS-165 #361).
+- **Conclusion / do-not-repeat:**
+  - Before ticketing a constructed edge case of a text guard, count it in `articles`. Most are 0-4 in 127k and not worth a ticket.
+  - A table phrase that *contains* the excluded word ("sejak <bulan>") slips past an exclusion written as "preceded by". Test both shapes.
+  - A QA fixture can be the bug. QA 10-14's collective test named "Istana Negara", which no terkait article names, so the arc was refused as `subject`.
+- **Links:** SYS-157 #352, SYS-158 #353, SYS-162 #357, SYS-163 #358, SYS-164 #359, DBT-77 #360, SYS-165 #361, DBT-78 #362; `.10x/reviews/2026-10-15-qa-report.md`.
