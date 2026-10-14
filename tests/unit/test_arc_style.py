@@ -86,5 +86,29 @@ class TestTiedToToday:
         assert not st.tied_to_today("Pelemahan ini berlanjut sejak lama.", "IHSG anjlok 2,59%",
                                     "IHSG ditutup anjlok 2,59% ke level 5.936,15.")
 
+    def test_a_frame_ties_by_word_family(self):
+        """Re-run 2026-10-08: this BPIH frame was refused because 'kesepakatan' is not 'menyepakati'."""
+        assert st.tied_to_today("Kesepakatan ini mengakhiri pembahasan yang sempat diwarnai usulan komposisi berbeda.",
+                                "BPIH 2027 disepakati Rp98,46 juta per jemaah",
+                                "Pemerintah dan Komisi VIII DPR menyepakati BPIH 2027 rata-rata Rp98.466.351,35.")
+        assert st.tied_to_today("Pelemahan ini berlanjut sejak lama.", "IHSG anjlok", "IHSG terus melemah.")
+
+    @pytest.mark.parametrize("word,stem", [
+        ("kesepakatan", "sepakat"), ("disepakati", "sepakat"), ("menyepakati", "sepakat"), ("pelemahan", "lemah"),
+        ("melemah", "lemah"), ("memutasi", "mutasi"), ("perombakan", "rombak"), ("berlanjut", "lanjut"),
+        ("memukul", "pukul"), ("penurunan", "turun"),
+    ])
+    def test_stems(self, word, stem):
+        assert stem in st.stems(word)
+
+    @pytest.mark.parametrize("word", ["polri", "ihsg", "bank", "kapolda"])
+    def test_a_word_is_its_own_family(self, word):
+        assert word in st.stems(word) and all(len(s) >= st.MIN_STEM for s in st.stems(word))
+
+    @pytest.mark.parametrize("word", ["diri", "bea", "seni", "kini"])
+    def test_no_stem_shorter_than_four_letters(self, word):
+        """'di' + 'ri', 'se' + 'ni': a 2-letter stem would tie any two sentences."""
+        assert st.stems(word) == {word}
+
     def test_an_empty_latar_is_tied(self):
         assert st.tied_to_today("", JUDUL, HARI_INI)

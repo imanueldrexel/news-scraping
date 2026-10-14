@@ -14,9 +14,9 @@ the replay reports them (SYS-160), so the gate and the number agree.
   event ("dibahas", "disebut", "dikabarkan", "ditanggapi").
 - `tied_to_today(latar, judul, hari_ini)`: the back-story's first sentence
   frames today's news -- it does not open on a past date, and it shares a
-  content word with the judul or hari_ini (`story_words`; a name counts:
-  "Ini gelombang kedua perombakan Polri" ties by "Polri", while its event
-  words differ from today's "memutasi").
+  content word with the judul or hari_ini, up to its affixes (`story_words`,
+  `stems`; a name counts: "Ini gelombang kedua perombakan Polri" ties by
+  "Polri", while its event words differ from today's "memutasi").
 """
 import re
 from typing import List, Optional
@@ -65,9 +65,37 @@ def non_events(text: str) -> List[str]:
     return [m.group(0).lower() for m in NON_EVENTS.finditer(text or "")]
 
 
+_PREFIXES = ("meng", "meny", "mem", "men", "me", "peng", "peny", "pem", "pen", "per", "pe", "ber", "be", "ter",
+             "di", "ke", "se")
+_NASAL = {"meng": "k", "meny": "s", "mem": "p", "men": "t", "peng": "k", "peny": "s", "pem": "p", "pen": "t"}
+_SUFFIXES = ("nya", "kan", "an", "i")
+MIN_STEM = 4
+
+
+def stems(word: str) -> set:
+    """The word and the stems it may carry under one Indonesian prefix and one suffix (nasal
+    forms restored: menyepakati -> sepakat), each of at least MIN_STEM letters. Enough to tie
+    "Kesepakatan ini ..." to today's "disepakati", or "Pelemahan" to "melemah" (the 2026-10-08
+    re-run refused that BPIH frame); not a stemmer."""
+    bases = {word} | {word[:-len(s)] for s in _SUFFIXES if word.endswith(s) and len(word) - len(s) >= MIN_STEM}
+    out = set(bases)
+    for base in bases:
+        for prefix in _PREFIXES:
+            rest = base[len(prefix):]
+            if base.startswith(prefix) and len(rest) >= MIN_STEM:
+                out.add(rest)
+                if prefix in _NASAL:
+                    out.add(_NASAL[prefix] + rest)
+    return {s for s in out if len(s) >= MIN_STEM} or {word}
+
+
+def _families(words) -> set:
+    return {s for w in words for s in stems(w)}
+
+
 def tied_to_today(latar: str, judul: str, hari_ini: str) -> bool:
     first = (sentences(latar) or [""])[0]
     if not first:
         return True
     today = story_words.story_content_words(judul, hari_ini)
-    return not opens_on_date(first) and bool(today.keys() & story_words.content_words(first).keys())
+    return not opens_on_date(first) and bool(_families(today) & _families(story_words.content_words(first)))
