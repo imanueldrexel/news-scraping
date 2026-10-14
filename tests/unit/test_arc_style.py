@@ -112,3 +112,55 @@ class TestTiedToToday:
 
     def test_an_empty_latar_is_tied(self):
         assert st.tied_to_today("", JUDUL, HARI_INI)
+
+    @pytest.mark.parametrize("recap", ["Awal Oktober, Polri memutasi 88 perwira.",
+                                       "Pekan lalu, Polri memutasi 88 perwira.",
+                                       "Sebelumnya, tiga pekan lalu, Polri memutasi 88 perwira.",
+                                       "Sabtu lalu Polri memutasi 88 perwira tinggi."])
+    def test_a_recap_opening_on_relative_time_is_not_tied(self, recap):
+        """SYS-164 (#359): SYS-159's recap written the way SYS-154 now asks is still a recap."""
+        assert not st.tied_to_today(recap, JUDUL, HARI_INI)
+
+    def test_a_since_frame_ties(self):
+        assert st.tied_to_today("Sejak awal Oktober, Polri sudah dua kali merombak jabatan Kapolda.", JUDUL, HARI_INI)
+
+
+class TestTimeAnchors:
+    """SYS-164 (#359): a time anchor is a calendar date or a relative time not after "sejak"."""
+
+    def test_dates_and_relative_times_in_order(self):
+        assert st.time_anchors("Pekan lalu IHSG turun, Senin (5/10) dan Kamis (8/10) memburuk. Kemarin, kini, "
+                               "lalu sejak awal Oktober.") == ["Pekan lalu", "5/10", "8/10", "Kemarin"]
+
+    def test_the_karhutla_latar_of_10_11(self):
+        """digests/preview/arcs-v5/2026-10-11: every chosen item told in order. "sejak awal Oktober" is
+        the frame, not an anchor; QA counted the latar's 5 with it."""
+        latar = ("Gangguan penerbangan di Bandara SMB II Palembang ini berlanjut sejak awal Oktober. Pekan lalu, dua "
+                 "pesawat gagal mendarat saat jarak pandang 500 meter, lalu 18 penerbangan tertunda pada Senin (5/10) "
+                 "dan 30 penerbangan terdampak pada Kamis (8/10). Kemarin, 15 penerbangan kembali terganggu, dan kini "
+                 "OMC yang semula digelar dari Palembang dipindah ke Pangkal Pinang karena asap mengganggu operasi "
+                 "modifikasi cuaca.")
+        assert st.time_anchors(latar) == ["Pekan lalu", "5/10", "8/10", "Kemarin"]
+
+    @pytest.mark.parametrize("sentence", ["Pada tanggal 3 Oktober, Polri memutasi 88 perwira.",
+                                          "Pada hari Sabtu (3/10), Polri memutasi 88 perwira.",
+                                          "Pada Sabtu, 3 Oktober, Polri memutasi 88 perwira.",
+                                          "Tanggal 3/10, Polri memutasi 88 perwira."])
+    def test_more_date_opening_shapes(self, sentence):
+        assert st.opens_on_date(sentence) and st.opens_on_time(sentence) and st.date_led(sentence)
+
+    @pytest.mark.parametrize("sentence,opens", [
+        ("Awal Oktober, Polri memutasi 88 perwira.", True),
+        ("Kemarin Seskab melapor.", True),
+        ("Pada pekan lalu Polri memutasi 88 perwira.", True),
+        ("Sejak awal Oktober Polri dua kali merombak.", False),
+        ("Polri memutasi 88 perwira pekan lalu.", False),
+        ("Mutasi ini lanjutan rotasi awal Oktober.", False),
+    ])
+    def test_opens_on_time(self, sentence, opens):
+        assert st.opens_on_time(sentence) is opens
+        assert st.time_led(sentence) is opens
+        assert not st.opens_on_date(sentence)
+
+    def test_sejak_frames_are_not_anchors(self):
+        assert st.time_anchors("Sejak awal Oktober dan sejak pekan lalu harga naik.") == []

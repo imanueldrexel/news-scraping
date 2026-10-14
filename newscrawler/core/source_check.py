@@ -171,8 +171,9 @@ def _part_of_month(m, today):
     return _month_part(part, month, y)
 
 
-def _days_ago(n: int, slack: int = 0):
-    return lambda m, today: (today - timedelta(days=n + slack), today - timedelta(days=max(n - slack, 1)))
+def _days_back(today: date, n: int, slack: int) -> Tuple[date, date]:
+    """The days `n` days before `today`, `slack` days either way, never today itself."""
+    return today - timedelta(days=n + slack), today - timedelta(days=max(n - slack, 1))
 
 
 def _last_days(n: int):
@@ -189,10 +190,30 @@ def _weekday_last(m, today):
     return today - timedelta(days=back), today - timedelta(days=back)
 
 
-_COUNT = {"dua": 2, "tiga": 3, "empat": 4, "lima": 5, "enam": 6, "tujuh": 7}
+_COUNT = {"satu": 1, "dua": 2, "tiga": 3, "empat": 4, "lima": 5, "enam": 6, "tujuh": 7, "delapan": 8,
+          "sembilan": 9, "sepuluh": 10, "sebelas": 11}
+# A count no table can turn into days: matched so the shorter phrase inside it is not read, and left unread.
+_VAGUE_COUNT = r"beberapa|sekian|belasan|puluhan|ratusan|\w+\s+(?:belas|puluh)"
+
+
+def _count_ago(m, today) -> Optional[Tuple[date, date]]:
+    """SYS-157 rework (#352): "tiga pekan lalu" is three weeks back, never "pekan lalu" (last week);
+    "dua bulan lalu" is two calendar months back, never "bulan lalu". None for a vague count."""
+    word = m.group("n").lower()
+    n = _COUNT.get(word) or (int(word) if word.isdigit() else None)
+    if not n:
+        return None
+    unit = m.group("unit").lower()
+    if unit == "bulan":
+        k = today.year * 12 + today.month - 1 - n
+        return _whole_month(k % 12 + 1, k // 12)
+    return _days_back(today, n, 1) if unit == "hari" else _days_back(today, 7 * n, 2 if n == 1 else 3)
+
+
 _MONTH_NAME = "|".join(_MONTH_WORDS)
 # SYS-157 (#352): the relative time phrases a story arc may write instead of a calendar date, each with the
-# days it can mean, seen from the edition's date. Longest phrases first: "dua pekan lalu" is not "pekan lalu".
+# days it can mean, seen from the edition's date (None: matched, so nothing shorter inside it is read, but
+# not turned into days). Where two start together the longer is read: "dua pekan lalu" is not "pekan lalu".
 _RELATIVE = [
     (rf"(?P<part>awal|pertengahan|akhir)\s+(?:(?P<month>{_MONTH_NAME})\b(?:\s+(?P<year>\d{{4}}))?"
      rf"|bulan(?:\s+(?P<which>ini|lalu))?\b)", _part_of_month),
@@ -200,16 +221,41 @@ _RELATIVE = [
      lambda m, today: _whole_month(*_month_year(m.group("month"), m.group("year"), today))),
     (r"bulan\s+lalu", lambda m, today: _whole_month(*_previous_month(today))),
     (r"dua\s+pekan\s+(?:terakhir|belakangan)", _last_days(14)),
-    (r"dua\s+pekan\s+lalu", _days_ago(14, slack=3)),
     (r"(?:sepekan|seminggu)\s+(?:terakhir|belakangan)", _last_days(7)),
-    (r"(?:sepekan|seminggu)\s+lalu", _days_ago(7, slack=2)),
+    (r"(?:sepekan|seminggu)\s+lalu", lambda m, today: _days_back(today, 7, 2)),
+    (rf"(?P<n>{'|'.join(_COUNT)}|\d+|{_VAGUE_COUNT})\s+(?P<unit>hari|pekan|minggu|bulan)\s+lalu", _count_ago),
     (r"pekan\s+lalu|(?-i:minggu)\s+lalu", _last_week),
     (rf"(?P<day>{'|'.join(d for d in copy.DAYS if d != 'Minggu')}|(?-i:Minggu))\s+lalu", _weekday_last),
     (r"kemarin", lambda m, today: (today - timedelta(days=1), today - timedelta(days=1))),
-    (rf"(?P<n>{'|'.join(_COUNT)}|[2-7])\s+hari\s+lalu",
-     lambda m, today: _days_ago(_COUNT.get(m.group("n").lower()) or int(m.group("n")), slack=1)(m, today)),
 ]
 _RELATIVE_EACH = [(re.compile(rf"\b(?:{pattern})\b", re.IGNORECASE), span) for pattern, span in _RELATIVE]
+
+
+def _blank_dates(text: str) -> str:
+    """`text` with every date blanked by as many spaces, so positions still point into `text`."""
+    blank = lambda m: " " * len(m.group(0))  # noqa: E731
+    return _LONG_DATE.sub(blank, _SHORT_DATE.sub(blank, text))
+
+
+def _relative_matches(text: str) -> list:
+    """(match, span function) of every relative time phrase in `text`, in order: leftmost first, then
+    the longest of those starting together, and none inside another's text."""
+    text = _blank_dates(text)
+    matches = sorted(((m.start(), -m.end(), m, span) for pattern, span in _RELATIVE_EACH
+                      for m in pattern.finditer(text)), key=lambda t: t[:2])
+    found, taken = [], 0
+    for start, neg_end, m, span in matches:
+        if start >= taken:
+            found.append((m, span))
+            taken = -neg_end
+    return found
+
+
+def relative_phrases(text: str) -> List[Tuple[int, str]]:
+    """(position, phrase as written) of every relative time phrase in `text`, whether or not its days
+    can be told ("beberapa pekan lalu" is one): where a sentence names a past time without a calendar
+    date (`arc_style`, SYS-164). No edition date is needed to find them."""
+    return [(m.start(), m.group(0)) for m, _ in _relative_matches(text)]
 
 
 def relative_times(text: str, today: date) -> List[Tuple[str, date, date]]:
@@ -220,23 +266,24 @@ def relative_times(text: str, today: date) -> List[Tuple[str, date, date]]:
     reads those. The ranges, agreed in tests/unit/test_source_check.py:
       awal / pertengahan / akhir <bulan>   1-10 / 11-20 / 21-end of that month
       sejak <bulan>, bulan lalu            that whole month (where it began)
-      sepekan lalu                         5-9 days before; dua pekan lalu 11-17 days before
+      sepekan lalu                         5-9 days before
+      N pekan lalu (N >= 2)                7N days before, 3 days either way (dua pekan lalu: 11-17)
+      N bulan lalu                         the whole calendar month N months back
       sepekan / dua pekan terakhir         the 7 / 14 days before
       pekan lalu                           the previous Monday-Sunday week
       <hari> lalu                          the last such weekday before today ("Minggu lalu" is a
                                            Sunday only with a capital M; "minggu lalu" is last week)
       kemarin; N hari lalu                 the day before; N days before, one day either way
-    "sepekan sebelumnya", "dua hari sebelumnya" are not read: they count from the event the
-    sentence just told, not from today (replay 2026-10-11, the Padang flood arc), and the prompt
+    A longer phrase is never read as a shorter one inside it: "tiga pekan lalu" is not "pekan lalu",
+    and a vague count ("beberapa pekan lalu", "dua puluh hari lalu") is not read at all (QA,
+    2026-10-14). "sepekan sebelumnya", "dua hari sebelumnya" are not read: they count from the event
+    the sentence just told, not from today (replay 2026-10-11, the Padang flood arc), and the prompt
     lets a sequence word stand without a source."""
-    text = without_dates(text)
-    matches = sorted(((m.start(), -m.end(), m, span) for pattern, span in _RELATIVE_EACH
-                      for m in pattern.finditer(text)), key=lambda t: t[:2])
-    found, taken = [], 0
-    for start, neg_end, m, span in matches:        # leftmost, then longest: "dua pekan lalu", not "pekan lalu"
-        if start >= taken:
-            found.append((m.group(0), *span(m, today)))
-            taken = -neg_end
+    found = []
+    for m, span in _relative_matches(text):
+        days = span(m, today)
+        if days:
+            found.append((m.group(0), *days))
     return found
 
 
@@ -257,32 +304,80 @@ def relative_name(day: date, today: date) -> str:
 _ORDINAL_WORDS = {"kedua": 2, "ketiga": 3, "keempat": 4, "kelima": 5, "keenam": 6, "ketujuh": 7, "kedelapan": 8,
                   "kesembilan": 9, "kesepuluh": 10}
 _ORDINAL = re.compile(rf"(?:\b(?P<before>[^\W\d_][\w-]*)\s+)?\b(?P<ordinal>{'|'.join(_ORDINAL_WORDS)}|ke-(?P<n>\d+))\b"
-                      r"(?P<times>\s+kali(?:nya)?\b)?", re.IGNORECASE)
+                      r"(?P<times>\s+kali(?:nya)?\b)?(?P<belah>\s+belah\b)?", re.IGNORECASE)
 # What a collective "kedua"/"ketiga" ("both", "all three") follows: function words and adverbs ("Kini kelima
 # tersangka ...", replay 2026-10-10). Time words stay nouns: "pekan kedua", "hari ketiga".
 _NOT_A_NOUN = (story_words.STOPWORDS - {"hari", "tahun", "bulan", "pekan"}) | {
     "kini", "lalu", "kemudian", "akhirnya", "bahkan", "hanya", "sebanyak", "total", "seluruh", "sementara"}
+# ... and verbs: "menahan kedua tersangka", "memeriksa ketiga saksi", "bersama kedua menteri" (QA, 2026-10-14).
+# A me-/di-/ber- word is read as a verb, except the nouns listed here ("termin kedua", "rapat terbatas ketiga"
+# stay claims: ter- is not read as a verb prefix). A noun missing from the list leaves its claim unchecked,
+# as before SYS-158; a verb read as a noun would cost a retry, so the rule leans to collective.
+_VERB = re.compile(r"(?:me|di|ber)[a-z]{3,}")
+_PREFIXED_NOUNS = {"menteri", "menit", "menara", "media", "medali", "meja", "metode", "merek", "mesin", "diskusi",
+                   "dialog", "direktur", "direksi", "dirut", "divisi", "dinas", "distrik", "dimensi", "berita",
+                   "berkas"}
 _SEKIAN = re.compile(r"\bkesekian\s+kali(?:nya)?\b", re.IGNORECASE)
 _SERIES = re.compile(rf"\b(?P<n>dua|tiga|empat|lima|enam|tujuh|delapan|sembilan|sepuluh|\d+)\s+"
-                     r"(?P<unit>hari|pekan|minggu|bulan|sesi|kuartal|tahun)(?:\s+perdagangan)?\s+"
+                     r"(?P<unit>hari|pekan|minggu|bulan|sesi|kuartal|tahun|kali)(?:\s+perdagangan)?\s+"
                      r"(?:beruntun|berturut-turut)\b", re.IGNORECASE)
-_RECORD = re.compile(r"\b(?:pertama\s+kali(?:nya)?|terendah|tertinggi)\s+sejak\s+[^\W_]+", re.IGNORECASE)
+_RECORD = re.compile(r"\b(?P<record>pertama\s+kali(?:nya)?|terendah|tertinggi)\s+sejak\s+", re.IGNORECASE)
+_PART = r"(?:(?P<part>awal|pertengahan|akhir)\s+)?"
+# The time a record runs from, whole, so "terendah sejak awal Maret" never licenses "terendah sejak awal tahun"
+# (QA, 2026-10-14: the key used to be the one word after "sejak"). Else up to three words, to the next
+# function word or punctuation (`_record_time`).
+_RECORD_TIME = re.compile(
+    rf"(?:(?P<day>\d{{1,2}})\s+)?{_PART}(?P<month>{_MONTH_NAME})\b(?:\s+(?P<year>\d{{4}}))?"
+    rf"|(?P<dm>\d{{1,2}}/\d{{1,2}})(?:/(?P<dmyear>\d{{2,4}}))?"
+    r"|(?:(?P<spanpart>awal|pertengahan|akhir)\s+)?(?P<span>tahun|bulan|pekan|minggu|kuartal|semester)\b"
+    r"(?:\s+(?P<which>ini|lalu|\d{4}|[IVX]+\b|\d\b))?"
+    r"|(?P<bare_year>\d{4})\b", re.IGNORECASE)
 _SERIES_COUNT = {"dua": 2, "tiga": 3, "empat": 4, "lima": 5, "enam": 6, "tujuh": 7, "delapan": 8, "sembilan": 9,
                  "sepuluh": 10}
+
+
+def _record_time(rest: str) -> Tuple[str, str]:
+    """(as written, key) of the time a record runs from; `rest` is the text after its "sejak".
+    "awal tahun ini" is keyed "awal tahun"; a month's or a day's year stays in the key (see
+    `stated_claims`)."""
+    m = _RECORD_TIME.match(rest)
+    if m:
+        if m.group("month"):
+            parts = [m.group("day"), m.group("part"), m.group("month"), m.group("year")]
+        elif m.group("dm"):
+            parts = [m.group("dm"), m.group("dmyear")]
+        elif m.group("span"):
+            which = m.group("which")
+            parts = [m.group("spanpart"), m.group("span"), None if (which or "").lower() == "ini" else which]
+        else:
+            parts = [m.group("bare_year")]
+        return m.group(0), " ".join(p.lower() for p in parts if p)
+    written = []
+    for word in re.findall(r"[\w-]+", re.match(r"[\w\s-]*", rest).group(0))[:3]:
+        if word.lower() in story_words.STOPWORDS:
+            break
+        written.append(word)
+    return " ".join(written), " ".join(written).lower()
+
+
+def _collective(before: str, belah: bool) -> bool:
+    """A word ordinal after `before` means "both"/"all N", not a count (`ordinal_claims`)."""
+    return belah or before in _NOT_A_NOUN or (bool(_VERB.fullmatch(before)) and before not in _PREFIXED_NOUNS)
 
 
 def ordinal_claims(text: str) -> List[Tuple[str, Optional[int], str]]:
     """(claim as written, the count it implies, its key) of every ordinal or series claim in `text`
     (SYS-158 #353): a count the writer inferred, which no digit check sees.
     - "gelombang kedua", "untuk ketiga kalinya", "pemilu ke-5": N. A word ordinal claims a count only
-      after a word that is not a function word or before "kali": "kedua negara" (both countries),
-      "dan ketiga tersangka" are not claims;
+      after a noun or before "kali". After a function word ("kedua negara", "dan ketiga tersangka"),
+      after a verb ("menahan kedua tersangka") or before "belah" ("kedua belah pihak") it is a
+      collective, not a claim;
     - "untuk kesekian kalinya": at least 3;
-    - "tiga hari berturut-turut", "dua pekan beruntun": N;
-    - "pertama kali sejak Maret", "terendah sejak 2020": None -- a record, which no count proves.
+    - "tiga hari berturut-turut", "dua pekan beruntun", "tiga kali berturut-turut": N;
+    - "pertama kali sejak Maret", "terendah sejak awal tahun": None -- a record, which no count proves.
     The key is what a source must state for the claim to be its own: the word before the ordinal
     and N ("kali N" for "kedua kalinya", "ke-N" for a written number), the series' unit and N, or
-    the record phrase itself."""
+    the record with its whole time ("terendah sejak awal maret", "tertinggi sejak 9 januari 2026")."""
     out = []
     for m in _ORDINAL.finditer(text):
         n = int(m.group("n")) if m.group("n") else _ORDINAL_WORDS[m.group("ordinal").lower()]
@@ -291,18 +386,67 @@ def ordinal_claims(text: str) -> List[Tuple[str, Optional[int], str]]:
             key = f"kali {n}"
         elif m.group("n"):
             key = f"ke-{n}"
-        elif before and before not in _NOT_A_NOUN:
+        elif before and not _collective(before, bool(m.group("belah"))):
             key = f"{before} {n}"
         else:
             continue
         start = m.start() if key == f"{before} {n}" else m.start("ordinal")
-        out.append((text[start:m.end()], n, key))
+        out.append((text[start:m.end("times") if m.group("times") else m.end("ordinal")], n, key))
     out += [(m.group(0), 3, "kesekian") for m in _SEKIAN.finditer(text)]
     out += [(m.group(0), _SERIES_COUNT.get(m.group("n").lower()) or int(m.group("n")),
              f"beruntun {m.group('unit').lower()} {_SERIES_COUNT.get(m.group('n').lower()) or int(m.group('n'))}")
             for m in _SERIES.finditer(text)]
-    out += [(m.group(0), None, " ".join(m.group(0).lower().replace("kalinya", "kali").split()))
-            for m in _RECORD.finditer(text)]
+    for m in _RECORD.finditer(text):
+        written, key = _record_time(text[m.end():])
+        if key:
+            record = " ".join(m.group("record").lower().replace("kalinya", "kali").split())
+            out.append((m.group(0) + written, None, f"{record} sejak {key}"))
+    return out
+
+
+def stated_claims(source: str) -> Set[str]:
+    """The claim keys `source` states (`ordinal_claims`), and each record's key without the year of
+    its month or day: "terendah sejak Maret 2026" in a source states "terendah sejak Maret" too, never
+    "terendah sejak Maret 2025"; a bare year ("sejak 2019") is the whole time and is kept."""
+    keys = {key for _, _, key in ordinal_claims(source)}
+    return keys | {key.rsplit(" ", 1)[0] for key in keys if re.search(r" sejak \S.* \d{4}$", key)}
+
+
+_CHANGE_VERBS = (r"bertambah|naik|meningkat|turun|berkurang|menurun|melonjak|anjlok|merosot|menguat|melemah|"
+                 r"membengkak|menyusut|tumbuh")
+# "Kini jumlah personel yang dimutasi bertambah menjadi 199 orang": a figure told as the new value of an earlier one.
+_CHANGE_CLAIM = re.compile(rf"\b(?:{_CHANGE_VERBS})\b(?:\s+\S+){{0,8}}?\s+(?:men)?jadi\s+"
+                           r"(?:(?:sekitar|sebesar|sebanyak|hampir|lebih\s+dari|lebih\s+kurang)\s+)?"
+                           r"(?:Rp|US\$|\$)?\s?(?P<number>\d+(?:[.,]\d+)*)", re.IGNORECASE)
+_TIME_AFTER = (rf"(?:(?:awal|pertengahan|akhir)\s+)?(?:{_MONTH_NAME}|tahun|kuartal|semester|periode|pekan|bulan|"
+               rf"hari\s+ini|kini|saat\s+ini|\d{{1,2}}/\d{{1,2}}|\d{{1,2}}\s+(?:{_MONTH_NAME})|\d{{4}})\b")
+# What makes a source's figure a total or the result of a change: a change verb; a total word; or a running
+# period, "hingga / sampai / per / sepanjang / sejak" + a time. Not a bare "hingga": the 2026-10-11 Polri
+# headline "Rombak 199 Personel Polri, Kakorlantas hingga Wakabaintelkam Diganti" is a list, not a total.
+_TOTAL_OR_CHANGE = re.compile(rf"\b(?:{_CHANGE_VERBS}|total|totalnya|kumulatif|akumulasi|keseluruhan)\b"
+                              rf"|\b(?:hingga|sampai|per|sepanjang|sejak|s\.d\.?|s/d)\s+{_TIME_AFTER}"
+                              r"|\bdari\s+(?:Rp|US\$|\$)?\s?\d", re.IGNORECASE)
+
+
+def _sentences(text: str) -> List[str]:
+    return [s for s in re.split(r"(?<=[.!?])\s+|\n+", text) if s.strip()]
+
+
+def unbacked_changes(text: str, source: str) -> List[str]:
+    """SYS-161 (#356): the change claims of `text` -- "(bertambah|naik|turun|...) menjadi N" -- whose N
+    no source sentence states as a total or a change: every sentence of `source` holding N (by value)
+    lacks a change verb, a total word and a running period (`_TOTAL_OR_CHANGE`). "Kini ... bertambah
+    menjadi 199 orang" read two separate Polri telegrams (88, then 199) as a running total; the bansos,
+    Bulog and PHK figures it was right for are each stated "hingga akhir September", "sampai awal
+    Oktober", "sepanjang Januari-September". A claim whose N no source holds at all is left to
+    `unsupported_number`."""
+    held = [(s, {value for number in _NUMBER.findall(s) for value in values(number)}) for s in _sentences(source)]
+    out = []
+    for m in (m for sentence in _sentences(text) for m in _CHANGE_CLAIM.finditer(sentence)):
+        wanted = values(m.group("number"))
+        holding = [s for s, available in held if wanted & available]
+        if holding and not any(_TOTAL_OR_CHANGE.search(s) for s in holding):
+            out.append(m.group(0))
     return out
 
 

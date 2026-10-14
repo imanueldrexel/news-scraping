@@ -8,12 +8,18 @@ of that, defined once: `story_arc.parse` refuses on them (SYS-156, SYS-159) and
 the replay reports them (SYS-160), so the gate and the number agree.
 
 - `date_led(sentence)`: the sentence opens on a date ("Pada 3/10, ...", "Sebelumnya,
-  pada Rabu (24/9) ...", "24/9: ...") or carries "pada <date>" anywhere.
+  pada Rabu (24/9) ...", "Pada tanggal 3 Oktober, ...", "24/9: ...") or carries "pada <date>"
+  anywhere.
+- `time_anchors(text)`: the past times the text names -- each calendar date, and each relative
+  phrase ("awal Oktober", "pekan lalu", "Sabtu lalu") not opened by "sejak" (SYS-164: since SYS-154
+  asks for relative time, a chronicle can be written without one calendar date). "Sejak awal
+  Oktober" frames the story; it is not a stop on its timeline.
+- `opens_on_time(sentence)`: the sentence opens on a time anchor; `time_led`: date-led, or that.
 - `repeated_opening(text)`: the first word two sentences share, or None.
 - `non_events(text)`: the process verbs that report talk about an event as an
   event ("dibahas", "disebut", "dikabarkan", "ditanggapi").
 - `tied_to_today(latar, judul, hari_ini)`: the back-story's first sentence
-  frames today's news -- it does not open on a past date, and it shares a
+  frames today's news -- it does not open on a time anchor, and it shares a
   content word with the judul or hari_ini, up to its affixes (`story_words`,
   `stems`; a name counts: "Ini gelombang kedua perombakan Polri" ties by
   "Polri", while its event words differ from today's "memutasi").
@@ -23,13 +29,16 @@ from typing import List, Optional
 
 from newscrawler.core import newsletter_copy as copy
 from newscrawler.core import story_words
-from newscrawler.core.source_check import date_mentions
+from newscrawler.core.source_check import date_mentions, relative_phrases
 
 _DAY = "|".join(copy.DAYS)
-# What may stand before a date for the sentence to open on it: a time connector, a preposition, a day name.
+# What may stand before a time for the sentence to open on it: a time connector, prepositions ("Pada",
+# "Pada tanggal", "Pada hari"), a day name before its date ("Sabtu (3/10)", "Sabtu, 3 Oktober").
+_DAY_BEFORE = rf"(?:(?:{_DAY})\s*[(,]\s*)?"
 _OPENS_ON_DATE = re.compile(rf"\s*(?:(?:sebelumnya|lalu|kemudian|selanjutnya|sementara itu|dan)\s*,?\s+)?"
-                            rf"(?:(?:pada|sejak|per|hingga|tanggal)\s+)?(?:(?:{_DAY})\s*\(\s*)?", re.IGNORECASE)
-_PADA_DATE = re.compile(rf"\bpada\s+(?:(?:{_DAY})\s*\(\s*)?$", re.IGNORECASE)
+                            rf"(?:(?:pada|sejak|per|hingga|tanggal|hari)\s+)*{_DAY_BEFORE}", re.IGNORECASE)
+_PADA_DATE = re.compile(rf"\bpada\s+(?:(?:tanggal|hari)\s+)*{_DAY_BEFORE}$", re.IGNORECASE)
+_SEJAK = re.compile(r"\bsejak\s+$", re.IGNORECASE)
 NON_EVENTS = re.compile(r"\b(?:dibahas|disebut|dikabarkan|ditanggapi)\b", re.IGNORECASE)
 
 
@@ -37,13 +46,35 @@ def sentences(text: str) -> List[str]:
     return [s.strip() for s in re.split(r"(?<=[.!?])\s+", text or "") if s.strip()]
 
 
+def _opens_on(sentence: str, positions: List[int]) -> bool:
+    return bool(positions) and bool(_OPENS_ON_DATE.fullmatch(sentence[:min(positions)]))
+
+
+def _relative_anchors(text: str) -> List[tuple]:
+    return [(pos, phrase) for pos, phrase in relative_phrases(text) if not _SEJAK.search(text[:pos])]
+
+
 def opens_on_date(sentence: str) -> bool:
-    mentions = date_mentions(sentence)
-    return bool(mentions) and bool(_OPENS_ON_DATE.fullmatch(sentence[:mentions[0][0]]))
+    return _opens_on(sentence, [pos for pos, *_ in date_mentions(sentence)])
+
+
+def opens_on_time(sentence: str) -> bool:
+    return _opens_on(sentence, [pos for pos, *_ in date_mentions(sentence)]
+                     + [pos for pos, _ in _relative_anchors(sentence)])
+
+
+def time_anchors(text: str) -> List[str]:
+    text = text or ""
+    found = [(pos, written) for pos, _, _, written in date_mentions(text)] + _relative_anchors(text)
+    return [written for _, written in sorted(found)]
 
 
 def date_led(sentence: str) -> bool:
     return opens_on_date(sentence) or any(_PADA_DATE.search(sentence[:pos]) for pos, *_ in date_mentions(sentence))
+
+
+def time_led(sentence: str) -> bool:
+    return date_led(sentence) or opens_on_time(sentence)
 
 
 def opening(sentence: str) -> str:
@@ -98,4 +129,4 @@ def tied_to_today(latar: str, judul: str, hari_ini: str) -> bool:
     if not first:
         return True
     today = story_words.story_content_words(judul, hari_ini)
-    return not opens_on_date(first) and bool(_families(today) & _families(story_words.content_words(first)))
+    return not opens_on_time(first) and bool(_families(today) & _families(story_words.content_words(first)))

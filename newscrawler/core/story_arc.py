@@ -19,18 +19,21 @@ and code checks what it wrote. The answer is JSON:
 
 `parse` refuses an answer ("json", "length", "style", "number", "date", "subject", "alur"):
 - style: the latar reads as a chronicle (`arc_style`, SYS-156): more than
-  MAX_LATAR_DATES calendar dates, more than MAX_DATE_OPENINGS sentences opening on a date, or
-  two sentences opening on the same word; or, with `alur`, its first sentence
-  is not tied to today (SYS-159). The 2026-10-08..12 replay: 69% of latar
+  MAX_LATAR_DATES calendar dates, more than MAX_LATAR_ANCHORS time anchors (dates and
+  relative times not after "sejak", SYS-164), more than MAX_DATE_OPENINGS sentences opening
+  on a time anchor, or two sentences opening on the same word; or, with `alur`, its first
+  sentence is not tied to today (SYS-159). The 2026-10-08..12 replay: 69% of latar
   sentences were "Pada d/m, ...";
 - number: every number in the prose is in today's `terkait` articles or the
   chosen `alur` items (by value, `source_check`); an ordinal or series claim
   ("gelombang kedua", "tiga hari beruntun") counts no more than the chosen
   items allow, unless a source states it, and a record ("terendah sejak ...")
-  only when a source states it (SYS-158);
+  only when a source states it (SYS-158); "bertambah/naik/turun menjadi N" only when a source
+  states N as a total or a change (SYS-161);
 - date: every date written (24/9, 24 September) is today's, a chosen item's own
   date, or one an article states -- never an unchosen item's; every relative
-  time ("awal Oktober", "pekan lalu") spans one of those or is stated (SYS-157);
+  time ("awal Oktober", "pekan lalu") spans one of those or is stated in today's articles
+  (SYS-157/162: a timeline item's "kemarin" was written from another day);
   with no `alur`, `latar` holds no date but today's;
 - subject: a `terkait` article names the story's subject (SYS-80);
 - alur: a chosen item shares at least ALUR_MIN_EVENT_WORDS *event* words --
@@ -41,7 +44,9 @@ and code checks what it wrote. The answer is JSON:
   "209 Ha Lahan Masih Terbakar" report shares "lahan".
 On the retry (`lenient`) off-subject articles and items are moved out instead of
 refused, and the number and date checks then hold the prose to what is left.
-An agenda with no date, number or scheduling word is dropped, not refused.
+An agenda with no date, number or scheduling word is dropped, not refused; so is one that
+repeats the latar or hari_ini (SYS-163: its date and at least AGENDA_REPEAT_SHARE of its
+content words are there).
 """
 import logging
 import re
@@ -54,7 +59,8 @@ from newscrawler.core import newsletter_copy as copy
 from newscrawler.core import story_words
 from newscrawler.core.llm_json import Rejected, ask_json, json_object
 from newscrawler.core.source_check import (dates_in, off_subject, ordinal_claims, relative_name, relative_times,
-                                           resolve, unsupported_number, without_dates)
+                                           resolve, stated_claims, unbacked_changes, unsupported_number,
+                                           without_dates)
 from newscrawler.core.story_summary import article_text, guard_text, words
 from newscrawler.core.summarizer import SummarizerError
 from newscrawler.core.thread_finder import TimelineItem
@@ -67,9 +73,14 @@ ASKED = {**LIMITS, "judul": 10, "latar": 60}                                    
 REASONS = ("json", "length", "style", "number", "date", "subject", "alur")
 ALUR_MIN_EVENT_WORDS = 1
 MAX_LATAR_DATES = 2     # SYS-156: calendar dates in a latar (13 of 19 replayed latar held >= 3)
-# SYS-156: sentences of a latar that open on a date ("Pada 24/9, ..."). A date inside a sentence is
-# held only by MAX_LATAR_DATES: the 10-12 re-run refused "..., ditutup menguat 1,04% pada Jumat (9/10)".
+# SYS-156: sentences of a latar that open on a date ("Pada 24/9, ...") or, since SYS-164, a relative time
+# ("Pekan lalu, ..."). A date inside a sentence is held only by the counts: the 10-12 re-run refused
+# "..., ditutup menguat 1,04% pada Jumat (9/10)".
 MAX_DATE_OPENINGS = 1
+# SYS-164: dates and relative times (not "sejak ...") in a latar: a frame and two turning points fit. The v5
+# Karhutla latar told all four chosen items in order with four (Pekan lalu, 5/10, 8/10, Kemarin).
+MAX_LATAR_ANCHORS = 3
+AGENDA_REPEAT_SHARE = 0.5   # SYS-163: El-Sisi 10-10 repeated 7 of its 9 content words from the latar
 STYLE_ASK = ("tulis latar sebagai cerita: satu kalimat bingkai dan paling banyak dua titik balik, dikaitkan "
              "dengan peristiwa hari ini, dengan waktu relatif (\"awal Oktober\", \"pekan lalu\")")
 # What makes an agenda a scheduled step rather than a guess (with a date or a number it is one already).
@@ -139,11 +150,15 @@ PROMPT = (
     "    2. Pilih paling banyak dua titik balik, yaitu yang mengubah keadaan. Lewati tahap proses\n"
     "       (\"dibahas\", \"disebut\", \"dikabarkan\", \"ditanggapi\") kecuali itulah titik baliknya.\n"
     "    3. Kaitkan setiap fakta lampau dengan hari ini (\"kini\", \"kali ini\", \"setelah\", \"menyusul\",\n"
-    "       \"berbeda dengan\"), bukan sekadar urutan waktu (\"lalu\", \"kemudian\").\n"
+    "       \"berbeda dengan\"), bukan sekadar urutan waktu (\"lalu\", \"kemudian\"). Tulis angka hari ini\n"
+    "       sebagai lanjutan angka lampau (\"bertambah/naik/turun menjadi N\") HANYA jika artikel menyebut N\n"
+    "       sebagai total atau perubahan (\"total\", \"hingga September\", \"sepanjang tahun\", \"naik dari\").\n"
+    "       Jika tidak, keduanya peristiwa terpisah: ceritakan angka hari ini sebagai peristiwa hari ini.\n"
     "    4. Tulis waktu cuplikan dengan waktu relatif yang tertera dalam kurung di LINI MASA, mis.\n"
     "       \"akhir September\", \"pekan lalu\", \"kemarin\", bukan \"Kamis (8/10)\" atau \"Pada 24/9\".\n"
     "       Tanggal kalender hanya jika tanggal itu sendiri penting (tenggat, sidang, pemungutan\n"
-    "       suara), paling banyak dua di latar.\n"
+    "       suara), paling banyak dua di latar. Seluruh latar paling banyak tiga penanda waktu\n"
+    "       (tanggal atau waktu relatif; \"sejak ...\" tidak dihitung).\n"
     "    5. Jangan membuka dua kalimat dengan kata yang sama.\n"
     "    6. Akhiri dengan apa yang masih terbuka (siapa yang memutuskan berikutnya, apa yang masih\n"
     "       diperdebatkan) HANYA jika artikel menyebutnya. Jika tidak, berhenti.\n"
@@ -269,10 +284,16 @@ def chronicle(latar: str, judul: str, hari_ini: str, has_alur: bool) -> List[str
     dates = len(dates_in(latar))
     if dates > MAX_LATAR_DATES:
         problems.append(f"latar memuat {dates} tanggal kalender, maks {MAX_LATAR_DATES}")
-    opened = [s for s in arc_style.sentences(latar) if arc_style.opens_on_date(s)]
+    anchors = arc_style.time_anchors(latar)
+    if len(anchors) > MAX_LATAR_ANCHORS:
+        quoted = ", ".join(f'"{a}"' for a in anchors)
+        problems.append(f"latar memuat {len(anchors)} penanda waktu ({quoted}), maks {MAX_LATAR_ANCHORS}: "
+                        "ceritakan paling banyak dua titik balik")
+    opened = [s for s in arc_style.sentences(latar) if arc_style.opens_on_time(s)]
     if len(opened) > MAX_DATE_OPENINGS:
         quoted = ", ".join(f'"{" ".join(s.split()[:8])} ..."' for s in opened)
-        problems.append(f"{len(opened)} kalimat latar dibuka dengan tanggal ({quoted}), maks {MAX_DATE_OPENINGS}")
+        problems.append(f"{len(opened)} kalimat latar dibuka dengan tanggal atau waktu ({quoted}), "
+                        f"maks {MAX_DATE_OPENINGS}")
     word = arc_style.repeated_opening(latar)
     if word:
         problems.append(f"dua kalimat latar dibuka dengan kata \"{word}\"")
@@ -281,11 +302,12 @@ def chronicle(latar: str, judul: str, hari_ini: str, has_alur: bool) -> List[str
     return problems
 
 
-def unbacked_times(text: str, digest_date: date, known: set, source: str) -> List[str]:
+def unbacked_times(text: str, digest_date: date, known: set, stated: str) -> List[str]:
     """SYS-157: the relative time phrases of `text` ("awal Oktober", "pekan lalu") whose days hold
     none of the `known` dates (today, the chosen items' own dates, the dates the sources state) and
-    that no source states as written."""
-    stated = " ".join(source.lower().split())
+    that `stated` -- today's `terkait` articles only -- does not state as written. A phrase means
+    something only from the day it was written: a 23/9 item's "kemarin" is 22/9 (SYS-162)."""
+    stated = " ".join(stated.lower().split())
     return [phrase for phrase, first, last in relative_times(text, digest_date)
             if not any(first <= d <= last for d in known) and " ".join(phrase.lower().split()) not in stated]
 
@@ -300,6 +322,18 @@ def overcounted(text: str, items: int, stated: set) -> List[str]:
 
 def _agenda_kept(agenda: str) -> bool:
     return bool(agenda) and bool(dates_in(agenda) or re.search(r"\d", agenda) or _SCHEDULED.search(agenda))
+
+
+def agenda_repeats(agenda: str, latar: str, hari_ini: str) -> bool:
+    """SYS-163: the agenda tells a date the latar or hari_ini already tells, with at least
+    AGENDA_REPEAT_SHARE of its content words there too (2026-10-10: "Minggu (11/10) pukul 10.30 WIB,
+    Prabowo menerima El-Sisi di Istana ..." closed a latar that had just said it). Dropped, not
+    refused: it adds nothing, so a retry would buy the reader nothing."""
+    told = f"{latar} {hari_ini}"
+    if not set(dates_in(agenda)) & set(dates_in(told)):
+        return False
+    words, seen = story_words.content_words(agenda), story_words.content_words(told)
+    return bool(words) and sum(w in seen for w in words) >= AGENDA_REPEAT_SHARE * len(words)
 
 
 def parse(answer: Optional[str], shown_texts: Sequence[str], timeline: Sequence[TimelineItem], digest_date: date,
@@ -343,6 +377,9 @@ def parse(answer: Optional[str], shown_texts: Sequence[str], timeline: Sequence[
     if agenda_dropped:
         logger.info(f"Arc agenda dropped (no date, number or scheduled step): {agenda!r}")
         agenda = ""
+    elif agenda and agenda_repeats(agenda, latar, hari_ini):
+        logger.info(f"Arc agenda dropped (repeats the latar or hari_ini): {agenda!r}")
+        agenda, agenda_dropped = "", True
 
     style = chronicle(latar, judul, hari_ini, bool(chosen))
     # Today's date and each chosen item's own date are right whether or not a text states them; they
@@ -352,7 +389,8 @@ def parse(answer: Optional[str], shown_texts: Sequence[str], timeline: Sequence[
     # A relative time may span any day a date check accepts (SYS-157).
     days = ({digest_date} | {t.day for t in chosen.values()}
             | {resolve(d, m, digest_date) for d, m in dates_in(source)}) - {None}
-    claims = {key for _, _, key in ordinal_claims(source)}
+    claims = stated_claims(source)
+    stated_today = "\n\n".join(shown_texts[i] for i in terkait)   # where a relative phrase may be stated
     numbers, dates = [], []
     for key, value in [("judul", judul), ("hari_ini", hari_ini), ("latar", latar), ("agenda", agenda),
                        ("sekilas", sekilas)]:
@@ -368,9 +406,12 @@ def parse(answer: Optional[str], shown_texts: Sequence[str], timeline: Sequence[
             numbers.append(f'"{bad}" di {key} tidak ada di artikel atau cuplikan alur')
         numbers += [f'"{claim}" di {key} menghitung lebih dari {len(chosen)} cuplikan alur yang dipilih, atau '
                     "klaim rekor yang tidak tertulis di teks" for claim in overcounted(value, len(chosen), claims)]
+        numbers += [f'"{claim}" di {key} membaca angka itu sebagai total atau perubahan, padahal artikel tidak '
+                    "menyebutnya begitu: ceritakan angka hari ini sebagai peristiwa hari ini"
+                    for claim in unbacked_changes(value, source)]
         dates += [f'waktu "{phrase}" di {key} tidak cocok dengan tanggal hari ini, tanggal cuplikan alur yang '
                   "dipilih, atau tanggal yang tertulis di artikel" for phrase in unbacked_times(value, digest_date,
-                                                                                                days, source)]
+                                                                                                days, stated_today)]
     if not chosen:
         own = (digest_date.day, digest_date.month)
         stray_dates = [d for d in dates_in(latar) if d != own]

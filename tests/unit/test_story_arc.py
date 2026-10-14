@@ -143,6 +143,53 @@ class TestAgenda:
         assert _reason(_answer(agenda="Rapat lanjutan dijadwalkan Jumat (16/10)."))[0] == "date"
 
 
+# SYS-163 (#358): the v5 replay's agendas (digests/preview/arcs-v5), as the model wrote them.
+EL_SISI = {"hari_ini": "Presiden Mesir Abdel Fattah El-Sisi tiba di Lanud Halim Perdanakusuma, Jakarta, Sabtu (10/10) "
+                       "sekitar pukul 17.25 WIB untuk kunjungan kenegaraan hingga Minggu (11/10). Kedatangannya "
+                       "disambut "
+                       "pengawalan jet tempur TNI AU dan sambutan pelajar.",
+           "latar": "Kunjungan ini menyusul lawatan El-Sisi ke Korea Selatan dan Malaysia, dan dijadwalkan bertemu "
+                    "Presiden Prabowo Subianto di Istana Kepresidenan, Jakarta, Minggu (11/10) pukul 10.30 WIB. "
+                    "Menurut "
+                    "Menteri Luar Negeri Arrmanatha Nasir, pertemuan akan diawali pertemuan tete a tete, dilanjutkan "
+                    "pertemuan bilateral, dan penandatanganan sejumlah nota kesepahaman.",
+           "agenda": "Minggu (11/10) pukul 10.30 WIB, Prabowo menerima El-Sisi di Istana, menurut Menlu Arrmanatha "
+                     "Nasir."}
+OJOL = {"hari_ini": "Pemerintah resmi menerbitkan Perpres Nomor 27 Tahun 2026 tentang Perlindungan Ekosistem "
+                    "Transportasi Berbasis Digital pada Kamis (8/10). Aturan ini mengatur tarif, kemitraan, pengiriman "
+                    "makanan dan barang, jaminan sosial, serta bagi hasil aplikator maksimal 8 persen.",
+        "latar": "Perpres ini terbit setelah proses sinkronisasi dan harmonisasi yang mempertimbangkan aspirasi pelaku "
+                 "ekosistem ojol. Sebelumnya, Menteri UMKM Maman Abdurrahman menyebut penyusunan regulasi cukup lama "
+                 "karena harus diselaraskan dengan aturan ketenagakerjaan serta lalu lintas dan angkutan jalan, dan "
+                 "pada pertengahan September ia mengungkapkan salah satu alasannya adalah mensinergikan dengan "
+                 "undang-undang lain. Status pengemudi tetap sebagai mitra perusahaan aplikasi dengan hak dan "
+                 "kewajiban yang jelas.",
+        "agenda": "Aturan pelaksana Perpres Ojol harus tuntas paling lambat 31 Desember 2026, menurut Wamensesneg "
+                  "Bambang Eko Suhariyanto."}
+
+
+class TestAgendaRepeats:
+    def test_the_el_sisi_agenda_repeats_the_latar(self):
+        assert sa.agenda_repeats(EL_SISI["agenda"], EL_SISI["latar"], EL_SISI["hari_ini"])
+
+    def test_the_ojol_agenda_is_new(self):
+        assert not sa.agenda_repeats(OJOL["agenda"], OJOL["latar"], OJOL["hari_ini"])
+
+    def test_the_same_date_with_new_words_is_kept(self):
+        """Half the words are not enough: the agenda must mostly repeat what was told."""
+        assert not sa.agenda_repeats("Kamis (15/10) DPR memanggil Kapolri soal anggaran pemadaman dan evakuasi.",
+                                     "Prabowo menggelar rapat karhutla lanjutan Kamis (15/10).", "")
+
+    def test_the_same_words_without_its_date_is_kept(self):
+        assert not sa.agenda_repeats("Prabowo menerima El-Sisi di Istana Merdeka.", EL_SISI["latar"],
+                                     EL_SISI["hari_ini"])
+
+    def test_dropped_in_parse_not_refused(self):
+        latar = FRAME + "Rapat lanjutan Prabowo soal karhutla dijadwalkan Kamis (15/10)."
+        arc = _parse(_answer(latar=latar, agenda="Rapat lanjutan karhutla dijadwalkan Kamis (15/10)."))
+        assert arc.agenda == "" and arc.agenda_dropped and arc.back_story == latar
+
+
 class TestShape:
     @pytest.mark.parametrize("override,detail", [
         ({"alur": [1]}, "bukan cuplikan LINI MASA"),
@@ -296,8 +343,57 @@ class TestRelativeTime:
         assert sa.unbacked_times("pertengahan Oktober", DAY, set(), "") == ["pertengahan Oktober"]
 
 
+    def test_a_count_of_weeks_is_read_with_its_own_span(self):
+        """SYS-157 rework: 'tiga pekan lalu' (18-24/9) holds the chosen 23/9 item; read as 'pekan lalu'
+        (5-11/10) it was refused. 'dua bulan lalu' (August) holds none."""
+        latar = FRAME + "Tiga pekan lalu Seskab melaporkan 209 hektare lahan masih terbakar."
+        assert _parse(_answer(latar=latar))
+        reason, detail = _reason(_answer(latar=latar.replace("Tiga pekan lalu", "Dua bulan lalu")))
+        assert reason == "date" and '"Dua bulan lalu"' in detail
+
+    def test_a_phrase_in_an_old_timeline_item_does_not_license_it(self):
+        """SYS-162 (#357): the 23/9 item's 'Kemarin' meant 22/9; it cannot back today's 'Kemarin' (11/10)."""
+        timeline = [TIMELINE[0]._replace(opening="Kemarin Seskab melaporkan 209 hektare lahan masih terbakar.")] \
+            + TIMELINE[1:]
+        latar = FRAME + "Kemarin Seskab melaporkan 209 hektare lahan masih terbakar."
+        reason, detail = _reason(_answer(latar=latar), timeline=timeline)
+        assert reason == "date" and '"Kemarin"' in detail
+        assert sa.parse(_answer(latar=latar), _texts("Kemarin Seskab melaporkan karhutla."), timeline, DAY)
+
+
 class TestOrdinals:
     """SYS-158 (#353): a count no larger than the chosen timeline, a record only when stated."""
+
+    def test_a_record_is_held_to_its_whole_time(self):
+        """QA 2026-10-14: 'terendah sejak awal Maret' in a source licensed 'terendah sejak awal tahun'."""
+        latar = FRAME + "Luas karhutla kali ini tertinggi sejak awal tahun."
+        with pytest.raises(Rejected) as e:
+            sa.parse(_answer(latar=latar), _texts("Luas karhutla tertinggi sejak awal Agustus."), TIMELINE, DAY)
+        assert e.value.reason == "number" and '"tertinggi sejak awal tahun"' in e.value.detail
+        assert sa.parse(_answer(latar=latar), _texts("Luas karhutla tertinggi sejak awal tahun ini."), TIMELINE, DAY)
+
+    def test_a_record_may_drop_its_year_but_not_change_it(self):
+        latar = FRAME + "Luas karhutla kali ini tertinggi sejak Maret."
+        texts = _texts("Luas karhutla tertinggi sejak Maret 2025.")
+        assert sa.parse(_answer(latar=latar), texts, TIMELINE, DAY)
+        with pytest.raises(Rejected) as e:
+            sa.parse(_answer(latar=latar.replace("Maret.", "Maret 2026.")), _texts("Luas karhutla tertinggi sejak "
+                                                                                   "Maret 2025, pada 2026."),
+                     TIMELINE, DAY)
+        assert e.value.reason == "number" and '"tertinggi sejak Maret 2026"' in e.value.detail
+
+    def test_n_times_in_a_row_is_held_to_the_items(self):
+        """'tiga kali berturut-turut' is a series no digit check sees: one item does not back it."""
+        latar = FRAME + "Prabowo menggelar rapat karhutla tiga kali berturut-turut."
+        reason, detail = _reason(_answer(alur=[N + 1], latar=latar))
+        assert reason == "number" and '"tiga kali berturut-turut"' in detail
+        assert _parse(_answer(latar=latar))
+
+    def test_a_collective_after_a_verb_costs_no_retry(self):
+        """No alur, a crime-desk hari_ini: 'menahan kedua tersangka' = held both suspects."""
+        hari_ini = "Polisi menahan kedua tersangka karhutla di Istana Negara, Senin (12/10)."
+        assert _parse(_answer(alur=[], latar="", hari_ini=hari_ini, judul="Polisi tahan dua tersangka karhutla",
+                              terkait=[0], tidak_terkait=[1, 2]))
 
     def test_backed_by_enough_items(self):
         assert _parse(_answer(latar="Ini rapat karhutla ketiga sejak September. Seskab melaporkan 209 hektare."))
@@ -323,6 +419,54 @@ class TestOrdinals:
         assert _reason(_answer(alur=[], hari_ini=hari_ini, latar=""))[0] == "number"
         assert sa.parse(_answer(alur=[], hari_ini=hari_ini, latar=""), _texts("Ini rapat terbatas ketiga."),
                         TIMELINE, DAY)
+
+
+class TestChangeClaims:
+    """SYS-161 (#356): "bertambah/naik/turun menjadi N" needs a source that states N as a total or a change."""
+
+    def test_a_figure_the_source_does_not_call_a_total_is_refused(self):
+        """KONTAN states 1.673 disrupted flights as today's event; nothing says it grew to that."""
+        hari_ini = "Presiden Prabowo memimpin rapat karhutla, Senin (12/10). Penerbangan terganggu kini bertambah " \
+                   "menjadi 1.673."
+        reason, detail = _reason(_answer(hari_ini=hari_ini))
+        assert reason == "number" and '"bertambah menjadi 1.673"' in detail and "peristiwa hari ini" in detail
+
+    def test_a_running_total_the_source_states_passes(self):
+        hari_ini = "Presiden Prabowo memimpin rapat karhutla, Senin (12/10). Penerbangan terganggu kini bertambah " \
+                   "menjadi 1.673."
+        assert sa.parse(_answer(hari_ini=hari_ini), _texts("Total 1.673 penerbangan terganggu sejak awal Oktober.",
+                                                            i=1), TIMELINE, DAY)
+
+    def test_the_prompt_says_so(self):
+        assert "bertambah/naik/turun menjadi N" in sa.PROMPT and "peristiwa terpisah" in sa.PROMPT
+
+
+class TestTimeAnchors:
+    """SYS-164 (#359): relative time counts as a time anchor in the latar's caps."""
+
+    def test_more_than_three_anchors_is_refused(self):
+        latar = (FRAME + "Akhir September Seskab melaporkan 209 hektare terbakar, Prabowo menggelar rapat 23/9 dan "
+                 "24/9, lalu kemarin karhutla meluas.")
+        reason, detail = _reason(_answer(latar=latar))
+        assert reason == "style" and "4 penanda waktu" in detail and '"Akhir September"' in detail
+
+    def test_three_anchors_and_a_since_frame_pass(self):
+        latar = ("Karhutla sudah di meja Presiden sejak akhir September. Seskab melaporkan 209 hektare terbakar "
+                 "pada 23/9, dan Prabowo menggelar rapat 24/9 serta akhir September.")
+        assert _parse(_answer(latar=latar))
+
+    def test_two_sentences_opening_on_relative_time_are_refused(self):
+        latar = (FRAME + "Akhir September Seskab melaporkan 209 hektare terbakar. Tiga pekan lalu Prabowo menggelar "
+                 "rapat.")
+        reason, detail = _reason(_answer(latar=latar))
+        assert reason == "style" and "2 kalimat latar dibuka dengan tanggal atau waktu" in detail
+
+    def test_a_first_sentence_opening_on_relative_time_is_not_a_frame(self):
+        reason, detail = _reason(_answer(latar="Akhir September Seskab melaporkan 209 hektare lahan masih terbakar."))
+        assert reason == "style" and "tidak mengaitkan alur" in detail
+
+    def test_the_prompt_caps_the_anchors(self):
+        assert "paling banyak tiga penanda waktu" in sa.PROMPT
 
 
 def _example() -> dict:

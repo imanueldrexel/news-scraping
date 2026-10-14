@@ -124,16 +124,22 @@ def style_metrics(records: list) -> dict:
     """SYS-160: does the back-story read as a story or as a chronicle (arc_style)? Over the
     records with a back-story: the share of its sentences that are date-led, calendar dates per
     back-story (mean, max, how many hold >= 3), the process non-event verbs used, and the share
-    whose first sentence is tied to today (SYS-159's rule; a story without `alur` is exempt)."""
+    whose first sentence is tied to today (SYS-159's rule; a story without `alur` is exempt).
+    SYS-164: the same with relative time counted -- the share of time-led sentences (date-led, or
+    opening on a relative time not after "sejak") and the back-stories holding >= 3 time anchors."""
     backs = [r for r in records if r["back"]]
     said = [s for r in backs for s in sentences(r["back"])]
     dates = [len(dates_in(r["back"])) for r in backs]
+    anchors = [len(arc_style.time_anchors(r["back"])) for r in backs]
     tied = [arc_style.tied_to_today(r["back"], r["judul"], r["hari_ini"]) for r in backs if r["alur"]]
     led = sum(arc_style.date_led(s) for s in said)
+    time_led = sum(arc_style.time_led(s) for s in said)
     return {"back_stories": len(backs), "sentences": len(said), "date_led": led,
             "date_led_share": round(led / len(said), 3) if said else None,
+            "time_led": time_led, "time_led_share": round(time_led / len(said), 3) if said else None,
             "dates_mean": round(sum(dates) / len(dates), 2) if dates else None, "dates_max": max(dates, default=None),
             "with_3_dates_or_more": sum(d >= 3 for d in dates),
+            "anchors_max": max(anchors, default=None), "with_3_anchors_or_more": sum(a >= 3 for a in anchors),
             "non_events": sum(len(arc_style.non_events(r["back"])) for r in backs),
             "tied_to_today": sum(tied), "tied_checked": len(tied),
             "tied_share": round(sum(tied) / len(tied), 3) if tied else None}

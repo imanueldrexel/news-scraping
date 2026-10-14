@@ -56,6 +56,8 @@ class TestHandcheck:
 
 CHRONICLE = "Pelemahan ini berlanjut. Pada 24/9 IHSG turun. Pada 25/9 IHSG dibahas, dan pada 1/10 disebut anjlok."
 STORY = "Ini pekan kedua IHSG melemah. Akhir September indeks sudah turun 3,09%."
+TWO_DATES = "Pelemahan IHSG berlanjut sejak 24/9 dan 1/10."
+RELATIVE = "Pekan lalu IHSG turun. Kemarin IHSG anjlok, dan awal Oktober sudah melemah."
 
 
 def _record(back, alur=True, judul="IHSG anjlok", hari_ini="IHSG ditutup anjlok 2,59%."):
@@ -66,11 +68,16 @@ class TestStyleMetrics:
     """SYS-160 (#355): the numbers the arcs' writing is judged by."""
 
     def test_on_fixed_back_stories(self, replay):
+        """TWO_DATES sits one below the ">= 3" line (DBT-77: `d >= 2` survived without it); RELATIVE is a
+        chronicle in relative time, which only the SYS-164 metrics see."""
         m = replay.style_metrics([_record(CHRONICLE), _record(STORY), _record("", alur=False),
-                                  _record("Gempa ini terjadi tanpa korban.", alur=False)])
-        assert m == {"back_stories": 3, "sentences": 6, "date_led": 2, "date_led_share": 0.333,
-                     "dates_mean": 1.0, "dates_max": 3, "with_3_dates_or_more": 1, "non_events": 2,
-                     "tied_to_today": 1, "tied_checked": 2, "tied_share": 0.5}
+                                  _record("Gempa ini terjadi tanpa korban.", alur=False), _record(TWO_DATES),
+                                  _record(RELATIVE)])
+        assert m == {"back_stories": 5, "sentences": 9, "date_led": 2, "date_led_share": 0.222,
+                     "time_led": 5, "time_led_share": 0.556,
+                     "dates_mean": 1.0, "dates_max": 3, "with_3_dates_or_more": 1,
+                     "anchors_max": 3, "with_3_anchors_or_more": 2, "non_events": 2,
+                     "tied_to_today": 2, "tied_checked": 4, "tied_share": 0.5}
 
     def test_nothing_to_measure(self, replay):
         m = replay.style_metrics([])
