@@ -164,7 +164,8 @@ One line each; read this before starting on a scraper or pipeline problem.
 - **Dropping one chunk level of a queued sitemap leaves `l1_not_in_l2` (SYS-137, 2026-10-12):** a queued sitemap has no article and no mentions, so drop BOTH levels (`drop_oversized_queued_chunks.py`); keeping its L1 kept June's extraction and made the store check read 2,171 divergent sitemaps.
 - **The RAG floor is a tail filter, not a lead filter (SYS-138 send-back, 2026-10-12):** it admits a semantic-only hit at 0.55 with no keyword. A rule that puts a subset first whenever its hits "pass the floor" (the week window) led 2/10 held-out week questions with a keyword-coverage-0 off-topic card. Measure such a rule with `scripts/experiments/qa_2026_10_12b/probe_week_window_lead.py` on questions it was not tuned on. -> 2026-10-12 QA second-pass entry
 - **"May this article lead?" = does its paragraph hold the question's subject word (ADR-013, 2026-10-12):** a keyword-coverage threshold (0.6) drops this week's on-topic KPK/IHSG cards (0.55-0.61), and a final-score margin cannot separate the Primbon piece (0.402) from Danantara cards (~0.41). `KeywordQuery.subject` (names, else anchors) separates every case. Don't re-try coverage or margin gates. -> 2026-10-12 "SYS-138 rework" entry
-- **A story arc's back-story stops being a date-by-date chronicle only when the timeline hands the model the relative phrase to copy (SYS-154, 2026-10-14):** the rewritten rules alone still produced "Kamis (8/10)" for every past fact (4/8 accepted). Showing "(akhir September)" beside each LINI MASA item (`source_check.relative_name`, which the SYS-157 check reads back) got 18/20 accepted and 7.8% date-led sentences (was 72%). Measure with `replay_story_arcs.py` (`style` metrics, `--metrics-from` for an old run). A time check that counts from the edition's date must not read sequence words ("sepekan sebelumnya"). -> 2026-10-14 "re-runs of the arc replay" entry
+- **A story arc's back-story stops being a date-by-date chronicle only when the timeline hands the model the relative phrase to copy (SYS-154, 2026-10-14):** the rewritten rules alone still produced "Kamis (8/10)" for every past fact (4/8 accepted). Showing "(akhir September)" beside each LINI MASA item (`source_check.relative_name`, which the SYS-157 check reads back) got 18/20 accepted and 7.8% date-led sentences (was 72%). Measure with `replay_story_arcs.py` (`style` metrics, `--metrics-from` for an old run). A time check that counts from the edition's date must not read sequence words ("sepekan sebelumnya"). -> 2026-10-14 "re-runs of the arc replay" entry- **Once a prompt asks for relative time, a check keyed on calendar dates goes blind (QA, 2026-10-14):** "Awal Oktober, Polri memutasi 88 perwira." passes SYS-159's tie and SYS-156's caps. Count time anchors (calendar dates + non-"sejak" `relative_times` phrases) when judging whether an arc is a chronicle: v5 is 8/51 time-led, not only 4/51 date-led. -> 2026-10-14 QA entry, SYS-164
+
 ## Log
 
 ### 2026-09-19 — SYS-31 fix: does a category deny-list + off-topic-anchor margin actually fix filter precision?
@@ -2720,3 +2721,30 @@ SINDONEWS   old 12 new 12 | lost [] | gained []   links identical: True
   - A word-overlap check in Indonesian needs affix-level matching (*kesepakatan*/*disepakati*); exact overlap refuses good frames.
   - Cost: $1.68 at the peak price across the four rounds (v2 + v3 ran off-peak, so less was billed). Replays are metered, not in api_usage_log.
 - **Links:** SYS-154 #349, SYS-155 #350, SYS-156 #351, SYS-157 #352, SYS-158 #353, SYS-159 #354, SYS-160 #355, tracker #336; commits fec04c3, 841992e, dcca96a, 1e56720, 702386c
+
+### 2026-10-14 — QA: do SYS-154..160's checks hold on held-out inputs, and does the v5 gain survive counting relative time?
+- **Question / hypothesis:** the gates were met on calendar-date metrics (7.8% date-led, 0 latar with ≥ 3 dates, 17/17 tied). Two things to test:
+  - Under a prompt that now asks for relative time, is that real or just dates renamed?
+  - Do the new time, ordinal and style checks hold on shapes the dev's tests do not use?
+- **Method:**
+  - `scripts/experiments/qa_2026_10_14/test_qa_arcs_story.py`: 84 QA tests from the tickets' text, run with `-p no:cacheprovider`.
+  - `qa_mutants_1014.py`: 34 mutants, none from the dev's registry, in a `git archive` copy at `%TEMP%\qamut1014`.
+  - `replay_story_arcs.py --metrics-from` on copies of `digests/preview/arcs` and `arcs-v5`.
+  - An inline "time-led" count: a sentence that opens, after an optional connector or "pada", on a `date_mentions` date or on a `relative_times` phrase not starting with "sejak". Time anchors per latar = `dates_in` + non-"sejak" `relative_times`.
+  - DB read-only for the sources of the Polri, IWIP and example facts.
+- **Result:**
+  - The metrics reproduce exactly.
+  - Time-led sentences: baseline 43/65 → v5 **8/51 (15.7%)**.
+  - Latar with ≥ 3 time anchors: 14/19 → **3/17**. The worst is Karhutla Palembang 10-11 with 5 anchors, telling all 4 items in order.
+  - Mutants: 32/34 KILLED. `qa_metric_ge2_dates` survives the dev's suites (→ DBT-77); `qa_relative_dates_not_blanked` is equivalent.
+  - 19 QA tests are red:
+    - "tiga/empat pekan lalu" are read as "pekan lalu" and "dua/tiga bulan lalu" as "bulan lalu" (SYS-157 sent back);
+    - SYS-158 sent back: a record key is one word ("terendah sejak awal" for any "awal ..."); "tiga kali berturut-turut" → `[]`; "menahan kedua tersangka" → claim N=2, refused as `number` with no alur;
+    - a 23/9 snippet's "kemarin" licenses today's "kemarin" (SYS-162);
+    - "Awal Oktober, Polri memutasi 88 perwira." counts as tied to today, and "Pada tanggal/hari ..." openings are missed (SYS-164).
+  - DB: today's 199 Polri personnel moved under ST/2251 (10 Oct), separate from ST/2205 (2 Oct, 88). The arc's "bertambah menjadi 199" is false (SYS-161).
+- **Conclusion / do-not-repeat:**
+  - The v5 gain is real: it holds with relative time counted, at 8/51.
+  - Once the prompt asks for relative time, a check keyed on calendar dates no longer separates a recap from a frame; count time anchors (SYS-164).
+  - A QA test file with red tests at baseline makes every `-x` mutant "KILLED": count kills only on tests that pass unmutated.
+- **Links:** SYS-154..160 (#349..#355), SYS-161..164 (#356..#359), DBT-77 (#360); `.10x/reviews/2026-10-14-qa-report.md`.

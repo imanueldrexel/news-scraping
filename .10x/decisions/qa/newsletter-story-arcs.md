@@ -41,3 +41,30 @@ The automatic gates measured length, coverage and cost, not whether an arc reads
    - arcs accepted ≥ 90%.
 2. Unit tests + mutants for SYS-156..159.
 3. The owner's 3-way read (new arc / old arc / today's) on 10-11 and 10-12, then the 5-day blind A/B (≥ 4/5).
+
+## QA audit of SYS-154..160 (2026-10-14, afternoon)
+Report: `.10x/reviews/2026-10-14-qa-report.md`. QA tests: `scripts/experiments/qa_2026_10_14/`.
+
+**Verdicts:**
+- **Closed:** SYS-155, SYS-156, SYS-159, SYS-160.
+- **Sent back:**
+  - SYS-157: "tiga pekan lalu" is read as "pekan lalu", "dua bulan lalu" as "bulan lalu";
+  - SYS-158: a one-word record key, "N kali berturut-turut" unread, collectives after verbs claimed.
+- **Held:** SYS-154, for the owner's 3-way read.
+
+**Gates:** reproduced exactly from QA's copies of `arcs/` and `arcs-v5/`.
+- QA added a "time-led" count (calendar date or non-"sejak" relative phrase at the opening): baseline 43/65 → v5 8/51, so the gate holds when relative time counts.
+- v5 latar with ≥ 3 time anchors: 3/17.
+
+**Filed:** SYS-161 #356 (P2), SYS-162 #357, SYS-163 #358, SYS-164 #359, DBT-77 #360.
+
+**Decisions:**
+- The dev's three deviations are accepted:
+  - style named in the same detail as numbers and dates;
+  - opens-on-date rather than any "pada <date>" for the refusal;
+  - the tie by word families, names included.
+- Under SYS-154's prompt, a recap is told in relative time, so the date-opening test no longer separates a recap from a frame (SYS-164).
+- "Kini ... bertambah menjadi N" is a comparison claim no guard reads. It is right for year-to-date totals and wrong for separate waves (SYS-161, P2: a false fact a reader meets).
+- The owner's read goes ahead on `arcs-v5`. `NEWSLETTER_ARCS=1` waits on the SYS-157/158 rework and SYS-161.
+
+**Lesson:** a QA suite with red tests at baseline "kills" every mutant under `-x`. Count a kill only on tests that pass unmutated.

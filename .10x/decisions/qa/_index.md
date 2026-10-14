@@ -28,3 +28,5 @@
 - [qa-pass-2026-10-13](qa-pass-2026-10-13.md) - audit of the dev's fixes: 6 closed (SYS-138/143/91, DBT-67/68/69), SYS-144/145 + DBT-60 sent back (held-out -nya adverbs regress kept topic switches on the served path; Decimal/numpy dates), SRC-59/SYS-139 held, filed SYS-146, DBT-70/71, SRC-62
 - Lesson: measure a ranking rule on held-out questions; the RAG floor is a tail filter, not a lead filter. Probe an LLM step's fallback on the same pairs.
 - [newsletter-story-arcs](newsletter-story-arcs.md) — 2026-10-14: the arcs pass the automatic gates but read as a chronicle (69% date-led latar); SYS-154..160 filed; SYS-157/158 release-blocking with SYS-154
+- [newsletter-story-arcs](newsletter-story-arcs.md), 2026-10-14 afternoon: audit of SYS-154..160. Closed SYS-155/156/159/160; sent back SYS-157 (longer relative phrases misread) and SYS-158 (record key, "kali berturut-turut", collectives after verbs); SYS-154 held for the owner's read. Filed SYS-161 (P2, "bertambah menjadi 199" is false), SYS-162/163/164, DBT-77.
+- Lesson: under a prompt that asks for relative time, a check keyed on calendar dates goes blind. Re-measure with relative phrases counted (SYS-164).

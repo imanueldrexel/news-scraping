@@ -1,8 +1,8 @@
 # Project Status
 
 ## Project: NewsAggregator
-**Current Phase:** QA audit 2026-10-13 done: 6 closed, 3 sent back (SYS-144/145, DBT-60), SRC-59/SYS-139 held, 5 filed. Back to SDE.
-**Last Updated:** 2026-10-13 ~02:45 WIB by QA
+**Current Phase:** QA audit 2026-10-14 of SYS-154..160: 4 closed (SYS-155/156/159/160), SYS-157/158 sent back, SYS-154 held for the owner's read; filed SYS-161 (P2) .. SYS-164, DBT-77. Back to SDE; owner reads arcs-v5.
+**Last Updated:** 2026-10-14 (afternoon) by QA
 **Health:** On Track
 
 ## Progress
@@ -404,3 +404,16 @@ Design approved by the owner. Order:
 - Unit 3,243 passed; 55 mutants killed.
 - [ ] Owner: the 3-way re-read (`digests/preview/arcs-v5/<date>-compare.pdf`) and the blind A/B (`-X/-Y.pdf`, `key.json`). `NEWSLETTER_ARCS` stays 0.
 - Still open from before: DBT-74 #346 (12:00 log + old-path comparison), SYS-150 #340 (the owner's A/B).
+
+## QA 2026-10-14 (afternoon): audit of SYS-154..160 (report: reviews/2026-10-14-qa-report.md)
+- **Closed:** SYS-155 #350, SYS-156 #351, SYS-159 #354, SYS-160 #355.
+- **Sent back:** SYS-157 #352 ("tiga pekan lalu" -> "pekan lalu"); SYS-158 #353 (one-word record key, "N kali berturut-turut", collectives after verbs).
+- **Held:** SYS-154 #349, until the owner's 3-way read on arcs-v5.
+- **Filed:** SYS-161 #356 (P2 Polri running total), SYS-162 #357, SYS-163 #358, SYS-164 #359, DBT-77 #360.
+- **Evidence:**
+  - unit 3243 passed;
+  - QA mutants 32/34 KILLED (1 equivalent, 1 -> DBT-77);
+  - gates reproduced: 7.8% date-led, 0 with >= 3 dates, 17/17 tied, 18/20 accepted.
+- **Next:**
+  - SDE: SYS-157/158 rework, SYS-161, then the P3s;
+  - owner: 3-way read + blind A/B on arcs-v5. `NEWSLETTER_ARCS` stays 0.

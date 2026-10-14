@@ -1,5 +1,42 @@
 # Current Handoff
 
+## From: QA (audit of SYS-154..160) -> To: SDE (rework + new tickets), owner (read arcs-v5)
+**Date:** 2026-10-14 (afternoon)
+**Read first:**
+- `.10x/reviews/2026-10-14-qa-report.md`;
+- the QA comments on #349..#355;
+- `scripts/experiments/qa_2026_10_14/test_qa_arcs_story.py`. Each red test there is a send-back or a ticket.
+
+### SDE, in this order
+1. **SYS-158 #353 (sent back)**, `source_check.ordinal_claims`:
+   - the record key holds the whole time phrase, not one word;
+   - "N kali berturut-turut/beruntun" is read as a series;
+   - a word ordinal after a verb (me-/di-/ber-), or in "kedua belah pihak", is collective.
+   - Done when QA's TestSys158* pass.
+2. **SYS-157 #352 (sent back)**, `relative_times`: "N pekan lalu" / "N bulan lalu" (N > the table's) is read with its own span, or not at all, never as "pekan lalu"/"bulan lalu".
+3. **SYS-161 #356 (P2):** "Kini ... bertambah menjadi N" needs a source sentence with N and a change/total word. Prompt rule too. Re-run 10-11.
+4. **SYS-162 #357:** a relative phrase is licensed as stated only by today's `terkait` articles.
+5. **SYS-164 #359:** time anchors = calendar dates + non-"sejak" relative phrases, in the tie, the caps and the metric, plus the "Pada tanggal/hari" openings.
+6. **SYS-163 #358** (agenda repeating latar) and **DBT-77 #360** (a 2-date fixture).
+
+Mutants: `scripts/experiments/qa_2026_10_14/qa_mutants_1014.py <copy>`. Run it in a `git archive` copy; it takes `QA_MUTANT_TESTS`.
+
+### Owner
+- The read goes ahead now, on `digests/preview/arcs-v5/`: the 3-way `*-compare.pdf` for 10-11 and 10-12, then the blind A/B and `handcheck.csv`.
+- **One known wrong fact:** the Polri arc (10-11) calls 199 a running total after 88. It was a separate telegram (SYS-161).
+- **Worth judging in `same_thread`:**
+  - IWIP's internship/PPh 21 item;
+  - RI-Mesir's IEU-CEPA and "investasi" items.
+- `NEWSLETTER_ARCS` stays 0 until the read passes and SYS-157/158/161 are done.
+
+### Still open from before
+- DBT-74 #346: the 12:00 log + the old-path comparison.
+- SYS-150 #340: the owner's A/B.
+
+---
+
+## Previous (superseded)
+
 ## From: SDE (arcs read as stories, SYS-154..160) -> To: QA (verify), owner (3-way re-read + blind A/B)
 **Date:** 2026-10-14 (~09:30 WIB)
 **Read first:**
