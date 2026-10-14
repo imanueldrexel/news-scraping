@@ -237,6 +237,20 @@ def relative_times(text: str, today: date) -> List[Tuple[str, date, date]]:
     return found
 
 
+def relative_name(day: date, today: date) -> str:
+    """The relative phrase for a past `day` seen from `today` that `relative_times` reads back as a
+    span holding it: "kemarin", "pekan lalu" (the previous Monday-Sunday week), else "awal /
+    pertengahan / akhir <bulan>". The story arcs show it beside each timeline item, so the model
+    can write the time without a calendar date and the check accepts it (SYS-154/157)."""
+    if day == today - timedelta(days=1):
+        return "kemarin"
+    first, last = _last_week(None, today)
+    if first <= day <= last:
+        return "pekan lalu"
+    part = "awal" if day.day <= 10 else "pertengahan" if day.day <= 20 else "akhir"
+    return f"{part} {copy.MONTHS[day.month - 1]}"
+
+
 _ORDINAL_WORDS = {"kedua": 2, "ketiga": 3, "keempat": 4, "kelima": 5, "keenam": 6, "ketujuh": 7, "kedelapan": 8,
                   "kesembilan": 9, "kesepuluh": 10}
 _ORDINAL = re.compile(rf"(?:\b(?P<before>[^\W\d_][\w-]*)\s+)?\b(?P<ordinal>{'|'.join(_ORDINAL_WORDS)}|ke-(?P<n>\d+))\b"

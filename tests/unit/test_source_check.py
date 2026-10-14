@@ -6,7 +6,7 @@ the summary's guard through these functions); this file covers what DBT-72 adds
 and the rule that no other module defines its own copy."""
 import ast
 import os
-from datetime import date
+from datetime import date, timedelta
 
 import pytest
 
@@ -135,6 +135,23 @@ class TestRelativeTimes:
                                       "sepekan kemudian", "hari ini"])
     def test_not_a_relative_phrase(self, text):
         assert sc.relative_times(text, TODAY) == []
+
+
+class TestRelativeName:
+    """The phrase shown beside each timeline item: the check must accept it for that item."""
+
+    @pytest.mark.parametrize("today", [date(2026, 10, 12), date(2026, 10, 18), date(2026, 3, 2), date(2026, 1, 1)])
+    def test_every_past_day_reads_back_as_a_span_holding_it(self, today):
+        for back in range(1, 32):
+            day = today - timedelta(days=back)
+            spans = sc.relative_times(sc.relative_name(day, today), today)
+            assert len(spans) == 1 and spans[0][1] <= day <= spans[0][2], (day, sc.relative_name(day, today))
+
+    @pytest.mark.parametrize("day,name", [(date(2026, 10, 11), "kemarin"), (date(2026, 10, 7), "pekan lalu"),
+                                          (date(2026, 10, 2), "awal Oktober"), (date(2026, 9, 23), "akhir September"),
+                                          (date(2026, 9, 15), "pertengahan September")])
+    def test_names(self, day, name):
+        assert sc.relative_name(day, TODAY) == name
 
 
 class TestOrdinalClaims:

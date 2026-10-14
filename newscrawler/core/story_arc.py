@@ -8,7 +8,8 @@ and code checks what it wrote. The answer is JSON:
 
     judul      <= 10 words asked (12 accepted), what changed today
     hari_ini   <= 60 words, today first
-    latar      <= 70 words, the back-story from the `alur` items, told as a story (SYS-154):
+    latar      <= 60 words asked (70 accepted: the frame sentence made the 10-11 re-run's run 77-84),
+               the back-story from the `alur` items, told as a story (SYS-154):
                a frame sentence first, at most two turning points, relative time;
                with no `alur`: why it matters (only impacts the articles state), or ""
     agenda     <= 20 words, only a scheduled or announced next step an article states, or ""
@@ -52,8 +53,8 @@ from newscrawler.core import arc_style
 from newscrawler.core import newsletter_copy as copy
 from newscrawler.core import story_words
 from newscrawler.core.llm_json import Rejected, ask_json, json_object
-from newscrawler.core.source_check import (dates_in, off_subject, ordinal_claims, relative_times, resolve,
-                                           unsupported_number, without_dates)
+from newscrawler.core.source_check import (dates_in, off_subject, ordinal_claims, relative_name, relative_times,
+                                           resolve, unsupported_number, without_dates)
 from newscrawler.core.story_summary import article_text, guard_text, words
 from newscrawler.core.summarizer import SummarizerError
 from newscrawler.core.thread_finder import TimelineItem
@@ -115,8 +116,8 @@ PROMPT = (
     "- Proyeksi, klaim, dan pendapat selalu diberi sumber. Jangan menyajikan proyeksi sebagai fakta.\n"
     "- Salin angka persis seperti di teks. Jangan membulatkan, menjumlahkan, atau menghitung selisih\n"
     "  sendiri: tulis angka yang tertulis saja.\n"
-    "- Rp tanpa spasi (Rp2.574.000), tanggal hari ini sebagai \"Senin (12/10)\", kode saham sekali dalam\n"
-    "  kurung: Telkom (TLKM).\n"
+    "- Rp tanpa spasi (Rp2.574.000), tanggal hari ini di hari_ini sebagai \"Senin (12/10)\", kode saham\n"
+    "  sekali dalam kurung: Telkom (TLKM).\n"
     "- Jangan menulis fakta yang sama dua kali.\n"
     "\n"
     "Balas HANYA dengan JSON valid, tanpa teks lain:\n"
@@ -126,7 +127,7 @@ PROMPT = (
     "- judul: maks 10 kata. Apa yang berubah hari ini. Bukan salinan judul portal.\n"
     "- hari_ini: 2-3 kalimat, maks 60 kata: apa yang terjadi hari ini, siapa, angka terpenting, dan\n"
     "  bila ada satu kaitan terpenting dengan alur.\n"
-    "- latar: 2-3 kalimat, maks 70 kata.\n"
+    "- latar: 2-3 kalimat, maks 60 kata.\n"
     "  - Jika \"alur\" berisi cuplikan, latar adalah cerita, bukan catatan harian:\n"
     "    1. Kalimat pertama adalah bingkai: apa arti peristiwa sebelumnya bagi berita hari ini (lanjutan,\n"
     "       gelombang berikutnya, makin parah, atau berbalik arah), dengan menyebut peristiwa atau\n"
@@ -136,9 +137,9 @@ PROMPT = (
     "       (\"dibahas\", \"disebut\", \"dikabarkan\", \"ditanggapi\") kecuali itulah titik baliknya.\n"
     "    3. Kaitkan setiap fakta lampau dengan hari ini (\"kini\", \"kali ini\", \"setelah\", \"menyusul\",\n"
     "       \"berbeda dengan\"), bukan sekadar urutan waktu (\"lalu\", \"kemudian\").\n"
-    "    4. Pakai waktu relatif yang cocok dengan tanggal cuplikannya: \"awal Oktober\", \"akhir\n"
-    "       September\", \"pekan lalu\", \"sepekan lalu\", \"dua pekan terakhir\", \"Kamis lalu\", \"kemarin\".\n"
-    "       Tanggal kalender (24/9) hanya jika tanggal itu sendiri penting (tenggat, sidang, pemungutan\n"
+    "    4. Tulis waktu cuplikan dengan waktu relatif yang tertera dalam kurung di LINI MASA, mis.\n"
+    "       \"akhir September\", \"pekan lalu\", \"kemarin\", bukan \"Kamis (8/10)\" atau \"Pada 24/9\".\n"
+    "       Tanggal kalender hanya jika tanggal itu sendiri penting (tenggat, sidang, pemungutan\n"
     "       suara), paling banyak dua di latar.\n"
     "    5. Jangan membuka dua kalimat dengan kata yang sama.\n"
     "    6. Akhiri dengan apa yang masih terbuka (siapa yang memutuskan berikutnya, apa yang masih\n"
@@ -197,11 +198,12 @@ class StoryArc:
         return "\n\n".join(t for t in (self.hari_ini, self.back_story) if t)
 
 
-def timeline_text(item: TimelineItem) -> str:
-    """What the model reads of a timeline item: its day, outlet, headline, opening."""
+def timeline_text(item: TimelineItem, digest_date: date) -> str:
+    """What the model reads of a timeline item: its day with the relative phrase to write for it
+    (SYS-154: the 10-11/10-12 re-run still dated every past fact "Kamis (8/10)"), outlet, headline, opening."""
     d = item.day
-    return (f"{copy.DAYS[d.weekday()]}, {d.day} {copy.MONTHS_SHORT[d.month - 1]} · {copy.outlet(item.source)} — "
-            f"{item.headline}\n{item.opening}")
+    return (f"{copy.DAYS[d.weekday()]}, {d.day} {copy.MONTHS_SHORT[d.month - 1]} ({relative_name(d, digest_date)}) · "
+            f"{copy.outlet(item.source)} — {item.headline}\n{item.opening}")
 
 
 def item_source(item: TimelineItem) -> str:
@@ -213,7 +215,7 @@ def item_source(item: TimelineItem) -> str:
 def build_prompt(shown: Sequence[dict], timeline: Sequence[TimelineItem], digest_date: date) -> str:
     n = len(shown)
     articles = "\n\n".join(f"[{i}] {article_text(a)}" for i, a in enumerate(shown))
-    lines = "\n\n".join(f"[{n + k}] {timeline_text(t)}" for k, t in enumerate(timeline)) or "(kosong)"
+    lines = "\n\n".join(f"[{n + k}] {timeline_text(t, digest_date)}" for k, t in enumerate(timeline)) or "(kosong)"
     return PROMPT.format(n=n, m=len(timeline), tanggal=copy.tanggal(digest_date), articles=articles, timeline=lines)
 
 
@@ -264,9 +266,10 @@ def chronicle(latar: str, judul: str, hari_ini: str, has_alur: bool) -> List[str
     dates = len(dates_in(latar))
     if dates > MAX_LATAR_DATES:
         problems.append(f"latar memuat {dates} tanggal kalender, maks {MAX_LATAR_DATES}")
-    led = sum(arc_style.date_led(s) for s in arc_style.sentences(latar))
-    if led > MAX_DATE_LED:
-        problems.append(f"{led} kalimat latar disusun dengan tanggal (\"Pada 24/9, ...\"), maks {MAX_DATE_LED}")
+    led = [s for s in arc_style.sentences(latar) if arc_style.date_led(s)]
+    if len(led) > MAX_DATE_LED:
+        quoted = ", ".join(f'"{" ".join(s.split()[:8])} ..."' for s in led)
+        problems.append(f"{len(led)} kalimat latar disusun dengan tanggal ({quoted}), maks {MAX_DATE_LED}")
     word = arc_style.repeated_opening(latar)
     if word:
         problems.append(f"dua kalimat latar dibuka dengan kata \"{word}\"")
@@ -316,7 +319,10 @@ def parse(answer: Optional[str], shown_texts: Sequence[str], timeline: Sequence[
     problems = [f"{key} {words(value)} kata, maks {LIMITS[key]} -- persingkat: \"{value}\""
                 for key, value in fields if words(value) > LIMITS[key]]
     if problems:
-        raise Rejected("length", "; ".join(problems))
+        # The one retry rewrites the latar, so it hears the style rules too (10-11 re-run: shortened,
+        # then refused as style).
+        style = chronicle(latar, judul, hari_ini, bool(alur))
+        raise Rejected("length", "; ".join(problems + ([f"{'; '.join(style)} -- {STYLE_ASK}"] if style else [])))
 
     anchors, strays = off_subject(judul, hari_ini, {i: shown_texts[i] for i in terkait})
     chosen = {i: timeline[i - n] for i in alur}

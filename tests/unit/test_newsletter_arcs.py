@@ -64,7 +64,8 @@ class TestOn:
         gen, plan, searched = _plan(monkeypatch, s, hits=hits, rows={901: ROW, 1: today})
         gen.build_edition(plan, arcs=True)
         first = s.prompts["arc"][0]
-        assert "LINI MASA\n[2] Minggu, 20 Sep · CNBC Indonesia — Lini masa: rapat pertama digelar" in first
+        assert ("LINI MASA\n[2] Minggu, 20 Sep (pertengahan September) · CNBC Indonesia — Lini masa: rapat pertama "
+                "digelar") in first
         assert "Artikel hari ini sendiri" not in first          # today's own article is never its back-story
         from newscrawler.core.constants import ARC_FETCH_K
         assert searched and len(searched[0][0]) == 1 and searched[0][1] == ARC_FETCH_K

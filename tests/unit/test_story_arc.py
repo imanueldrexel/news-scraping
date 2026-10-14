@@ -190,6 +190,19 @@ class TestStyle:
         reason, text = _reason(_answer(latar=latar))
         assert reason == "style" and detail in text and sa.STYLE_ASK in text
 
+    def test_the_date_led_sentences_are_quoted(self):
+        latar = FRAME + "Pada 23/9 Seskab melaporkan 209 hektare terbakar. Pada 24/9 Prabowo menggelar rapat."
+        detail = _reason(_answer(latar=latar))[1]
+        assert '"Pada 23/9 Seskab melaporkan 209 hektare terbakar. ..."' in detail
+        assert '"Pada 24/9 Prabowo menggelar rapat. ..."' in detail
+
+    def test_a_length_refusal_also_names_the_style_problems(self):
+        """The retry that shortens the latar hears the style rules too."""
+        latar = ("Pada 23/9 Seskab melaporkan 209 hektare lahan masih terbakar. Pada 24/9 Prabowo menggelar rapat "
+                 + " ".join(["karhutla"] * 60) + ".")
+        reason, detail = _reason(_answer(latar=latar))
+        assert reason == "length" and "kalimat latar disusun dengan tanggal" in detail and sa.STYLE_ASK in detail
+
     def test_a_latar_at_the_limits_passes(self):
         """Two dates, one date-led sentence, distinct openings, tied to today."""
         assert _parse(_answer())
@@ -310,7 +323,8 @@ class TestPrompt:
         assert "Setiap fakta dari LINI MASA harus berasal dari cuplikannya." in sa.PROMPT
 
     @pytest.mark.parametrize("rule", ["Kalimat pertama adalah bingkai", "paling banyak dua titik balik",
-                                      "Kaitkan setiap fakta lampau dengan hari ini", "Pakai waktu relatif",
+                                      "Kaitkan setiap fakta lampau dengan hari ini",
+                                      "waktu relatif yang tertera dalam kurung di LINI MASA",
                                       "Jangan membuka dua kalimat dengan kata yang sama",
                                       "HANYA jika artikel menyebutnya"])
     def test_the_six_story_rules(self, rule):
@@ -325,8 +339,8 @@ class TestPrompt:
     def test_indexes_continue_from_today_into_the_timeline(self):
         prompt = sa.build_prompt(SHOWN, TIMELINE, DAY)
         assert "[0] CNBC Indonesia — Prabowo Pimpin Rapat Karhutla" in prompt
-        assert f"[{N}] Rabu, 23 Sep · CNBC Indonesia — Prabowo Dapat Laporan 209 Ha" in prompt
-        assert f"[{N + 2}] Jumat, 2 Okt · tvOnenews — Prabowo Lantik Wantimpres" in prompt
+        assert f"[{N}] Rabu, 23 Sep (akhir September) · CNBC Indonesia — Prabowo Dapat Laporan 209 Ha" in prompt
+        assert f"[{N + 2}] Jumat, 2 Okt (awal Oktober) · tvOnenews — Prabowo Lantik Wantimpres" in prompt
         assert "3 artikel Senin, 12 Oktober 2026" in prompt and "3 cuplikan" in prompt
 
     def test_an_empty_timeline_says_so(self):
