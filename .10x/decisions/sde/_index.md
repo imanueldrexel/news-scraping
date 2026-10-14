@@ -11,7 +11,7 @@
 
 - [p3-bug-burndown-2026-10-06](p3-bug-burndown-2026-10-06.md) — SRC-58, OPS-39, DBT-01, SYS-90 (found) ready-for-qa; two owner-approved production writes with backups; SRC-47 owner-deferred, re-measured
 
-- [newsletter-story-arcs](newsletter-story-arcs.md) — tracker #336: DBT-72..75, SYS-147..150 built 2026-10-13 night (arcs behind NEWSLETTER_ARCS=0); DBT-76 split out; SYS-150 replay for the owner's blind read
+- [newsletter-story-arcs](newsletter-story-arcs.md) — tracker #336: DBT-72..75, SYS-147..150 built 2026-10-13 night (arcs behind NEWSLETTER_ARCS=0); DBT-76 split out; SYS-150 replay for the owner's blind read; 2026-10-14: SYS-154..160 (arcs read as stories) ready-for-qa, final replay 18/20, date-led 72%→7.8%
 
 ## Cross-cutting SDE notes
 - A unit test that patches only `init_crawler` while the code builds `build_newsletter_service()` runs the real generator and writes into `digests/` (2026-10-13: 2026-10-03.md overwritten). Patch the light service, make the heavy one raise.
@@ -35,3 +35,5 @@
 - [qa-senior-fixes-2026-10-12](qa-senior-fixes-2026-10-12.md) — 2026-10-12: SYS-111, SYS-139 (soft deadline, ADR-011), SYS-104+140 (LLM follow-up rewrite, ADR-010) ready-for-qa; rest in progress
 - [qa-second-pass-fixes-2026-10-12](qa-second-pass-fixes-2026-10-12.md) — 2026-10-12 night: SYS-138 subject gate (ADR-013), SYS-143/144/145 (ADR-014), DBT-68/69, DBT-67 store_repair module (ADR-015); all ready-for-qa
 - [open-p2-p3-2026-10-12](open-p2-p3-2026-10-12.md) — 2026-10-12 night: SRC-59 INVESTORID sitemap_post + id-segment placeholder hook, DBT-60 date rule, SYS-91 repair script (apply ~06:00)
+- An LLM-writing gate is only as good as the guard's precision: replay, read every refusal detail in the log, and separate the model's faults from the guard's (SYS-154..159: 3 of the refusals were the guards').
+- Long gh comment bodies: write them with the Write tool and pass `--body-file`; several heredocs in one Bash call broke the shell (unmatched quote).

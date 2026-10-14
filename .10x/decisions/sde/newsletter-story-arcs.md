@@ -52,3 +52,41 @@ Tracker #336 · ADR-016, ADR-017 · design: `decisions/architect/newsletter-stor
 ## Production state
 - `NEWSLETTER_ARCS` defaults to 0, and a test fails if that default flips. The 2026-10-14 12:00 run is today's edition, byte for byte, built through DBT-74's composition root (its log should show no NEWS_L2 or e5-large load).
 - No migration and no production DB write. The replays wrote only under `digests/preview/arcs*`.
+
+---
+
+# 2026-10-14 (morning): arcs read as stories -- SYS-154..160 (QA's tickets from the owner's read)
+
+## Built
+| Ticket | What | Commit(s) |
+|---|---|---|
+| SYS-160 #355 | `core/arc_style.py`: date-led, opens-on-date, repeated opening, non-events, tie to today, defined once. `replay_story_arcs.py`: `style_metrics`, `reads_as_story` rows, `--compare` (3-way blind A/B/C), `--metrics-from` (baseline on an old run) | fec04c3 |
+| SYS-154 #349 | latar rules (1)-(6); "setiap fakta bertanggal" gone; each LINI MASA item shows its relative phrase (`relative_name`); "Senin (12/10)" for hari_ini only; latar asks 60 / accepts 70 (`ASKED` vs `LIMITS`) | fec04c3, 841992e, 702386c |
+| SYS-155 #350 | worked example rebuilt from 2026-10-02's real KONTAN articles, as a story (frame, 0 dates) | fec04c3 |
+| SYS-156 #351 | `style` refusal (`chronicle`): > 2 dates, > 1 sentence *opening* on a date, same opening word; the detail quotes the sentences; a length refusal carries style too and names the cut | fec04c3, 841992e, dcca96a, 702386c |
+| SYS-157 #352 | `source_check.relative_times` (table) + `unbacked_times`; "… sebelumnya" not read | fec04c3, dcca96a |
+| SYS-158 #353 | `source_check.ordinal_claims` + `overcounted`; records ("terendah/tertinggi sejak") need a source | fec04c3, 702386c |
+| SYS-159 #354 | `tied_to_today`: not opening on a date + a shared content word (names included) up to affixes (`stems`) | fec04c3, 1e56720 |
+
+## Deviations (each on its ticket)
+- **SYS-159 is not "event word only".** That rule refused the research file's own rewrite and passed the recap (EXPERIMENTS 2026-10-14 SYS-160 entry). Exact overlap also refused "Kesepakatan ini …" against today's "menyepakati", hence the word families.
+- **SYS-156's style problems go into the same retry detail as numbers/dates (and length), named first;** it is not a separate early raise. Rule 2 counts sentences that *open* on a date; the metric counts sentences that *carry* "pada <date>".
+- **SYS-158 also covers "terendah/tertinggi sejak".**
+- **SYS-157 adds "<Hari> lalu" and "… bulan ini/lalu",** and `relative_name` for the prompt.
+
+## Evidence
+- Replays (EXPERIMENTS "re-runs of the arc replay"):
+  - v2 4/8;
+  - v3 7/8;
+  - v4 17/20;
+  - **v5 (702386c) 18/20 accepted, date-led 7.8%, 0 latar ≥ 3 dates, tied 17/17**;
+  - $1.68 at peak in all.
+- Owner files: `digests/preview/arcs-v5/` (untracked).
+- Unit 3,243 passed.
+- 55 mutants (sys148/154..160) KILLED in a scratch worktree, torn down junction-first; venv intact.
+
+## Left / tech debt
+- **The owner's 3-way re-read and the 5-day blind A/B** (SYS-154/SYS-150 gate). `NEWSLETTER_ARCS` stays 0.
+- **Polri arc slip:** "Kini … bertambah menjadi 199 orang" reads a wave's count as a running total. No check catches it; it is for QA's hand-check. It could become a cumulative-claim guard if QA tickets it.
+- **Accepted share sits at the 90% gate.** Both fallbacks are market stories with a number the model made up. A price story with a timeline is the weak spot.
+- The stems are a heuristic (one prefix, one suffix, stems ≥ 4 letters), used only for the tie. Not a stemmer: do not reuse it for search.

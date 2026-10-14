@@ -395,3 +395,12 @@ Design approved by the owner. Order:
 - Root cause: `story_arc.PROMPT` ("setiap fakta bertanggal", chronicle-style example). Research: `reviews/2026-10-14-arc-writing-research.md`.
 - Filed: SYS-154 #349 (bug P2), SYS-155..160 #350..#355. SYS-157/158 land with SYS-154 (the trust bar).
 - SYS-150's ship gate now waits on them; `NEWSLETTER_ARCS` stays 0.
+
+## SDE 2026-10-14 (morning): arcs read as stories -- SYS-154..160 ready-for-qa (tracker #336)
+- [x] SYS-160 #355: style metrics + `--compare` + `--metrics-from`. Baseline: date-led 72.3%, 14/19 latar ≥ 3 dates, tie 10/17.
+- [x] SYS-154 #349 + SYS-155 #350: prompt and narrative example; the timeline shows each item's relative phrase.
+- [x] SYS-156 #351 (`style`), SYS-157 #352 (relative time), SYS-158 #353 (ordinals), SYS-159 #354 (tie, word families).
+- Final replay (702386c): 18/20 accepted; date-led 7.8%; 0 latar ≥ 3 dates; tied 17/17; $0.60 at peak.
+- Unit 3,243 passed; 55 mutants killed.
+- [ ] Owner: the 3-way re-read (`digests/preview/arcs-v5/<date>-compare.pdf`) and the blind A/B (`-X/-Y.pdf`, `key.json`). `NEWSLETTER_ARCS` stays 0.
+- Still open from before: DBT-74 #346 (12:00 log + old-path comparison), SYS-150 #340 (the owner's A/B).

@@ -1,5 +1,48 @@
 # Current Handoff
 
+## From: SDE (arcs read as stories, SYS-154..160) -> To: QA (verify), owner (3-way re-read + blind A/B)
+**Date:** 2026-10-14 (~09:30 WIB)
+**Read first:**
+- `.10x/decisions/sde/newsletter-story-arcs.md`, section "2026-10-14 (morning)";
+- each ticket's dev comment (#349..#355);
+- EXPERIMENTS.md: "SYS-160: the arcs' reads-as-a-story metrics" and "re-runs of the arc replay".
+
+### Ready for QA (all `status: ready-for-qa`)
+- SYS-154 #349, SYS-155 #350, SYS-156 #351, SYS-157 #352, SYS-158 #353, SYS-159 #354, SYS-160 #355.
+- Commits fec04c3, 841992e, dcca96a, 1e56720, 702386c (+ 0d25928 experiments).
+
+### What to verify
+- **Gates (final replay on 702386c, `digests/preview/arcs-v5/metrics.json`):**
+  - accepted 18/20 (90%, at the gate);
+  - date-led 7.8% (≤ 25%);
+  - latar with ≥ 3 dates 0 (≤ 2);
+  - tied 17/17 (≥ 90%).
+- **Baseline:** `replay_story_arcs.py --metrics-from digests/preview/arcs` gives 72.3% / 14 / 10-of-17. It is 2 above the hand count of 45/65 (it also counts "Sebelumnya, pada 19/9", and today's date).
+- **Mutants:** `QA_MUTANT_TESTS="tests/unit/test_story_arc.py tests/unit/test_source_check.py tests/unit/test_arc_style.py tests/unit/test_replay_story_arcs.py tests/unit/test_newsletter_arcs.py"`; names `sys154..160_*` and `sys148_*` (55, all KILLED here). Run them in a worktree at a short path.
+- **Deviations to judge** (each on its ticket):
+  - SYS-159's tie is not "event word only": that rule refused the research's own rewrite;
+  - SYS-156 counts sentences that *open* on a date, and its detail rides with numbers/dates/length;
+  - SYS-158 covers "terendah/tertinggi sejak" too.
+- **Hand-check:** the 10-11 Polri arc ends "Kini jumlah personel yang dimutasi bertambah menjadi 199 orang", reading this wave's 199 as a running total. No guard catches a cumulative misreading. QA's call to ticket.
+- **Weak spot:** both fallbacks are market stories with a number the model made up (correctly refused). Price stories with a timeline sit closest to the 90% line.
+
+### Owner
+1. **3-way re-read on the phone:** `digests/preview/arcs-v5/2026-10-11-compare.pdf` and `2026-10-12-compare.pdf` (the other 3 days too, if you like). Each arc story appears as Versi A/B/C: new arc, old arc, today's summary. Note which you prefer, then open `compare_key.json`.
+2. **Blind A/B** (the SYS-150 ship gate, unchanged): `digests/preview/arcs-v5/<date>-X.pdf` vs `-Y.pdf` for 10-08..12, then `key.json`. Arcs ship if they win ≥ 4/5.
+3. **`handcheck.csv`:**
+   - `reads_as_story` y/n per arc (new, `kind=arc`);
+   - `same_thread` per timeline item;
+   - `attributed` per causal sentence.
+4. `NEWSLETTER_ARCS` stays 0 until 1-2 pass.
+
+### Still open from before
+- DBT-74 #346: the 12:00 log + the old-path comparison.
+- SYS-150 #340: the owner's A/B (now on arcs-v5).
+
+---
+
+## Previous (superseded)
+
 ## From: QA (owner's read of the arc replay) -> To: SDE
 **Date:** 2026-10-14
 **Read first:**
