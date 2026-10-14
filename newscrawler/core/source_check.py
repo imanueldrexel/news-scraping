@@ -258,8 +258,10 @@ _ORDINAL_WORDS = {"kedua": 2, "ketiga": 3, "keempat": 4, "kelima": 5, "keenam": 
                   "kesembilan": 9, "kesepuluh": 10}
 _ORDINAL = re.compile(rf"(?:\b(?P<before>[^\W\d_][\w-]*)\s+)?\b(?P<ordinal>{'|'.join(_ORDINAL_WORDS)}|ke-(?P<n>\d+))\b"
                       r"(?P<times>\s+kali(?:nya)?\b)?", re.IGNORECASE)
-# What a collective "kedua"/"ketiga" ("both", "all three") follows. Time words stay nouns: "pekan kedua", "hari ketiga".
-_NOT_A_NOUN = story_words.STOPWORDS - {"hari", "tahun", "bulan", "pekan"}
+# What a collective "kedua"/"ketiga" ("both", "all three") follows: function words and adverbs ("Kini kelima
+# tersangka ...", replay 2026-10-10). Time words stay nouns: "pekan kedua", "hari ketiga".
+_NOT_A_NOUN = (story_words.STOPWORDS - {"hari", "tahun", "bulan", "pekan"}) | {
+    "kini", "lalu", "kemudian", "akhirnya", "bahkan", "hanya", "sebanyak", "total", "seluruh", "sementara"}
 _SEKIAN = re.compile(r"\bkesekian\s+kali(?:nya)?\b", re.IGNORECASE)
 _SERIES = re.compile(rf"\b(?P<n>dua|tiga|empat|lima|enam|tujuh|delapan|sembilan|sepuluh|\d+)\s+"
                      r"(?P<unit>hari|pekan|minggu|bulan|sesi|kuartal|tahun)(?:\s+perdagangan)?\s+"

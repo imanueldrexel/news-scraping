@@ -173,6 +173,7 @@ class TestOrdinalClaims:
         assert sc.ordinal_claims(text) == [(claim, n, key)]
 
     @pytest.mark.parametrize("text", ["Kedua negara sepakat.", "Presiden dan kedua menteri hadir.",
+                                      "Kini kelima tersangka diserahkan ke penuntut umum.",
                                       "antara ketiga tersangka", "pada kuartal pertama", "IHSG turun beruntun"])
     def test_not_a_claim(self, text):
         """A collective 'kedua' (both) follows a function word or opens the sentence."""

@@ -62,7 +62,8 @@ from newscrawler.core.thread_finder import TimelineItem
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
-LIMITS = {"judul": 12, "hari_ini": 60, "latar": 70, "agenda": 20, "sekilas": 15}
+LIMITS = {"judul": 12, "hari_ini": 60, "latar": 70, "agenda": 20, "sekilas": 15}     # accepted
+ASKED = {**LIMITS, "judul": 10, "latar": 60}                                            # what PROMPT asks
 REASONS = ("json", "length", "style", "number", "date", "subject", "alur")
 ALUR_MIN_EVENT_WORDS = 1
 MAX_LATAR_DATES = 2     # SYS-156: calendar dates in a latar (13 of 19 replayed latar held >= 3)
@@ -318,7 +319,10 @@ def parse(answer: Optional[str], shown_texts: Sequence[str], timeline: Sequence[
         raise Rejected("json", f"setiap nomor artikel 0-{n - 1} harus muncul tepat sekali di terkait atau tidak_terkait")
 
     fields = [("judul", judul), ("hari_ini", hari_ini), ("latar", latar), ("agenda", agenda), ("sekilas", sekilas)]
-    problems = [f"{key} {words(value)} kata, maks {LIMITS[key]} -- persingkat: \"{value}\""
+    # The retry names how much to cut, down to what the prompt asks: the 5-day re-run's "persingkat"
+    # retries left the latar at 77 -> 77 and 87 -> 80 words.
+    problems = [f"{key} {words(value)} kata, maks {LIMITS[key]} -- buang paling sedikit "
+                f"{words(value) - ASKED[key]} kata{' (mis. satu kalimat)' if key == 'latar' else ''}: \"{value}\""
                 for key, value in fields if words(value) > LIMITS[key]]
     if problems:
         # The one retry rewrites the latar, so it hears the style rules too (10-11 re-run: shortened,

@@ -166,6 +166,16 @@ class TestShape:
         arc = _parse(json.dumps(data))
         assert (arc.latar, arc.agenda, arc.alur) == ("", "", [])
 
+    def test_the_retry_says_how_much_to_cut_down_to_what_is_asked(self):
+        latar = "Karhutla sudah lama di meja Presiden. " + " ".join(["kata"] * 70) + "."
+        detail = _reason(_answer(latar=latar))[1]
+        assert "latar 76 kata, maks 70 -- buang paling sedikit 16 kata (mis. satu kalimat)" in detail
+
+    def test_the_prompt_asks_what_asked_says(self):
+        assert f"judul: maks {sa.ASKED['judul']} kata" in sa.PROMPT
+        assert f"latar: 2-3 kalimat, maks {sa.ASKED['latar']} kata" in sa.PROMPT
+        assert all(sa.ASKED[k] <= sa.LIMITS[k] for k in sa.LIMITS)
+
     def test_every_broken_limit_is_named(self):
         reason, detail = _reason(_answer(judul=" ".join(["kata"] * 13), sekilas=" ".join(["kata"] * 16)))
         assert reason == "length" and "judul 13 kata" in detail and "sekilas 16 kata" in detail
