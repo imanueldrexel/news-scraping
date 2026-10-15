@@ -133,3 +133,10 @@ Design: `.10x/decisions/architect/newsletter-story-arcs.md`, section "2026-10-15
 - SYS-161's 10-11 re-run (~$0.15) after the owner's top-up; then ready-for-qa. The same run shows whether the
   retry repairs Karhutla/Lobster under SYS-164 (the accepted share sits at the 90% gate).
 - `.env` is not in git: the cap change is recorded here and in memory only.
+
+## 2026-10-15 (morning): SYS-161's 10-11 re-run, and the bare-"total" hole
+- The owner okayed the run (SumoPod ~$3). `arcs-v6`: $0.1064, 4 arcs, 0 refusals. The Polri story was not picked as a top story, so the replay can't show its arc.
+- Offline against all 24 stored Polri articles, the v5 claim passed: two say "Total ada 199 ... yang dirotasi", which is the size of that one telegram. Fix: `_TOTAL_OR_CHANGE` no longer counts bare `total|totalnya|keseluruhan`. Change verbs, `kumulatif|akumulasi`, a running period and "dari N" still count. Prompt rule 3 now says "total ada N" alone is only that event's count.
+- Tests: `TestUnbackedChanges::test_a_bare_total_is_the_size_of_one_event`; "Total ada 12 kasus" in the passing list became "Secara kumulatif ada 12 kasus". Mutant `sys161_bare_total_is_a_total` added and the `sys161_source_change_verb_ignored` pattern retargeted. All 6 `sys161_*` are KILLED.
+- Accepted cost: a source that says only "total N" for a real running sum now costs one retry. The model then tells N as today's event. The reader loses nothing.
+- v6 ran on the old prompt. It was not re-run, to save the balance.

@@ -420,10 +420,12 @@ _CHANGE_CLAIM = re.compile(rf"\b(?:{_CHANGE_VERBS})\b(?:\s+\S+){{0,8}}?\s+(?:men
                            r"(?:Rp|US\$|\$)?\s?(?P<number>\d+(?:[.,]\d+)*)", re.IGNORECASE)
 _TIME_AFTER = (rf"(?:(?:awal|pertengahan|akhir)\s+)?(?:{_MONTH_NAME}|tahun|kuartal|semester|periode|pekan|bulan|"
                rf"hari\s+ini|kini|saat\s+ini|\d{{1,2}}/\d{{1,2}}|\d{{1,2}}\s+(?:{_MONTH_NAME})|\d{{4}})\b")
-# What makes a source's figure a total or the result of a change: a change verb; a total word; or a running
-# period, "hingga / sampai / per / sepanjang / sejak" + a time. Not a bare "hingga": the 2026-10-11 Polri
-# headline "Rombak 199 Personel Polri, Kakorlantas hingga Wakabaintelkam Diganti" is a list, not a total.
-_TOTAL_OR_CHANGE = re.compile(rf"\b(?:{_CHANGE_VERBS}|total|totalnya|kumulatif|akumulasi|keseluruhan)\b"
+# What makes a source's figure a running total or the result of a change: a change verb; an accumulation word;
+# or a running period, "hingga / sampai / per / sepanjang / sejak" + a time. Not a bare "hingga": the 2026-10-11
+# Polri headline "Rombak 199 Personel Polri, Kakorlantas hingga Wakabaintelkam Diganti" is a list, not a total.
+# Not a bare "total" either: "Total ada 199 pejabat Polri yang dirotasi" (two 10-11 Polri articles) is the size
+# of that one telegram, and it let the arc's "bertambah menjadi 199" through.
+_TOTAL_OR_CHANGE = re.compile(rf"\b(?:{_CHANGE_VERBS}|kumulatif|akumulasi)\b"
                               rf"|\b(?:hingga|sampai|per|sepanjang|sejak|s\.d\.?|s/d)\s+{_TIME_AFTER}"
                               r"|\bdari\s+(?:Rp|US\$|\$)?\s?\d", re.IGNORECASE)
 
@@ -434,8 +436,8 @@ def _sentences(text: str) -> List[str]:
 
 def unbacked_changes(text: str, source: str) -> List[str]:
     """SYS-161 (#356): the change claims of `text` -- "(bertambah|naik|turun|...) menjadi N" -- whose N
-    no source sentence states as a total or a change: every sentence of `source` holding N (by value)
-    lacks a change verb, a total word and a running period (`_TOTAL_OR_CHANGE`). "Kini ... bertambah
+    no source sentence states as a running total or a change: every sentence of `source` holding N (by
+    value) lacks a change verb, an accumulation word and a running period (`_TOTAL_OR_CHANGE`). "Kini ... bertambah
     menjadi 199 orang" read two separate Polri telegrams (88, then 199) as a running total; the bansos,
     Bulog and PHK figures it was right for are each stated "hingga akhir September", "sampai awal
     Oktober", "sepanjang Januari-September". A claim whose N no source holds at all is left to

@@ -279,10 +279,17 @@ class TestUnbackedChanges:
         ("Kini serapan bertambah menjadi sekitar 4,11 juta ton.", BULOG),        # "sampai awal Oktober"
         ("Kini jumlahnya bertambah menjadi 63.789 orang.", PHK),                 # "sepanjang", "naik dari"
         ("Emas Antam naik Rp7.000 menjadi Rp2.572.000 per gram.", "Emas Antam naik Rp7.000 jadi Rp2.572.000."),
-        ("Jumlahnya meningkat menjadi 12 kasus.", "Total ada 12 kasus."),
+        ("Jumlahnya meningkat menjadi 12 kasus.", "Secara kumulatif ada 12 kasus."),
     ])
     def test_a_total_or_a_change_the_source_states_passes(self, claim, source):
         assert sc.unbacked_changes(claim, source) == []
+
+    def test_a_bare_total_is_the_size_of_one_event(self):
+        """Two of the 24 stored 10-11 Polri articles: "Total ada 199 pejabat Polri yang dirotasi" counts that
+        telegram, so it does not back "bertambah menjadi 199" (SYS-161, arcs-v6 offline check)."""
+        source = POLRI + "\n\nTotal ada 199 pejabat Polri yang dirotasi, termasuk tujuh Wakapolda di seluruh Indonesia."
+        claim = "Kini jumlah personel yang dimutasi bertambah menjadi 199 orang."
+        assert sc.unbacked_changes(claim, source) == ["bertambah menjadi 199"]
 
     def test_a_number_no_source_holds_is_left_to_the_number_check(self):
         assert sc.unbacked_changes("Jumlahnya bertambah menjadi 250 orang.", POLRI) == []

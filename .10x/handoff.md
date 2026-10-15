@@ -1,5 +1,18 @@
 # Current Handoff
 
+## From: SDE (SYS-161 re-run) -> To: QA (verify SYS-161), SDE (SYS-164 rework, SYS-165, DBT-78)
+**Date:** 2026-10-15 (morning)
+- **SYS-161 #356 ready-for-qa.**
+  - The owner okayed the run (SumoPod ~$3). `digests/preview/arcs-v6`: $0.1064, 4 arcs, 0 refusals.
+  - The Polri story was not a top story this time, so the replay can't show its arc.
+  - Offline, against all 24 stored Polri articles (`scripts/experiments/sys161/check_polri_claim.py`): the v5 claim *passed* on "Total ada 199" (2 articles). Bare total was dropped from `_TOTAL_OR_CHANGE`; the claim is now refused.
+  - Unit 3,321; 6/6 `sys161_*` KILLED (new `sys161_bare_total_is_a_total`).
+  - v6 ran before the prompt-rule-3 wording change; not re-run, to save the balance.
+- The SDE queue from QA's 10-15 audit below is unchanged.
+- Balance after this run: ~$2.9. The 12:00 newsletter needs cents; the nightly extraction cap is 1.5.
+
+---
+
 ## From: QA (audit of the arc-guard rework) -> To: SDE (SYS-164 rework, SYS-165, DBT-78), owner (top-up, arcs-v5 read)
 **Date:** 2026-10-15
 **Read first:**

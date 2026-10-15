@@ -2807,3 +2807,19 @@ SINDONEWS   old 12 new 12 | lost [] | gained []   links identical: True
   - A table phrase that *contains* the excluded word ("sejak <bulan>") slips past an exclusion written as "preceded by". Test both shapes.
   - A QA fixture can be the bug. QA 10-14's collective test named "Istana Negara", which no terkait article names, so the arc was refused as `subject`.
 - **Links:** SYS-157 #352, SYS-158 #353, SYS-162 #357, SYS-163 #358, SYS-164 #359, DBT-77 #360, SYS-165 #361, DBT-78 #362; `.10x/reviews/2026-10-15-qa-report.md`.
+
+### 2026-10-15 — SYS-161: the 10-11 replay (arcs-v6), and the guard checked against all 24 stored Polri articles
+- **Question / hypothesis:** after the owner's go-ahead (SumoPod balance ~$3), does the 10-11 re-run show the Polri "bertambah menjadi 199" arc refused or rewritten?
+- **Method:**
+  - `replay_story_arcs.py --dates 2026-10-11 --out-dir digests/preview/arcs-v6`.
+  - Offline, DB read-only: `scripts/experiments/sys161/check_polri_claim.py` runs `unbacked_changes` on the v5 Polri latar against every stored 10-10/11 article whose headline names Polri/mutasi and whose text holds 199 (24 articles), joined and one by one.
+- **Result:**
+  - Replay: $0.1064, 4 arcs built, 0 fallbacks, **0 refusals of any kind**. Style: date-led 1/12, time-led 1/12, ≥ 3 anchors 1/4, tied 4/4.
+  - **The Polri story was not a top story this time** (it is in Sekilas on both sides). So the replay cannot show the Polri arc. The PHK arc writes "bertambah menjadi 63.789 orang hingga September" and passes correctly ("sepanjang Januari-September" in the source).
+  - **Offline, the guard let the v5 claim through:** with all 24 articles joined, `[]`. Two articles back it alone, each with "Total ada 199 pejabat/Perwira ... yang dirotasi", the size of that one telegram. Bare "total" was in `_TOTAL_OR_CHANGE`.
+  - After dropping bare `total|totalnya|keseluruhan` (kept: change verbs, `kumulatif|akumulasi`, running period, "dari N"), the claim is refused and no single article backs it. Unit 3,321 passed; 6 `sys161_*` mutants KILLED (new: `sys161_bare_total_is_a_total`).
+- **Conclusion / do-not-repeat:**
+  - The editor's top-story pick varies between replays: a Done-when that names one arc must not depend on that arc being picked. Check the guard against the stored articles offline (free) as well.
+  - "Total ada N" in Indonesian news is usually the size of one event or list, not a running sum. Only a running period or an accumulation word makes N cumulative.
+  - v6 ran on the old prompt (which listed "total" as an example); the prompt now says "total ada N" alone is just that event's count. Not re-run, to save the balance.
+- **Links:** SYS-161 (#356); `digests/preview/arcs-v6` (untracked).

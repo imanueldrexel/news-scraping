@@ -1,11 +1,14 @@
 # Project Status
 
 ## Project: NewsAggregator
-**Current Phase:** QA audit 2026-10-15 of the arc-guard rework: SYS-157/158/162/163 + DBT-77 closed; SYS-164 sent back ("sejak <bulan>" frame counted as an anchor, tie regression); SYS-165 #361 + DBT-78 #362 filed. SYS-161 still waits on its 10-11 re-run (SumoPod top-up). Owner: top-up, then the arcs-v5 read.
-**Last Updated:** 2026-10-15 by QA
+**Current Phase:** SYS-161 10-11 re-run done (arcs-v6, $0.11, 0 refusals; Polri not a top story) + bare-"total" hole closed -> SYS-161 ready-for-qa. Open from QA 10-15: SYS-164 rework, SYS-165, DBT-78. Owner: top-up, arcs-v5 read.
+**Last Updated:** 2026-10-15 by SDE
 **Health:** On Track
 
 ## Progress
+
+### SDE 2026-10-15 morning: SYS-161 re-run
+- arcs-v6 (10-11): $0.1064, 4 arcs, 0 refusals; Polri in Sekilas, not an arc. Offline: v5 Polri claim passed on "Total ada 199" (2 of 24 articles) -> bare total dropped from `_TOTAL_OR_CHANGE`; unit 3,321; 6/6 sys161 mutants KILLED. SYS-161 ready-for-qa.
 
 ### QA audit 2026-10-15 (arc-guard rework, 3e8b90c/89eb879)
 - Unit 3,320 pass; QA file `scripts/experiments/qa_2026_10_15/test_qa_arc_rework.py` 56/60 (4 red = SYS-164 send-back + SYS-165); dev mutants 76/76, QA mutants 11/16 by dev suites (5 -> DBT-78). Report: reviews/2026-10-15-qa-report.md
