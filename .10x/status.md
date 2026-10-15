@@ -1,8 +1,8 @@
 # Project Status
 
 ## Project: NewsAggregator
-**Current Phase:** SYS-161 10-11 re-run done (arcs-v6, $0.11, 0 refusals; Polri not a top story) + bare-"total" hole closed -> SYS-161 ready-for-qa. Open from QA 10-15: SYS-164 rework, SYS-165, DBT-78. Owner: top-up, arcs-v5 read.
-**Last Updated:** 2026-10-15 by SDE
+**Current Phase:** Owner read arcs-v5 ("much more fluid and better"; invisible time span accepted) -> SYS-154 closed. SYS-161 ready-for-qa. SDE: SYS-164 rework, SYS-165, DBT-78. Owner: SYS-150 per-day blind A/B (>= 4/5), SumoPod top-up.
+**Last Updated:** 2026-10-16 by QA
 **Health:** On Track
 
 ## Progress

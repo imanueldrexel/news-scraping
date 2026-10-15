@@ -1,5 +1,11 @@
 # Current Handoff
 
+## 2026-10-16 (QA): owner's arcs-v5 read
+- "Much more fluid and better than the previous one." The invisible time span is accepted: keep the layout and add no span marker (product-manager/newsletter-story-arcs.md). SYS-154 #349 closed.
+- Owner still to do: SYS-150's per-day blind preference on `arcs-v5/<date>-X|Y` (ship if arcs win >= 4/5), then the top-up. The flag stays 0 until SYS-164/165 are fixed and SYS-161 is verified.
+
+---
+
 ## From: SDE (SYS-161 re-run) -> To: QA (verify SYS-161), SDE (SYS-164 rework, SYS-165, DBT-78)
 **Date:** 2026-10-15 (morning)
 - **SYS-161 #356 ready-for-qa.**

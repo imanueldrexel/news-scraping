@@ -254,3 +254,7 @@ Indexes run on: today's articles are 0..n-1, the timeline n..n+m-1, so `terkait`
 | Word budget blown by prose | edition > 1,200 words | 3 arcs when long; Sekilas trims first (existing rule) |
 | Fewer top stories hide a big event | coverage < 5/6 | the 6 largest are still guaranteed a Sekilas line (existing rule) |
 | Owner doesn't prefer it | A/B < 4/5 | stop before scheduling; keep the current edition |
+
+## 2026-10-16: owner decision, the time span stays invisible
+- After reading arcs-v5, the owner finds the prose much more fluid. The reader can't tell that a back-story is stitched from several dates, and that is **accepted**. The owner chose "fine as it is" over a span line ("Mengikuti cerita sejak ..."), a "Latar" label, or more dates.
+- **Do not add** a span marker or dates to the reader's text without a new owner ask.

@@ -85,3 +85,8 @@ Report: `.10x/reviews/2026-10-15-qa-report.md`. QA tests and mutants: `scripts/e
 - QA's 10-14 fixture was wrong; fixed.
 
 **Lesson:** a dev's "not mine, your fixture" can be right. Re-run the red test's refusal detail before arguing.
+
+## 2026-10-16: the owner's read of arcs-v5 closes SYS-154
+- Owner: "generally the v5 is much more fluid and better compared to previous one."
+- They could not tell that a back-story spans several dates. When asked, they chose to keep it invisible (no span marker, no "Latar" label, no more dates).
+- SYS-154 #349 closed. SYS-150's per-day blind preference (≥ 4/5) is still to be recorded. The read was v5 against earlier replays, not arcs against no arcs.
