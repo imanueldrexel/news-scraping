@@ -192,3 +192,31 @@ No new ADR: every change stays inside ADR-017's seam (checks live in `source_che
 ## Failure modes accepted
 - Change claim: a source sentence that holds N and an unrelated change verb still licenses it.
 - Collective rule: a noun with a me-/di-/ber- prefix missing from the list hides a real claim (unchecked).
+
+# 2026-10-16 (dev): QA's 10-16 queue (SYS-167..170, DBT-79, DBT-80)
+
+No new ADR. Every change stays inside ADR-017's seam: text-vs-source checks live in `source_check`,
+style measures in `arc_style`, and `story_arc.parse` only wires them. The arc's data flow is unchanged.
+
+## Decisions
+- **SYS-169: an unstated future time is refused as `date` (owner, 2026-10-16), not dropped.** The check is
+  the same as for an unstated calendar date. The retry tells the model to write the time the article states, which
+  is the prompt's own format ("Kamis (15/10)"), so a real next step survives in the right form.
+  - Backed only when today's `terkait` articles state the same future time by key ("minggu depan" = "pekan
+    depan", "esok" = "besok", "mendatang" = "depan"). A timeline item's "minggu depan" was written on another
+    day (SYS-162's reasoning).
+  - **No span backing.** The ticket's optional "a source date in the span backs it" is not taken: with today
+    Mon 12/10, any source date this week would back "pekan ini", including the date of an unrelated deadline.
+  - Runs on every prose field, like `unbacked_times` (past) and SYS-161: a false "besok" in hari_ini is the same
+    error as one in the agenda.
+- **The future-time table moves from `story_arc._FUTURE` to `source_check`** (`future_phrases` / `future_key`),
+  beside `_RELATIVE`. It is now read by a check (SYS-169) as well as by `_agenda_kept` / `agenda_repeats`, and
+  ADR-017 puts checks there.
+- **SYS-168 (owner, 2026-10-16): bare "bulan ini" / "tahun ini" are not future times.** They are mostly past
+  tense in news and span a whole month or year. "akhir bulan ini" / "akhir tahun ini" are. Added: esok,
+  (pekan|minggu|bulan|tahun) mendatang.
+- **SYS-170:** a change claim is `<verb> ... (men)jadi | hingga | sampai | ke (angka|level|posisi) N`. "naik
+  hingga 5%" as a range is still decided by the source side (a sentence with N and a change verb backs it).
+- **SYS-167:** "<hari> pekan/minggu lalu" spans that weekday of last week. "awal/pertengahan/akhir pekan lalu"
+  spans the whole of last week, because "akhir pekan" (weekend vs end of week) is ambiguous: no new refusals
+  from a narrower guess. The phrase starts at the modifier, so the opening and frame rules see it unchanged.

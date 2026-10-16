@@ -2,10 +2,14 @@
 
 ## Project: NewsAggregator
 **Current Phase:** QA audited the 10-16 SDE batch: SYS-164/165/166, DBT-78, SYS-161 closed. New: SYS-167..170 (#364-#367; SYS-169/170 P2), DBT-79 #368, DBT-80 #369. Owner: SYS-150 per-day blind A/B (>= 4/5), SumoPod top-up. NEWSLETTER_ARCS stays 0; QA recommends SYS-169/170 first.
-**Last Updated:** 2026-10-16 by QA
+**Last Updated:** 2026-10-16 by SDE (QA's 10-16 queue in progress)
 **Health:** On Track
 
 ## Progress
+
+### SDE 2026-10-16 (evening): QA's 10-16 queue -- in progress
+- Design: architect/newsletter-story-arcs.md "2026-10-16 (dev)"; owner chose SYS-169 = refuse as `date`, SYS-168 = no bare "bulan/tahun ini".
+- [ ] SYS-169+168  [ ] SYS-170  [ ] SYS-167  [ ] DBT-79  [ ] DBT-80
 
 ### QA audit 2026-10-16 (7e5a21a + SYS-161 fcda81c)
 - Unit 3,344; QA file `scripts/experiments/qa_2026_10_16/test_qa_1016.py` 35/55 (20 red = the 4 new SYS tickets); dev mutants 12/12 + sys161 6/6 KILLED, QA's qa16 5/9 by dev suites (4 -> DBT-79); v4/v5/v6 metrics reproduce. Report: reviews/2026-10-16-qa-report.md
