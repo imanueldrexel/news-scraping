@@ -13,7 +13,8 @@ the replay reports them (SYS-160), so the gate and the number agree.
 - `time_anchors(text)`: the past times the text names -- each calendar date, and each relative
   phrase ("awal Oktober", "pekan lalu", "Sabtu lalu") not opened by "sejak" (SYS-164: since SYS-154
   asks for relative time, a chronicle can be written without one calendar date). "Sejak awal
-  Oktober" frames the story; it is not a stop on its timeline.
+  Oktober" and "sejak September" frame the story; they are not stops on its timeline. A calendar
+  date after "sejak" ("Sejak 15/9") is still an anchor.
 - `opens_on_time(sentence)`: the sentence opens on a time anchor; `time_led`: date-led, or that.
 - `repeated_opening(text)`: the first word two sentences share, or None.
 - `non_events(text)`: the process verbs that report talk about an event as an
@@ -38,7 +39,10 @@ _DAY_BEFORE = rf"(?:(?:{_DAY})\s*[(,]\s*)?"
 _OPENS_ON_DATE = re.compile(rf"\s*(?:(?:sebelumnya|lalu|kemudian|selanjutnya|sementara itu|dan)\s*,?\s+)?"
                             rf"(?:(?:pada|sejak|per|hingga|tanggal|hari)\s+)*{_DAY_BEFORE}", re.IGNORECASE)
 _PADA_DATE = re.compile(rf"\bpada\s+(?:(?:tanggal|hari)\s+)*{_DAY_BEFORE}$", re.IGNORECASE)
-_SEJAK = re.compile(r"\bsejak\s+$", re.IGNORECASE)
+# "sejak" before a relative phrase ("sejak awal Oktober") or opening one ("sejak September", a table phrase of
+# its own): either way a frame, not an anchor (SYS-164 rework: the second was counted, and refused by the tie).
+_SEJAK_BEFORE = re.compile(r"\bsejak\s+$", re.IGNORECASE)
+_SEJAK_OPENS = re.compile(r"sejak\b", re.IGNORECASE)
 NON_EVENTS = re.compile(r"\b(?:dibahas|disebut|dikabarkan|ditanggapi)\b", re.IGNORECASE)
 
 
@@ -50,8 +54,12 @@ def _opens_on(sentence: str, positions: List[int]) -> bool:
     return bool(positions) and bool(_OPENS_ON_DATE.fullmatch(sentence[:min(positions)]))
 
 
+def _is_frame(text: str, pos: int, phrase: str) -> bool:
+    return bool(_SEJAK_BEFORE.search(text[:pos]) or _SEJAK_OPENS.match(phrase))
+
+
 def _relative_anchors(text: str) -> List[tuple]:
-    return [(pos, phrase) for pos, phrase in relative_phrases(text) if not _SEJAK.search(text[:pos])]
+    return [(pos, phrase) for pos, phrase in relative_phrases(text) if not _is_frame(text, pos, phrase)]
 
 
 def opens_on_date(sentence: str) -> bool:

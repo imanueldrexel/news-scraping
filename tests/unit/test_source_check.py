@@ -249,6 +249,12 @@ class TestStatedClaims:
     def test_a_bare_year_is_the_whole_time(self):
         assert sc.stated_claims("Inflasi tertinggi sejak 2019.") == {"tertinggi sejak 2019"}
 
+    def test_a_short_date_keeps_its_year(self):
+        """DBT-78 (#362): "terendah sejak 9/1/2025" is not stated by a source's "sejak 9/1/2026"."""
+        arc = {key for _, _, key in sc.ordinal_claims("IHSG terendah sejak 9/1/2025.")}
+        assert arc and not arc & sc.stated_claims("IHSG terendah sejak 9/1/2026.")
+        assert arc <= sc.stated_claims("IHSG terendah sejak 9/1/2025.")
+
 
 # SYS-161 (#356): fixture strings from the DB (read-only, 2026-10-15): the guard texts of the 2026-10-11 Polri
 # articles and of the 10-09 / 10-11 articles behind the three right "Kini ... bertambah menjadi" sentences.

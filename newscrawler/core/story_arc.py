@@ -45,8 +45,8 @@ and code checks what it wrote. The answer is JSON:
 On the retry (`lenient`) off-subject articles and items are moved out instead of
 refused, and the number and date checks then hold the prose to what is left.
 An agenda with no date, number or scheduling word is dropped, not refused; so is one that
-repeats the latar or hari_ini (SYS-163: its date and at least AGENDA_REPEAT_SHARE of its
-content words are there).
+repeats the latar or hari_ini (SYS-163: its date -- or since SYS-165 its future time,
+"minggu depan" -- and at least AGENDA_REPEAT_SHARE of its content words are there).
 """
 import logging
 import re
@@ -83,10 +83,13 @@ MAX_LATAR_ANCHORS = 3
 AGENDA_REPEAT_SHARE = 0.5   # SYS-163: El-Sisi 10-10 repeated 7 of its 9 content words from the latar
 STYLE_ASK = ("tulis latar sebagai cerita: satu kalimat bingkai dan paling banyak dua titik balik, dikaitkan "
              "dengan peristiwa hari ini, dengan waktu relatif (\"awal Oktober\", \"pekan lalu\")")
+# The future times an agenda may give instead of a date. Each makes the agenda a scheduled step (SYS-166), and
+# one that hari_ini or the latar also gives is a shared time, like a shared date (SYS-165).
+_FUTURE = re.compile(r"\b(?:besok|lusa|(?:akhir\s+)?(?:pekan|minggu)\s+(?:depan|ini)|(?:bulan|tahun)\s+depan)\b",
+                     re.IGNORECASE)
 # What makes an agenda a scheduled step rather than a guess (with a date or a number it is one already).
-_SCHEDULED = re.compile(r"\b(?:dijadwalkan|jadwal|rapat|sidang|tenggat|batas waktu|berlaku|mulai|pekan depan|"
-                        r"bulan depan|tahun depan|besok|lusa|rdg|pelantikan|peluncuran|pengumuman|rilis|akan)\b",
-                        re.IGNORECASE)
+_SCHEDULED = re.compile(r"\b(?:dijadwalkan|jadwal|rapat|sidang|tenggat|batas waktu|berlaku|mulai|rdg|pelantikan|"
+                        r"peluncuran|pengumuman|rilis|akan)\b", re.IGNORECASE)
 
 # The example is from 2026-10-02, outside the replay set (2026-10-08..10-12) and never the day written. Its
 # facts are that day's (KONTAN: 3,28% sepekan, +0,46% to 6.036,89 after six days down) and its two items' (KONTAN
@@ -322,16 +325,24 @@ def overcounted(text: str, items: int, stated: set) -> List[str]:
 
 
 def _agenda_kept(agenda: str) -> bool:
-    return bool(agenda) and bool(dates_in(agenda) or re.search(r"\d", agenda) or _SCHEDULED.search(agenda))
+    return bool(agenda) and bool(dates_in(agenda) or re.search(r"\d", agenda) or _SCHEDULED.search(agenda)
+                                 or _FUTURE.search(agenda))
+
+
+def future_times(text: str) -> set:
+    """The future times `text` gives (`_FUTURE`), keyed so synonyms meet: "Minggu depan" is "pekan depan"."""
+    return {re.sub(r"\bminggu\b", "pekan", " ".join(m.group(0).lower().split())) for m in _FUTURE.finditer(text)}
 
 
 def agenda_repeats(agenda: str, latar: str, hari_ini: str) -> bool:
-    """SYS-163: the agenda tells a date the latar or hari_ini already tells, with at least
-    AGENDA_REPEAT_SHARE of its content words there too (2026-10-10: "Minggu (11/10) pukul 10.30 WIB,
-    Prabowo menerima El-Sisi di Istana ..." closed a latar that had just said it). Dropped, not
-    refused: it adds nothing, so a retry would buy the reader nothing."""
+    """SYS-163: the agenda tells a time the latar or hari_ini already tells -- a date, or since
+    SYS-165 a future time ("minggu depan") -- with at least AGENDA_REPEAT_SHARE of its content words
+    there too (2026-10-10: "Minggu (11/10) pukul 10.30 WIB, Prabowo menerima El-Sisi di Istana ..."
+    closed a latar that had just said it; 2026-10-12: "Pelantikan pimpinan BPGMN diharapkan
+    dilakukan minggu depan" closed a story whose hari_ini had just said it). Dropped, not refused:
+    it adds nothing, so a retry would buy the reader nothing."""
     told = f"{latar} {hari_ini}"
-    if not set(dates_in(agenda)) & set(dates_in(told)):
+    if not (set(dates_in(agenda)) & set(dates_in(told)) or future_times(agenda) & future_times(told)):
         return False
     words, seen = story_words.content_words(agenda), story_words.content_words(told)
     return bool(words) and sum(w in seen for w in words) >= AGENDA_REPEAT_SHARE * len(words)

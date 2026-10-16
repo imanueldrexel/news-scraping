@@ -164,3 +164,29 @@ class TestTimeAnchors:
 
     def test_sejak_frames_are_not_anchors(self):
         assert st.time_anchors("Sejak awal Oktober dan sejak pekan lalu harga naik.") == []
+
+    @pytest.mark.parametrize("frame", ["Sejak September, Polri sudah dua kali merombak jabatan Kapolda.",
+                                       "Sejak Agustus 2026, Polri sudah dua kali merombak jabatan Kapolda.",
+                                       "Polri sudah dua kali merombak jabatan Kapolda sejak September."])
+    def test_a_sejak_month_frame_is_not_an_anchor(self, frame):
+        """SYS-164 rework (#359): "sejak <bulan>" is a table phrase of its own that *opens* with sejak.
+        It was counted as an anchor and an opening, and the tie refused the frame it had accepted."""
+        assert st.time_anchors(frame) == []
+        assert not st.opens_on_time(frame)
+        assert st.tied_to_today(frame, JUDUL, HARI_INI)
+
+    def test_a_sejak_frame_does_not_hide_the_anchors_after_it(self):
+        latar = ("Sejak September karhutla meluas. Pekan lalu Seskab melapor, 5/10 rapat digelar, "
+                 "dan kemarin asap sampai Malaysia.")
+        assert st.time_anchors(latar) == ["Pekan lalu", "5/10", "kemarin"]
+
+    def test_a_calendar_date_after_sejak_is_still_an_anchor(self):
+        assert st.time_anchors("Sejak 15/9 gugatan berjalan.") == ["15/9"]
+
+    @pytest.mark.parametrize("sentence,led", [("Polri memutasi 88 perwira pada 3/10.", True),
+                                              ("Polri memutasi 88 perwira pekan lalu.", False),
+                                              ("Pekan lalu, Polri memutasi 88 perwira.", True)])
+    def test_time_led_keeps_a_mid_sentence_pada_date(self, sentence, led):
+        """DBT-78 (#362): time_led is date_led (with "pada <date>" anywhere) or a time opening -- the dev's
+        Bulog case on #359 ("... pada 25 September")."""
+        assert st.time_led(sentence) is led

@@ -1772,13 +1772,16 @@ M = [
  ('sys163_repeat_kept', 'newscrawler/core/story_arc.py',
   '    elif agenda and agenda_repeats(agenda, latar, hari_ini):', '    elif False:'),
  ('sys163_no_shared_date_needed', 'newscrawler/core/story_arc.py',
-  '    if not set(dates_in(agenda)) & set(dates_in(told)):\n        return False', '    if False:\n        return False'),
+  '    if not (set(dates_in(agenda)) & set(dates_in(told)) or future_times(agenda) & future_times(told)):\n'
+  '        return False', '    if False:\n        return False'),
  ('sys163_share_0', 'newscrawler/core/story_arc.py', 'AGENDA_REPEAT_SHARE = 0.5', 'AGENDA_REPEAT_SHARE = 0.0'),
  ('sys163_share_0_9', 'newscrawler/core/story_arc.py', 'AGENDA_REPEAT_SHARE = 0.5', 'AGENDA_REPEAT_SHARE = 0.9'),
  ('sys164_anchor_cap_off', 'newscrawler/core/story_arc.py', '    if len(anchors) > MAX_LATAR_ANCHORS:', '    if False:'),
  ('sys164_anchor_cap_4', 'newscrawler/core/story_arc.py', 'MAX_LATAR_ANCHORS = 3', 'MAX_LATAR_ANCHORS = 4'),
  ('sys164_sejak_counted', 'newscrawler/core/arc_style.py',
-  ' if not _SEJAK.search(text[:pos])]', ']'),
+  '    return bool(_SEJAK_BEFORE.search(text[:pos]) or _SEJAK_OPENS.match(phrase))', '    return False'),
+ # SYS-164 rework (#359): "sejak <bulan>" opens its own table phrase.
+ ('sys164r_sejak_month_counted', 'newscrawler/core/arc_style.py', ' or _SEJAK_OPENS.match(phrase))', ')'),
  ('sys164_relative_not_an_anchor', 'newscrawler/core/arc_style.py',
   'for pos, _, _, written in date_mentions(text)] + _relative_anchors(text)',
   'for pos, _, _, written in date_mentions(text)]'),
@@ -1797,6 +1800,26 @@ M = [
  # DBT-77 (#360): QA's survivor, killed by the 2-date back-story in test_replay_story_arcs.py.
  ('qa_metric_ge2_dates', 'scripts/experiments/replay_story_arcs.py',
   '"with_3_dates_or_more": sum(d >= 3', '"with_3_dates_or_more": sum(d >= 2'),
+ # SYS-165 (#361): a future time the agenda shares with hari_ini or the latar.
+ ('sys165_future_not_shared', 'newscrawler/core/story_arc.py', ' or future_times(agenda) & future_times(told))', ')'),
+ ('sys165_any_future_time_shared', 'newscrawler/core/story_arc.py',
+  ' or future_times(agenda) & future_times(told))', ' or (future_times(agenda) and future_times(told)))'),
+ ('sys165_synonyms_not_keyed', 'newscrawler/core/story_arc.py',
+  'return {re.sub(r"\\bminggu\\b", "pekan", " ".join(m.group(0).lower().split()))',
+  'return {" ".join(m.group(0).lower().split())'),
+ # SYS-166 (#363): a future time makes an agenda a scheduled step.
+ ('sys166_future_not_scheduled', 'newscrawler/core/story_arc.py',
+  '\n                                 or _FUTURE.search(agenda))', ')'),
+ # DBT-78 (#362): QA's survivors of 2026-10-15 (scripts/experiments/qa_2026_10_15/qa_mutants_1015.py).
+ ('qa15_stated_today_all_articles', 'newscrawler/core/story_arc.py',
+  'stated_today = "\\n\\n".join(shown_texts[i] for i in terkait)', 'stated_today = "\\n\\n".join(shown_texts)'),
+ ('qa15_agenda_told_latar_only', 'newscrawler/core/story_arc.py', 'told = f"{latar} {hari_ini}"', 'told = latar'),
+ ('qa15_agenda_share_strict', 'newscrawler/core/story_arc.py',
+  '>= AGENDA_REPEAT_SHARE * len(words)', '> AGENDA_REPEAT_SHARE * len(words)'),
+ ('qa15_time_led_opening_only', 'newscrawler/core/arc_style.py',
+  'return date_led(sentence) or opens_on_time(sentence)', 'return opens_on_time(sentence)'),
+ ('qa15_dm_year_dropped', 'newscrawler/core/source_check.py',
+  'parts = [m.group("dm"), m.group("dmyear")]', 'parts = [m.group("dm")]'),
 ]
 only = sys.argv[1:]
 # The tests each mutant runs (default: all of tests/unit). QA_MUTANT_TESTS narrows it to the files that

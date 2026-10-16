@@ -2823,3 +2823,33 @@ SINDONEWS   old 12 new 12 | lost [] | gained []   links identical: True
   - "Total ada N" in Indonesian news is usually the size of one event or list, not a running sum. Only a running period or an accumulation word makes N cumulative.
   - v6 ran on the old prompt (which listed "total" as an example); the prompt now says "total ada N" alone is just that event's count. Not re-run, to save the balance.
 - **Links:** SYS-161 (#356); `digests/preview/arcs-v6` (untracked).
+
+### 2026-10-16 — SYS-164 rework, SYS-165/166, DBT-78: "sejak <bulan>" frames, future times in agendas, and QA's survivors
+- **Question / hypothesis:**
+  - SYS-164: does excluding a relative phrase that *opens* with "sejak" (not only one after it) give back the tie for "Sejak September, ..." without hiding the anchors after it?
+  - SYS-165: is a shared future time ("minggu depan") plus the existing 50% word share enough to drop the BPGMN repeat and keep Ojol and the new-step agendas?
+  - SYS-166: how common is the "minggu depan" synonym the scheduling list missed?
+- **Method:** all zero-cost (no LLM).
+  - QA's `scripts/experiments/qa_2026_10_15/test_qa_arc_rework.py` and the arc unit suites.
+  - Mutants: the registry's arc entries, run by a scratch driver in a plain copy of the working tree (`git ls-files -co --exclude-standard ... | tar`), with tests = the four suites DBT-78 names. Also QA's `qa_mutants_1015.py` with `QA_ONLY_OWN=1`.
+  - `replay_story_arcs.py --metrics-from digests/preview/arcs-v4|v5|v6`, on this tree and on a `git archive HEAD` copy.
+  - DB read-only: `extracted_text ~* '\m<phrase>\M'` over 135,591 articles.
+- **Result:**
+  - QA's file is 60/60 (was 56/60). Registry arc mutants: 87/87 KILLED. QA's own: 15/15 matching KILLED. `qa15_sejak_anywhere_before` no longer matches after the `_SEJAK` rename; its equivalent is KILLED.
+  - Metrics are identical to HEAD on v4, v5 and v6 (v5: time-led 11/51, >= 3 anchors 1/17, tied 17/17). Both replay sentences with "sejak Agustus" now hold 0 anchors, and neither latar was at the cap.
+  - Real-text counts:
+
+    | phrase | articles |
+    |---|---|
+    | pekan depan | 703 |
+    | minggu depan | 347 |
+    | pekan ini | 2,006 |
+    | minggu ini | 464 |
+    | akhir pekan ini | 198 |
+    | besok / lusa | 1,702 / 64 |
+    | bulan depan / tahun depan | 347 / 1,609 |
+
+- **Conclusion / do-not-repeat:**
+  - An exclusion written against a regex table must cover the table's own entries that start with the excluded word. "Preceded by sejak" missed "sejak <bulan>" twice: in QA's metric on 10-14, and in SYS-164's code.
+  - "minggu depan" is a third of the "next week" phrasings. A word list for times needs its synonyms, written once (`story_arc._FUTURE`) and read by every rule that needs it.
+- **Links:** SYS-164 (#359), SYS-165 (#361), SYS-166 (#363), DBT-78 (#362); `.10x/decisions/sde/newsletter-story-arcs.md` "2026-10-16".

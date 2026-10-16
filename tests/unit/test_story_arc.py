@@ -6,7 +6,7 @@ from datetime import date
 import pytest
 
 import newscrawler.core.story_arc as sa
-from newscrawler.core import arc_style
+from newscrawler.core import arc_style, story_words
 from newscrawler.core.llm_json import Rejected
 from newscrawler.core.summarizer import QuotaExhausted
 from newscrawler.core.thread_finder import TimelineItem
@@ -54,6 +54,12 @@ def _parse(answer, lenient=False, timeline=TIMELINE):
 def _reason(answer, **kw):
     with pytest.raises(Rejected) as e:
         _parse(answer, **kw)
+    return e.value.reason, e.value.detail
+
+
+def _reason_on(answer, texts, lenient=False):
+    with pytest.raises(Rejected) as e:
+        sa.parse(answer, texts, TIMELINE, DAY, lenient=lenient)
     return e.value.reason, e.value.detail
 
 
@@ -142,6 +148,15 @@ class TestAgenda:
     def test_an_agenda_number_is_still_checked(self):
         assert _reason(_answer(agenda="Rapat lanjutan dijadwalkan Jumat (16/10)."))[0] == "date"
 
+    @pytest.mark.parametrize("agenda", ["Presiden berangkat ke Kairo minggu depan.",
+                                        "Hasil seleksi diumumkan pekan ini.",
+                                        "Presiden berangkat ke Kairo akhir pekan ini.",
+                                        "Presiden berangkat ke Kairo besok."])
+    def test_a_future_time_makes_a_scheduled_step(self, agenda):
+        """SYS-166 (#363): "minggu depan" is "pekan depan"; a near time is a step, not a guess."""
+        assert sa._agenda_kept(agenda)
+        assert not sa._agenda_kept("Presiden berangkat ke Kairo.")
+
 
 # SYS-163 (#358): the v5 replay's agendas (digests/preview/arcs-v5), as the model wrote them.
 EL_SISI = {"hari_ini": "Presiden Mesir Abdel Fattah El-Sisi tiba di Lanud Halim Perdanakusuma, Jakarta, Sabtu (10/10) "
@@ -168,6 +183,15 @@ OJOL = {"hari_ini": "Pemerintah resmi menerbitkan Perpres Nomor 27 Tahun 2026 te
                   "Bambang Eko Suhariyanto."}
 
 
+# SYS-165 (#361): v5 2026-10-12 (digests/preview/arcs-v5/2026-10-12-Y.md), as the model wrote it.
+BPGMN = {"hari_ini": "Presiden Prabowo Subianto memimpin rapat terbatas soal kebakaran hutan dan lahan di Istana "
+                     "Kepresidenan Jakarta, Senin (12/10). Menko Polkam Dudung Abdurachman menyebut pelantikan "
+                     "pimpinan Badan Pengelola Gambut dan Mangrove Nasional diharapkan minggu depan.",
+         "latar": "Kini Dudung menyebut Satyawan Puryatmoko, Dirjen KSDAE Kementerian Kehutanan, sebagai calon Ketua "
+                  "BPGMN.",
+         "agenda": "Pelantikan pimpinan BPGMN diharapkan dilakukan minggu depan menurut Dudung."}
+
+
 class TestAgendaRepeats:
     def test_the_el_sisi_agenda_repeats_the_latar(self):
         assert sa.agenda_repeats(EL_SISI["agenda"], EL_SISI["latar"], EL_SISI["hari_ini"])
@@ -183,6 +207,39 @@ class TestAgendaRepeats:
     def test_the_same_words_without_its_date_is_kept(self):
         assert not sa.agenda_repeats("Prabowo menerima El-Sisi di Istana Merdeka.", EL_SISI["latar"],
                                      EL_SISI["hari_ini"])
+
+    def test_repeating_hari_ini_rather_than_the_latar_is_dropped(self):
+        """DBT-78 (#362): what was told is the latar and hari_ini both."""
+        hari_ini = "Prabowo memimpin rapat karhutla, Senin (12/10). Rapat lanjutan dijadwalkan Kamis (15/10) di Istana."
+        assert sa.agenda_repeats("Rapat lanjutan dijadwalkan Kamis (15/10) di Istana.", "Karhutla meluas.", hari_ini)
+
+    def test_exactly_the_share_is_a_repeat(self):
+        """DBT-78 (#362): AGENDA_REPEAT_SHARE is "at least": 2 of 4 content words (rapat, karhutla)."""
+        agenda = "Kapolri memanggil rapat karhutla, Kamis (15/10)."
+        latar = "Prabowo menggelar rapat karhutla lanjutan Kamis (15/10)."
+        words = story_words.content_words(agenda)
+        assert sum(w in story_words.content_words(latar) for w in words) == sa.AGENDA_REPEAT_SHARE * len(words)
+        assert sa.agenda_repeats(agenda, latar, "")
+
+    def test_the_bpgmn_agenda_repeats_hari_ini_in_relative_time(self):
+        """SYS-165 (#361): digests/preview/arcs-v5/2026-10-12-Y.md -- no date, the shared time is
+        "minggu depan" (6 of 7 content words told)."""
+        assert sa.agenda_repeats(BPGMN["agenda"], BPGMN["latar"], BPGMN["hari_ini"])
+
+    def test_a_future_time_is_shared_under_its_synonym(self):
+        agenda = BPGMN["agenda"].replace("minggu depan", "pekan depan")
+        assert sa.agenda_repeats(agenda, BPGMN["latar"], BPGMN["hari_ini"])
+        assert sa.future_times("Minggu depan, lalu akhir pekan ini.") == {"pekan depan", "akhir pekan ini"}
+
+    @pytest.mark.parametrize("time", ["bulan depan", "besok", ""])
+    def test_another_future_time_or_none_is_kept(self, time):
+        """Same words, but not the time hari_ini gave: a different step (or a guess), not a repeat."""
+        agenda = BPGMN["agenda"].replace("minggu depan", time)
+        assert not sa.agenda_repeats(agenda, BPGMN["latar"], BPGMN["hari_ini"])
+
+    def test_a_new_step_at_the_same_future_time_is_kept(self):
+        agenda = "DPR memanggil Kepala BNPB soal anggaran pemadaman minggu depan."
+        assert not sa.agenda_repeats(agenda, BPGMN["latar"], BPGMN["hari_ini"])
 
     def test_dropped_in_parse_not_refused(self):
         latar = FRAME + "Rapat lanjutan Prabowo soal karhutla dijadwalkan Kamis (15/10)."
@@ -359,6 +416,20 @@ class TestRelativeTime:
         reason, detail = _reason(_answer(latar=latar), timeline=timeline)
         assert reason == "date" and '"Kemarin"' in detail
         assert sa.parse(_answer(latar=latar), _texts("Kemarin Seskab melaporkan karhutla."), timeline, DAY)
+
+    def test_a_phrase_only_a_tidak_terkait_article_states_does_not_license_it(self):
+        """DBT-78 (#362): article [2] (cabai) was not chosen as today's story, so its 'Kemarin' is not."""
+        latar = FRAME + "Kemarin Seskab melaporkan 209 hektare lahan masih terbakar."
+        reason, detail = _reason_on(_answer(latar=latar), _texts("Kemarin harga cabai naik.", i=2))
+        assert reason == "date" and '"Kemarin"' in detail
+        assert sa.parse(_answer(latar=latar), _texts("Kemarin asap makin tebal.", i=1), TIMELINE, DAY)
+
+    def test_a_phrase_in_an_article_moved_out_on_the_retry_does_not_license_it(self):
+        """DBT-78 (#362): the retry moves the off-subject article [2] out of terkait; its text goes with it."""
+        latar = FRAME + "Kemarin Seskab melaporkan 209 hektare lahan masih terbakar."
+        answer = _answer(latar=latar, terkait=[0, 1, 2], tidak_terkait=[])
+        reason, detail = _reason_on(answer, _texts("Kemarin harga cabai naik.", i=2), lenient=True)
+        assert reason == "date" and '"Kemarin"' in detail
 
 
 class TestOrdinals:
