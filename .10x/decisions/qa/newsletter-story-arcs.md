@@ -90,3 +90,23 @@ Report: `.10x/reviews/2026-10-15-qa-report.md`. QA tests and mutants: `scripts/e
 - Owner: "generally the v5 is much more fluid and better compared to previous one."
 - They could not tell that a back-story spans several dates. When asked, they chose to keep it invisible (no span marker, no "Latar" label, no more dates).
 - SYS-154 #349 closed. SYS-150's per-day blind preference (≥ 4/5) is still to be recorded. The read was v5 against earlier replays, not arcs against no arcs.
+
+## QA audit of SYS-164 rework, SYS-165, SYS-166, DBT-78, SYS-161 (2026-10-16)
+Report: `.10x/reviews/2026-10-16-qa-report.md`. QA tests and mutants: `scripts/experiments/qa_2026_10_16/`.
+
+**Verdicts:** all five closed: SYS-164 #359, SYS-165 #361, SYS-166 #363, DBT-78 #362, SYS-161 #356.
+
+**Filed:**
+- SYS-167 #364 (P3): a modifier before "pekan lalu" hides it from the opening and frame rules.
+- SYS-168 #365 (P3): `_FUTURE` misses "akhir tahun ini", "mendatang", "esok".
+- SYS-169 #366 (P2): an agenda's relative future time is unchecked against the sources.
+- SYS-170 #367 (P2): the change guard reads only "menjadi".
+- DBT-79 #368: 4 survivors.
+- DBT-80 #369: 27 stale registry mutants.
+
+**Decisions:**
+- SYS-161's Done-when "the re-run shows the Polri arc refused" is met by the offline check against all 24 stored Polri articles, because the v6 replay did not build that arc.
+- The dev's calls are accepted: a future time in the latar counts as told; "akhir pekan ini" ≠ "pekan ini"; "pekan ini" schedules an agenda (bounded by SYS-169 once fixed).
+- Not ticketed, since 0 occurrences in the replays and the prompt says "sejak": "semenjak" / "mulai" as frame words, and "berlaku per <date>" as a running period.
+
+**Lesson:** a guard keyed on one wording ("menjadi", "pekan depan") is evaded by the next most common one. Before closing, count the wording's siblings in the corpus.

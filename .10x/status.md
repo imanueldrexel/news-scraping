@@ -1,11 +1,14 @@
 # Project Status
 
 ## Project: NewsAggregator
-**Current Phase:** SDE worked QA's 10-15 queue: SYS-164 (rework), SYS-165, DBT-78 and new SYS-166 ready-for-qa. SYS-161 ready-for-qa. Owner: SYS-150 per-day blind A/B (>= 4/5), SumoPod top-up.
-**Last Updated:** 2026-10-16 by SDE
+**Current Phase:** QA audited the 10-16 SDE batch: SYS-164/165/166, DBT-78, SYS-161 closed. New: SYS-167..170 (#364-#367; SYS-169/170 P2), DBT-79 #368, DBT-80 #369. Owner: SYS-150 per-day blind A/B (>= 4/5), SumoPod top-up. NEWSLETTER_ARCS stays 0; QA recommends SYS-169/170 first.
+**Last Updated:** 2026-10-16 by QA
 **Health:** On Track
 
 ## Progress
+
+### QA audit 2026-10-16 (7e5a21a + SYS-161 fcda81c)
+- Unit 3,344; QA file `scripts/experiments/qa_2026_10_16/test_qa_1016.py` 35/55 (20 red = the 4 new SYS tickets); dev mutants 12/12 + sys161 6/6 KILLED, QA's qa16 5/9 by dev suites (4 -> DBT-79); v4/v5/v6 metrics reproduce. Report: reviews/2026-10-16-qa-report.md
 
 ### SDE 2026-10-16: QA's 10-15 queue
 - SYS-164 #359 (rework): "sejak <bulan>" is a frame, not an anchor (`arc_style._is_frame`). SYS-165 #361: an agenda repeating a future time ("minggu depan") is dropped. SYS-166 #363 (new, found while building SYS-165): "minggu depan"/"pekan ini" agendas were dropped as guesses. DBT-78 #362: QA's 5 survivors guarded and registered. All ready-for-qa.

@@ -30,3 +30,4 @@
 - [newsletter-story-arcs](newsletter-story-arcs.md) — 2026-10-14: the arcs pass the automatic gates but read as a chronicle (69% date-led latar); SYS-154..160 filed; SYS-157/158 release-blocking with SYS-154
 - [newsletter-story-arcs](newsletter-story-arcs.md), 2026-10-14 afternoon: audit of SYS-154..160. Closed SYS-155/156/159/160; sent back SYS-157 (longer relative phrases misread) and SYS-158 (record key, "kali berturut-turut", collectives after verbs); SYS-154 held for the owner's read. Filed SYS-161 (P2, "bertambah menjadi 199" is false), SYS-162/163/164, DBT-77.
 - Lesson: under a prompt that asks for relative time, a check keyed on calendar dates goes blind. Re-measure with relative phrases counted (SYS-164).
+- [newsletter-story-arcs](newsletter-story-arcs.md), 2026-10-16: audit of SYS-164 rework/165/166, DBT-78, SYS-161. All five closed. Filed SYS-167..170 (#364-#367; SYS-169/170 P2 reader-facing), DBT-79 #368, DBT-80 #369 (27 stale registry mutants).

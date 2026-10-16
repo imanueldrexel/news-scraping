@@ -2853,3 +2853,45 @@ SINDONEWS   old 12 new 12 | lost [] | gained []   links identical: True
   - An exclusion written against a regex table must cover the table's own entries that start with the excluded word. "Preceded by sejak" missed "sejak <bulan>" twice: in QA's metric on 10-14, and in SYS-164's code.
   - "minggu depan" is a third of the "next week" phrasings. A word list for times needs its synonyms, written once (`story_arc._FUTURE`) and read by every rule that needs it.
 - **Links:** SYS-164 (#359), SYS-165 (#361), SYS-166 (#363), DBT-78 (#362); `.10x/decisions/sde/newsletter-story-arcs.md` "2026-10-16".
+
+### 2026-10-16 — QA audit of SYS-164 rework / SYS-165 / SYS-166 / DBT-78 / SYS-161: held-out wordings, 27 mutants, and how often each sibling wording occurs
+- **Question / hypothesis:** each fix keys on one wording ("sejak" right before the phrase, "pekan depan"/"minggu depan", "(men)jadi N"). Do the sibling wordings news actually writes slip past it, and how common are they?
+- **Method:**
+  - `scripts/experiments/qa_2026_10_16/test_qa_1016.py` (55 tests).
+  - `scripts/experiments/qa_2026_10_16/qa_mutants_1016.py`: the dev's 12 registry entries for the batch plus 9 `qa16_*`, in a `git archive` copy of HEAD, on the four DBT-78 suites.
+  - `sys161_*` through `qa_mutants_1015.py`.
+  - Corpus counts: `extracted_text ~* <pattern>`, read-only session, 136,983 articles.
+  - Replays grepped (v2..v6); `--metrics-from` run on copies of v4/v5/v6.
+- **Result:**
+  - Dev mutants 12/12 and `sys161_*` 6/6 KILLED. 4 of 9 `qa16_*` survive the dev's suites; all are killed by QA's file.
+  - Corpus counts:
+
+    | wording | articles | note |
+    |---|---|---|
+    | "<hari> pekan lalu" | 160 | |
+    | "akhir/awal/pertengahan pekan lalu" | 398 | with the row above: 26% of the 2,131 "pekan lalu" |
+    | "akhir tahun ini" | 487 | |
+    | "bulan mendatang" | 265 | |
+    | "esok" | 191 | |
+    | "akhir bulan ini" | 118 | |
+    | "pekan mendatang" | 99 | |
+    | "minggu mendatang" | 38 | |
+    | "minggu depan" | 348 | |
+    | "pekan depan" | 710 | |
+    | "semenjak" | 211 | |
+    | change claim "<verb> menjadi N" | 3,462 | |
+    | "<verb> hingga/sampai N" | 914 | |
+    | "<verb> ke angka/level N" | 320 | |
+    | "<verb>, menjadi N" | 3 | |
+    | "<verb> menjadi total N" | 2 | |
+
+  - Replays: none of the modifier/future shapes occur. "naik hingga Rp500 juta" occurs twice.
+  - v5 metrics reproduce: time-led 11/51, ≥ 3 anchors 1.
+- **Conclusion / do-not-repeat:**
+  - When a guard keys on a wording, count its siblings in the corpus before closing. "hingga" is a quarter of the change claims, and "akhir tahun ini" is more common than the "minggu depan" that started SYS-166.
+  - The agenda's relative future time had no source check at all (SYS-169). Every time a guard grows a table of accepted wordings, check whether the accepted wording is itself held to the sources.
+  - `--metrics-from` writes `style_metrics.json` into its input dir: run it on a copy.
+- **Links:**
+  - Closed: SYS-164 (#359), SYS-165 (#361), SYS-166 (#363), DBT-78 (#362), SYS-161 (#356).
+  - Filed: SYS-167..170 (#364-#367), DBT-79 (#368), DBT-80 (#369).
+  - `.10x/reviews/2026-10-16-qa-report.md`.

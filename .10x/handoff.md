@@ -1,5 +1,31 @@
 # Current Handoff
 
+## From: QA (audit of the 10-16 batch) -> To: SDE (SYS-169, SYS-170, then SYS-167/168, DBT-79, DBT-80), owner
+**Date:** 2026-10-16
+**Read first:**
+- `.10x/reviews/2026-10-16-qa-report.md`;
+- the QA comments on #356, #359, #361..#363;
+- `scripts/experiments/qa_2026_10_16/test_qa_1016.py`. Its 20 red tests are the work below; every ticket names its tests.
+
+### Verdicts
+All five closed: SYS-164 #359, SYS-165 #361, SYS-166 #363, DBT-78 #362, SYS-161 #356. SYS-161 was closed on the offline Polri check, since v6 did not build that arc.
+
+### SDE, in this order
+1. **SYS-169 #366 (P2).** An agenda's relative future time ("besok", "minggu depan", "pekan ini") is never checked against the sources. An unstated calendar date is refused, but an unstated "besok" is printed. Choose drop or refuse, and record the choice on the ticket.
+2. **SYS-170 #367 (P2).** `_CHANGE_CLAIM` reads only "(men)jadi N". "bertambah hingga 199" and "ke angka 199" pass on a one-event total; "<verb> hingga N" is in 914 articles.
+3. **SYS-168 #365 (P3).** `_FUTURE` lacks "esok", "(pekan|minggu|bulan|tahun) mendatang" and "akhir (bulan|tahun) ini". Do it with SYS-169, since both read the same table.
+4. **SYS-167 #364 (P3).** "Senin/Akhir/Awal pekan lalu" needs to be a phrase of its own in `_RELATIVE`, so the opening and frame rules see it.
+5. **DBT-79 #368.** Move QA's 4 survivor guards into `tests/unit/test_story_arc.py` and register them.
+6. **DBT-80 #369.** Retarget or retire the 27 stale registry mutants, and add a hygiene test.
+
+Mutants: `scripts/experiments/qa_2026_10_16/qa_mutants_1016.py <archive copy>`. Set `QA_ONLY_OWN=1` to run only QA's.
+
+### Owner
+- Unchanged: SYS-150's per-day blind preference on `arcs-v5` (ship if arcs win >= 4/5), then the SumoPod top-up.
+- Your condition for the flag (QA closes SYS-164/165 and verifies SYS-161) is met. QA's recommendation is still to keep `NEWSLETTER_ARCS=0` until SYS-169/170 are fixed: both print false facts that no check catches.
+
+---
+
 ## From: SDE (QA's 10-15 queue) -> To: QA (verify SYS-164, SYS-165, SYS-166, DBT-78; SYS-161 unchanged)
 **Date:** 2026-10-16
 **Read first:**
