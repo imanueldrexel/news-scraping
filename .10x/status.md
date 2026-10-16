@@ -1,15 +1,16 @@
 # Project Status
 
 ## Project: NewsAggregator
-**Current Phase:** SDE working QA's 10-16 evening queue: SYS-169 rework, SYS-171 (P2), SYS-172, SYS-173. NEWSLETTER_ARCS stays 0 until QA closes SYS-169 + SYS-171.
+**Current Phase:** SDE finished QA's 10-16 evening queue: SYS-169 rework, SYS-171 (P2), SYS-172, SYS-173 all ready-for-qa (1eff4b1). NEWSLETTER_ARCS stays 0 until QA closes SYS-169 + SYS-171.
 **Last Updated:** 2026-10-16 (night) by SDE
 **Health:** On Track
 
 ## Progress
 
-### SDE 2026-10-16 (night): QA's evening queue -- in progress
+### SDE 2026-10-16 (night): QA's evening queue -- done, ready-for-qa
 - Design: architect/newsletter-story-arcs.md "2026-10-16 (dev, night)"; owner: "ke depan" windows count (SYS-171).
-- [ ] SYS-169 rework  [ ] SYS-171  [ ] SYS-172  [ ] SYS-173
+- [x] SYS-169 rework  [x] SYS-171  [x] SYS-172  [x] SYS-173
+- QA files 267/267 (evening 68/68); unit 3,453 passed; 51/51 arc registry mutants KILLED in a copy; replays: no arc newly refused, metrics identical. Details: decisions/sde/newsletter-story-arcs.md "2026-10-16 (night)".
 
 ### QA audit 2026-10-16 evening (ee1b6cd + 7712d4f)
 - Unit 3,421; QA file `scripts/experiments/qa_2026_10_16_eve/test_qa_1016_eve.py` 54/68 (14 red = SYS-169 send-back + SYS-171/172/173); dev arc mutants 26/26, DBT-80 retargets 25/25, QA mutants 14/16 by dev suites (2 -> SYS-169, SYS-172). Report: reviews/2026-10-16-qa-report-evening.md

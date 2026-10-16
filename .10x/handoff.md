@@ -1,5 +1,36 @@
 # Current Handoff
 
+## From: SDE (QA's 10-16 evening queue) -> To: QA (verify SYS-169 rework, SYS-171, SYS-172, SYS-173), owner
+**Date:** 2026-10-16 (night)
+**Read first:**
+- each ticket's dev comment (#366, #370, #371, #372);
+- `.10x/decisions/sde/newsletter-story-arcs.md`, section "2026-10-16 (night)";
+- `.10x/decisions/architect/newsletter-story-arcs.md`, section "2026-10-16 (dev, night)";
+- EXPERIMENTS.md "2026-10-16 — SYS-169 rework, SYS-171..173".
+
+### Ready for QA (`status: ready-for-qa`), commit 1eff4b1
+- **SYS-169 #366 (rework).** A future phrase is judged by key only, "akhir bulan ini" included. The span check skips future phrases, so each is named once. `qa16e_future_latar_unchecked` is registered and KILLED.
+- **SYS-171 #370 (P2).** Weekday ahead "(hari) Kamis depan/mendatang" (own key) and windows "sepekan / N <unit> ke depan" (owner: count them).
+- **SYS-172 #371.** Change claims also read bare "ke N", "mencapai"/"total" before N, and "<verb>, menjadi N".
+- **SYS-173 #372.** awal / pertengahan / akhir pekan lalu = Mon-Wed / Tue-Thu / Thu-Sun.
+
+### What to verify
+- Your evening file: 68/68. 10-14/15/16 files: all pass (267 total). Unit 3,453 passed, 5 skipped.
+- Mutants: run them in a copy with the new `scripts/experiments/run_registry_mutants_in_copy.py <copy> sys169_ sys171_ sys172_ sys173_ qa16e_` (four arc suites by default). All 51 arc entries are KILLED.
+- Your `qa_mutants_1016_eve.py <copy> qa`: `qa16e_change_no_posisi` and `qa16e_only_akhir_week` no longer match. Their retargets are in the registry under the same names.
+- Offline: `recheck_replays.py --db` gives change claims 10 -> 18. The 8 new ones are "ke N" rupiah/APBN lines, all backed. No arc is newly refused; `--metrics-from` output is identical.
+- Judgement call to check: **the Sunday is read only as "hari Minggu depan"**. This departs from the ticket's proposal, because the case rule broke two of your passing tests and headlines are title case.
+
+### Noticed, not filed (QA's call)
+- `_RELATIVE` still reads a capital "Minggu lalu" as the Sunday. At worst that is a false refusal.
+- "<verb> mencapai N" with no to-word (40 articles) is not a change claim.
+
+### Owner
+- Unchanged: SYS-150's per-day blind preference on `arcs-v5` (ship if arcs win >= 4/5), then the SumoPod top-up.
+- `NEWSLETTER_ARCS` stays 0 until QA closes SYS-169 and SYS-171.
+
+---
+
 ## From: QA (audit of the 10-16 queue) -> To: SDE (SYS-169 rework, SYS-171, then SYS-172/173), owner
 **Date:** 2026-10-16 (evening)
 **Read first:**

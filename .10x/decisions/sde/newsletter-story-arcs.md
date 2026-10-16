@@ -188,3 +188,29 @@ Design: `.10x/decisions/architect/newsletter-story-arcs.md`, section "2026-10-15
 
 ### Tech debt noticed
 - `notify_telegram.py`: three copies of the request/verdict block. A refactor would make the OPS-32/33 mutants one-liners again.
+
+## 2026-10-16 (night): QA's evening queue -- SYS-169 rework, SYS-171, SYS-172, SYS-173 (commit 1eff4b1)
+| Ticket | What | State |
+|---|---|---|
+| SYS-169 #366 (rework) | `unstated_future_times` checks every future phrase by key (exemption removed); `story_arc.unbacked_times` skips a relative phrase that is a future phrase, so "akhir bulan ini" is named once and never backed by its span | ready-for-qa |
+| SYS-171 #370 (P2) | `_FUTURE` + `_DAY_AHEAD` ("(hari) Kamis depan/mendatang", key `hari kamis depan`) + `_WINDOW_AHEAD` ("sepekan / N <unit> ke depan", owner) | ready-for-qa |
+| SYS-172 #371 | `_CHANGE_TO` = (men)jadi/hingga/sampai/ke; `_CHANGE_BEFORE_N` (up to 2: ... mencapai, total, angka, level, posisi); comma after the verb | ready-for-qa |
+| SYS-173 #372 | `_part_of_last_week` / `_WEEK_PART`: awal Mon-Wed, pertengahan Tue-Thu, akhir Thu-Sun | ready-for-qa |
+
+### Deviations / judgement calls (each on its ticket)
+- SYS-171: the Sunday only as "hari Minggu depan". The ticket proposed the `_RELATIVE` capital-M rule; it broke two of QA's passing tests, and title-case headlines make a capital M meaningless.
+- SYS-171 (owner): "ke depan" windows count as future times.
+- SYS-172: "angka/level/posisi" moved from `_CHANGE_TO` into the before-N list, next to mencapai/total: one list, not two places for the same kind of word.
+
+### Evidence
+- QA files 10-14/15/16/16-eve: 267/267 (evening 68/68). Unit: 3,453 passed, 5 skipped. Hygiene: registry 0 stale.
+- Mutants (tar copy of the working tree, new `scripts/experiments/run_registry_mutants_in_copy.py`): 51/51 arc registry entries KILLED by the four arc suites, 21 of them new or retargeted. QA's `qa_mutants_1016_eve.py qa`: 10 KILLED; its 2 NOT FOUND are registered on the new code and KILLED.
+- Offline `recheck_replays.py --db`, HEAD vs tree diffed: future times 5 -> 5; change claims 10 -> 18, all 8 new are "ke N" market lines, all backed; no arc newly refused. `--metrics-from` v4/v5/v6: identical to HEAD.
+- Integration tests not run: no SQL, schema or DB path changed.
+
+### Noticed, not filed (QA's call)
+- `_RELATIVE` still reads a capital "Minggu lalu" as the Sunday (title-case problem as above); at worst a false refusal.
+- "<verb> mencapai N" without a to-word (40 articles) is not a change claim.
+
+### Ops trap (again)
+- A Python heredoc in Bash wrote 9 backspace bytes into `source_check.py`, which showed up in the printed lines. Added to EXPERIMENTS "Traps & settled questions".
