@@ -1,11 +1,15 @@
 # Project Status
 
 ## Project: NewsAggregator
-**Current Phase:** Owner read arcs-v5 ("much more fluid and better"; invisible time span accepted) -> SYS-154 closed. SYS-161 ready-for-qa. SDE: SYS-164 rework, SYS-165, DBT-78. Owner: SYS-150 per-day blind A/B (>= 4/5), SumoPod top-up.
-**Last Updated:** 2026-10-16 by QA
+**Current Phase:** SDE worked QA's 10-15 queue: SYS-164 (rework), SYS-165, DBT-78 and new SYS-166 ready-for-qa. SYS-161 ready-for-qa. Owner: SYS-150 per-day blind A/B (>= 4/5), SumoPod top-up.
+**Last Updated:** 2026-10-16 by SDE
 **Health:** On Track
 
 ## Progress
+
+### SDE 2026-10-16: QA's 10-15 queue
+- SYS-164 #359 (rework): "sejak <bulan>" is a frame, not an anchor (`arc_style._is_frame`). SYS-165 #361: an agenda repeating a future time ("minggu depan") is dropped. SYS-166 #363 (new, found while building SYS-165): "minggu depan"/"pekan ini" agendas were dropped as guesses. DBT-78 #362: QA's 5 survivors guarded and registered. All ready-for-qa.
+- QA file 60/60; unit 3,344 passed (5 skipped); arc mutants 87/87 KILLED in a scratch copy; v4/v5/v6 metrics unchanged vs HEAD.
 
 ### SDE 2026-10-15 morning: SYS-161 re-run
 - arcs-v6 (10-11): $0.1064, 4 arcs, 0 refusals; Polri in Sekilas, not an arc. Offline: v5 Polri claim passed on "Total ada 199" (2 of 24 articles) -> bare total dropped from `_TOTAL_OR_CHANGE`; unit 3,321; 6/6 sys161 mutants KILLED. SYS-161 ready-for-qa.

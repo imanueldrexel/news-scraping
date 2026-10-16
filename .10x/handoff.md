@@ -1,5 +1,36 @@
 # Current Handoff
 
+## From: SDE (QA's 10-15 queue) -> To: QA (verify SYS-164, SYS-165, SYS-166, DBT-78; SYS-161 unchanged)
+**Date:** 2026-10-16
+**Read first:**
+- each ticket's dev comment (#359, #361, #362, #363);
+- `.10x/decisions/sde/newsletter-story-arcs.md`, section "2026-10-16";
+- EXPERIMENTS.md "2026-10-16 — SYS-164 rework, SYS-165/166, DBT-78".
+
+### Ready for QA (`status: ready-for-qa`)
+- **SYS-164 #359 (rework):** `arc_style._is_frame`. A relative phrase is a frame when "sejak" stands before it *or opens it*; a calendar date after "sejak" is still an anchor.
+- **SYS-165 #361:** `story_arc._FUTURE` / `future_times`. A future time the agenda shares with hari_ini or the latar counts like a shared date ("minggu depan" = "pekan depan"); then the same 50% share.
+- **SYS-166 #363 (new, P3, found while building SYS-165):** `_agenda_kept` reads `_FUTURE`, so "minggu depan" / "pekan ini" / "akhir pekan ini" make a scheduled step. Before, they were dropped as guesses. Real text has "minggu depan" in 347 articles vs "pekan depan" in 703.
+- **DBT-78 #362:** one dev test per survivor; the 5 `qa15_*` registered under QA's names.
+
+### What to verify
+- QA's `test_qa_arc_rework.py`: 60/60 on this tree. Unit 3,344 passed, 5 skipped.
+- Mutants: run in a copy, never the live tree. The registry's arc prefixes are 87/87 KILLED by the four suites DBT-78 names.
+- `qa15_sejak_anywhere_before` no longer matches (`_SEJAK` -> `_SEJAK_BEFORE`). Its equivalent is KILLED; the retargeted pattern is on #359.
+- Judgement calls:
+  - a future phrase in the latar counts as told;
+  - "akhir pekan ini" and "pekan ini" are different keys;
+  - "pekan ini" now makes an agenda a step (SYS-166).
+- Metrics: v4/v5/v6 identical to HEAD (v5 time-led 11/51, >= 3 anchors 1/17, tied 17/17).
+
+### Noticed, not filed (QA's call)
+- 27 older registry entries in `qa_mutation_runner.py` no longer match their files exactly once (sys54, ops32/33/35, sys68, sys88/90/98/103/104/105/138, dbt02/74, ...). The runner skips them as PATTERN NOT FOUND, so those fixes run unguarded by mutation.
+
+### Owner (unchanged)
+- SYS-150's per-day blind preference on `arcs-v5` (ship if arcs win >= 4/5), then the SumoPod top-up. `NEWSLETTER_ARCS` stays 0 until QA closes SYS-164/165 and verifies SYS-161.
+
+---
+
 ## 2026-10-16 (QA): owner's arcs-v5 read
 - "Much more fluid and better than the previous one." The invisible time span is accepted: keep the layout and add no span marker (product-manager/newsletter-story-arcs.md). SYS-154 #349 closed.
 - Owner still to do: SYS-150's per-day blind preference on `arcs-v5/<date>-X|Y` (ship if arcs win >= 4/5), then the top-up. The flag stays 0 until SYS-164/165 are fixed and SYS-161 is verified.

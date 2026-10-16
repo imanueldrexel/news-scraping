@@ -140,3 +140,26 @@ Design: `.10x/decisions/architect/newsletter-story-arcs.md`, section "2026-10-15
 - Tests: `TestUnbackedChanges::test_a_bare_total_is_the_size_of_one_event`; "Total ada 12 kasus" in the passing list became "Secara kumulatif ada 12 kasus". Mutant `sys161_bare_total_is_a_total` added and the `sys161_source_change_verb_ignored` pattern retargeted. All 6 `sys161_*` are KILLED.
 - Accepted cost: a source that says only "total N" for a real running sum now costs one retry. The model then tells N as today's event. The reader loses nothing.
 - v6 ran on the old prompt. It was not re-run, to save the balance.
+
+## 2026-10-16: QA's 10-15 queue (SYS-164 rework, SYS-165, DBT-78) + SYS-166 (found while building SYS-165)
+| Ticket | What | State |
+|---|---|---|
+| SYS-164 #359 (sent back) | `arc_style._is_frame`: a relative phrase is a frame when "sejak" stands before it **or opens it** ("sejak September" is a `_RELATIVE` entry of its own). A calendar date after "sejak" is still an anchor (the ticket's definition). | ready-for-qa |
+| SYS-165 #361 | `story_arc._FUTURE` + `future_times` (keyed, "minggu" -> "pekan"); `agenda_repeats` takes a shared future time like a shared date, then the same `AGENDA_REPEAT_SHARE` | ready-for-qa |
+| SYS-166 #363 (new, P3) | `_SCHEDULED` listed "pekan depan" but not "minggu depan", "pekan ini", "akhir pekan ini": such an agenda was dropped as a guess. `_agenda_kept` now also reads `_FUTURE`; the times are written once. | ready-for-qa |
+| DBT-78 #362 | QA's 5 survivors guarded in the dev suites, registered as `qa15_*` | ready-for-qa |
+
+### Judgement calls
+- A future phrase in the **latar** counts as told, as the ticket asks. The latar is written today, and `unbacked_times` already reads its phrases from the edition date. A latar that quotes an old "minggu depan" verbatim would make an agenda with the same words look like a repeat. That needs both the phrase and >= 50% of the words, and the drop costs one sentence, not the arc.
+- "akhir pekan ini" and "pekan ini" are different keys: an agenda that narrows the time is kept.
+- `_SCHEDULED` broadened only by future times. "pekan ini" now makes an agenda a step: a stated near time is a schedule, the same rule that already held for "pekan depan" and "besok".
+- `_SEJAK` was renamed `_SEJAK_BEFORE` (next to `_SEJAK_OPENS`). QA's `qa15_sejak_anywhere_before` no longer matches; its equivalent on the new name (`_SEJAK_BEFORE.search(text[:pos])` -> `re.search(r"\bsejak\b", text[:pos], re.I)`) is KILLED by `test_the_karhutla_latar_of_10_11`.
+
+### Evidence
+- QA's `test_qa_arc_rework.py` 60/60 (was 56/60); QA 10-14's file all pass. Arc suites 328 passed.  Unit 3,344 passed, 5 skipped.
+- Mutants (scratch copy of the working tree, the four suites DBT-78 names, without `test_newsletter_arcs.py`): every registry mutant with an arc prefix (`sys156..166`, `sys157r/158r`, `qa15_*`, `qa_metric_ge2_dates`) is **87/87 KILLED**. New: `sys164r_sejak_month_counted`, `sys165_future_not_shared`, `sys165_any_future_time_shared`, `sys165_synonyms_not_keyed`, `sys166_future_not_scheduled`, and the 5 `qa15_*`. Retargeted: `sys164_sejak_counted`, `sys163_no_shared_date_needed`. QA's `qa_mutants_1015.py` (`QA_ONLY_OWN=1`, same suites): 15/15 matching KILLED.
+- `--metrics-from`: v4, v5 and v6 identical to HEAD (v5: time-led 11/51, >= 3 anchors 1/17, tied 17/17). The two "sejak Agustus" sentences in the replays now hold 0 anchors.
+- Real text (read-only, 135,591 articles): "minggu depan" 347, "pekan depan" 703, "pekan ini" 2,006, "minggu ini" 464, "akhir pekan ini" 198.
+
+### Noticed, not in scope
+- 27 older registry entries (sys54, ops32/33/35, sys68, sys88/90/98/103/104/105/138, dbt02/74 ...) no longer match their files exactly once. The runner prints PATTERN NOT FOUND and skips them. Not touched here.
