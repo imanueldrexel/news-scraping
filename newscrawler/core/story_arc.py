@@ -28,12 +28,14 @@ and code checks what it wrote. The answer is JSON:
   chosen `alur` items (by value, `source_check`); an ordinal or series claim
   ("gelombang kedua", "tiga hari beruntun") counts no more than the chosen
   items allow, unless a source states it, and a record ("terendah sejak ...")
-  only when a source states it (SYS-158); "bertambah/naik/turun menjadi N" only when a source
-  states N as a total or a change (SYS-161);
+  only when a source states it (SYS-158); "bertambah/naik/turun menjadi N" (or "hingga N", "ke
+  angka N", SYS-170) only when a source states N as a total or a change (SYS-161);
 - date: every date written (24/9, 24 September) is today's, a chosen item's own
   date, or one an article states -- never an unchosen item's; every relative
   time ("awal Oktober", "pekan lalu") spans one of those or is stated in today's articles
-  (SYS-157/162: a timeline item's "kemarin" was written from another day);
+  (SYS-157/162: a timeline item's "kemarin" was written from another day); every future time
+  ("besok", "minggu depan", "akhir tahun ini") is one today's articles state, compared by key
+  ("minggu depan" = "pekan depan"), never a stated date retold as a relative time (SYS-169);
   with no `alur`, `latar` holds no date but today's;
 - subject: a `terkait` article names the story's subject (SYS-80);
 - alur: a chosen item shares at least ALUR_MIN_EVENT_WORDS *event* words --
@@ -58,9 +60,9 @@ from newscrawler.core import arc_style
 from newscrawler.core import newsletter_copy as copy
 from newscrawler.core import story_words
 from newscrawler.core.llm_json import Rejected, ask_json, json_object
-from newscrawler.core.source_check import (dates_in, off_subject, ordinal_claims, relative_name, relative_times,
-                                           resolve, stated_claims, unbacked_changes, unsupported_number,
-                                           without_dates)
+from newscrawler.core.source_check import (dates_in, future_phrases, future_times, off_subject, ordinal_claims,
+                                           relative_name, relative_times, resolve, stated_claims, unbacked_changes,
+                                           unstated_future_times, unsupported_number, without_dates)
 from newscrawler.core.story_summary import article_text, guard_text, words
 from newscrawler.core.summarizer import SummarizerError
 from newscrawler.core.thread_finder import TimelineItem
@@ -83,10 +85,6 @@ MAX_LATAR_ANCHORS = 3
 AGENDA_REPEAT_SHARE = 0.5   # SYS-163: El-Sisi 10-10 repeated 7 of its 9 content words from the latar
 STYLE_ASK = ("tulis latar sebagai cerita: satu kalimat bingkai dan paling banyak dua titik balik, dikaitkan "
              "dengan peristiwa hari ini, dengan waktu relatif (\"awal Oktober\", \"pekan lalu\")")
-# The future times an agenda may give instead of a date. Each makes the agenda a scheduled step (SYS-166), and
-# one that hari_ini or the latar also gives is a shared time, like a shared date (SYS-165).
-_FUTURE = re.compile(r"\b(?:besok|lusa|(?:akhir\s+)?(?:pekan|minggu)\s+(?:depan|ini)|(?:bulan|tahun)\s+depan)\b",
-                     re.IGNORECASE)
 # What makes an agenda a scheduled step rather than a guess (with a date or a number it is one already).
 _SCHEDULED = re.compile(r"\b(?:dijadwalkan|jadwal|rapat|sidang|tenggat|batas waktu|berlaku|mulai|rdg|pelantikan|"
                         r"peluncuran|pengumuman|rilis|akan)\b", re.IGNORECASE)
@@ -154,7 +152,8 @@ PROMPT = (
     "       (\"dibahas\", \"disebut\", \"dikabarkan\", \"ditanggapi\") kecuali itulah titik baliknya.\n"
     "    3. Kaitkan setiap fakta lampau dengan hari ini (\"kini\", \"kali ini\", \"setelah\", \"menyusul\",\n"
     "       \"berbeda dengan\"), bukan sekadar urutan waktu (\"lalu\", \"kemudian\"). Tulis angka hari ini\n"
-    "       sebagai lanjutan angka lampau (\"bertambah/naik/turun menjadi N\") HANYA jika artikel menyebut N\n"
+    "       sebagai lanjutan angka lampau (\"bertambah/naik/turun menjadi N\", \"... hingga N\", \"... ke\n"
+    "       angka N\") HANYA jika artikel menyebut N\n"
     "       sebagai total berjalan atau perubahan (\"hingga September\", \"sepanjang tahun\", \"naik dari\");\n"
     "       \"total ada N\" saja hanya jumlah peristiwa itu sendiri.\n"
     "       Jika tidak, keduanya peristiwa terpisah: ceritakan angka hari ini sebagai peristiwa hari ini.\n"
@@ -170,7 +169,8 @@ PROMPT = (
     "    narasumbernya; \"\" jika tidak ada.\n"
     "- agenda: maks 20 kata. HANYA langkah berikutnya yang terjadwal atau sudah diumumkan dan tertulis\n"
     "  di teks (tanggal rapat, tenggat, berlakunya aturan), dengan sumbernya. \"\" jika tidak ada.\n"
-    "  Jangan menebak.\n"
+    "  Jangan menebak. Tulis waktunya seperti tertulis di artikel HARI INI (\"Kamis (15/10)\", \"pekan\n"
+    "  depan\"); jangan mengubah tanggal menjadi \"besok\" atau \"pekan ini\".\n"
     "- sekilas: 1 kalimat, maks 15 kata.\n"
     "- alur: nomor cuplikan LINI MASA yang kamu pakai. Semua fakta di \"latar\" harus berasal dari\n"
     "  cuplikan ini.\n"
@@ -325,13 +325,9 @@ def overcounted(text: str, items: int, stated: set) -> List[str]:
 
 
 def _agenda_kept(agenda: str) -> bool:
+    """A future time (`source_check.future_phrases`) makes the agenda a scheduled step, like a date (SYS-166)."""
     return bool(agenda) and bool(dates_in(agenda) or re.search(r"\d", agenda) or _SCHEDULED.search(agenda)
-                                 or _FUTURE.search(agenda))
-
-
-def future_times(text: str) -> set:
-    """The future times `text` gives (`_FUTURE`), keyed so synonyms meet: "Minggu depan" is "pekan depan"."""
-    return {re.sub(r"\bminggu\b", "pekan", " ".join(m.group(0).lower().split())) for m in _FUTURE.finditer(text)}
+                                 or future_phrases(agenda))
 
 
 def agenda_repeats(agenda: str, latar: str, hari_ini: str) -> bool:
@@ -424,6 +420,8 @@ def parse(answer: Optional[str], shown_texts: Sequence[str], timeline: Sequence[
         dates += [f'waktu "{phrase}" di {key} tidak cocok dengan tanggal hari ini, tanggal cuplikan alur yang '
                   "dipilih, atau tanggal yang tertulis di artikel" for phrase in unbacked_times(value, digest_date,
                                                                                                 days, stated_today)]
+        dates += [f'waktu "{phrase}" di {key} tidak tertulis di artikel hari ini: tulis waktunya seperti yang '
+                  "tertulis di artikel, mis. tanggalnya" for phrase in unstated_future_times(value, stated_today)]
     if not chosen:
         own = (digest_date.day, digest_date.month)
         stray_dates = [d for d in dates_in(latar) if d != own]

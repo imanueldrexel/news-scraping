@@ -121,6 +121,15 @@ class TestTiedToToday:
         """SYS-164 (#359): SYS-159's recap written the way SYS-154 now asks is still a recap."""
         assert not st.tied_to_today(recap, JUDUL, HARI_INI)
 
+    @pytest.mark.parametrize("recap", ["Senin pekan lalu, Polri memutasi 88 perwira.",
+                                       "Akhir pekan lalu, Polri memutasi 88 perwira.",
+                                       "Sebelumnya, awal minggu lalu, Polri memutasi 88 perwira."])
+    def test_a_recap_opening_on_a_modified_week_is_not_tied(self, recap):
+        """SYS-167 (#364): the modifier is part of the phrase, so the recap opens on it (558 articles write
+        "<hari>/awal/akhir pekan lalu", 26% of "pekan lalu")."""
+        assert st.opens_on_time(recap) and st.time_led(recap)
+        assert not st.tied_to_today(recap, JUDUL, HARI_INI)
+
     def test_a_since_frame_ties(self):
         assert st.tied_to_today("Sejak awal Oktober, Polri sudah dua kali merombak jabatan Kapolda.", JUDUL, HARI_INI)
 
@@ -179,6 +188,13 @@ class TestTimeAnchors:
         latar = ("Sejak September karhutla meluas. Pekan lalu Seskab melapor, 5/10 rapat digelar, "
                  "dan kemarin asap sampai Malaysia.")
         assert st.time_anchors(latar) == ["Pekan lalu", "5/10", "kemarin"]
+
+    @pytest.mark.parametrize("frame", ["Sejak akhir pekan lalu, Polri merombak jabatan Kapolda.",
+                                       "Sejak Senin minggu lalu Polri merombak jabatan Kapolda."])
+    def test_a_frame_with_a_modified_week_is_not_an_anchor(self, frame):
+        """SYS-167 (#364): "sejak akhir pekan lalu" read "pekan lalu" after "sejak akhir ", so it was counted."""
+        assert st.time_anchors(frame) == []
+        assert st.tied_to_today(frame, JUDUL, HARI_INI)
 
     def test_a_calendar_date_after_sejak_is_still_an_anchor(self):
         assert st.time_anchors("Sejak 15/9 gugatan berjalan.") == ["15/9"]

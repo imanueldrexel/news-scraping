@@ -167,6 +167,7 @@ One line each; read this before starting on a scraper or pipeline problem.
 - **Dropping one chunk level of a queued sitemap leaves `l1_not_in_l2` (SYS-137, 2026-10-12):** a queued sitemap has no article and no mentions, so drop BOTH levels (`drop_oversized_queued_chunks.py`); keeping its L1 kept June's extraction and made the store check read 2,171 divergent sitemaps.
 - **The RAG floor is a tail filter, not a lead filter (SYS-138 send-back, 2026-10-12):** it admits a semantic-only hit at 0.55 with no keyword. A rule that puts a subset first whenever its hits "pass the floor" (the week window) led 2/10 held-out week questions with a keyword-coverage-0 off-topic card. Measure such a rule with `scripts/experiments/qa_2026_10_12b/probe_week_window_lead.py` on questions it was not tuned on. -> 2026-10-12 QA second-pass entry
 - **"May this article lead?" = does its paragraph hold the question's subject word (ADR-013, 2026-10-12):** a keyword-coverage threshold (0.6) drops this week's on-topic KPK/IHSG cards (0.55-0.61), and a final-score margin cannot separate the Primbon piece (0.402) from Danantara cards (~0.41). `KeywordQuery.subject` (names, else anchors) separates every case. Don't re-try coverage or margin gates. -> 2026-10-12 "SYS-138 rework" entry
+- **A relative time a timeline item wrote is wrong in today's arc prose, forward as well as back (SYS-169, 2026-10-16):** v4's Padang latar printed "pekan ini" from a 1/10 item. Future times are checked by key against today's `terkait` articles only; no span backing (see the 2026-10-16 SYS-167..170 entry).
 - **A story arc's back-story stops being a date-by-date chronicle only when the timeline hands the model the relative phrase to copy (SYS-154, 2026-10-14):** the rewritten rules alone still produced "Kamis (8/10)" for every past fact (4/8 accepted). Showing "(akhir September)" beside each LINI MASA item (`source_check.relative_name`, which the SYS-157 check reads back) got 18/20 accepted and 7.8% date-led sentences (was 72%). Measure with `replay_story_arcs.py` (`style` metrics, `--metrics-from` for an old run). A time check that counts from the edition's date must not read sequence words ("sepekan sebelumnya"). -> 2026-10-14 "re-runs of the arc replay" entry- **Once a prompt asks for relative time, a check keyed on calendar dates goes blind (QA, 2026-10-14):** "Awal Oktober, Polri memutasi 88 perwira." passes SYS-159's tie and SYS-156's caps. Count time anchors (calendar dates + non-"sejak" `relative_times` phrases) when judging whether an arc is a chronicle: v5 is 8/51 time-led, not only 4/51 date-led. -> 2026-10-14 QA entry, SYS-164
 
 ## Log
@@ -2895,3 +2896,26 @@ SINDONEWS   old 12 new 12 | lost [] | gained []   links identical: True
   - Closed: SYS-164 (#359), SYS-165 (#361), SYS-166 (#363), DBT-78 (#362), SYS-161 (#356).
   - Filed: SYS-167..170 (#364-#367), DBT-79 (#368), DBT-80 (#369).
   - `.10x/reviews/2026-10-16-qa-report.md`.
+
+### 2026-10-16 — SYS-167..170, DBT-79: future times checked against today's articles, change claims in three forms, and what that does to v4/v5/v6
+- **Question / hypothesis:** QA's 10-16 tickets. (1) SYS-169: an arc's "besok" / "minggu depan" was never checked, while an unstated calendar date was refused. Does checking it by key against today's `terkait` articles catch real errors in the replays, or only cost retries? (2) SYS-170: does reading "hingga / sampai / ke angka N" as change claims refuse anything the replays rightly printed? (3) SYS-167/168: do the new phrases move the SYS-160 metrics?
+- **Method:**
+  - Offline, no LLM: `scripts/experiments/sys169_170/recheck_replays.py --db`. It reads every arc of `arcs-v4/v5/v6` through `key.json` and lists each future time and change claim, old rule vs new. With `--db` (read-only), it looks up the day's articles that state each future time, and checks each new-only change claim against the day's articles that share >= 2 judul words.
+  - `replay_story_arcs.py --metrics-from` on copies of v4/v5/v6.
+  - Mutants in a plain scratch copy of the working tree, never the live tree, on the four arc suites.
+- **Result:**
+  - 39 arcs; 5 future times; change claims 8 (old) -> 10 (new).
+  - **v4 2026-10-11 Banjir Padang: "Banjir ini melanjutkan rangkaian bencana hidrometeorologi yang mendominasi pekan ini."** Now refused as `date`; no article of the day states "pekan ini" for the story.
+    - The phrase came from the 2026-10-01 OKEZONE timeline item "Selain Karhutla, Banjir Dominasi Bencana Pekan Ini", so it meant the week of 28/9. On 11/10 it is false: SYS-162's error, through a future-time word.
+  - The 4 BPGMN "minggu depan" (v4/v5 10-12) are stated by 6 of the day's articles ("Dilantik Pekan Depan"): backed by key.
+  - New change claims (both v5): "turun hingga 600" (Karhutla Palembang 10-11) and "turun 157,61 poin ke level 5.936,15" (IHSG 10-12). Both are **backed**: a source sentence holds the figure with a change verb. No accepted arc is newly refused by SYS-170.
+  - QA's "naik hingga Rp500 juta" (v3/v4 10-12) is a Sekilas line from the summary path, not an arc: `unbacked_changes` does not run there.
+  - Metrics: v4/v5/v6 identical (v5: time-led 11/51, >= 3 anchors 1/17, tied 17/17). No replay latar has a modified "pekan lalu".
+  - Mutants: 28 new or retargeted (`sys167_*` 3, `sys168_*` 8, `sys169_*` 4, `sys170_*` 5, DBT-79's 4 `qa16_*`, `sys165_synonyms_not_keyed`, `sys166_future_not_scheduled`), all KILLED by the four arc suites. The other 148 arc registry mutants are all KILLED by their own suites (`thread_finder`, `llm_json`, `scheduled_newsletter` for the 14 the arc suites miss).
+- **Conclusion / do not repeat:**
+  - A relative time written in a timeline item is wrong in today's prose whether it points back ("kemarin", SYS-162) or forward ("pekan ini", "minggu depan"). Check both against today's articles only.
+  - Span backing (a stated date inside "pekan ini" backs it) was deliberately not taken: with today Monday, every date this week would back "pekan ini".
+  - "akhir bulan ini" is both a future time and a `_RELATIVE` phrase. The future check leaves it to the span check, so it is judged and named once.
+  - `_RELATIVE`'s "akhir bulan" used to match inside "akhir bulan depan" (read as this month). It now stops at "depan/mendatang".
+  - The trap that cost time here: Bash heredocs in this harness turn `\b` into a literal backspace character. Write regex code with the Edit tool and grep for `\x08` after any shell-written Python.
+- **Links:** SYS-167 (#364), SYS-168 (#365), SYS-169 (#366), SYS-170 (#367), DBT-79 (#368) · `newscrawler/core/source_check.py` · `newscrawler/core/story_arc.py` · `scripts/experiments/sys169_170/recheck_replays.py`

@@ -123,9 +123,20 @@ class TestRelativeTimes:
         ("kemarin", date(2026, 10, 11), date(2026, 10, 11)),
         ("tiga hari lalu", date(2026, 10, 8), date(2026, 10, 10)),
         ("2 hari lalu", date(2026, 10, 9), date(2026, 10, 11)),
+        ("Senin pekan lalu", date(2026, 10, 5), date(2026, 10, 5)),        # SYS-167: that weekday, last week
+        ("Jumat minggu lalu", date(2026, 10, 9), date(2026, 10, 9)),
+        ("Minggu pekan lalu", date(2026, 10, 11), date(2026, 10, 11)),
+        ("akhir pekan lalu", date(2026, 10, 5), date(2026, 10, 11)),       # SYS-167: the whole week
+        ("awal minggu lalu", date(2026, 10, 5), date(2026, 10, 11)),
+        ("pertengahan pekan lalu", date(2026, 10, 5), date(2026, 10, 11)),
     ])
     def test_each_phrase_family(self, text, first, last):
         assert sc.relative_times(f"Hal itu terjadi {text}.", TODAY) == [(text, first, last)]
+
+    @pytest.mark.parametrize("text", ["akhir bulan depan", "awal bulan mendatang"])
+    def test_a_future_month_is_not_this_month(self, text):
+        """SYS-168: "akhir bulan depan" was read as "akhir bulan" (21-31 of this month)."""
+        assert sc.relative_times(f"Aturan itu terbit {text}.", TODAY) == []
 
     def test_the_longest_phrase_wins(self):
         assert [p for p, *_ in sc.relative_times("dua pekan lalu dan sejak awal Oktober", TODAY)] == [
@@ -174,6 +185,35 @@ class TestRelativePhrases:
                                       "sepekan sebelumnya", "dua hari sebelumnya", "dua pekan sebelumnya"])
     def test_not_a_relative_phrase(self, text):
         assert sc.relative_times(text, TODAY) == []
+
+
+class TestFutureTimes:
+    """SYS-165/166/168/169: the future times an arc may write, keyed so synonyms meet."""
+
+    @pytest.mark.parametrize("phrase,key", [
+        ("besok", "besok"), ("Esok", "besok"), ("lusa", "lusa"), ("Minggu depan", "pekan depan"),
+        ("pekan  mendatang", "pekan depan"), ("minggu\nmendatang", "pekan depan"),
+        ("akhir minggu ini", "akhir pekan ini"),
+        ("pekan ini", "pekan ini"), ("bulan mendatang", "bulan depan"), ("tahun depan", "tahun depan"),
+        ("akhir tahun ini", "akhir tahun ini"), ("akhir bulan ini", "akhir bulan ini"),
+        ("akhir pekan mendatang", "akhir pekan depan"), ("akhir bulan depan", "akhir bulan depan"),
+    ])
+    def test_each_phrase_and_its_key(self, phrase, key):
+        assert sc.future_phrases(f"Rapat digelar {phrase}.") == [(len("Rapat digelar "), phrase)]
+        assert sc.future_times(f"Rapat digelar {phrase}.") == {key}
+
+    @pytest.mark.parametrize("text", ["Inflasi tahun ini 2,5%.", "Penjualan bulan ini naik.", "Esok harinya ia pulang.",
+                                      "Keesokan harinya ia pulang.", "Rapat digelar pekan lalu."])
+    def test_not_a_future_time(self, text):
+        assert sc.future_phrases(text) == []
+
+    def test_unstated_is_compared_by_key(self):
+        stated = "Pelantikan diharapkan minggu depan. Evaluasi besok."
+        assert sc.unstated_future_times("Dilantik pekan mendatang, dievaluasi esok, dibahas lusa.", stated) == ["lusa"]
+
+    def test_a_phrase_the_relative_check_reads_is_left_to_it(self):
+        assert sc.unstated_future_times("Evaluasi akhir bulan ini.", "") == []
+        assert sc.unstated_future_times("Evaluasi akhir tahun ini.", "") == ["akhir tahun ini"]
 
 
 class TestRelativeName:
@@ -296,6 +336,29 @@ class TestUnbackedChanges:
         source = POLRI + "\n\nTotal ada 199 pejabat Polri yang dirotasi, termasuk tujuh Wakapolda di seluruh Indonesia."
         claim = "Kini jumlah personel yang dimutasi bertambah menjadi 199 orang."
         assert sc.unbacked_changes(claim, source) == ["bertambah menjadi 199"]
+
+    @pytest.mark.parametrize("claim,written", [
+        ("Jumlah yang dimutasi kini bertambah hingga 199 orang.", "bertambah hingga 199"),
+        ("Jumlahnya kini naik sampai 199 orang.", "naik sampai 199"),
+        ("Jumlah yang dimutasi kini bertambah ke angka 199 orang.", "bertambah ke angka 199"),
+        ("Mutasi itu naik ke level 199 perwira.", "naik ke level 199"),
+        ("Kini jumlahnya bertambah hingga sebanyak 199 orang.", "bertambah hingga sebanyak 199"),
+    ])
+    def test_the_hingga_and_ke_angka_forms_are_change_claims(self, claim, written):
+        """SYS-170 (#367): the other two forms news writes ("hingga/sampai N" 914 articles, "ke angka/level N"
+        320), against the same one-telegram source."""
+        assert sc.unbacked_changes(claim, POLRI) == [written]
+
+    def test_a_hingga_range_the_source_states_as_a_change_passes(self):
+        """ "naik hingga 5%" (up to): a source sentence with N and a change verb backs it, as for "menjadi"."""
+        assert sc.unbacked_changes("Tarif naik hingga 5% tahun depan.", "Tarif listrik naik hingga 5 persen.") == []
+
+    @pytest.mark.parametrize("claim", ["Harga cabai naik sejak 1 Oktober hingga 12 Oktober.",
+                                       "Harga cabai naik sejak Kamis hingga 12/10.",
+                                       "Harga cabai naik hingga 12 Okt 2026."])
+    def test_a_date_after_hingga_is_no_figure(self, claim):
+        """Not "12" of the date, nor its "1" by backtracking: the source holds both as plain figures."""
+        assert sc.unbacked_changes(claim, "Pada 12 Oktober harga cabai 12 ribu per 1 kg.") == []
 
     def test_a_number_no_source_holds_is_left_to_the_number_check(self):
         assert sc.unbacked_changes("Jumlahnya bertambah menjadi 250 orang.", POLRI) == []
