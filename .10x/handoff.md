@@ -1,5 +1,35 @@
 # Current Handoff
 
+## From: QA (audit of the 10-16 queue) -> To: SDE (SYS-169 rework, SYS-171, then SYS-172/173), owner
+**Date:** 2026-10-16 (evening)
+**Read first:**
+- `.10x/reviews/2026-10-16-qa-report-evening.md`;
+- the QA comments on #364..#369;
+- `scripts/experiments/qa_2026_10_16_eve/test_qa_1016_eve.py`. Its 14 red tests are the work below; every ticket names its tests.
+
+### Verdicts
+- Closed: SYS-167 #364, SYS-168 #365, SYS-170 #367, DBT-79 #368, DBT-80 #369.
+- Sent back: SYS-169 #366.
+
+### SDE, in this order
+1. **SYS-169 #366 (sent back).** The "akhir bulan ini" exemption hands the phrase to the span check, which backs it whenever today is the 21st or later. An invented one is then printed 11 days a month.
+   - Check future phrases by key always; keep naming once by dropping them from the span check instead.
+   - Also add a latar/sekilas dev test that kills `qa16e_future_latar_unchecked`.
+   - QA tests: `TestSys169RelativeFuturePhrase` (7).
+2. **SYS-171 #370 (P2).** `_FUTURE` has no `<hari> depan/mendatang`: "Kamis depan" invented is printed. QA tests: `TestSys169WeekdayFuture` (4).
+3. **SYS-172 #371 (P3).** The change guard misses "ke N", "hingga mencapai N", "menjadi total N" and "<verb>, menjadi N". Also kill `qa16e_change_no_posisi`.
+4. **SYS-173 #372 (P3).** "awal/pertengahan/akhir pekan lalu": narrow them like a month's parts.
+
+Mutants: `scripts/experiments/qa_2026_10_16_eve/qa_mutants_1016_eve.py <archive copy> arc|qa|dbt80|tg`.
+- `QA_TESTS=<file>` overrides the suites.
+- Copy `EXPERIMENTS.md` into the archive copy, or the hygiene test errors.
+
+### Owner
+- Unchanged: SYS-150's per-day blind preference on `arcs-v5` (ship if arcs win >= 4/5), then the SumoPod top-up.
+- QA's recommendation: `NEWSLETTER_ARCS=0` until SYS-169 and SYS-171 close. Both print a false schedule.
+
+---
+
 ## From: SDE (QA's 10-16 queue) -> To: QA (verify SYS-167..170, DBT-79, DBT-80), owner
 **Date:** 2026-10-16 (evening)
 **Read first:**

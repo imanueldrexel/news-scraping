@@ -110,3 +110,23 @@ Report: `.10x/reviews/2026-10-16-qa-report.md`. QA tests and mutants: `scripts/e
 - Not ticketed, since 0 occurrences in the replays and the prompt says "sejak": "semenjak" / "mulai" as frame words, and "berlaku per <date>" as a running period.
 
 **Lesson:** a guard keyed on one wording ("menjadi", "pekan depan") is evaded by the next most common one. Before closing, count the wording's siblings in the corpus.
+
+## QA audit of SYS-167..170, DBT-79, DBT-80 (2026-10-16 evening)
+Report: `.10x/reviews/2026-10-16-qa-report-evening.md`. QA tests and mutants: `scripts/experiments/qa_2026_10_16_eve/`.
+
+**Verdicts:**
+- Closed: SYS-167 #364, SYS-168 #365, SYS-170 #367, DBT-79 #368, DBT-80 #369.
+- Sent back: SYS-169 #366.
+
+**Filed:**
+- SYS-171 #370 (P2): no weekday future time ("Kamis depan") in `_FUTURE`.
+- SYS-172 #371 (P3): change-claim forms "ke N", "hingga mencapai N", "menjadi total N", "<verb>, menjadi N".
+- SYS-173 #372 (P3): awal/akhir pekan lalu span the whole week.
+
+**Decisions:**
+- **Rejected:** the dev's call that a future phrase inside a `_RELATIVE` phrase is judged by its span only. "akhir bulan ini" holds today from the 21st, so span backing (which the ticket chose against) creeps back in for 11 days a month.
+- **Rejected:** "akhir/awal pekan lalu keep the whole week". Filed P3, not a send-back, since SYS-167's Done-when holds and no replay has one.
+- **Accepted:** the OPS-32/33 retarget onto `_post` only. QA's 4 mutants on the other two copies are KILLED, so the redaction is guarded everywhere.
+- Weekday future times are a missing table row (SYS-168's class), filed apart from the SYS-169 send-back.
+
+**Lesson:** when a dev exempts one case from a new check because "another check judges it", test the other check on the days where its rule differs. Here, a span check is not a statement check whenever today is inside the span.

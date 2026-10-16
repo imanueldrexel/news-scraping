@@ -2932,3 +2932,36 @@ SINDONEWS   old 12 new 12 | lost [] | gained []   links identical: True
   - A registry entry rots silently. `test_repo_hygiene.py::test_every_registered_mutant_matches_once` now fails in `tests/unit` instead.
   - When code is copied next to a mutant's target, give the mutant more context in the same commit: duplicated code is the second way entries rot.
 - **Links:** DBT-80 (#369) · `scripts/experiments/qa_mutation_runner.py` · `tests/unit/test_repo_hygiene.py`
+
+### 2026-10-16 — QA audit of SYS-167..170 / DBT-79 / DBT-80: held-out future times, change-claim siblings, and the "judged by its span" exemption
+- **Question / hypothesis:** do the fixes hold on inputs the dev's tests do not use: a future time in other fields, a weekday future time, a digest late in the month, the change-claim forms beyond "hingga" and "ke angka", and the weekday's exact day? Do DBT-80's 25 retargets each guard their fix?
+- **Method:**
+  - `scripts/experiments/qa_2026_10_16_eve/test_qa_1016_eve.py` (68 tests, end to end through `parse` where it matters).
+  - `qa_mutants_1016_eve.py` in archive copies:
+    - `arc`: the dev's 26, run by the four arc suites;
+    - `qa`: 12 of QA's own;
+    - `tg`: 4 redaction mutants on `_post_document` / `_post_html`;
+    - `dbt80`: 25, run by `tests/unit -x`.
+  - Read-only corpus counts (136,983 articles, `~*`), `recheck_replays.py --db`, and `replay_story_arcs.py --metrics-from` on copies of v4/v5/v6.
+- **Result:**
+  - Dev mutants 26/26 and DBT-80 25/25 KILLED. QA's mutants: 10/12 KILLED by the dev suites; the Telegram set 4/4 KILLED.
+  - Survivors:
+    - `qa16e_future_latar_unchecked` (the future check limited to agenda + hari_ini);
+    - `qa16e_change_no_posisi`.
+  - Replays and metrics reproduce the dev's figures exactly.
+  - "akhir bulan ini" invented in an agenda is REFUSED on 12/10 and KEPT on 21/10, 26/10 and 31/10. `unstated_future_times` skips it as a `_RELATIVE` phrase, and `unbacked_times` backs any phrase whose span holds today.
+  - Unchecked future times, with article counts: "Kamis depan" / "Senin mendatang" / "hari Jumat mendatang" (`<hari> depan|mendatang` ~200); "sepekan ke depan" 112; "dua pekan lagi".
+  - Change claims passing on a one-event total, with article counts: "ke N" 425, "hingga mencapai N" 145, "mencapai N" 40, "menjadi total N" 4, "<verb>, menjadi N" 3.
+  - Change claims read as a figure: years after "hingga" 102, clock times 4. Usually backed.
+  - "awal pekan lalu" is backed by a Sat/Sun item, and "akhir pekan lalu" by a Monday one.
+  - The hygiene test went red on QA's own refactor (renaming `_CHANGE_TO` -> 2 entries "0 matches").
+- **Conclusion / do not repeat:**
+  - Filed:
+    - SYS-169 sent back;
+    - SYS-171 #370 (weekday future, P2);
+    - SYS-172 #371 (change forms, P3);
+    - SYS-173 #372 (week parts, P3).
+  - A span check is not a statement check whenever today is inside the span. Never exempt a phrase from a statement check because a span check also reads it.
+  - When mutating in an archive copy, copy `EXPERIMENTS.md` in too: a registry entry targets it, and the hygiene test errors without it.
+  - `grep -v warn` on the runner's output hides every per-mutant line, because the pytest tail says "3 warnings". Filter on "Warning:" instead.
+- **Links:** SYS-167 (#364), SYS-168 (#365), SYS-169 (#366), SYS-170 (#367), DBT-79 (#368), DBT-80 (#369), SYS-171 (#370), SYS-172 (#371), SYS-173 (#372) · `.10x/reviews/2026-10-16-qa-report-evening.md`
