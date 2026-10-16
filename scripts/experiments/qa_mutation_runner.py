@@ -123,14 +123,10 @@ M = [
  ("sys54_service_never_discards", "newscrawler/domain/services/crawler_service_impl.py",
   "        self._discard_terminal_embeddings(website_name, \"settled terminal this run (SYS-54)\")\n",
   ""),
- ("sys54_failed_fetches_not_candidates", "newscrawler/domain/services/crawler_service_impl.py",
-  "        failure_note = self._record_fetch_failures(website_name, attempted, run_failures)\n"
-  "        self._source_failure_verdict = \"; \".join(n for n in (throttle_note, failure_note) if n) or None\n"
-  "        # After _record_fetch_failures, so a failure that reached the cap counts.\n"
-  "        self._discard_terminal_embeddings(website_name, \"settled terminal this run (SYS-54)\")\n",
-  "        self._discard_terminal_embeddings(website_name, \"settled terminal this run (SYS-54)\")\n"
-  "        failure_note = self._record_fetch_failures(website_name, attempted, run_failures)\n"
-  "        self._source_failure_verdict = \"; \".join(n for n in (throttle_note, failure_note) if n) or None\n"),
+ # DBT-80 (#369): retargeted 2026-10-16 -- SYS-139 added deadline_note to the verdict.
+ ('sys54_failed_fetches_not_candidates', 'newscrawler/domain/services/crawler_service_impl.py',
+  '        failure_note = self._record_fetch_failures(website_name, attempted, run_failures)\n        self._source_failure_verdict = "; ".join(\n            n for n in (throttle_note, deadline_note, failure_note) if n) or None\n        # After _record_fetch_failures, so a failure that reached the cap counts.\n        self._discard_terminal_embeddings(website_name, "settled terminal this run (SYS-54)")\n',
+  '        self._discard_terminal_embeddings(website_name, "settled terminal this run (SYS-54)")\n        failure_note = self._record_fetch_failures(website_name, attempted, run_failures)\n        self._source_failure_verdict = "; ".join(\n            n for n in (throttle_note, deadline_note, failure_note) if n) or None\n'),
  ("sys54_rows_before_flush", "newscrawler/infrastructure/repositories/dataflow/data_flow_repository_impl.py",
   "        if self.chunk_faiss_datasource.is_deferred:\n            self.__dict__.setdefault",
   "        if False:\n            self.__dict__.setdefault"),
@@ -179,18 +175,26 @@ M = [
   'failed_starts = failed_starts + (status == "init_failed")'),
  ("ops32_init_failure_reads_as_the_source", "newscrawler/tools/source_worker.py",
   'return "init_failed", "crawler could not start', 'return "failed", "crawler could not start'),
- ("ops32_no_retry", "scripts/notify_telegram.py",
-  "    for delay in RETRY_DELAYS:\n", "    for delay in ():\n"),
+ # DBT-80 (#369): retargeted 2026-10-16 -- OPS-43 added two more send paths with the same loop; the alert path is _deliver.
+ ('ops32_no_retry', 'scripts/notify_telegram.py',
+  '    ok, retryable, reason = _post(text)\n    for delay in RETRY_DELAYS:\n',
+  '    ok, retryable, reason = _post(text)\n    for delay in ():\n'),
  ("ops32_never_queued", "scripts/notify_telegram.py",
   "            if not ok and retryable and queue_on_failure:\n", "            if False:\n"),
  ("ops32_queue_not_delivered_first", "scripts/notify_telegram.py",
   "            pending = _flush_outbox()\n", "            pending = []\n"),
- ("ops32_refusal_queued_forever", "scripts/notify_telegram.py",
-  "    retryable = response.status_code == 429 or response.status_code >= 500\n", "    retryable = True\n"),
- ("ops33_exception_not_redacted", "scripts/notify_telegram.py",
-  'return False, True, f"{type(e).__name__}: {redact(e)}"', 'return False, True, f"{type(e).__name__}: {e}"'),
- ("ops33_body_not_redacted", "scripts/notify_telegram.py",
-  "{redact(response.text[:500])}", "{response.text[:500]}"),
+ # DBT-80 (#369): retargeted 2026-10-16 -- the alert path _post, told apart from _post_html by its json.
+ ('ops32_refusal_queued_forever', 'scripts/notify_telegram.py',
+  'json={"chat_id": TELEGRAM_CHAT_ID, "text": text},\n            timeout=10,\n        )\n    except Exception as e:  # noqa: BLE001\n        return False, True, f"{type(e).__name__}: {redact(e)}"\n    if response.status_code == 200:\n        return True, False, ""\n    retryable = response.status_code == 429 or response.status_code >= 500\n    return False, retryable, f"Telegram API returned {response.status_code}: {redact(response.text[:500])}"',
+  'json={"chat_id": TELEGRAM_CHAT_ID, "text": text},\n            timeout=10,\n        )\n    except Exception as e:  # noqa: BLE001\n        return False, True, f"{type(e).__name__}: {redact(e)}"\n    if response.status_code == 200:\n        return True, False, ""\n    retryable = True\n    return False, retryable, f"Telegram API returned {response.status_code}: {redact(response.text[:500])}"'),
+ # DBT-80 (#369): retargeted 2026-10-16 -- the alert path _post.
+ ('ops33_exception_not_redacted', 'scripts/notify_telegram.py',
+  'json={"chat_id": TELEGRAM_CHAT_ID, "text": text},\n            timeout=10,\n        )\n    except Exception as e:  # noqa: BLE001\n        return False, True, f"{type(e).__name__}: {redact(e)}"\n    if response.status_code == 200:\n        return True, False, ""\n    retryable = response.status_code == 429 or response.status_code >= 500\n    return False, retryable, f"Telegram API returned {response.status_code}: {redact(response.text[:500])}"',
+  'json={"chat_id": TELEGRAM_CHAT_ID, "text": text},\n            timeout=10,\n        )\n    except Exception as e:  # noqa: BLE001\n        return False, True, f"{type(e).__name__}: {e}"\n    if response.status_code == 200:\n        return True, False, ""\n    retryable = response.status_code == 429 or response.status_code >= 500\n    return False, retryable, f"Telegram API returned {response.status_code}: {redact(response.text[:500])}"'),
+ # DBT-80 (#369): retargeted 2026-10-16 -- the alert path _post.
+ ('ops33_body_not_redacted', 'scripts/notify_telegram.py',
+  'json={"chat_id": TELEGRAM_CHAT_ID, "text": text},\n            timeout=10,\n        )\n    except Exception as e:  # noqa: BLE001\n        return False, True, f"{type(e).__name__}: {redact(e)}"\n    if response.status_code == 200:\n        return True, False, ""\n    retryable = response.status_code == 429 or response.status_code >= 500\n    return False, retryable, f"Telegram API returned {response.status_code}: {redact(response.text[:500])}"',
+  'json={"chat_id": TELEGRAM_CHAT_ID, "text": text},\n            timeout=10,\n        )\n    except Exception as e:  # noqa: BLE001\n        return False, True, f"{type(e).__name__}: {redact(e)}"\n    if response.status_code == 200:\n        return True, False, ""\n    retryable = response.status_code == 429 or response.status_code >= 500\n    return False, retryable, f"Telegram API returned {response.status_code}: {response.text[:500]}"'),
  ("sys58_failed_flush_forgets_discards", "newscrawler/infrastructure/repositories/dataflow/data_flow_repository_impl.py",
   "                self.__dict__.setdefault(\"_unsaved_discards\", set()).update(\n",
   "                set().update(\n"),
@@ -284,8 +288,10 @@ M = [
   "            if not index_generation.is_current(self._store(db_name), db_name):", "            if False:"),
  ("dbt16_no_web_refresh", "newscrawler/web/app.py", "    _refresh_faiss_if_stale()\n    return processor.query", "    return processor.query"),
  # DBT-02 (#21)
- ('dbt02_not_wired', 'newscrawler/infrastructure/repositories/dataflow/data_flow_repository_impl.py',
-  'embed_documents=self.chunk_faiss_datasource.embedding_model.embed_documents,\n            usage=self.knowledge_datasource)', 'usage=self.knowledge_datasource)'),
+ # DBT-80 (#369): retargeted 2026-10-16 -- DBT-74 moved the 12:00 job's wiring to newsletter_app.
+ ('dbt02_not_wired', 'newscrawler/application/newsletter_app.py',
+  '    generator = NewsletterGenerator(newsletter_ds, embed_documents=embeddings.embed_documents,\n',
+  '    generator = NewsletterGenerator(newsletter_ds,\n'),
  # DBT-05 (#24)
  ("dbt05_primary_ignored", 'newscrawler/infrastructure/datasource/scrapers/crawler.py', 'if self.PRIMARY_EXTRACTOR == "trafilatura":\n                    # DBT-05 (#24)', 'if False:\n                    # DBT-05 (#24)'),
  ("dbt05_classify_ignores_primary", "scripts/check_crawlers.py", "if extractors and primary not in extractors:", 'if extractors and "site" not in extractors:'),
@@ -317,8 +323,14 @@ M = [
  ('sys70_bot_ua_not_used', 'newscrawler/core/page_loader/requests_page_loader.py', '            "User-Agent": bot_ua,', '            "User-Agent": BROWSER_USER_AGENT,'),
  # OPS-35 (#207)
  ('ops35_dead_index_is_empty', 'newscrawler/infrastructure/datasource/scrapers/crawler.py', '            raise SitemapIndexUnavailable(f"sitemap index did not load: {reason}")', '            return []'),
- ('ops35_all_branches_check_dropped', 'newscrawler/infrastructure/datasource/scrapers/crawler.py', '        if branches_to_crawl and len(failures) >= len(branches_to_crawl):', '        if False:'),
- ('ops35_note_not_logged', 'newscrawler/domain/services/crawler_service_impl.py', '            if branch_failures:', '            if False:'),
+ # DBT-80 (#369): retargeted 2026-10-16 -- SRC-58 counts skipped and gone branches as dead.
+ ('ops35_all_branches_check_dropped', 'newscrawler/infrastructure/datasource/scrapers/crawler.py',
+  '        if in_scope and len(dead) >= len(in_scope):',
+  '        if False:'),
+ # DBT-80 (#369): retargeted 2026-10-16 -- SRC-58 moved the note into _branch_note.
+ ('ops35_note_not_logged', 'newscrawler/domain/services/crawler_service_impl.py',
+  '        if failures:\n            parts.append(f"{len(failures)} of',
+  '        if False:\n            parts.append(f"{len(failures)} of'),
  ('ops35_branch_failure_not_counted', 'newscrawler/infrastructure/datasource/scrapers/crawler.py', '            failures.append((branch_name, reason or "page loader returned no document"))', '            pass'),
  # SYS-64 (#208)
  ('sys64_commit_not_retried', 'newscrawler/infrastructure/datasource/dataflow/write/faiss/index_generation.py', '    _retry_on_permission_error(os.rename, staged, journal_dir(db_name))', '    os.rename(staged, journal_dir(db_name))'),
@@ -341,32 +353,39 @@ M = [
  ('sys67_grouping_errors_never_stop', 'newscrawler/core/newsletter_generator.py',
   'Showing the ranked clusters.")\n                if consecutive_errors >= NEWSLETTER_MAX_CONSECUTIVE_SUMMARY_ERRORS:',
   'Showing the ranked clusters.")\n                if False:'),
+ # DBT-80 (#369): retargeted 2026-10-16 -- the summary loop now builds a story.
  ('sys68_success_keeps_error_streak', 'newscrawler/core/newsletter_generator.py',
-  '                    stats.summarized += 1\n                    consecutive_errors = 0\n', '                    stats.summarized += 1\n'),
+  '                    story = self.summarize_cluster(cluster, rejections, trace)\n                    consecutive_errors = 0\n',
+  '                    story = self.summarize_cluster(cluster, rejections, trace)\n'),
  ('sys68_floor_exclusive', 'newscrawler/core/newsletter_generator.py',
   'stats.share >= NEWSLETTER_MIN_SUMMARY_SHARE', 'stats.share > NEWSLETTER_MIN_SUMMARY_SHARE'),
  ('sys68_never_degraded', 'newscrawler/core/newsletter_generator.py',
   'if stats.total == 0 or stats.share >= NEWSLETTER_MIN_SUMMARY_SHARE:', 'if True:'),
  ('sys68_stats_not_in_row', 'newscrawler/core/newsletter_generator.py',
   '        composition[SUMMARIES_KEY] = stats.as_dict()   # SYS-68: not a topic; readers skip "_" keys\n', ''),
- ('sys68_footer_not_rendered', 'newscrawler/core/newsletter_generator.py',
-  '        if stats is not None:\n            footer += f" | {stats.footer()}"\n', ''),
+ # DBT-80 (#369): sys68_footer_not_rendered retired 2026-10-16 -- SYS-84 took telemetry out of the document (no SummaryStats.footer); the note reaches the operator through sys68_path_loses_note / sys68_service_drops_note.
+ # DBT-80 (#369): retargeted 2026-10-16 -- DigestPath carries the edition and trace too.
  ('sys68_path_loses_note', 'newscrawler/core/newsletter_generator.py',
-  'return DigestPath(file_path, note)', 'return DigestPath(file_path)'),
+  'return DigestPath(file_path, note, edition_file, trace={"plan": plan, "edition": edition})',
+  'return DigestPath(file_path, None, edition_file, trace={"plan": plan, "edition": edition})'),
  ('sys68_fallback_without_reason', 'newscrawler/core/newsletter_generator.py',
   '            line += f" — {reason}; sisanya hanya daftar judul"', '            line += ""'),
  ('sys68_no_provider_not_flagged', 'newscrawler/core/newsletter_generator.py',
   '            stats.stopped = "no_provider"\n', '            pass\n'),
- ('sys68_service_drops_note', 'newscrawler/domain/services/crawler_service_impl.py',
-  'note=getattr(path, "note", None))', 'note=None)'),
+ # DBT-80 (#369): retargeted 2026-10-16 -- DBT-74 moved the 12:00 job's crawl_log bracket to newsletter_app.
+ ('sys68_service_drops_note', 'newscrawler/application/newsletter_app.py',
+  'note=getattr(path, "note", None))',
+  'note=None)'),
  ('ops20_429_is_not_quota', 'newscrawler/core/summarizer.py',
   'return status == 429 or "RESOURCE_EXHAUSTED" in str(error)', 'return "RESOURCE_EXHAUSTED" in str(error)'),
  ('ops20_empty_answer_accepted', 'newscrawler/core/summarizer.py',
   '    if not text:\n        raise SummarizerError("empty answer")\n', ''),
  ('ops20_thinking_left_on', 'newscrawler/core/summarizer.py',
   'extra_body={"thinking": {"type": "disabled"}}', 'extra_body={}'),
+ # DBT-80 (#369): retargeted 2026-10-16 -- summarize goes through complete; the OpenAI-compatible path.
  ('ops20_call_not_counted', 'newscrawler/core/summarizer.py',
-  '        _count(self._usage, self.name)\n        return _answer(response.choices[0].message.content)', '        return _answer(response.choices[0].message.content)'),
+  '_tokens(getattr(usage, "completion_tokens", 0)))\n\n    def summarize(self, prompt: str) -> str:\n        reply = self.complete(prompt)\n        _count(self._usage, self.name)\n',
+  '_tokens(getattr(usage, "completion_tokens", 0)))\n\n    def summarize(self, prompt: str) -> str:\n        reply = self.complete(prompt)\n'),
   ('ops20_default_prefers_gemini', 'newscrawler/core/summarizer.py',
   '    if provider in ("", "openai") and OPENAI_API_KEY:', '    if provider in ("", "openai") and OPENAI_API_KEY and provider:'),
   ('ops20_extractor_uses_other_budget', 'newscrawler/core/knowledge_extractor.py',
@@ -433,8 +452,10 @@ M = [
   '            if len(ranked) <= NEWSLETTER_MAX_CLUSTERS_PER_STORY:\n                continue', '            if False:\n                continue'),
  ('sys67_errors_never_stop_grouping', 'newscrawler/core/newsletter_generator.py',
   '                if consecutive_errors >= NEWSLETTER_MAX_CONSECUTIVE_SUMMARY_ERRORS:\n                    stats.stopped = "errors"\n                    return\n', ''),
- ('sys67_prompt_focus_removed', 'newscrawler/core/newsletter_generator.py',
-  '    "Jika artikel membahas peristiwa yang berbeda, rangkum hanya peristiwa yang paling banyak dibahas "\n    "dan abaikan artikel yang tidak berkaitan.\\n"\n', ''),
+ # DBT-80 (#369): retargeted 2026-10-16 -- SYS-82 moved the summary prompt to story_summary.
+ ('sys67_prompt_focus_removed', 'newscrawler/core/story_summary.py',
+  '    "1. Tentukan SATU peristiwa yang dibahas paling banyak artikel. Nomor artikel yang membahas peristiwa\\n"\n    "   lain masukkan ke \\"tidak_terkait\\".\\n"\n',
+  ''),
  ('sys67_footer_hides_failed_groupings', 'newscrawler/core/newsletter_generator.py',
   '        if self.groups_failed:\n', '        if False:\n'),
  ('sys63_cta_cek_dropped', 'newscrawler/core/utils/utils.py',
@@ -806,8 +827,10 @@ M = [
  ('sys88_not_unescaped_at_ingest', 'newscrawler/infrastructure/datasource/scrapers/crawler.py',
   'data_field_dict["headline"] = unescape_headline(articles_data.get("headline")) or',
   'data_field_dict["headline"] = articles_data.get("headline") or'),
+ # DBT-80 (#369): retargeted 2026-10-16 -- the title is whitespace-joined too.
  ('sys88_page_title_escaped', 'newscrawler/infrastructure/datasource/scrapers/crawler.py',
-  '            return unescape_headline(og_title["content"].strip())', '            return og_title["content"].strip()'),
+  '            return " ".join(unescape_headline(og_title["content"]).split())',
+  '            return " ".join(og_title["content"].split())'),
  ('sys88_newsletter_reads_escaped',
   'newscrawler/infrastructure/datasource/dataflow/write/sqlalchemy/sql_alchemy_newsletter_data_source.py',
   '"headline":   unescape_headline(row.headline or ""),', '"headline":   row.headline or "",'),
@@ -925,10 +948,14 @@ M = [
  # ── SYS-90 (#255) / DBT-01 (#20): SitemapDTO dates under pydantic 2, SDE 2026-10-06 ──
  ('sys90_dto_validator_dropped', 'newscrawler/domain/dtos/dataflow/details/site_map_dto.py',
   '        return posted_at_datetime(value)', '        return value'),
+ # DBT-80 (#369): retargeted 2026-10-16 -- DBT-60 moved the conversion to posted_at_datetime.
  ('sys90_int_not_converted', 'newscrawler/domain/dtos/dataflow/details/site_map_dto.py',
-  '        return datetime.strptime(str(value), "%Y%m%d")', '        return value'),
+  '    return datetime.strptime(digits, "%Y%m%d")',
+  '    return value'),
+ # DBT-80 (#369): retargeted 2026-10-16 -- DBT-60: a yyyymmdd by pattern, else refused.
  ('sys90_any_int_is_a_date', 'newscrawler/domain/dtos/dataflow/details/site_map_dto.py',
-  'and 10000101 <= value <= 99991231:', ':'),
+  '    if not _YYYYMMDD.match(digits):\n        raise ValueError',
+  '    if False:\n        raise ValueError'),
  ('dbt01_timestamp_not_optional', 'newscrawler/domain/dtos/dataflow/details/site_map_dto.py',
   '    timestamp: Optional[datetime] = None', '    timestamp: datetime = None'),
  # ── QA 2026-10-06 night: rules the dev's mutants above do not touch (all 15 KILLED) ──
@@ -1016,8 +1043,10 @@ M = [
   '        if spent >= RAG_DAILY_COST_LIMIT_USD:', '        if False:'),
  ('sys98_cost_not_recorded', 'newscrawler/web/query_processor.py',
   'dollars = cost_usd(reply.input_tokens, reply.output_tokens, is_peak()) if self.summarizer.priced else 0.0', 'dollars = 0.0'),
+ # DBT-80 (#369): retargeted 2026-10-16 -- SYS-104 built the rewriter the same way; the answer's summarizer.
  ('sys98_provider_not_rag_setting', 'newscrawler/web/query_processor.py',
-  'build_summarizer(provider=RAG_LLM_PROVIDER, setting="RAG_LLM_PROVIDER",', 'build_summarizer(setting="RAG_LLM_PROVIDER",'),
+  'summarizer = build_summarizer(provider=RAG_LLM_PROVIDER, setting="RAG_LLM_PROVIDER",',
+  'summarizer = build_summarizer(setting="RAG_LLM_PROVIDER",'),
  ('sys98_complete_drops_tokens', 'newscrawler/core/summarizer.py',
   'return Reply(response.choices[0].message.content or "", _tokens(getattr(usage, "prompt_tokens", 0)),', 'return Reply(response.choices[0].message.content or "", 0,'),
  ('sys99_no_today_in_prompt', 'newscrawler/web/answer.py',
@@ -1052,8 +1081,10 @@ M = [
   'low in STOPWORDS or low in QUESTION_WORDS or ', ''),
  ('sys103_first_word_is_name', 'newscrawler/web/keywords.py',
   '(m.start() > 0 and word[0].isupper())', 'word[0].isupper()'),
+ # DBT-80 (#369): retargeted 2026-10-16 -- the cap now returns.
  ('sys103_no_max_terms', 'newscrawler/web/keywords.py',
-  '        if len(out) == MAX_TERMS:\n            break\n', ''),
+  '            if len(out) == MAX_TERMS:\n                return out\n',
+  ''),
  ('sys103_typo_kept', 'newscrawler/web/keywords.py',
   'kept = [t for t in question_terms if df.get(t.word, 0.0) > 0.0]', 'kept = [t for t in question_terms if t.word in df]'),
  ('sys103_anchor_df_inclusive', 'newscrawler/web/keywords.py',
@@ -1121,8 +1152,10 @@ M = [
   'answering anyway: {type(e).__name__}: {e}")\n            return False', 'answering anyway: {type(e).__name__}: {e}")\n            return True'),
  ("qa1007_free_provider_charged", "newscrawler/web/query_processor.py",
   "if self.summarizer.priced else 0.0", "if True else 0.0"),
- ("qa1007_peak_price_ignored", "newscrawler/web/query_processor.py",
-  "cost_usd(reply.input_tokens, reply.output_tokens, is_peak())", "cost_usd(reply.input_tokens, reply.output_tokens, False)"),
+ # DBT-80 (#369): retargeted 2026-10-16 -- the rewrite is priced the same way; the answer's price.
+ ('qa1007_peak_price_ignored', 'newscrawler/web/query_processor.py',
+  'dollars = cost_usd(reply.input_tokens, reply.output_tokens, is_peak()) if self.summarizer.priced',
+  'dollars = cost_usd(reply.input_tokens, reply.output_tokens, False) if self.summarizer.priced'),
  ("qa1007_empty_reply_is_ok", "newscrawler/web/query_processor.py",
   "        if not cleaned:\n", "        if False:\n"),
  ("qa1007_empty_reply_not_recorded", "newscrawler/web/query_processor.py",
@@ -1192,8 +1225,7 @@ M = [
   '.split()) >= MIN_PARAGRAPH_WORDS]', '.split()) > MIN_PARAGRAPH_WORDS]'),
  ('sys105_keyword_hits_unguarded', 'newscrawler/web/query_processor.py',
   'fts_hits = (substantial(self._fts_search(', 'fts_hits = ((self._fts_search('),
- ('sys105_rechunk_any_layout', 'scripts/rechunk_stale_chunks.py',
-  '        if new and list(stored) != new:\n', '        if new:\n'),
+ # DBT-80 (#369): sys105_rechunk_any_layout retired 2026-10-16 -- replaced by qa1012_rechunk_any_layout (SYS-109 rewrote select_targets).
  ('sys106_keyword_only_not_embedded', 'newscrawler/web/query_processor.py',
   '                for h, s in zip(keyword_only, scores):\n                    h["semantic_score"] = s\n', '                for h, s in zip(keyword_only, scores):\n                    pass\n'),
  ('sys106_semantic_only_no_coverage', 'newscrawler/web/query_processor.py',
@@ -1342,16 +1374,22 @@ M = [
  # SYS-104 + SYS-140 (ADR-010): the follow-up rewrite and its fallback
  ('sys104_rewrite_ignored', 'newscrawler/web/followup.py',
   '    if rewritten is not None:\n', '    if False:\n'),
+ # DBT-80 (#369): retargeted 2026-10-16 -- SYS-140 moved it to _with_thread.
  ('sys104_cue_from_thread', 'newscrawler/web/followup.py',
-  '(q,) + newest_first, q, FALLBACK_THREAD)', '(q,) + newest_first, " ".join((q,) + newest_first), FALLBACK_THREAD)'),
+  'return Retrieval(" ".join((q,) + newest_first), (q,) + newest_first, q, how)',
+  'return Retrieval(" ".join((q,) + newest_first), (q,) + newest_first, " ".join((q,) + newest_first), how)'),
+ # DBT-80 (#369): retargeted 2026-10-16 -- SYS-145 added a kept-thread branch with the same test.
  ('sys104_fallback_always_thread', 'newscrawler/web/followup.py',
-  '    if refers_back(q):\n', '    if True:\n'),
+  '    if refers_back(q):\n        return _with_thread(q, previous, FALLBACK_THREAD)',
+  '    if True:\n        return _with_thread(q, previous, FALLBACK_THREAD)'),
  ('sys104_itu_is_a_reference', 'newscrawler/web/followup.py',
   '(?:dia|ia|mereka|beliau|tersebut)', '(?:dia|ia|mereka|beliau|tersebut|itu)'),
  ('sys104_multiline_accepted', 'newscrawler/web/followup.py',
   '    if not text or "\\n" in text:\n', '    if not text:\n'),
+ # DBT-80 (#369): retargeted 2026-10-16 -- the check also refuses refusals and list items.
  ('sys104_no_length_cap', 'newscrawler/web/followup.py',
-  'if not text or len(text) > REWRITE_MAX_CHARS:', 'if not text:'),
+  'if not text or len(text) > REWRITE_MAX_CHARS or',
+  'if not text or'),
  ('sys104_rewrite_raises', 'newscrawler/web/followup.py',
   '    except Exception as e:  # noqa: BLE001 -- the rewrite is an aid', '    except ZeroDivisionError as e:  # noqa: BLE001 -- the rewrite is an aid'),
  ('sys104_no_cap_check', 'newscrawler/web/query_processor.py',
@@ -1378,10 +1416,14 @@ M = [
  ('sys138_window_overrides_reader', 'newscrawler/web/query_processor.py',
   'if cue is None or not cue.window or filters.days or filters.date_from or filters.date_to:',
   'if cue is None or not cue.window:'),
+ # DBT-80 (#369): retargeted 2026-10-16 -- ADR-013: the window's leaders, not its whole ranking.
  ('sys138_thin_week_not_filled', 'newscrawler/web/query_processor.py',
-  '            if len(inside) < RAG_TOP_K:\n', '            if False:\n'),
+  '            if len(leaders) >= RAG_TOP_K:\n                rest = in_window',
+  '            if True:\n                rest = in_window'),
+ # DBT-80 (#369): retargeted 2026-10-16 -- ADR-013: the leaders come first.
  ('sys138_window_always_whole', 'newscrawler/web/query_processor.py',
-  'ranked = inside + [h for h in everything if h.get("sitemap_id") not in seen]', 'ranked = everything'),
+  'ranked = leaders + [h for h in rest if h.get("sitemap_id") not in led]',
+  'ranked = rest'),
  ('sys140_names_on_joined_text', 'newscrawler/web/keywords.py',
   '    for one in (question,) + more:\n', '    for one in (" ".join((question,) + more),):\n'),
  # QA 2026-10-12 (second pass), against tests/unit and scripts/experiments/qa_2026_10_12b/test_qa_fixes.py.
@@ -1576,8 +1618,10 @@ M = [
   '    path = init_crawler().crawler_service.generate_newsletter(target_date)'),
  ('dbt74_event_builds_the_crawler', 'newscrawler/application/api/lambda_function/lambda_handler.py',
   '    if task == "newsletter":\n        # DBT-74', '    if False:\n        # DBT-74'),
+ # DBT-80 (#369): retargeted 2026-10-16 -- the composition root passes its own overrides.
  ('dbt74_l1_not_passed', 'newscrawler/application/newsletter_app.py',
-  'usage=SQLAlchemyKnowledgeDataSource(client), search_l1=search)', 'usage=SQLAlchemyKnowledgeDataSource(client))'),
+  'usage=SQLAlchemyKnowledgeDataSource(client), search_l1=search, **own)',
+  'usage=SQLAlchemyKnowledgeDataSource(client), **own)'),
  # SYS-148 (#338) story arc writer. QA_MUTANT_TESTS="tests/unit/test_story_arc.py tests/unit/test_source_check.py"
  ('sys148_alur_check_dropped', 'newscrawler/core/story_arc.py', '            < ALUR_MIN_EVENT_WORDS]', '            < 0]'),
  ('sys148_names_count_as_events', 'newscrawler/core/story_arc.py',

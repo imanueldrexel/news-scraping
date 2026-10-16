@@ -85,3 +85,56 @@ def test_no_test_module_shadows_a_test_name():
 def test_the_shadow_check_finds_a_repeated_class_and_method():
     source = "class A:\n    def t(self): pass\n    def t(self): pass\n\nclass A:\n    pass\n\ndef f(): pass\n"
     assert sorted(_shadowed_names(source)) == ["A x2", "A.t x2"]
+
+
+MUTATION_RUNNER = os.path.join(REPO, "scripts", "experiments", "qa_mutation_runner.py")
+
+
+def _registered_mutants(source):
+    """The mutation registry `M` of qa_mutation_runner.py: (name, path, old, new), parsed, never run."""
+    import ast
+    import warnings
+
+    with warnings.catch_warnings():     # an escape warning in some entry is not this check's business
+        warnings.simplefilter("ignore")
+        tree = ast.parse(source)
+    node = next(n for n in tree.body
+                if isinstance(n, ast.Assign) and any(getattr(t, "id", None) == "M" for t in n.targets))
+    return ast.literal_eval(node.value)
+
+
+def _matches(src, old):
+    """How often the runner finds `old` in `src`: as written, else in its CRLF form (the runner's own rule)."""
+    count = src.count(old)
+    if count != 1 and "\r\n" in src:
+        count = src.count(old.replace("\n", "\r\n"))
+    return count
+
+
+def _orphaned(mutants, read):
+    return ["%s (%s): %d matches" % (name, path, _matches(read(path), old))
+            for name, path, old, _ in mutants if _matches(read(path), old) != 1]
+
+
+def _read(path):
+    with open(os.path.join(REPO, path), "rb") as f:
+        return f.read().decode("utf-8")
+
+
+def test_every_registered_mutant_matches_once():
+    """DBT-80 (#369): a refactor that moves the code a mutant targets leaves the mutant matching 0 or 2+ times;
+    the runner prints PATTERN NOT FOUND, skips it, and the fix it guarded runs unguarded while the run still looks
+    green (27 such entries at e125470). Retarget the entry to the code that now carries the fix, or retire it with
+    a comment naming its replacement -- never delete one silently."""
+    with open(MUTATION_RUNNER, encoding="utf-8") as f:
+        mutants = _registered_mutants(f.read())
+    assert len({name for name, *_ in mutants}) == len(mutants), "two registry entries share a name"
+    assert [name for name, _, old, new in mutants if old == new] == []
+    assert _orphaned(mutants, _read) == []
+
+
+def test_the_registry_check_finds_a_stale_and_a_doubled_pattern():
+    files = {"a.py": "x = 1\ny = 2\n", "b.py": "z = 3\r\nz = 3\r\n", "c.py": "if a:\r\n    b()\r\n"}
+    mutants = [("ok", "a.py", "x = 1\n", "x = 2\n"), ("crlf_ok", "c.py", "if a:\n    b()", "if 0:\n    b()"),
+               ("stale", "a.py", "w = 9", "w = 0"), ("doubled", "b.py", "z = 3", "z = 4")]
+    assert _orphaned(mutants, files.__getitem__) == ["stale (a.py): 0 matches", "doubled (b.py): 2 matches"]

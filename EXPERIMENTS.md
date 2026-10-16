@@ -2919,3 +2919,16 @@ SINDONEWS   old 12 new 12 | lost [] | gained []   links identical: True
   - `_RELATIVE`'s "akhir bulan" used to match inside "akhir bulan depan" (read as this month). It now stops at "depan/mendatang".
   - The trap that cost time here: Bash heredocs in this harness turn `\b` into a literal backspace character. Write regex code with the Edit tool and grep for `\x08` after any shell-written Python.
 - **Links:** SYS-167 (#364), SYS-168 (#365), SYS-169 (#366), SYS-170 (#367), DBT-79 (#368) · `newscrawler/core/source_check.py` · `newscrawler/core/story_arc.py` · `scripts/experiments/sys169_170/recheck_replays.py`
+
+### 2026-10-16 — DBT-80: retargeting 27 orphaned mutation-registry entries
+- **Question / hypothesis:** do the 27 registry entries that no longer match their file still guard anything once moved to the code that carries their fix today?
+- **Method:** each entry was mapped to its current code by hand. The edit went through a scratch script that rewrites the tuples located by `ast` line numbers. Each retargeted mutant was then run against the full `tests/unit` in a plain scratch copy.
+- **Result:**
+  - 25 retargeted, all KILLED (`{'KILLED': 25}`, 20-67 s each). 2 retired: `sys68_footer_not_rendered` (the behaviour was removed by SYS-84) and `sys105_rechunk_any_layout` (replaced earlier).
+  - What orphaned them:
+    - refactors that moved code: DBT-74 (newsletter_app), SRC-58 (branch notes), DBT-60 (posted_at), SYS-82 (summary prompt), SYS-140/145 (followup);
+    - code duplicated next to the target, which makes a pattern match 2-3 times: OPS-43's two new Telegram send paths, SYS-104's rewriter beside the answer summarizer.
+- **Conclusion / do not repeat:**
+  - A registry entry rots silently. `test_repo_hygiene.py::test_every_registered_mutant_matches_once` now fails in `tests/unit` instead.
+  - When code is copied next to a mutant's target, give the mutant more context in the same commit: duplicated code is the second way entries rot.
+- **Links:** DBT-80 (#369) · `scripts/experiments/qa_mutation_runner.py` · `tests/unit/test_repo_hygiene.py`

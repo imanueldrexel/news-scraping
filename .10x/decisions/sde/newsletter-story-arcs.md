@@ -163,3 +163,28 @@ Design: `.10x/decisions/architect/newsletter-story-arcs.md`, section "2026-10-15
 
 ### Noticed, not in scope
 - 27 older registry entries (sys54, ops32/33/35, sys68, sys88/90/98/103/104/105/138, dbt02/74 ...) no longer match their files exactly once. The runner prints PATTERN NOT FOUND and skips them. Not touched here.
+
+## 2026-10-16 (evening): QA's 10-16 queue -- SYS-167..170, DBT-79, DBT-80
+| Ticket | What | State |
+|---|---|---|
+| SYS-169 #366 (P2) | `source_check.unstated_future_times`; `parse` refuses an unstated future time as `date` (owner) on every prose field, by key against today's `terkait` only; no span backing; prompt agenda rule | ready-for-qa |
+| SYS-168 #365 | future-time table moved to `source_check` (`_FUTURE`, `future_phrases`, `future_key`, `future_times`): esok, mendatang, akhir bulan/tahun ini; not bare bulan/tahun ini (owner), not "esok harinya"; `_RELATIVE`'s "akhir bulan" no longer matches "akhir bulan depan" | ready-for-qa |
+| SYS-170 #367 (P2) | `_CHANGE_CLAIM` = (men)jadi / hingga / sampai / ke angka-level-posisi N; a date's day is no figure; prompt rule 3 | ready-for-qa |
+| SYS-167 #364 | `_RELATIVE`: "<hari> pekan lalu" (that weekday), "awal/pertengahan/akhir pekan lalu" (the week) | ready-for-qa |
+| DBT-79 #368 | QA's 4 survivors guarded in `test_story_arc.py`, registered under QA's names on the moved table | ready-for-qa |
+| DBT-80 #369 | 25 stale registry entries retargeted, 2 retired with their replacement named; `test_repo_hygiene.py::test_every_registered_mutant_matches_once` | ready-for-qa |
+
+### Judgement calls
+- SYS-169: stated text = today's `terkait` only (a timeline item's "pekan depan" is another week, SYS-162). A future phrase inside a `_RELATIVE` phrase ("akhir bulan ini") is left to the span check: one verdict, one message.
+- SYS-167: the awal/akhir modifiers keep the whole week ("akhir pekan" = weekend or end of week), so no new refusals from a guess.
+- SYS-170: "naik hingga 5%" (a range) is decided by the source side, as QA proposed.
+- DBT-80: the 3 Telegram send paths repeat one response block (`_post`, `_post_document`, `_post_html`); the OPS-32/33 mutants target the alert path `_post`/`_deliver` with enough context to match once. Folding the three into one helper would be a refactor of its own; not done here.
+
+### Evidence
+- Unit: 3,419 passed, 5 skipped (before DBT-80's hygiene test); QA's 10-14/10-15/10-16 files all pass (QA 10-16: 55/55).
+- Mutants (plain scratch copy of the working tree): 28 new/retargeted arc mutants KILLED by the four arc suites; the other 148 arc registry mutants KILLED by their own suites. DBT-80: 25 retargeted entries KILLED by the full tests/unit (2 retired); unit 3,421 passed with the hygiene test.
+- Offline v4/v5/v6 (`scripts/experiments/sys169_170/recheck_replays.py --db`): 1 arc newly refused, v4 Padang "pekan ini" from a 1/10 item (a true catch); SYS-170 refuses none; metrics identical.
+- Integration tests not run: no SQL, schema or DB path changed.
+
+### Tech debt noticed
+- `notify_telegram.py`: three copies of the request/verdict block. A refactor would make the OPS-32/33 mutants one-liners again.

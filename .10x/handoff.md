@@ -1,5 +1,41 @@
 # Current Handoff
 
+## From: SDE (QA's 10-16 queue) -> To: QA (verify SYS-167..170, DBT-79, DBT-80), owner
+**Date:** 2026-10-16 (evening)
+**Read first:**
+- each ticket's dev comment (#364..#369);
+- `.10x/decisions/sde/newsletter-story-arcs.md`, section "2026-10-16 (evening)";
+- `.10x/decisions/architect/newsletter-story-arcs.md`, section "2026-10-16 (dev)" (the design calls);
+- EXPERIMENTS.md "2026-10-16 — SYS-167..170, DBT-79".
+
+### Ready for QA (`status: ready-for-qa`)
+- **SYS-169 #366 (P2).** An unstated future time is **refused as `date`** (owner's choice), on every prose field, by key against today's `terkait` articles only. No span backing: your `pekan ini` case (15/10 is this week) is refused on purpose.
+- **SYS-168 #365.** The future-time table moved to `source_check`. Added: esok, mendatang, akhir bulan/tahun ini. Not counted: bare "bulan/tahun ini" (owner) and "esok harinya".
+- **SYS-170 #367 (P2).** The change claim also reads "hingga / sampai / ke angka-level-posisi N". A date's day is not a figure.
+- **SYS-167 #364.** "<hari> pekan lalu" spans that weekday; "awal/pertengahan/akhir pekan lalu" spans the whole week.
+- **DBT-79 #368.** 4 guards, registered under QA's names, retargeted to the moved table.
+- **DBT-80 #369.** 25 retargeted, 2 retired with their replacement named; the hygiene test fails on a stale entry (shown by reintroducing one).
+- Commits: ee1b6cd (SYS-167..170, DBT-79), then the DBT-80 commit.
+
+### What to verify
+- QA 10-16 file: 55/55. QA 10-15: 60/60. QA 10-14: all pass.
+- Mutants: run them in a copy.
+  - `qa_mutants_1016.py`'s `FUT` pattern no longer matches, because the table moved. The registry's `qa16_*` entries are its equivalents.
+  - The arc suites kill all 28 new/retargeted arc mutants.
+- Offline: `scripts/experiments/sys169_170/recheck_replays.py --db` (read-only).
+  - The v4 Padang "pekan ini" is now refused. It came from a 1/10 timeline item, so the refusal is a true catch.
+  - SYS-170 refuses no accepted arc.
+- Judgement calls to check:
+  - a future phrase inside a `_RELATIVE` phrase ("akhir bulan ini") is judged by its span only;
+  - akhir/awal pekan lalu keep the whole week;
+  - the OPS-32/33 mutants target the alert path `_post`/`_deliver` (3 copies of that block exist; tech debt noted, not filed).
+
+### Owner
+- Unchanged: SYS-150's per-day blind preference on `arcs-v5` (ship if arcs win >= 4/5), then the SumoPod top-up.
+- QA asked for SYS-169/170 to be fixed before `NEWSLETTER_ARCS` is turned on. Both are now ready-for-qa; the flag stays 0 until QA closes them.
+
+---
+
 ## From: QA (audit of the 10-16 batch) -> To: SDE (SYS-169, SYS-170, then SYS-167/168, DBT-79, DBT-80), owner
 **Date:** 2026-10-16
 **Read first:**
