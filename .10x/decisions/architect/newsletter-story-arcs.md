@@ -220,3 +220,27 @@ style measures in `arc_style`, and `story_arc.parse` only wires them. The arc's 
 - **SYS-167:** "<hari> pekan/minggu lalu" spans that weekday of last week. "awal/pertengahan/akhir pekan lalu"
   spans the whole of last week, because "akhir pekan" (weekend vs end of week) is ambiguous: no new refusals
   from a narrower guess. The phrase starts at the modifier, so the opening and frame rules see it unchanged.
+
+# 2026-10-16 (dev, night): QA's evening queue (SYS-169 rework, SYS-171, SYS-172, SYS-173)
+
+No new ADR. All four stay inside ADR-017's seam (`source_check` holds the tables and checks; `story_arc.parse`
+wires them). The arc's data flow is unchanged.
+
+## Decisions
+- **SYS-169 rework: a future phrase is judged by key only, never by span.** The span check
+  (`story_arc.unbacked_times`) skips a relative phrase that is also a future phrase ("akhir bulan ini"), and
+  `unstated_future_times` drops its relative-phrase exemption. Reason: a span holding today backs an invented
+  "akhir bulan ini" from the 21st on, which is the span backing SYS-169 chose against. It is still named once,
+  now by the future check.
+- **SYS-171: weekday future times** "(hari) <hari> depan/mendatang" join `_FUTURE`, keyed `hari <hari> depan`
+  (so "Kamis mendatang" backs "Kamis depan", and a weekday never meets "pekan depan"). "Minggu depan" is the
+  Sunday only with a capital M, as in `_RELATIVE` ("Minggu lalu"); lowercase is next week. Accepted cost: a
+  sentence-initial "Minggu depan, ..." meaning next week is read as Sunday, so an article's "pekan depan"
+  does not back it (a retry, not a false fact).
+- **SYS-171 (owner, 2026-10-16 night): "se<unit> / N <unit> ke depan" counts as a future time.** Like
+  SYS-169, a time window the articles don't state is the model's own; an uncounted one printed whenever the
+  agenda had "akan". Keyed with minggu->pekan, seminggu->sepekan. Cost: the occasional retry on a forecast.
+- **SYS-172:** the change claim reads bare `ke N`, `mencapai`/`total` among the words before N (up to two),
+  and a comma after the verb. "<verb> mencapai N" with no to-word is still not a claim (not in the ticket).
+- **SYS-173:** a part of last week is narrowed like a month part: awal Mon-Wed, pertengahan Tue-Thu,
+  akhir Thu-Sun (covers both readings of "akhir pekan"). Supersedes the 10-16 (dev) whole-week call.

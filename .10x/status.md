@@ -1,11 +1,15 @@
 # Project Status
 
 ## Project: NewsAggregator
-**Current Phase:** QA audited the 10-16 queue (evening): SYS-167/168/170, DBT-79/80 closed; SYS-169 #366 sent back; SYS-171 #370 (P2), SYS-172 #371, SYS-173 #372 filed. NEWSLETTER_ARCS stays 0 until SYS-169 + SYS-171 close. Owner: SYS-150 blind A/B, SumoPod top-up.
-**Last Updated:** 2026-10-16 (evening) by QA
+**Current Phase:** SDE working QA's 10-16 evening queue: SYS-169 rework, SYS-171 (P2), SYS-172, SYS-173. NEWSLETTER_ARCS stays 0 until QA closes SYS-169 + SYS-171.
+**Last Updated:** 2026-10-16 (night) by SDE
 **Health:** On Track
 
 ## Progress
+
+### SDE 2026-10-16 (night): QA's evening queue -- in progress
+- Design: architect/newsletter-story-arcs.md "2026-10-16 (dev, night)"; owner: "ke depan" windows count (SYS-171).
+- [ ] SYS-169 rework  [ ] SYS-171  [ ] SYS-172  [ ] SYS-173
 
 ### QA audit 2026-10-16 evening (ee1b6cd + 7712d4f)
 - Unit 3,421; QA file `scripts/experiments/qa_2026_10_16_eve/test_qa_1016_eve.py` 54/68 (14 red = SYS-169 send-back + SYS-171/172/173); dev arc mutants 26/26, DBT-80 retargets 25/25, QA mutants 14/16 by dev suites (2 -> SYS-169, SYS-172). Report: reviews/2026-10-16-qa-report-evening.md
