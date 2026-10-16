@@ -171,6 +171,13 @@ def _part_of_month(m, today):
     return _month_part(part, month, y)
 
 
+def _since_month(m, today):
+    """"sejak Oktober": where it began, that month up to today. A start is never ahead, so the span never runs
+    past today and is never taken for a schedule (SYS-174)."""
+    first, last = _whole_month(*_month_year(m.group("month"), m.group("year"), today))
+    return first, min(last, today)
+
+
 def _days_back(today: date, n: int, slack: int) -> Tuple[date, date]:
     """The days `n` days before `today`, `slack` days either way, never today itself."""
     return today - timedelta(days=n + slack), today - timedelta(days=max(n - slack, 1))
@@ -238,7 +245,7 @@ _RELATIVE = [
      rf"|bulan(?:\s+(?P<which>ini|lalu))?\b(?!\s+(?:depan|mendatang)))",    # SYS-168: not "akhir bulan depan"
      _part_of_month),
     (rf"sejak\s+(?P<month>{_MONTH_NAME})\b(?:\s+(?P<year>\d{{4}}))?",
-     lambda m, today: _whole_month(*_month_year(m.group("month"), m.group("year"), today))),
+     _since_month),
     (r"bulan\s+lalu", lambda m, today: _whole_month(*_previous_month(today))),
     (r"dua\s+pekan\s+(?:terakhir|belakangan)", _last_days(14)),
     (r"(?:sepekan|seminggu)\s+(?:terakhir|belakangan)", _last_days(7)),
@@ -290,7 +297,7 @@ def relative_times(text: str, today: date) -> List[Tuple[str, date, date]]:
     `today` (SYS-157 #352). A calendar date with its month ("24 September") is not one: `dates_in`
     reads those. The ranges, agreed in tests/unit/test_source_check.py:
       awal / pertengahan / akhir <bulan>   1-10 / 11-20 / 21-end of that month
-      sejak <bulan>, bulan lalu            that whole month (where it began)
+      sejak <bulan>, bulan lalu            that whole month (where it began); this month up to today
       sepekan lalu                         5-9 days before
       N pekan lalu (N >= 2)                7N days before, 3 days either way (dua pekan lalu: 11-17)
       N bulan lalu                         the whole calendar month N months back
@@ -335,14 +342,21 @@ def relative_name(day: date, today: date) -> str:
 # as "hari Minggu depan": a bare "Minggu Depan" is next week in title-case headlines and at a sentence's start, and a
 # reader cannot tell it apart either. A window ahead, "sepekan / dua bulan ke depan", is one too (owner, 2026-10-16).
 _DAY_AHEAD = rf"(?:hari\s+(?:{'|'.join(copy.DAYS)})|{_WEEKDAY_BUT_SUNDAY})\s+(?:depan|mendatang)"
+# SYS-171 rework (#370): a weekday of a named week, "(hari) Kamis pekan depan", "Senin minggu mendatang", "Rabu pekan
+# ini", is that weekday, never the week alone. Keyed apart from "Kamis depan": that may be this week's Thursday. The
+# week word after it leaves no doubt about the Sunday, so "Minggu pekan depan" is the Sunday in any case.
+_DAY_OF_WEEK = rf"(?:hari\s+)?(?:{'|'.join(copy.DAYS)})\s+(?:pekan|minggu)\s+(?:depan|mendatang|ini)"
 _WINDOW_AHEAD = rf"(?:se|(?:{'|'.join(_COUNT)}|\d+|{_VAGUE_COUNT})\s+)(?:hari|pekan|minggu|bulan|tahun)\s+ke\s+depan"
 _FUTURE = re.compile(rf"\b(?:{_DAY_AHEAD}|{_WINDOW_AHEAD}|"
+                     rf"{_DAY_OF_WEEK}|"
                      r"b?esok(?!\s+harinya)|lusa|(?:akhir\s+)?(?:pekan|minggu)\s+(?:depan|mendatang|ini)"
                      r"|(?:akhir\s+)?(?:bulan|tahun)\s+(?:depan|mendatang)|akhir\s+(?:bulan|tahun)\s+ini)\b",
                      re.IGNORECASE)
 _DAY_AHEAD_ONLY = re.compile(_DAY_AHEAD, re.IGNORECASE)
+_DAY_OF_WEEK_ONLY = re.compile(_DAY_OF_WEEK, re.IGNORECASE)
 _FUTURE_SYNONYMS = ((r"\bminggu\b", "pekan"), (r"\bmendatang\b", "depan"), (r"^esok\b", "besok"),
                     (r"\bseminggu\b", "sepekan"))
+_DAY_OF_WEEK_KEY = re.compile(r"hari \w+ (?P<week>pekan (?:depan|ini))")
 
 
 def future_phrases(text: str) -> List[Tuple[int, str]]:
@@ -353,8 +367,12 @@ def future_phrases(text: str) -> List[Tuple[int, str]]:
 
 def future_key(phrase: str) -> str:
     """`phrase` keyed so synonyms meet: "Minggu  mendatang" is "pekan depan", "esok" is "besok", "Kamis
-    mendatang" is "hari kamis depan", "hari Minggu depan" (the Sunday) is "hari minggu depan"."""
+    mendatang" is "hari kamis depan", "hari Minggu depan" (the Sunday) is "hari minggu depan", "Kamis minggu
+    mendatang" is "hari kamis pekan depan"."""
     key = " ".join(phrase.lower().split())
+    if _DAY_OF_WEEK_ONLY.fullmatch(phrase):
+        words = key.split()
+        return f"hari {words[-3]} pekan {'ini' if words[-1] == 'ini' else 'depan'}"
     if _DAY_AHEAD_ONLY.fullmatch(phrase):
         return f"hari {key.split()[-2]} depan"
     for pattern, replacement in _FUTURE_SYNONYMS:
@@ -372,8 +390,10 @@ def unstated_future_times(text: str, stated: str) -> List[str]:
     `unbacked_times` for the past -- does not give under the same key. An article's "Kamis (15/10)" does
     not back the model's "besok": it is the step's time only as the article wrote it. A future time that
     is also a relative phrase ("akhir bulan ini") is judged here too, never by its span: from the 21st on,
-    today is inside "akhir bulan ini" and would back any invented one (QA, 2026-10-16 evening)."""
+    today is inside "akhir bulan ini" and would back any invented one (QA, 2026-10-16 evening). A stated weekday
+    of a week also states the week: "Kamis pekan depan" backs "pekan depan", never the reverse (SYS-171)."""
     given = future_times(stated)
+    given |= {m.group("week") for m in map(_DAY_OF_WEEK_KEY.fullmatch, given) if m}
     return [phrase for _, phrase in future_phrases(text) if future_key(phrase) not in given]
 
 
@@ -498,11 +518,19 @@ _CHANGE_VERBS = (r"bertambah|naik|meningkat|turun|berkurang|menurun|melonjak|anj
 # "menjadi total", "ke angka"), and a comma after the verb ("bertambah, menjadi 199").
 _CHANGE_TO = r"(?:men)?jadi|hingga|sampai|ke"
 _CHANGE_BEFORE_N = r"sekitar|sebesar|sebanyak|hampir|lebih\s+dari|lebih\s+kurang|mencapai|total|angka|level|posisi"
-_CHANGE_CLAIM = re.compile(rf"\b(?:{_CHANGE_VERBS})\b,?(?:\s+\S+){{0,8}}?\s+(?:{_CHANGE_TO})\s+"
+# SYS-175 (#374): "mencapai" is the to-word itself only right after the verb ("naik mencapai 13,74 persen", 55
+# sentences in the corpus). After a gap it is mostly another noun's verb, often the earlier value: "turun 35,30% dari
+# bulan sebelumnya yang mencapai 41.201 unit" (1,181 sentences).
+_CHANGE_TO_AFTER = rf"(?:\s+\S+){{0,8}}?\s+(?:{_CHANGE_TO})|\s+mencapai"
+_CHANGE_CLAIM = re.compile(rf"\b(?:{_CHANGE_VERBS})\b,?(?:{_CHANGE_TO_AFTER})\s+"
                            rf"(?:(?:{_CHANGE_BEFORE_N})\s+){{0,2}}"
                            r"(?:Rp|US\$|\$)?\s?(?P<number>\d+(?:[.,]\d+)*)"
                            rf"(?![.,]?\d)(?!\s*/|\s+(?:{_MONTH_NAME})\b)", re.IGNORECASE)
-_TIME_AFTER = (rf"(?:(?:awal|pertengahan|akhir)\s+)?(?:{_MONTH_NAME}|tahun|kuartal|semester|periode|pekan|bulan|"
+# SYS-176 (#375): a weekday may stand before the date, "Hingga Senin (12/10)", "per Senin, 12/10" (2,096 articles), but
+# never alone: a bare "hingga Senin" may end a list.
+_WEEKDAY_BEFORE_DATE = rf"(?:(?:hari\s+)?(?:{'|'.join(copy.DAYS)}),?\s*\(?(?=\d{{1,2}}(?:/|\s+(?:{_MONTH_NAME})\b)))?"
+_TIME_AFTER = (rf"{_WEEKDAY_BEFORE_DATE}"
+               rf"(?:(?:awal|pertengahan|akhir)\s+)?(?:{_MONTH_NAME}|tahun|kuartal|semester|periode|pekan|bulan|"
                rf"hari\s+ini|kini|saat\s+ini|\d{{1,2}}/\d{{1,2}}|\d{{1,2}}\s+(?:{_MONTH_NAME})|\d{{4}})\b")
 # What makes a source's figure a running total or the result of a change: a change verb; an accumulation word;
 # or a running period, "hingga / sampai / per / sepanjang / sejak" + a time. Not a bare "hingga": the 2026-10-11
@@ -520,7 +548,7 @@ def _sentences(text: str) -> List[str]:
 
 def unbacked_changes(text: str, source: str) -> List[str]:
     """SYS-161 (#356): the change claims of `text` -- "(bertambah|naik|turun|...) menjadi / hingga / ke
-    (angka|mencapai|total) N" (SYS-170/172) -- whose N
+    (angka|mencapai|total) N" (SYS-170/172), "<verb> mencapai N" (SYS-175) -- whose N
     no source sentence states as a running total or a change: every sentence of `source` holding N (by
     value) lacks a change verb, an accumulation word and a running period (`_TOTAL_OR_CHANGE`). "Kini ... bertambah
     menjadi 199 orang" read two separate Polri telegrams (88, then 199) as a running total; the bansos,

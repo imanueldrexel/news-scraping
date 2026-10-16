@@ -109,6 +109,7 @@ class TestRelativeTimes:
         ("awal bulan", date(2026, 10, 1), date(2026, 10, 10)),
         ("akhir bulan lalu", date(2026, 9, 21), date(2026, 9, 30)),
         ("sejak September", date(2026, 9, 1), date(2026, 9, 30)),
+        ("sejak Oktober", date(2026, 10, 1), date(2026, 10, 12)),        # SYS-174: a start, never ahead of today
         ("bulan lalu", date(2026, 9, 1), date(2026, 9, 30)),
         ("pekan lalu", date(2026, 10, 5), date(2026, 10, 11)),
         ("minggu lalu", date(2026, 10, 5), date(2026, 10, 11)),
@@ -201,6 +202,10 @@ class TestFutureTimes:
         ("Kamis depan", "hari kamis depan"), ("Senin mendatang", "hari senin depan"),
         ("hari Jumat mendatang", "hari jumat depan"), ("hari Minggu depan", "hari minggu depan"),
         ("Minggu Depan", "pekan depan"),
+        ("Kamis Depan", "hari kamis depan"), ("KAMIS Mendatang", "hari kamis depan"),   # any case (QA 10-16 night)
+        # SYS-171 rework: a weekday of a named week is that weekday, apart from "Kamis depan" and the week.
+        ("Kamis pekan depan", "hari kamis pekan depan"), ("Senin minggu mendatang", "hari senin pekan depan"),
+        ("hari Rabu Pekan Ini", "hari rabu pekan ini"), ("Minggu pekan depan", "hari minggu pekan depan"),
         # SYS-171 (owner, 2026-10-16): a window ahead.
         ("sepekan ke depan", "sepekan ke depan"), ("seminggu ke depan", "sepekan ke depan"),
         ("dua minggu ke depan", "dua pekan ke depan"), ("3 bulan ke depan", "3 bulan ke depan"),
@@ -226,6 +231,19 @@ class TestFutureTimes:
         assert sc.unstated_future_times("Rapat digelar Kamis depan.", "Rapat digelar pekan depan.") == ["Kamis depan"]
         assert sc.unstated_future_times("Rapat digelar pekan depan.", "Rapat digelar Kamis depan.") == ["pekan depan"]
         assert sc.unstated_future_times("Rapat digelar Kamis depan.", "Rapat digelar Kamis mendatang.") == []
+
+    def test_a_weekday_of_a_week_states_its_week_never_the_reverse(self):
+        """SYS-171 rework (QA, 2026-10-16 night): "Kamis pekan depan" was read as "pekan depan", so the weekday
+        was never checked. An article's "Kamis pekan depan" still backs "pekan depan"; "Kamis depan" (maybe this
+        week's) backs neither."""
+        unstated = sc.unstated_future_times
+        assert unstated("Rapat digelar Kamis pekan depan.", "Rapat digelar pekan depan.") == ["Kamis pekan depan"]
+        assert unstated("Rapat digelar Kamis pekan depan.", "Rapat digelar Selasa pekan depan.") == ["Kamis pekan depan"]
+        assert unstated("Rapat digelar Kamis pekan depan.", "Rapat digelar Kamis depan.") == ["Kamis pekan depan"]
+        assert unstated("Rapat digelar Kamis pekan depan.", "Rapat digelar kamis minggu mendatang.") == []
+        assert unstated("Rapat digelar pekan depan.", "Rapat digelar Kamis pekan depan.") == []
+        assert unstated("Rapat digelar pekan ini.", "Rapat digelar Rabu pekan ini.") == []
+        assert unstated("Rapat digelar pekan ini.", "Rapat digelar Rabu pekan depan.") == ["pekan ini"]
 
     def test_a_relative_phrase_is_checked_by_key_too(self):
         """SYS-169 rework (QA, 2026-10-16 evening): "akhir bulan ini" is a relative phrase too, but its span
@@ -379,6 +397,36 @@ class TestUnbackedChanges:
         """SYS-172 (#371): bare "ke N" (425 articles), "hingga mencapai N" (145), "menjadi total N" and
         "<verb>, menjadi N", against the same one-telegram source."""
         assert sc.unbacked_changes(claim, POLRI) == [written]
+
+    @pytest.mark.parametrize("claim,written", [
+        ("Kini jumlahnya bertambah mencapai 199 orang.", "bertambah mencapai 199"),
+        ("Kini jumlahnya naik mencapai total 199 orang.", "naik mencapai total 199"),
+        ("Kini jumlahnya melonjak, mencapai 199 orang.", "melonjak, mencapai 199"),
+    ])
+    def test_verb_mencapai_n_is_a_change_claim(self, claim, written):
+        """SYS-175 (#374): "mencapai" right after the verb is the to-word (55 corpus sentences, "naik mencapai
+        13,74 persen")."""
+        assert sc.unbacked_changes(claim, POLRI) == [written]
+
+    def test_mencapai_after_a_gap_is_another_nouns_figure(self):
+        """SYS-175: after a gap "mencapai" mostly tells another figure, often the earlier one (1,181 sentences):
+        here 199 is last month's, not the new value."""
+        assert sc.unbacked_changes("Jumlahnya turun 5 persen dari bulan lalu yang mencapai 199 orang.", POLRI) == []
+
+    @pytest.mark.parametrize("source", ["Hingga Senin (12/10), korban tercatat 199 orang.",
+                                        "Korban tercatat 199 orang per Senin, 12/10.",
+                                        "Sampai hari Senin (12/10/2026) korban tercatat 199 orang.",
+                                        "Hingga Kamis 8 Oktober, korban tercatat 199 orang."])
+    def test_a_running_period_dated_by_weekday_backs_the_claim(self, source):
+        """SYS-176 (#375): the weekday before the date (2,096 articles) made a true running total look like
+        one event."""
+        assert sc.unbacked_changes("Korban bertambah menjadi 199 orang.", source) == []
+
+    def test_a_weekday_without_a_date_is_no_running_period(self):
+        """A bare "hingga Senin" may end a list, as "Kakorlantas hingga Wakabaintelkam" does (SYS-161)."""
+        claim = "Korban bertambah menjadi 199 orang."
+        assert sc.unbacked_changes(claim, "Rapat digelar Jumat hingga Senin, 199 orang hadir.") == [
+            "bertambah menjadi 199"]
 
     def test_a_ke_change_the_source_states_passes(self):
         """The arcs-v2/v3 10-12 wording: the source tells the same rise."""

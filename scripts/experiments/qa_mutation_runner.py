@@ -1786,7 +1786,7 @@ M = [
   '        k = today.year * 12 + today.month - 1 - n', '        k = today.year * 12 + today.month - 1 - 1'),
  ('sys157r_days_no_slack', 'newscrawler/core/source_check.py',
   '_days_back(today, n, 1) if unit == "hari"', '_days_back(today, n, 0) if unit == "hari"'),
- ('sys162_items_state_relative_times', 'newscrawler/core/story_arc.py', 'days, stated_today)]', 'days, source)]'),
+ ('sys162_items_state_relative_times', 'newscrawler/core/story_arc.py', 'days, stated_today,\n', 'days, source,\n'),
  ('sys158r_record_key_one_word', 'newscrawler/core/source_check.py',
   'f"{record} sejak {key}"))', 'f"{record} sejak {key.split()[0]}"))'),
  ('sys158r_year_never_dropped', 'newscrawler/core/source_check.py',
@@ -1876,13 +1876,13 @@ M = [
  # Retargeted for the SYS-169 rework: the span check now skips a future phrase (it used to be the key check
  # that skipped a relative one).
  ('sys169_relative_checked_twice', 'newscrawler/core/story_arc.py',
-  'if not future_phrases(phrase)\n            and not any(first <= d <= last for d in known)',
-  'if not any(first <= d <= last for d in known)'),
+  'if not future_phrases(phrase)\n            and not any(first <= d <= last for d in _backing_days(',
+  'if not any(first <= d <= last for d in _backing_days('),
  # SYS-168 (#365): the future times news writes most, and their keys.
  ('sys168_no_mendatang_key', 'newscrawler/core/source_check.py', '(r"\\bmendatang\\b", "depan"), ', ''),
  ('sys168_no_esok_key', 'newscrawler/core/source_check.py', ', (r"^esok\\b", "besok"),', ','),
  ('sys168_no_pekan_mendatang', 'newscrawler/core/source_check.py',
-  '(?:pekan|minggu)\\s+(?:depan|mendatang|ini)', '(?:pekan|minggu)\\s+(?:depan|ini)'),
+  'lusa|(?:akhir\\s+)?(?:pekan|minggu)\\s+(?:depan|mendatang|ini)', 'lusa|(?:akhir\\s+)?(?:pekan|minggu)\\s+(?:depan|ini)'),
  ('sys168_no_esok', 'newscrawler/core/source_check.py', 'b?esok(?!\\s+harinya)', 'besok(?!\\s+harinya)'),
  ('sys168_esok_harinya_future', 'newscrawler/core/source_check.py', 'b?esok(?!\\s+harinya)', 'b?esok'),
  ('sys168_no_akhir_ini', 'newscrawler/core/source_check.py', '|akhir\\s+(?:bulan|tahun)\\s+ini)\\b"', ')\\b"'),
@@ -1937,7 +1937,7 @@ M = [
  ('sys172_no_bare_ke', 'newscrawler/core/source_check.py', '|sampai|ke"', '|sampai|ke(?=\\s+(?:angka|level|posisi))"'),
  ('sys172_no_mencapai', 'newscrawler/core/source_check.py', '|mencapai|total|', '|total|'),
  ('sys172_no_total', 'newscrawler/core/source_check.py', '|mencapai|total|', '|mencapai|'),
- ('sys172_no_comma', 'newscrawler/core/source_check.py', '\\b,?(?:\\s+\\S+){{0,8}}?', '\\b(?:\\s+\\S+){{0,8}}?'),
+ ('sys172_no_comma', 'newscrawler/core/source_check.py', '\\b,?(?:{_CHANGE_TO_AFTER})', '\\b(?:{_CHANGE_TO_AFTER})'),
  ('sys172_one_word_before_n', 'newscrawler/core/source_check.py', '})\\s+){{0,2}}"', '})\\s+)?"'),
  ('qa16e_change_no_posisi', 'newscrawler/core/source_check.py', '|level|posisi"', '|level"'),
  # SYS-173 (#372): a part of last week spans only its days.
@@ -1947,6 +1947,46 @@ M = [
  ('sys173_awal_to_thursday', 'newscrawler/core/source_check.py', '"awal": (0, 2)', '"awal": (0, 3)'),
  ('sys173_pertengahan_whole_week', 'newscrawler/core/source_check.py', '"pertengahan": (1, 3)', '"pertengahan": (0, 6)'),
  ('sys173_akhir_from_friday', 'newscrawler/core/source_check.py', '"akhir": (3, 6)', '"akhir": (4, 6)'),
+ # SYS-171 rework (#370): "<hari> pekan/minggu depan|ini" is that weekday, keyed apart; a stated one states its week.
+ ('sys171_weekday_of_week_read_as_week', 'newscrawler/core/source_check.py', '                     rf"{_DAY_OF_WEEK}|"\n', ''),
+ ('sys171_weekday_of_week_keyed_as_day_ahead', 'newscrawler/core/source_check.py',
+  'return f"hari {words[-3]} pekan {\'ini\' if words[-1] == \'ini\' else \'depan\'}"', 'return f"hari {words[-3]} depan"'),
+ ('sys171_weekday_of_week_ini_is_depan', 'newscrawler/core/source_check.py',
+  "pekan {'ini' if words[-1] == 'ini' else 'depan'}", 'pekan depan'),
+ ('sys171_weekday_of_week_no_sunday', 'newscrawler/core/source_check.py',
+  '_DAY_OF_WEEK = rf"(?:hari\\s+)?(?:{\'|\'.join(copy.DAYS)})', '_DAY_OF_WEEK = rf"(?:hari\\s+)?(?:{_WEEKDAY_BUT_SUNDAY})'),
+ ('sys171_weekday_of_week_case_sensitive', 'newscrawler/core/source_check.py',
+  '_DAY_OF_WEEK_ONLY = re.compile(_DAY_OF_WEEK, re.IGNORECASE)', '_DAY_OF_WEEK_ONLY = re.compile(_DAY_OF_WEEK)'),
+ ('sys171_week_not_implied', 'newscrawler/core/source_check.py',
+  '    given |= {m.group("week") for m in map(_DAY_OF_WEEK_KEY.fullmatch, given) if m}\n', ''),
+ ('sys171_week_implied_both_ways', 'newscrawler/core/source_check.py',
+  'if future_key(phrase) not in given]',
+  'if future_key(phrase) not in given\n            and _DAY_OF_WEEK_KEY.sub(lambda m: m.group("week"), future_key(phrase)) not in given]'),
+ # QA 2026-10-16 night: a weekday ahead written in capitals keys as one ("Kamis Depan", "KAMIS mendatang").
+ ('qa16n_day_ahead_case_sensitive', 'newscrawler/core/source_check.py',
+  '_DAY_AHEAD_ONLY = re.compile(_DAY_AHEAD, re.IGNORECASE)', '_DAY_AHEAD_ONLY = re.compile(_DAY_AHEAD)'),
+ # SYS-174 (#373): today never backs a span still running past it; in the agenda only a day after today does.
+ ('sys174_today_backs_running_span', 'newscrawler/core/story_arc.py',
+  'if schedule else known - {digest_date}', 'if schedule else known'),
+ ('sys174_agenda_past_day_backs', 'newscrawler/core/story_arc.py',
+  'return {d for d in known if d > digest_date} if schedule', 'return known - {digest_date} if schedule'),
+ ('sys174_agenda_today_backs', 'newscrawler/core/story_arc.py',
+  '{d for d in known if d > digest_date}', '{d for d in known if d >= digest_date}'),
+ ('sys174_no_running_rule', 'newscrawler/core/story_arc.py', '    if last <= digest_date:\n        return known\n',
+  '    if True:\n        return known\n'),
+ ('sys174_agenda_not_a_schedule', 'newscrawler/core/story_arc.py', 'key == "agenda")]', 'False)]'),
+ ('sys174_every_field_a_schedule', 'newscrawler/core/story_arc.py', 'key == "agenda")]', 'True)]'),
+ ('sys174_sejak_whole_month', 'newscrawler/core/source_check.py', '    return first, min(last, today)\n',
+  '    return first, last\n'),
+ # SYS-175 (#374): "mencapai" right after the verb is the to-word, never after a gap.
+ ('sys175_no_mencapai_to_word', 'newscrawler/core/source_check.py', '{_CHANGE_TO})|\\s+mencapai"', '{_CHANGE_TO})"'),
+ ('sys175_mencapai_after_a_gap', 'newscrawler/core/source_check.py', '{_CHANGE_TO})|\\s+mencapai"',
+  '{_CHANGE_TO}|mencapai)"'),
+ # SYS-176 (#375): a weekday before the date makes a running period, never a weekday alone.
+ ('sys176_no_weekday_before_date', 'newscrawler/core/source_check.py',
+  '_TIME_AFTER = (rf"{_WEEKDAY_BEFORE_DATE}"', '_TIME_AFTER = (rf""'),
+ ('sys176_weekday_alone', 'newscrawler/core/source_check.py',
+  '(?:{_MONTH_NAME}|tahun|kuartal', '(?:{_MONTH_NAME}|senin|selasa|rabu|kamis|jumat|sabtu|minggu|tahun|kuartal'),
 ]
 only = sys.argv[1:]
 # The tests each mutant runs (default: all of tests/unit). QA_MUTANT_TESTS narrows it to the files that

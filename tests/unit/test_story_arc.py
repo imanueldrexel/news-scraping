@@ -380,6 +380,56 @@ class TestFutureTimeStated:
         agenda = "Para ahli dipanggil Senin mendatang."
         assert sa.parse(_answer(agenda=agenda), _texts("Ahli dipanggil Senin depan."), TIMELINE, DAY).agenda == agenda
 
+    @pytest.mark.parametrize("written,stated", [("Kamis pekan depan", "digelar pekan depan"),
+                                                ("hari Senin minggu depan", "digelar Kamis pekan depan"),
+                                                ("Rabu pekan ini", "digelar pekan ini")])
+    def test_a_weekday_of_a_week_is_checked_as_that_weekday(self, written, stated):
+        """SYS-171 rework (QA, 2026-10-16 night): "Kamis pekan depan" was read as "pekan depan" alone, so an
+        invented Thursday passed on an article's "pekan depan"."""
+        agenda = f"Rapat lanjutan karhutla dijadwalkan {written}."
+        reason, detail = _reason_on(_answer(agenda=agenda), _texts(f"Rapat lanjutan {stated}."))
+        assert reason == "date" and f'"{written}" di agenda' in detail
+
+    def test_a_stated_weekday_of_a_week_backs_it_and_its_week(self):
+        texts = _texts("Rapat lanjutan digelar KAMIS Minggu Mendatang.")
+        for agenda in ("Rapat lanjutan karhutla dijadwalkan hari Kamis pekan depan.",
+                       "Rapat lanjutan karhutla dijadwalkan pekan depan."):
+            assert sa.parse(_answer(agenda=agenda), texts, TIMELINE, DAY).agenda == agenda
+
+    @pytest.mark.parametrize("field,value,day", [
+        ("agenda", "Rapat lanjutan karhutla dijadwalkan akhir bulan.", date(2026, 10, 21)),
+        ("agenda", "Rapat lanjutan karhutla dijadwalkan akhir Oktober.", date(2026, 10, 30)),
+        ("agenda", "Rapat lanjutan karhutla dijadwalkan pertengahan bulan ini.", DAY),
+        ("latar", FRAME + "Pada 23/9 Seskab melaporkan 209 hektare lahan masih terbakar. Aturannya menyusul akhir "
+                          "bulan.", date(2026, 10, 26)),
+    ])
+    def test_an_invented_month_part_schedule_is_refused(self, field, value, day):
+        """SYS-174 (#373): today, and the articles' 12/10, sit inside "akhir bulan" / "pertengahan bulan ini"
+        while they run, and backed an invented schedule (the SYS-169 hole outside the future table)."""
+        texts = [TEXTS[0].replace("Rapat lanjutan dijadwalkan Kamis (15/10).", ""), *TEXTS[1:]]
+        with pytest.raises(Rejected) as e:
+            sa.parse(_answer(**{field: value}), texts, TIMELINE, day)
+        assert e.value.reason == "date"
+
+    def test_a_past_day_inside_the_span_backs_the_latar_not_the_agenda(self):
+        """SYS-174: on 15/10 the article's 12/10 sits inside "pertengahan Oktober". It backs the past reading in
+        the latar; the agenda is the scheduled step, which cannot have one."""
+        texts = [TEXTS[0].replace("Rapat lanjutan dijadwalkan Kamis (15/10).", "Rapat pertama digelar Senin (12/10)."),
+                 *TEXTS[1:]]
+        day = date(2026, 10, 15)
+        with pytest.raises(Rejected) as e:
+            sa.parse(_answer(agenda="Rapat lanjutan karhutla dijadwalkan pertengahan Oktober."), texts, TIMELINE, day)
+        assert e.value.reason == "date" and '"pertengahan Oktober" di agenda' in e.value.detail
+        latar = ("Persoalan karhutla sudah di meja Presiden sejak September. Pada 23/9 Seskab melaporkan 209 hektare "
+                 "lahan masih terbakar, dan pertengahan Oktober Prabowo menggelar rapat lagi.")
+        assert sa.parse(_answer(latar=latar, agenda=""), texts, TIMELINE, day)
+
+    def test_a_stated_day_ahead_inside_the_month_part_backs_it(self):
+        texts = [TEXTS[0].replace("Rapat lanjutan dijadwalkan Kamis (15/10).", "Rapat lanjutan Rabu (28/10)."),
+                 *TEXTS[1:]]
+        agenda = "Rapat lanjutan karhutla dijadwalkan akhir bulan."
+        assert sa.parse(_answer(agenda=agenda), texts, TIMELINE, date(2026, 10, 21)).agenda == agenda
+
     def test_the_prompt_says_so(self):
         assert "jangan mengubah tanggal menjadi \"besok\"" in " ".join(sa.PROMPT.split())
 
@@ -529,13 +579,72 @@ class TestRelativeTime:
         assert _reason(_answer(hari_ini=hari_ini))[0] == "date"
         assert sa.parse(_answer(hari_ini=hari_ini), _texts("Titik api bertambah pada Minggu (11/10)."), TIMELINE, DAY)
 
-    def test_the_edition_date_backs_it(self):
-        """'pertengahan Oktober' (11-20/10) holds only today, 12/10: no chosen item, no stated date."""
-        texts = [TEXTS[0].replace(" Rapat lanjutan dijadwalkan Kamis (15/10).", "")] + TEXTS[1:]
-        answer = _answer(hari_ini="Presiden Prabowo memimpin rapat karhutla pertengahan Oktober.", agenda="")
-        assert sa.parse(answer, texts, TIMELINE, DAY)
+    def test_the_edition_date_backs_a_span_that_has_ended(self):
+        """A span ending today is backed by today: 'pertengahan Oktober' (11-20/10) on 20/10."""
+        assert sa.unbacked_times("pertengahan Oktober", date(2026, 10, 20), {date(2026, 10, 20)}, "") == []
         assert sa.unbacked_times("pertengahan Oktober", DAY, set(), "") == ["pertengahan Oktober"]
 
+    def test_the_edition_date_does_not_back_a_span_still_running(self):
+        """SYS-174 (#373): 'pertengahan Oktober' (11-20/10) on 12/10 holds today, but its days still run, so it
+        may be a schedule and today does not show one. It used to pass, and an invented 'akhir bulan' with it
+        from the 21st on."""
+        texts = [TEXTS[0].replace(" Rapat lanjutan dijadwalkan Kamis (15/10).", "")] + TEXTS[1:]
+        answer = _answer(hari_ini="Presiden Prabowo memimpin rapat karhutla pertengahan Oktober.", agenda="")
+        assert _reason_on(answer, texts)[0] == "date"
+        assert sa.unbacked_times("pertengahan Oktober", DAY, {DAY}, "") == ["pertengahan Oktober"]
+
+
+    RUNNING = [("akhir bulan", date(2026, 10, 26), date(2026, 10, 22), date(2026, 10, 28)),
+               ("akhir Oktober", date(2026, 10, 25), date(2026, 10, 21), date(2026, 10, 30)),
+               ("pertengahan bulan ini", DAY, date(2026, 10, 11), date(2026, 10, 18)),
+               ("awal Oktober", date(2026, 10, 8), date(2026, 10, 6), date(2026, 10, 9))]
+
+    @pytest.mark.parametrize("phrase,today,past,ahead", RUNNING)
+    def test_today_does_not_back_a_span_still_running(self, phrase, today, past, ahead):
+        """SYS-174 (#373): from the 21st "akhir bulan" holds today, whether it tells a past event or an invented
+        schedule, so today proves neither. A past day backs the past reading, outside the agenda (the 10-08
+        arcs' "awal Oktober" for a 6/10 item)."""
+        text = f"Rapat digelar {phrase}."
+        assert sa.unbacked_times(text, today, {today}, "") == [phrase]
+        assert sa.unbacked_times(text, today, {today, past}, "") == []
+
+    @pytest.mark.parametrize("phrase,today,past,ahead", RUNNING)
+    def test_in_the_agenda_only_a_day_ahead_backs_it(self, phrase, today, past, ahead):
+        """SYS-174: the agenda is the scheduled step, so a past day inside a running span backs nothing there
+        (QA: "pertengahan Oktober" on 15/10 was backed by the article's own 12/10)."""
+        text = f"Rapat lanjutan dijadwalkan {phrase}."
+        assert sa.unbacked_times(text, today, {today, past}, "", schedule=True) == [phrase]
+        assert sa.unbacked_times(text, today, {today, past, ahead}, "", schedule=True) == []
+
+    def test_a_span_that_has_ended_is_backed_as_before(self):
+        """Today backs a span ending today, in the agenda too; a past span keeps its past days."""
+        assert sa.unbacked_times("pertengahan Oktober", date(2026, 10, 20), {date(2026, 10, 20)}, "", True) == []
+        assert sa.unbacked_times("akhir September", DAY, {date(2026, 9, 24)}, "", True) == []
+
+    def test_sejak_this_month_ends_today(self):
+        """SYS-174: "sejak Oktober" is a start, never ahead, so its span ends today and today still backs it."""
+        assert sa.unbacked_times("Karhutla dibahas sejak Oktober.", DAY, {DAY}, "") == []
+
+    def test_end_to_end_the_edition_date_backs_a_span_ending_today(self):
+        """"sejak Oktober" on 12/10 spans 1-12/10. The chosen items are 23-24/9, and the articles' dates are 15/10
+        or unread, so only today is inside it."""
+        latar = ("Persoalan karhutla sudah di meja Presiden sejak Oktober. Pada 23/9 Seskab melaporkan 209 hektare "
+                 "lahan masih terbakar, dan pada 24 September Prabowo menggelar rapat pertama.")
+        assert _parse(_answer(latar=latar))
+
+    def test_end_to_end_a_chosen_item_backs_a_running_span_in_the_latar(self):
+        """As the 10-08 replays' "awal Oktober" for a 6/10 item: here "pertengahan Oktober" (11-20/10) for the
+        chosen 11/10 item. Without it only today and the article's own 12/10 (today) sit inside: refused."""
+        item = TimelineItem(104, date(2026, 10, 11), "CNBC", "Prabowo Rapat Karhutla Lagi", "Presiden rapat karhutla.",
+                            0.85, 12)
+        latar = ("Persoalan karhutla sudah di meja Presiden sejak September. Pada 23/9 Seskab melaporkan 209 hektare "
+                 "lahan masih terbakar, dan pertengahan Oktober Prabowo menggelar rapat lagi.")
+        texts = [TEXTS[0].replace("Rapat lanjutan dijadwalkan Kamis (15/10).", ""), *TEXTS[1:]]
+        timeline = [*TIMELINE, item]
+        assert sa.parse(_answer(latar=latar, alur=[N, N + 3], agenda=""), texts, timeline, DAY)
+        with pytest.raises(Rejected) as e:
+            sa.parse(_answer(latar=latar, alur=[N], agenda=""), texts, timeline, DAY)
+        assert e.value.reason == "date" and '"pertengahan Oktober" di latar' in e.value.detail
 
     def test_a_count_of_weeks_is_read_with_its_own_span(self):
         """SYS-157 rework: 'tiga pekan lalu' (18-24/9) holds the chosen 23/9 item; read as 'pekan lalu'

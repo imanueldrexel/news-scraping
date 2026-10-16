@@ -21,6 +21,7 @@ Reusable diagnostics live in `scripts/experiments/`. Throwaway repro code is inl
 
 One line each; read this before starting on a scraper or pipeline problem.
 
+- **No `git stash` / `stash pop` over uncommitted source edits (2026-10-16 late night):** `core.autocrlf=true` writes them back with CRLF, and every mutant anchored on `\n` then reports NOT FOUND. Compare against HEAD from an archive copy instead.
 - **Never write regex code through a Bash heredoc or `python -c` (2026-10-16, twice):** this harness turns `\b` into a backspace byte, silently. Use the Edit/Write tools; after any shell-written Python, count `chr(8)` in the file.
 - **A capital letter does not mark a weekday in Indonesian news (2026-10-16, SYS-171):** headlines are title case ("Dilantik Minggu Depan" = next week). Only "hari Minggu" safely means the Sunday. (`_RELATIVE` still reads a capital "Minggu lalu" as the Sunday: at worst a retry.)
 
@@ -3014,3 +3015,31 @@ SINDONEWS   old 12 new 12 | lost [] | gained []   links identical: True
   - The month-part hole is the general form of SYS-169: today backs any relative span that holds it, so a span still running proves nothing.
   - A bare weekday with no suffix is unchecked, but no replay arc writes one (all carry their date): not filed.
 - **Links:** #366, #370, #371, #372, #373, #374, #375; `.10x/reviews/2026-10-16-qa-report-night.md`.
+
+### 2026-10-16 — SYS-171 rework, SYS-174..176: weekday of a week, running spans judged by field, adjacent "mencapai", weekday-dated running periods
+- **Question / hypothesis:**
+  - (1) SYS-174: QA proposed "today alone does not back a running span". Does a stricter rule hold without refusing true past phrases: a running span backed only by a day after today, in every field?
+  - (2) SYS-175: should "mencapai" stand as the to-word after the same 0-8 word gap as "hingga", or only right after the verb?
+  - (3) SYS-171: does "<hari> pekan depan" need its own key?
+  - (4) SYS-176: does a weekday before the date break SYS-161's Polri cases?
+- **Method:**
+  - QA's `scripts/experiments/qa_2026_10_16_night/test_qa_1016_night.py` (17 red at the start) and the 10-14/15/16/16-eve files.
+  - Corpus, read-only: a scratch probe split every article sentence with a change verb and a later "mencapai N" into adjacent (`<verb>,? mencapai N`) and gap-only (1-8 words between). It used a server-side cursor and a SQL pre-filter `~* '\m(<verbs>)\M[^.]{0,160}mencapai'`. Without them the first attempt held 4.3 GB and ran for over 10 minutes, then was killed.
+  - Offline: `scripts/experiments/sys169_170/recheck_replays.py --db`, extended to judge every relative phrase whose span runs past the edition day. It uses `story_arc.unbacked_times` with the arc's timeline-item dates (handcheck.csv) and the dates of the day's articles. It ran on an archive copy of HEAD and on the tree, and the outputs were diffed.
+  - Mutants: `run_registry_mutants_in_copy.py` on a `tar` copy (arc suites), then QA's `qa_mutants_1016_night.py <copy>`.
+- **Result:**
+  - (1) **The strict rule fails on real arcs.** It refused 6 of 39 stored v4/v5 arcs, all true past phrases in the latar on 8-9/10 ("awal Oktober pemerintah ... kembali mengusulkan skema 52:48", "pada awal Oktober menjelaskan alasan ..."). Each was backed by an early-October timeline item (2/10, 5/10, 6/10, 1/10). The cost would be about 15% of arcs retried for a correct sentence.
+  - The rule as shipped is by field. Today never backs a running span. A past day backs one outside the agenda, and in the agenda only a day after today does. With it, the 6 are backed and HEAD-vs-tree output is identical. QA's 9 `TestMonthPartFuture` cases pass.
+    - A trap in QA's fixture: `dates_in` does not read "Senin (12/10/2026)" (the year blocks `_SHORT_DATE`), so that article's 12/10 is no known day. My first agenda test meant to show "a past day does not back the agenda" proved nothing until the fixture stated "Senin (12/10)". The mutant `sys174_agenda_not_a_schedule` survived until then.
+  - (2) Adjacent: 55 sentences in 54 articles, all real change claims in a 15-sentence sample ("naik mencapai 13,74 persen", "melemah, mencapai angka Rp17.862"). Gap-only: 1,181 sentences in 1,091 articles, mostly "mencapai" of another noun, often the earlier value ("turun 35,30% dari bulan sebelumnya yang mencapai 41.201 unit", "tumbuh 17% ..., dengan nilai transaksi mencapai Rp5,7 triliun"). So it is adjacent only.
+  - (3) Own key `hari <hari> pekan depan|ini`. A stated one also gives its week key on the backing side only. Replays: future times 5 -> 5 (no replay writes a weekday of a week).
+  - (4) The weekday is read only when a date follows (lookahead), so "hingga Senin" alone stays out. The Polri cases are still refused. Change claims 18 -> 18 on the replays.
+  - Mutants: all 171 registry entries on the arc modules KILLED (164 by the arc suites, 7 summary-check ones by the newsletter suites), 25 of them new or retargeted; QA's night set 18/18. Unit 3,493 passed, 5 skipped.
+  - Unit tests: one dev test asserted the old behaviour ("pertengahan Oktober" on 12/10 backed by today alone). It was rewritten to the new rule.
+  - The working tree's `source_check.py` / `story_arc.py` came back with CRLF after a `git stash` / `stash pop` (`core.autocrlf=true`). Three of QA's mutants anchored on `\n` then reported NOT FOUND. They were rewritten to LF, and all 18 QA mutants were KILLED.
+- **Conclusion / do not repeat:**
+  - A relative span that still runs past today is never backed by today. Whether a past day backs it depends on the field: the agenda is the scheduled step, the latar is past.
+  - Measure a backing rule on the stored replays before choosing it. The "only a day ahead" rule looked principled and refused 15% of true arcs.
+  - "mencapai" after a gap is not a change claim. Do not widen it to the gap form.
+  - Never `git stash` in this repo with uncommitted source edits when mutants anchor on `\n`: `autocrlf=true` rewrites the files with CRLF on pop. Copy the tree instead.
+- **Links:** SYS-171 (#370), SYS-174 (#373), SYS-175 (#374), SYS-176 (#375) · `newscrawler/core/source_check.py` · `newscrawler/core/story_arc.py` · `scripts/experiments/sys169_170/recheck_replays.py`

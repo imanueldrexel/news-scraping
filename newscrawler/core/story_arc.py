@@ -306,16 +306,29 @@ def chronicle(latar: str, judul: str, hari_ini: str, has_alur: bool) -> List[str
     return problems
 
 
-def unbacked_times(text: str, digest_date: date, known: set, stated: str) -> List[str]:
+def _backing_days(known: set, last: date, digest_date: date, schedule: bool) -> set:
+    """SYS-174 (#373): the `known` days that may back a span ending on `last`. Today backs only a span that has
+    ended: while one still runs ("akhir bulan" from the 21st) today sits inside it whether the phrase tells a past
+    event or an invented schedule. A past day inside it backs the past reading (the 10-08 arcs' "awal Oktober" for a
+    6/10 item), except in the agenda, the scheduled step, where only a day after today does ("Rabu (28/10)")."""
+    if last <= digest_date:
+        return known
+    return {d for d in known if d > digest_date} if schedule else known - {digest_date}
+
+
+def unbacked_times(text: str, digest_date: date, known: set, stated: str, schedule: bool = False) -> List[str]:
     """SYS-157: the relative time phrases of `text` ("awal Oktober", "pekan lalu") whose days hold
     none of the `known` dates (today, the chosen items' own dates, the dates the sources state) and
     that `stated` -- today's `terkait` articles only -- does not state as written. A phrase means
     something only from the day it was written: a 23/9 item's "kemarin" is 22/9 (SYS-162). A future time
-    ("akhir bulan ini") is not read here: `unstated_future_times` judges it by key, never by its span (SYS-169)."""
+    ("akhir bulan ini") is not read here: `unstated_future_times` judges it by key, never by its span (SYS-169).
+    A span still running past today is not backed by today, nor in a `schedule` (the agenda) by a past day
+    (`_backing_days`, SYS-174)."""
     stated = " ".join(stated.lower().split())
     return [phrase for phrase, first, last in relative_times(text, digest_date)
             if not future_phrases(phrase)
-            and not any(first <= d <= last for d in known) and " ".join(phrase.lower().split()) not in stated]
+            and not any(first <= d <= last for d in _backing_days(known, last, digest_date, schedule))
+            and " ".join(phrase.lower().split()) not in stated]
 
 
 def overcounted(text: str, items: int, stated: set) -> List[str]:
@@ -421,7 +434,8 @@ def parse(answer: Optional[str], shown_texts: Sequence[str], timeline: Sequence[
                     for claim in unbacked_changes(value, source)]
         dates += [f'waktu "{phrase}" di {key} tidak cocok dengan tanggal hari ini, tanggal cuplikan alur yang '
                   "dipilih, atau tanggal yang tertulis di artikel" for phrase in unbacked_times(value, digest_date,
-                                                                                                days, stated_today)]
+                                                                                                days, stated_today,
+                                                                                                key == "agenda")]
         dates += [f'waktu "{phrase}" di {key} tidak tertulis di artikel hari ini: tulis waktunya seperti yang '
                   "tertulis di artikel, mis. tanggalnya" for phrase in unstated_future_times(value, stated_today)]
     if not chosen:
