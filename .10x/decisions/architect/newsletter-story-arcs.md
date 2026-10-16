@@ -244,3 +244,45 @@ wires them). The arc's data flow is unchanged.
   and a comma after the verb. "<verb> mencapai N" with no to-word is still not a claim (not in the ticket).
 - **SYS-173:** a part of last week is narrowed like a month part: awal Mon-Wed, pertengahan Tue-Thu,
   akhir Thu-Sun (covers both readings of "akhir pekan"). Supersedes the 10-16 (dev) whole-week call.
+
+# 2026-10-16 (dev, late night): QA's night queue (SYS-171 rework, SYS-174, SYS-175, SYS-176)
+
+No new ADR. All four stay inside ADR-017's seam: `source_check` holds the tables, `story_arc.parse` wires them. The
+data flow and the prompt are unchanged; `relative_name` (the phrase shown beside each timeline item) is unchanged.
+
+## Decisions
+- **SYS-171 rework: "<hari> pekan/minggu depan|mendatang|ini" is that weekday, keyed `hari <hari> pekan depan|ini`.**
+  - It does not share a key with "Kamis depan". From a Monday, "Kamis depan" may be this week's Thursday; "Kamis
+    pekan depan" cannot be. Sharing would let one back the other across a week.
+  - A stated one also states its week: an article's "Kamis pekan depan" backs the arc's "pekan depan". The reverse
+    does not hold. Only the backing side gets the extra key (`unstated_future_times`). The repeat check
+    (`agenda_repeats`, SYS-163/165) keeps exact keys.
+  - "pekan ini" is included. "Rabu pekan ini" had the same hole: it was read as "pekan ini" alone.
+  - Any case, and "Minggu pekan depan" is the Sunday: the week word after it removes the doubt.
+  - No comma form ("Senin, pekan depan" may be today plus next week).
+- **SYS-174: today never backs a relative span that still runs past it. In the agenda, only a day after today
+  backs one.** (`story_arc._backing_days`; `unbacked_times(..., schedule=key == "agenda")`)
+  - This is the ticket's first option, made by field. The literal option ("only a day after today backs a running
+    span", in every field) was built and measured first. It refused 6 of the 39 stored v4/v5 arcs. Each was a true
+    past "awal Oktober" in the latar on 8-9/10, backed by an early-October timeline item. That would cost about 15%
+    of arcs a retry.
+  - A past day inside a running span backs the past reading. The agenda is the scheduled step by construction, so
+    there it backs nothing.
+  - Today backs neither reading: it sits inside the span either way.
+  - The ticket's second option (key the month part as a future time while it runs) was rejected. It would refuse a
+    true past part that a timeline item backs, and it would make `future_phrases` depend on the edition date.
+  - "sejak <bulan>" now spans that month only up to today. A start is never ahead, so it never runs past today, and
+    today keeps backing it as before.
+- **SYS-175: "mencapai" is the to-word only right after the verb (optional comma).**
+  - Corpus, read-only: 55 sentences have "<verb> mencapai N", all real change claims ("naik mencapai 13,74 persen").
+  - With a 1-8 word gap there are 1,181 sentences. There "mencapai" mostly belongs to another noun, often the
+    earlier value ("turun 35,30% dari bulan sebelumnya yang mencapai 41.201 unit").
+  - So the to-word may not stand after the gap.
+- **SYS-176: a weekday may stand before the date of a running period** ("Hingga Senin (12/10)", "per Senin, 12/10",
+  "sampai hari Senin (12/10/2026)", "hingga Kamis 8 Oktober"). It does so only when a date follows (lookahead). A bare
+  "hingga Senin" may end a list.
+
+## Failure modes accepted
+- SYS-174, latar: an invented schedule in the latar, inside a running span that also holds a past day from the
+  sources or the timeline, is still backed. The agenda is closed; the latar keeps the past reading.
+- SYS-171: an arc's "Kamis depan" and an article's "Kamis pekan depan" for the same day do not meet. Cost: a retry.
