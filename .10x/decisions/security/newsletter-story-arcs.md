@@ -6,3 +6,6 @@
 - No security finding (`.10x/reviews/2026-10-16-security-review-evening.md`).
 - OPS-33's token redaction is mutation-guarded on all three Telegram send paths.
 - Integrity gaps were filed as bugs: SYS-169 sent back, SYS-171 #370, SYS-172 #371.
+
+## 2026-10-16 (late): SYS-171 rework, SYS-174..176
+- No security finding (`.10x/reviews/2026-10-16-security-review-late.md`). Regex and backing-set changes on in-process text only; bounded patterns (179 QA tests in 1.4 s). QA's probes open the DB read-only. Integrity gaps were filed as bugs: SYS-174 sent back, SYS-177..179.

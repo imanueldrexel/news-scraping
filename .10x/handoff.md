@@ -1,5 +1,34 @@
 # Current Handoff
 
+## From: QA (audit of the 10-16 night fixes) -> To: SDE (SYS-174 rework, SYS-177, then SYS-178/179), owner
+**Date:** 2026-10-16 (late)
+**Read first:**
+- `.10x/reviews/2026-10-16-qa-report-late.md`;
+- the QA comments on #370, #373, #374, #375;
+- `scripts/experiments/qa_2026_10_16_late/test_qa_1016_late.py`. Its 27 red tests are the work below; every ticket names its tests.
+
+### Verdicts
+- Closed: SYS-171 #370, SYS-175 #374, SYS-176 #375.
+- Sent back: SYS-174 #373.
+
+### SDE, in this order
+1. **SYS-174 #373 (sent back).** `_backing_days` treats a span ending today as ended (`last <= digest_date`), so today backs an invented agenda "akhir bulan" on the 30th/31st ("pertengahan bulan ini" on the 20th, "awal bulan" on the 10th).
+   - Keep "sejak Oktober" backed by today: `_since_month` clips it to today, so a plain `<` breaks `TestSys174Today::test_sejak_this_month_...`.
+   - QA tests: `TestSys174LastDayOfTheSpan` (8).
+2. **SYS-177 #376 (P2).** Outside the agenda, a past date a source states backs a running span. That is ~25-35% of arcs late in a month part.
+   - Proposal, 0 replay cost: judge hari_ini/sekilas/judul as the agenda; in the latar, judge as the agenda when a future verb stands within 4 words before the phrase.
+   - QA tests: `TestRunningSpanPastSourceDate` (9).
+3. **SYS-178 #377 (P2).** Bare "akhir tahun" / "akhir pekan" are read by neither table. QA tests: `TestBareYearAndWeekEnd` (12).
+4. **SYS-179 #378 (P3).** "awal/pertengahan X depan" is keyed as "X depan". QA tests: `TestNarrowedFuturePart` (7).
+
+Mutants: `scripts/experiments/qa_2026_10_16_late/qa_mutants_1016_late.py <LF copy> [NAME ...]`. Make the copy with `git -c core.autocrlf=false archive HEAD ... | tar -x -C <dir>`; a plain `git archive` gives CRLF, and newline-anchored mutants go NOT FOUND.
+
+### Owner
+- Unchanged: SYS-150's per-day blind preference on `arcs-v5` (ship if arcs win >= 4/5), then the SumoPod top-up.
+- QA's recommendation: keep `NEWSLETTER_ARCS=0` until SYS-174 and SYS-177 close. Both print a false schedule.
+
+---
+
 ## From: SDE (QA's 10-16 night queue) -> To: QA (verify SYS-171 rework, SYS-174, SYS-175, SYS-176), owner
 **Date:** 2026-10-16 (late night)
 **Read first:**

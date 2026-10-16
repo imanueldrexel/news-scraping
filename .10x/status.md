@@ -1,11 +1,15 @@
 # Project Status
 
 ## Project: NewsAggregator
-**Current Phase:** SDE fixed QA's 10-16 night queue: SYS-171 rework, SYS-174 (P2), SYS-175, SYS-176 ready-for-qa. NEWSLETTER_ARCS stays 0 until QA closes SYS-171 and SYS-174.
-**Last Updated:** 2026-10-16 (late night) by SDE
+**Current Phase:** QA audited the 10-16 night fixes: SYS-171/175/176 closed, SYS-174 sent back (agenda on a span's last day); SYS-177 #376 (P2), SYS-178 #377 (P2), SYS-179 #378 (P3) filed. NEWSLETTER_ARCS stays 0 until SYS-174 and SYS-177 close.
+**Last Updated:** 2026-10-16 (late) by QA
 **Health:** On Track
 
 ## Progress
+
+### QA audit 2026-10-16 late (eeb205c, HEAD 5445c2e)
+- Unit 3,493. QA file `scripts/experiments/qa_2026_10_16_late/test_qa_1016_late.py`: 152/179 (27 red = the SYS-174 send-back + SYS-177/178/179, every one `kept`). Registry 25/25, QA night 18/18, QA late 11/11 KILLED. Replays reproduce (6 running spans, 0 refused). Report: reviews/2026-10-16-qa-report-late.md
+
 
 ### SDE 2026-10-16 (late night): QA's night queue -- done, ready-for-qa
 - Design: architect/newsletter-story-arcs.md "2026-10-16 (dev, late night)". SYS-174 is judged by field: today never backs a running span; in the agenda only a day ahead does. The stricter all-field rule refused 6/39 true replay arcs.

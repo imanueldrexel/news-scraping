@@ -151,3 +151,24 @@ Report: `.10x/reviews/2026-10-16-qa-report-night.md`. QA tests and mutants: `scr
 - A bare weekday ("dijadwalkan Kamis.") is not filed: every weekday in the v4-v6 arcs carries its date.
 
 **Lesson:** when a fix moves a phrase from one check to another, test the phrase's neighbours that stayed behind. "akhir bulan ini" moved to the key check, and "akhir bulan" did not.
+
+## QA audit of SYS-171 rework, SYS-174..176 (2026-10-16 late)
+Report: `.10x/reviews/2026-10-16-qa-report-late.md`. QA tests, mutants and probes: `scripts/experiments/qa_2026_10_16_late/`.
+
+**Verdicts:**
+- Closed: SYS-171 #370, SYS-175 #374, SYS-176 #375.
+- Sent back: SYS-174 #373 (a span ending today counts as ended, so today backs an invented agenda "akhir bulan" on the 30th/31st, and likewise on the 20th and 10th).
+
+**Filed:**
+- SYS-177 #376 (P2): outside the agenda, a past date a source states backs a running span (~25-35% of arcs by corpus count).
+- SYS-178 #377 (P2): bare "akhir tahun" / "akhir pekan" are read by neither table.
+- SYS-179 #378 (P3): "awal/pertengahan X depan" is keyed as "X depan".
+
+**Decisions:**
+- **Accepted:** the dev's key call. "Kamis pekan depan" stays apart from "Kamis depan" (a retry both ways). A stated weekday of a week implies its week, one way only.
+- **Accepted:** SYS-174 judged by field, not by "only a day ahead" everywhere. The dev measured 6/39 true replay arcs refused by the strict rule, and QA confirmed all 6 are latar past narration.
+- **Rejected:** "The agenda is closed". It is open on each span's last day.
+- **Rejected:** "the residual is the latar". It is the hari_ini and sekilas too, and it is not rare. It is filed apart (SYS-177), not as a send-back, because QA's own SYS-174 proposal allowed a source date to back the span. The new rule (by field, with a future verb before the phrase) is a design call with its own evidence.
+- **Not filed, by count:** comma "Kamis, pekan depan" (0), adverb + "mencapai" (10), "hingga <hari> malam (d/m" (22, false refusal only), `relative_name` "akhir Oktober" for a this-week item (true; the past verb carries the tense).
+
+**Lesson:** when a fix removes one day from a backing set, measure what the rest of the set still backs on real articles. Test the boundary where the fix's "has it ended?" test flips.

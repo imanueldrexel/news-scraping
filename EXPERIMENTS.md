@@ -23,6 +23,7 @@ One line each; read this before starting on a scraper or pipeline problem.
 
 - **No `git stash` / `stash pop` over uncommitted source edits (2026-10-16 late night):** `core.autocrlf=true` writes them back with CRLF, and every mutant anchored on `\n` then reports NOT FOUND. Compare against HEAD from an archive copy instead.
 - **Never write regex code through a Bash heredoc or `python -c` (2026-10-16, twice):** this harness turns `\b` into a backspace byte, silently. Use the Edit/Write tools; after any shell-written Python, count `chr(8)` in the file.
+- **Dropping today from a time guard's backing still leaves every date the day's articles state (QA 2026-10-16 late, SYS-177):** 13% of articles inside a month part state a past date in it, so about one arc in four backs an invented schedule anyway. Measure the whole backing set on real articles, and test the span's last day.
 - **A capital letter does not mark a weekday in Indonesian news (2026-10-16, SYS-171):** headlines are title case ("Dilantik Minggu Depan" = next week). Only "hari Minggu" safely means the Sunday. (`_RELATIVE` still reads a capital "Minggu lalu" as the Sunday: at worst a retry.)
 
 - **Count a text guard's edge case in `articles` before ticketing it (2026-10-15, QA):** compound counts, "kemarin lusa", "setengah bulan lalu" and kuartal-with-year records occur 0-4 times in 127,559 articles; an exclusion written as "preceded by sejak" misses a table phrase that starts with it (SYS-164). -> 2026-10-15 "QA audit of the arc-guard rework" entry
@@ -3043,3 +3044,35 @@ SINDONEWS   old 12 new 12 | lost [] | gained []   links identical: True
   - "mencapai" after a gap is not a change claim. Do not widen it to the gap form.
   - Never `git stash` in this repo with uncommitted source edits when mutants anchor on `\n`: `autocrlf=true` rewrites the files with CRLF on pop. Copy the tree instead.
 - **Links:** SYS-171 (#370), SYS-174 (#373), SYS-175 (#374), SYS-176 (#375) · `newscrawler/core/source_check.py` · `newscrawler/core/story_arc.py` · `scripts/experiments/sys169_170/recheck_replays.py`
+
+### 2026-10-16 — QA audit of the SYS-171 rework / SYS-174..176: what still backs a running span, the span's last day, and the forms neither time table reads
+- **Question / hypothesis:**
+  - Does each fix hold on inputs the dev's tests do not use?
+  - SYS-174 drops today from a running span's backing. Is the rest of the backing set (`parse`'s `days`: every date today's `terkait` articles state, plus the alur items) still enough to back an invented schedule in real articles?
+  - Does the span-ended test (`last <= digest_date`) leave the span's last day open?
+- **Method:**
+  - `scripts/experiments/qa_2026_10_16_late/test_qa_1016_late.py` (179 tests).
+  - `qa_mutants_1016_late.py <LF copy>` (11). Also `run_registry_mutants_in_copy.py <copy> sys171_ sys174_ sys175_ sys176_ qa16n_` and the night file's 18.
+  - `probe_running_span_backing.py`: per digest day inside a month part, the share of that day's articles whose guard text (headline + 800 chars) states a date between the span's start and yesterday.
+  - `probe_forms_corpus.py`: read-only `~*` counts of the forms the fixes leave out.
+  - `recheck_replays.py --db`. A scratch script located each replay running span's field via `back_stories_from_markdown`.
+- **Result:**
+  - Registry 25/25, night 18/18, late 11/11 KILLED. Unit 3,493 passed. Earlier QA files 407/407. Replays: 6 running spans, 0 refused, all in the latar, none with a future verb before the phrase.
+  - 27 QA tests red, every one `kept`:
+    - span's last day in the agenda (6). "akhir bulan" on 31/10 and 30/11, "pertengahan bulan ini" on 20/10, "awal bulan" on 10/10 are kept; the day before is refused;
+    - past source date inside a running span (8). Share of articles stating one: akhir September 13.4% (3,621 / 26,978), pertengahan September 14.2%, pertengahan Oktober 10.2%. That is ~25% / 35% of 2- / 3-article arcs;
+    - bare "akhir tahun" / "akhir pekan" (9): 141 / 21 articles after a future verb;
+    - "awal/pertengahan X depan" keyed as "X depan" (4): 55 articles.
+  - Not filed, by count: "<hari>, pekan depan" 0 articles; adverb + "mencapai" 10 (vs 35 adjacent); "<verb> N% mencapai N" 5; "hingga <hari> malam (d/m" 22 (vs 2,155).
+  - Fixture traps on the way:
+    - an agenda with no `_SCHEDULED` word ("ditargetkan", "terbit") is dropped, not checked;
+    - two date-led latar sentences are refused as style;
+    - the Wantimpres item is off-thread for the karhutla story;
+    - `git archive` without `-c core.autocrlf=false` gives a CRLF copy, so 3 newline-anchored mutants went NOT FOUND;
+    - `ln -s` in git-bash copied the whole venv instead of linking it.
+- **Conclusion / do not repeat:**
+  - SYS-171/175/176 closed; SYS-174 sent back (last day in the agenda).
+  - SYS-177 (P2), SYS-178 (P2) and SYS-179 (P3) filed.
+  - Removing today from the backing set is not enough: the day's articles state recent dates in about one arc in four. Measure the whole backing set.
+  - Before reading a red test as a finding, check that its outcome is the hole (`kept`) and not another guard's refusal.
+- **Links:** #370, #373, #374, #375, #376, #377, #378; `.10x/reviews/2026-10-16-qa-report-late.md`.
