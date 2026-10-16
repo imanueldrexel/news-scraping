@@ -342,12 +342,43 @@ class TestFutureTimeStated:
                                _texts("Besok harga cabai diperkirakan turun.", i=2))
         assert reason == "date"
 
-    def test_a_relative_phrase_is_checked_once_by_its_span(self):
-        """ "akhir bulan ini" (21-31/10) is a relative phrase too: its span decides, and it is named once."""
+    @pytest.mark.parametrize("day", [DAY, date(2026, 10, 26)])
+    def test_a_relative_future_phrase_is_judged_by_key_and_named_once(self, day):
+        """SYS-169 rework (QA, 2026-10-16 evening): "akhir bulan ini" is a relative phrase too, but its span
+        (21-31/10) holds today from the 21st on, so the span would back an invented one 11 days a month. The
+        key decides; a source date inside the span (26/10) does not back it either."""
         answer = _answer(agenda="Rapat lanjutan karhutla dijadwalkan akhir bulan ini.")
-        reason, detail = _reason(answer)
-        assert reason == "date" and detail.count('"akhir bulan ini"') == 1
-        assert sa.parse(answer, _texts("Evaluasi digelar Senin (26/10)."), TIMELINE, DAY).agenda
+        for texts in (TEXTS, _texts("Evaluasi digelar Senin (26/10).")):
+            with pytest.raises(Rejected) as e:
+                sa.parse(answer, texts, TIMELINE, day)
+            assert e.value.reason == "date" and e.value.detail.count('"akhir bulan ini"') == 1
+        assert sa.parse(answer, _texts("Evaluasi digelar akhir bulan ini."), TIMELINE, day).agenda
+
+    @pytest.mark.parametrize("field,value", [
+        ("latar", FRAME + "Pada 23/9 Seskab melaporkan 209 hektare lahan masih terbakar. Rapat lagi pekan depan."),
+        ("sekilas", "Prabowo rapat karhutla lagi besok."),
+        ("judul", "Prabowo rapat karhutla lagi bulan depan"),
+    ])
+    def test_the_latar_sekilas_and_judul_are_checked(self, field, value):
+        """QA's surviving mutant `qa16e_future_latar_unchecked` checked only agenda and hari_ini."""
+        reason, detail = _reason(_answer(**{field: value}))
+        assert reason == "date" and f"di {field} tidak tertulis di artikel hari ini" in detail
+
+    @pytest.mark.parametrize("agenda", ["Rapat lanjutan karhutla dijadwalkan Kamis depan.",
+                                        "Rapat lanjutan karhutla dijadwalkan pada hari Senin mendatang.",
+                                        "Keputusan karhutla akan diumumkan sepekan ke depan."])
+    def test_a_weekday_or_a_window_ahead_is_refused_unless_stated(self, agenda):
+        """SYS-171 (#370): the article says "Kamis (15/10)", this week's Thursday; "Kamis depan" is the 22nd.
+        A window ahead counts too (owner, 2026-10-16)."""
+        phrase = sa.future_phrases(agenda)[0][1]
+        reason, detail = _reason(_answer(agenda=agenda))
+        assert reason == "date" and f'"{phrase}" di agenda' in detail
+        assert sa.parse(_answer(agenda=agenda), _texts(f"Rapat lanjutan {phrase}."), TIMELINE, DAY).agenda == agenda
+
+    def test_a_weekday_ahead_makes_a_scheduled_step(self):
+        """SYS-166 reads the same table: a stated "Senin mendatang" keeps an agenda that names nothing else."""
+        agenda = "Para ahli dipanggil Senin mendatang."
+        assert sa.parse(_answer(agenda=agenda), _texts("Ahli dipanggil Senin depan."), TIMELINE, DAY).agenda == agenda
 
     def test_the_prompt_says_so(self):
         assert "jangan mengubah tanggal menjadi \"besok\"" in " ".join(sa.PROMPT.split())

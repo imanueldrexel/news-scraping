@@ -195,6 +195,17 @@ def _weekday_of_last_week(m, today):
     return day, day
 
 
+# SYS-173 (#372): a part of last week, Monday = 0, narrowed like a month's part. "akhir pekan" is the weekend or the
+# end of the week; Thursday-Sunday holds both readings.
+_WEEK_PART = {"awal": (0, 2), "pertengahan": (1, 3), "akhir": (3, 6)}
+
+
+def _part_of_last_week(m, today):
+    monday = _last_week(m, today)[0]
+    first, last = _WEEK_PART[m.group("part").lower()]
+    return monday + timedelta(days=first), monday + timedelta(days=last)
+
+
 _COUNT = {"satu": 1, "dua": 2, "tiga": 3, "empat": 4, "lima": 5, "enam": 6, "tujuh": 7, "delapan": 8,
           "sembilan": 9, "sepuluh": 10, "sebelas": 11}
 # A count no table can turn into days: matched so the shorter phrase inside it is not read, and left unread.
@@ -216,6 +227,9 @@ def _count_ago(m, today) -> Optional[Tuple[date, date]]:
 
 
 _MONTH_NAME = "|".join(_MONTH_WORDS)
+# A weekday as a time word: "Minggu" is the Sunday only with a capital M; "minggu" is a week.
+_WEEKDAY_BUT_SUNDAY = "|".join(d for d in copy.DAYS if d != "Minggu")
+_WEEKDAY = rf"{_WEEKDAY_BUT_SUNDAY}|(?-i:Minggu)"
 # SYS-157 (#352): the relative time phrases a story arc may write instead of a calendar date, each with the
 # days it can mean, seen from the edition's date (None: matched, so nothing shorter inside it is read, but
 # not turned into days). Where two start together the longer is read: "dua pekan lalu" is not "pekan lalu".
@@ -232,11 +246,11 @@ _RELATIVE = [
     (rf"(?P<n>{'|'.join(_COUNT)}|\d+|{_VAGUE_COUNT})\s+(?P<unit>hari|pekan|minggu|bulan)\s+lalu", _count_ago),
     (r"pekan\s+lalu|(?-i:minggu)\s+lalu", _last_week),
     # SYS-167 (#364): the modifier is part of the phrase, so "Senin pekan lalu, ..." opens on it and "sejak akhir
-    # pekan lalu" is a frame. "akhir pekan" is the weekend or the end of the week, so the modifiers keep the week.
-    (rf"(?P<day>{'|'.join(d for d in copy.DAYS if d != 'Minggu')}|(?-i:Minggu))\s+(?:pekan|(?-i:minggu))\s+lalu",
+    # pekan lalu" is a frame. SYS-173 (#372): a part spans only its days of that week.
+    (rf"(?P<day>{_WEEKDAY})\s+(?:pekan|(?-i:minggu))\s+lalu",
      _weekday_of_last_week),
-    (r"(?:awal|pertengahan|akhir)\s+(?:pekan|(?-i:minggu))\s+lalu", _last_week),
-    (rf"(?P<day>{'|'.join(d for d in copy.DAYS if d != 'Minggu')}|(?-i:Minggu))\s+lalu", _weekday_last),
+    (r"(?P<part>awal|pertengahan|akhir)\s+(?:pekan|(?-i:minggu))\s+lalu", _part_of_last_week),
+    (rf"(?P<day>{_WEEKDAY})\s+lalu", _weekday_last),
     (r"kemarin", lambda m, today: (today - timedelta(days=1), today - timedelta(days=1))),
 ]
 _RELATIVE_EACH = [(re.compile(rf"\b(?:{pattern})\b", re.IGNORECASE), span) for pattern, span in _RELATIVE]
@@ -282,7 +296,7 @@ def relative_times(text: str, today: date) -> List[Tuple[str, date, date]]:
       N bulan lalu                         the whole calendar month N months back
       sepekan / dua pekan terakhir         the 7 / 14 days before
       pekan lalu                           the previous Monday-Sunday week
-      awal / pertengahan / akhir pekan lalu  the same week (SYS-167: "akhir pekan" reads two ways)
+      awal / pertengahan / akhir pekan lalu  Mon-Wed / Tue-Thu / Thu-Sun of that week (SYS-173)
       <hari> pekan lalu                    that weekday of the previous week
       <hari> lalu                          the last such weekday before today ("Minggu lalu" is a
                                            Sunday only with a capital M; "minggu lalu" is last week)
@@ -317,20 +331,32 @@ def relative_name(day: date, today: date) -> str:
 # The future times a story arc may write instead of a date (SYS-165/166/168). Bare "bulan ini" / "tahun ini" are not
 # among them (owner, 2026-10-16): mostly past tense in news, and a whole month or year is no schedule. "esok harinya"
 # is past narration ("the next day").
-_FUTURE = re.compile(r"\b(?:b?esok(?!\s+harinya)|lusa|(?:akhir\s+)?(?:pekan|minggu)\s+(?:depan|mendatang|ini)"
+# SYS-171 (#370): a weekday ahead, "(hari) Kamis depan / mendatang", keyed apart from "pekan depan". The Sunday only
+# as "hari Minggu depan": a bare "Minggu Depan" is next week in title-case headlines and at a sentence's start, and a
+# reader cannot tell it apart either. A window ahead, "sepekan / dua bulan ke depan", is one too (owner, 2026-10-16).
+_DAY_AHEAD = rf"(?:hari\s+(?:{'|'.join(copy.DAYS)})|{_WEEKDAY_BUT_SUNDAY})\s+(?:depan|mendatang)"
+_WINDOW_AHEAD = rf"(?:se|(?:{'|'.join(_COUNT)}|\d+|{_VAGUE_COUNT})\s+)(?:hari|pekan|minggu|bulan|tahun)\s+ke\s+depan"
+_FUTURE = re.compile(rf"\b(?:{_DAY_AHEAD}|{_WINDOW_AHEAD}|"
+                     r"b?esok(?!\s+harinya)|lusa|(?:akhir\s+)?(?:pekan|minggu)\s+(?:depan|mendatang|ini)"
                      r"|(?:akhir\s+)?(?:bulan|tahun)\s+(?:depan|mendatang)|akhir\s+(?:bulan|tahun)\s+ini)\b",
                      re.IGNORECASE)
-_FUTURE_SYNONYMS = ((r"\bminggu\b", "pekan"), (r"\bmendatang\b", "depan"), (r"^esok\b", "besok"))
+_DAY_AHEAD_ONLY = re.compile(_DAY_AHEAD, re.IGNORECASE)
+_FUTURE_SYNONYMS = ((r"\bminggu\b", "pekan"), (r"\bmendatang\b", "depan"), (r"^esok\b", "besok"),
+                    (r"\bseminggu\b", "sepekan"))
 
 
 def future_phrases(text: str) -> List[Tuple[int, str]]:
-    """(position, phrase as written) of every future time in `text`: "besok", "pekan depan", "akhir tahun ini"."""
+    """(position, phrase as written) of every future time in `text`: "besok", "pekan depan", "akhir tahun ini",
+    "Kamis depan", "sepekan ke depan"."""
     return [(m.start(), m.group(0)) for m in _FUTURE.finditer(text or "")]
 
 
 def future_key(phrase: str) -> str:
-    """`phrase` keyed so synonyms meet: "Minggu  mendatang" is "pekan depan", "esok" is "besok"."""
+    """`phrase` keyed so synonyms meet: "Minggu  mendatang" is "pekan depan", "esok" is "besok", "Kamis
+    mendatang" is "hari kamis depan", "hari Minggu depan" (the Sunday) is "hari minggu depan"."""
     key = " ".join(phrase.lower().split())
+    if _DAY_AHEAD_ONLY.fullmatch(phrase):
+        return f"hari {key.split()[-2]} depan"
     for pattern, replacement in _FUTURE_SYNONYMS:
         key = re.sub(pattern, replacement, key)
     return key
@@ -344,12 +370,11 @@ def future_times(text: str) -> Set[str]:
 def unstated_future_times(text: str, stated: str) -> List[str]:
     """SYS-169 (#366): the future times of `text` that `stated` -- today's `terkait` articles only, as
     `unbacked_times` for the past -- does not give under the same key. An article's "Kamis (15/10)" does
-    not back the model's "besok": it is the step's time only as the article wrote it. A phrase inside a
-    relative phrase ("akhir bulan ini") is left to the relative-time check, which reads its span."""
+    not back the model's "besok": it is the step's time only as the article wrote it. A future time that
+    is also a relative phrase ("akhir bulan ini") is judged here too, never by its span: from the 21st on,
+    today is inside "akhir bulan ini" and would back any invented one (QA, 2026-10-16 evening)."""
     given = future_times(stated)
-    relative = [(pos, pos + len(phrase)) for pos, phrase in relative_phrases(text)]
-    return [phrase for pos, phrase in future_phrases(text)
-            if future_key(phrase) not in given and not any(start <= pos < end for start, end in relative)]
+    return [phrase for _, phrase in future_phrases(text) if future_key(phrase) not in given]
 
 
 _ORDINAL_WORDS = {"kedua": 2, "ketiga": 3, "keempat": 4, "kelima": 5, "keenam": 6, "ketujuh": 7, "kedelapan": 8,
@@ -469,9 +494,12 @@ _CHANGE_VERBS = (r"bertambah|naik|meningkat|turun|berkurang|menurun|melonjak|anj
 # SYS-170 (#367): news writes it with "hingga / sampai" (914 articles) and "ke angka / level / posisi" (320) as well
 # as "(men)jadi" (3,462). "naik hingga 5%" may be a range ("up to"): the source side decides, as for "menjadi". The
 # figure is never a date's day: "naik sejak 1 Oktober hingga 12 Oktober" claims no 12.
-_CHANGE_TO = r"(?:men)?jadi|hingga|sampai|ke\s+(?:angka|level|posisi)"
-_CHANGE_CLAIM = re.compile(rf"\b(?:{_CHANGE_VERBS})\b(?:\s+\S+){{0,8}}?\s+(?:{_CHANGE_TO})\s+"
-                           r"(?:(?:sekitar|sebesar|sebanyak|hampir|lebih\s+dari|lebih\s+kurang)\s+)?"
+# SYS-172 (#371): bare "ke N" (425 articles, "melemah ke 17.930"), up to two words before N ("hingga mencapai",
+# "menjadi total", "ke angka"), and a comma after the verb ("bertambah, menjadi 199").
+_CHANGE_TO = r"(?:men)?jadi|hingga|sampai|ke"
+_CHANGE_BEFORE_N = r"sekitar|sebesar|sebanyak|hampir|lebih\s+dari|lebih\s+kurang|mencapai|total|angka|level|posisi"
+_CHANGE_CLAIM = re.compile(rf"\b(?:{_CHANGE_VERBS})\b,?(?:\s+\S+){{0,8}}?\s+(?:{_CHANGE_TO})\s+"
+                           rf"(?:(?:{_CHANGE_BEFORE_N})\s+){{0,2}}"
                            r"(?:Rp|US\$|\$)?\s?(?P<number>\d+(?:[.,]\d+)*)"
                            rf"(?![.,]?\d)(?!\s*/|\s+(?:{_MONTH_NAME})\b)", re.IGNORECASE)
 _TIME_AFTER = (rf"(?:(?:awal|pertengahan|akhir)\s+)?(?:{_MONTH_NAME}|tahun|kuartal|semester|periode|pekan|bulan|"
@@ -492,7 +520,7 @@ def _sentences(text: str) -> List[str]:
 
 def unbacked_changes(text: str, source: str) -> List[str]:
     """SYS-161 (#356): the change claims of `text` -- "(bertambah|naik|turun|...) menjadi / hingga / ke
-    angka N" (SYS-170) -- whose N
+    (angka|mencapai|total) N" (SYS-170/172) -- whose N
     no source sentence states as a running total or a change: every sentence of `source` holding N (by
     value) lacks a change verb, an accumulation word and a running period (`_TOTAL_OR_CHANGE`). "Kini ... bertambah
     menjadi 199 orang" read two separate Polri telegrams (88, then 199) as a running total; the bansos,

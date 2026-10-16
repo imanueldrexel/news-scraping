@@ -21,6 +21,9 @@ Reusable diagnostics live in `scripts/experiments/`. Throwaway repro code is inl
 
 One line each; read this before starting on a scraper or pipeline problem.
 
+- **Never write regex code through a Bash heredoc or `python -c` (2026-10-16, twice):** this harness turns `\b` into a backspace byte, silently. Use the Edit/Write tools; after any shell-written Python, count `chr(8)` in the file.
+- **A capital letter does not mark a weekday in Indonesian news (2026-10-16, SYS-171):** headlines are title case ("Dilantik Minggu Depan" = next week). Only "hari Minggu" safely means the Sunday. (`_RELATIVE` still reads a capital "Minggu lalu" as the Sunday: at worst a retry.)
+
 - **Count a text guard's edge case in `articles` before ticketing it (2026-10-15, QA):** compound counts, "kemarin lusa", "setengah bulan lalu" and kuartal-with-year records occur 0-4 times in 127,559 articles; an exclusion written as "preceded by sejak" misses a table phrase that starts with it (SYS-164). -> 2026-10-15 "QA audit of the arc-guard rework" entry
 - **A "running total" guard must not key on a bare "hingga" (2026-10-15, SYS-161):** the 10-11 Polri headline "Rombak 199 Personel Polri, Kakorlantas hingga Wakabaintelkam" holds the figure and "hingga" as a list. A source states a total as "hingga/sampai/per/sepanjang/sejak + a time", a total word, a change verb or "dari <number>". -> 2026-10-15 "Arc guards rework" entry
 
@@ -2965,3 +2968,26 @@ SINDONEWS   old 12 new 12 | lost [] | gained []   links identical: True
   - When mutating in an archive copy, copy `EXPERIMENTS.md` in too: a registry entry targets it, and the hygiene test errors without it.
   - `grep -v warn` on the runner's output hides every per-mutant line, because the pytest tail says "3 warnings". Filter on "Warning:" instead.
 - **Links:** SYS-167 (#364), SYS-168 (#365), SYS-169 (#366), SYS-170 (#367), DBT-79 (#368), DBT-80 (#369), SYS-171 (#370), SYS-172 (#371), SYS-173 (#372) · `.10x/reviews/2026-10-16-qa-report-evening.md`
+
+### 2026-10-16 — SYS-169 rework, SYS-171..173: future phrases judged by key only, weekdays and windows ahead, more change-claim forms, narrowed week parts
+- **Question / hypothesis:** QA's 10-16 evening queue. (1) SYS-169: does checking "akhir bulan ini" by key, and keeping it out of the span check, refuse the 21st-31st case without naming it twice? (2) SYS-171: can `_FUTURE` take "(hari) Kamis depan" and "sepekan ke depan" (owner: count windows) without breaking QA's passing key tests? (3) SYS-172: do bare "ke N", "mencapai/total" and "<verb>, menjadi" refuse any arc the replays printed? (4) SYS-173: do narrowed week parts move the metrics?
+- **Method:**
+  - QA's `scripts/experiments/qa_2026_10_16_eve/test_qa_1016_eve.py` (14 red at the start) and the 10-14/15/16 files.
+  - Offline, no LLM: `scripts/experiments/sys169_170/recheck_replays.py --db` (read-only), on an archive copy of HEAD and on the working tree, outputs diffed.
+  - `replay_story_arcs.py --metrics-from` on copies of v4/v5/v6, HEAD vs working tree, `style_metrics.json` compared.
+  - Mutants: new `scripts/experiments/run_registry_mutants_in_copy.py <copy> <prefix>...`, on a `tar` copy of the working tree (never the live tree), with the four arc suites. Then QA's `qa_mutants_1016_eve.py <copy> qa`.
+- **Result:**
+  - QA files: 267/267 (evening 68/68). Unit 3,453 passed, 5 skipped.
+  - **The ticket's "Minggu depan is the Sunday" proposal broke two of QA's passing tests** ("Minggu depan" / "Minggu Mendatang" keyed "pekan depan"). Headlines are title case ("Dilantik Minggu Depan") and sentences start with it, so a capital M does not mark the Sunday. The Sunday is read only as "hari Minggu depan"; a bare "Minggu depan" stays next week. A reader cannot tell the two apart either, so no false fact is printed.
+  - Replays: 39 arcs; future times 5 (unchanged; the only ones are the BPGMN "minggu depan", still keyed "pekan depan"); change claims 10 -> 18 (new rule).
+    - The 8 new ones are all "ke N" market lines: v4 10-08 "melemah 28 poin atau 0,16% ke Rp17.915", "menguat ke Rp17.894", "menguat ke Rp17.899"; v4/v5 "menguat pada Jumat (9/10/2026) ke Rp17.899", "melemah 0,08 persen ke Rp17.899"; v5 10-10 "naik ke Rp240,1"; v5 10-12 "melemah 0,11% ke Rp17.895", "naik ke Rp17.705".
+    - All 8 are **backed** by the day's articles sharing >= 2 judul words, the script's approximation of the arc's sources. No arc is newly refused.
+  - No replay has "akhir bulan ini", a weekday ahead, a window ahead or a part of last week. Metrics are identical to HEAD: v4 time-led 10/48, >= 3 anchors 4/16, tied 16/16; v5 11/51, 1/17, 17/17; v6 1/12, 1/4, 4/4.
+  - Mutants: 51/51 arc registry entries KILLED, including 21 new or retargeted (`sys169_*` 2, `sys171_*` 6, `sys172_*` 5, `sys173_*` 4, QA's `qa16e_future_latar_unchecked`, `qa16e_change_no_posisi`, `qa16e_only_akhir_week`, plus 3 older entries retargeted onto moved text). QA's own set: 10 KILLED, and its 2 NOT FOUND are the registered retargets.
+  - Cost of the heredoc `\b` trap again: a Python heredoc wrote 9 backspace characters into `source_check.py`. Found from the printed lines, then fixed by a script that writes `chr(92) + "b"`.
+- **Conclusion / do not repeat:**
+  - A future time is judged by key only, on every field. The span check skips any relative phrase that is also a future phrase, so each is named once.
+  - Never read a weekday from capitalisation in Indonesian news text: headlines are title case. "hari <Minggu>" is the only safe Sunday marker.
+  - Change-claim words before N are now one list (`_CHANGE_BEFORE_N`, up to two), and "ke" is a plain to-word. A new filler word goes in that list, not into `_CHANGE_TO`.
+  - Not done (not in the tickets): "<verb> mencapai N" with no to-word (40 articles).
+- **Links:** SYS-169 (#366), SYS-171 (#370), SYS-172 (#371), SYS-173 (#372) · `newscrawler/core/source_check.py` · `newscrawler/core/story_arc.py` · `scripts/experiments/run_registry_mutants_in_copy.py`

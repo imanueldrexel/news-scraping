@@ -310,10 +310,12 @@ def unbacked_times(text: str, digest_date: date, known: set, stated: str) -> Lis
     """SYS-157: the relative time phrases of `text` ("awal Oktober", "pekan lalu") whose days hold
     none of the `known` dates (today, the chosen items' own dates, the dates the sources state) and
     that `stated` -- today's `terkait` articles only -- does not state as written. A phrase means
-    something only from the day it was written: a 23/9 item's "kemarin" is 22/9 (SYS-162)."""
+    something only from the day it was written: a 23/9 item's "kemarin" is 22/9 (SYS-162). A future time
+    ("akhir bulan ini") is not read here: `unstated_future_times` judges it by key, never by its span (SYS-169)."""
     stated = " ".join(stated.lower().split())
     return [phrase for phrase, first, last in relative_times(text, digest_date)
-            if not any(first <= d <= last for d in known) and " ".join(phrase.lower().split()) not in stated]
+            if not future_phrases(phrase)
+            and not any(first <= d <= last for d in known) and " ".join(phrase.lower().split()) not in stated]
 
 
 def overcounted(text: str, items: int, stated: set) -> List[str]:

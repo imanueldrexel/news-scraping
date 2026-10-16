@@ -126,9 +126,9 @@ class TestRelativeTimes:
         ("Senin pekan lalu", date(2026, 10, 5), date(2026, 10, 5)),        # SYS-167: that weekday, last week
         ("Jumat minggu lalu", date(2026, 10, 9), date(2026, 10, 9)),
         ("Minggu pekan lalu", date(2026, 10, 11), date(2026, 10, 11)),
-        ("akhir pekan lalu", date(2026, 10, 5), date(2026, 10, 11)),       # SYS-167: the whole week
-        ("awal minggu lalu", date(2026, 10, 5), date(2026, 10, 11)),
-        ("pertengahan pekan lalu", date(2026, 10, 5), date(2026, 10, 11)),
+        ("akhir pekan lalu", date(2026, 10, 8), date(2026, 10, 11)),       # SYS-173: Thu-Sun of last week
+        ("awal minggu lalu", date(2026, 10, 5), date(2026, 10, 7)),         # Mon-Wed
+        ("pertengahan pekan lalu", date(2026, 10, 6), date(2026, 10, 8)),   # Tue-Thu
     ])
     def test_each_phrase_family(self, text, first, last):
         assert sc.relative_times(f"Hal itu terjadi {text}.", TODAY) == [(text, first, last)]
@@ -197,13 +197,23 @@ class TestFutureTimes:
         ("pekan ini", "pekan ini"), ("bulan mendatang", "bulan depan"), ("tahun depan", "tahun depan"),
         ("akhir tahun ini", "akhir tahun ini"), ("akhir bulan ini", "akhir bulan ini"),
         ("akhir pekan mendatang", "akhir pekan depan"), ("akhir bulan depan", "akhir bulan depan"),
+        # SYS-171 (#370): a weekday ahead, apart from "pekan depan"; the Sunday only after "hari".
+        ("Kamis depan", "hari kamis depan"), ("Senin mendatang", "hari senin depan"),
+        ("hari Jumat mendatang", "hari jumat depan"), ("hari Minggu depan", "hari minggu depan"),
+        ("Minggu Depan", "pekan depan"),
+        # SYS-171 (owner, 2026-10-16): a window ahead.
+        ("sepekan ke depan", "sepekan ke depan"), ("seminggu ke depan", "sepekan ke depan"),
+        ("dua minggu ke depan", "dua pekan ke depan"), ("3 bulan ke depan", "3 bulan ke depan"),
+        ("beberapa hari ke depan", "beberapa hari ke depan"), ("setahun ke depan", "setahun ke depan"),
     ])
     def test_each_phrase_and_its_key(self, phrase, key):
         assert sc.future_phrases(f"Rapat digelar {phrase}.") == [(len("Rapat digelar "), phrase)]
         assert sc.future_times(f"Rapat digelar {phrase}.") == {key}
 
     @pytest.mark.parametrize("text", ["Inflasi tahun ini 2,5%.", "Penjualan bulan ini naik.", "Esok harinya ia pulang.",
-                                      "Keesokan harinya ia pulang.", "Rapat digelar pekan lalu."])
+                                      "Keesokan harinya ia pulang.", "Rapat digelar pekan lalu.",
+                                      "Ke depan, pemerintah menambah anggaran.", "Rapat digelar hari Kamis.",
+                                      "Rapat digelar Kamis lalu."])
     def test_not_a_future_time(self, text):
         assert sc.future_phrases(text) == []
 
@@ -211,9 +221,17 @@ class TestFutureTimes:
         stated = "Pelantikan diharapkan minggu depan. Evaluasi besok."
         assert sc.unstated_future_times("Dilantik pekan mendatang, dievaluasi esok, dibahas lusa.", stated) == ["lusa"]
 
-    def test_a_phrase_the_relative_check_reads_is_left_to_it(self):
-        assert sc.unstated_future_times("Evaluasi akhir bulan ini.", "") == []
-        assert sc.unstated_future_times("Evaluasi akhir tahun ini.", "") == ["akhir tahun ini"]
+    def test_a_weekday_ahead_is_not_next_week(self):
+        """SYS-171: "Kamis depan" is one day, so an article's "pekan depan" does not back it, nor the reverse."""
+        assert sc.unstated_future_times("Rapat digelar Kamis depan.", "Rapat digelar pekan depan.") == ["Kamis depan"]
+        assert sc.unstated_future_times("Rapat digelar pekan depan.", "Rapat digelar Kamis depan.") == ["pekan depan"]
+        assert sc.unstated_future_times("Rapat digelar Kamis depan.", "Rapat digelar Kamis mendatang.") == []
+
+    def test_a_relative_phrase_is_checked_by_key_too(self):
+        """SYS-169 rework (QA, 2026-10-16 evening): "akhir bulan ini" is a relative phrase too, but its span
+        holds today from the 21st on, so only the key decides."""
+        assert sc.unstated_future_times("Evaluasi akhir bulan ini.", "") == ["akhir bulan ini"]
+        assert sc.unstated_future_times("Evaluasi akhir bulan ini.", "Evaluasi digelar Akhir Bulan Ini.") == []
 
 
 class TestRelativeName:
@@ -348,6 +366,27 @@ class TestUnbackedChanges:
         """SYS-170 (#367): the other two forms news writes ("hingga/sampai N" 914 articles, "ke angka/level N"
         320), against the same one-telegram source."""
         assert sc.unbacked_changes(claim, POLRI) == [written]
+
+    @pytest.mark.parametrize("claim,written", [
+        ("Kini jumlahnya bertambah ke 199 orang.", "bertambah ke 199"),
+        ("Mutasi itu naik ke posisi 199.", "naik ke posisi 199"),
+        ("Kini jumlahnya bertambah hingga mencapai 199 orang.", "bertambah hingga mencapai 199"),
+        ("Kini jumlahnya bertambah menjadi total 199 orang.", "bertambah menjadi total 199"),
+        ("Kini jumlahnya bertambah, menjadi 199 orang.", "bertambah, menjadi 199"),
+        ("Kini jumlahnya bertambah hingga mencapai total 199 orang.", "bertambah hingga mencapai total 199"),
+    ])
+    def test_the_ke_mencapai_total_and_comma_forms_are_change_claims(self, claim, written):
+        """SYS-172 (#371): bare "ke N" (425 articles), "hingga mencapai N" (145), "menjadi total N" and
+        "<verb>, menjadi N", against the same one-telegram source."""
+        assert sc.unbacked_changes(claim, POLRI) == [written]
+
+    def test_a_ke_change_the_source_states_passes(self):
+        """The arcs-v2/v3 10-12 wording: the source tells the same rise."""
+        assert sc.unbacked_changes("Inflasi tahunan naik ke 3,28%.", "Inflasi tahunan naik menjadi 3,28 persen.") == []
+
+    @pytest.mark.parametrize("text", ["Ribuan buruh turun ke jalan, 199 orang ditahan.", "Harga naik ke-2 kalinya."])
+    def test_ke_before_a_word_or_an_ordinal_is_no_claim(self, text):
+        assert sc.unbacked_changes(text, POLRI) == []
 
     def test_a_hingga_range_the_source_states_as_a_change_passes(self):
         """ "naik hingga 5%" (up to): a source sentence with N and a change verb backs it, as for "menjadi"."""
