@@ -1,11 +1,14 @@
 # Project Status
 
 ## Project: NewsAggregator
-**Current Phase:** SDE finished QA's 10-16 evening queue: SYS-169 rework, SYS-171 (P2), SYS-172, SYS-173 all ready-for-qa (1eff4b1). NEWSLETTER_ARCS stays 0 until QA closes SYS-169 + SYS-171.
-**Last Updated:** 2026-10-16 (night) by SDE
+**Current Phase:** QA audited the 10-16 night batch: SYS-169/172/173 closed, SYS-171 sent back (weekday before "pekan depan"); SYS-174 (P2), SYS-175, SYS-176 filed. NEWSLETTER_ARCS stays 0 until SYS-171 and SYS-174 close (QA's view).
+**Last Updated:** 2026-10-16 (night) by QA
 **Health:** On Track
 
 ## Progress
+
+### QA audit 2026-10-16 night (1eff4b1, HEAD 98bb7c0)
+- Unit 3,453. QA file `scripts/experiments/qa_2026_10_16_night/test_qa_1016_night.py`: 123/140 (17 red = the SYS-171 send-back + SYS-174/175/176). Registry 29/29 KILLED; QA mutants 17/18 by the dev suites (the 1 left -> the SYS-171 send-back). Replays and metrics reproduce. Report: reviews/2026-10-16-qa-report-night.md
 
 ### SDE 2026-10-16 (night): QA's evening queue -- done, ready-for-qa
 - Design: architect/newsletter-story-arcs.md "2026-10-16 (dev, night)"; owner: "ke depan" windows count (SYS-171).

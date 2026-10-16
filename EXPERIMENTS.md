@@ -2991,3 +2991,26 @@ SINDONEWS   old 12 new 12 | lost [] | gained []   links identical: True
   - Change-claim words before N are now one list (`_CHANGE_BEFORE_N`, up to two), and "ke" is a plain to-word. A new filler word goes in that list, not into `_CHANGE_TO`.
   - Not done (not in the tickets): "<verb> mencapai N" with no to-word (40 articles).
 - **Links:** SYS-169 (#366), SYS-171 (#370), SYS-172 (#371), SYS-173 (#372) · `newscrawler/core/source_check.py` · `newscrawler/core/story_arc.py` · `scripts/experiments/run_registry_mutants_in_copy.py`
+
+### 2026-10-16 — QA audit of the SYS-169 rework / SYS-171..173: month parts backed by today, weekdays before "pekan depan", two change-claim neighbours
+- **Question / hypothesis:** Does each fix hold on inputs the dev's tests do not use? Do the phrases next to the ones the fix moved, which stayed in the old path, still print a false fact?
+- **Method:**
+  - `scripts/experiments/qa_2026_10_16_night/test_qa_1016_night.py` (140 tests).
+  - `qa_mutants_1016_night.py <archive copy>` (18 QA mutants).
+  - `run_registry_mutants_in_copy.py <copy> sys169_ sys170_ sys171_ sys172_ sys173_ qa16e_`.
+  - Corpus counts by read-only `~*` SELECTs on `articles.extracted_text` (136,983 rows).
+  - `recheck_replays.py --db`; `replay_story_arcs.py --metrics-from` on copies of v4/v5/v6.
+- **Result:**
+  - Registry 29/29 KILLED. QA mutants 17/18 by the four arc suites; the survivor, `qa16n_day_ahead_case_sensitive`, is killed by QA's file.
+  - Unit 3,453 passed. Earlier QA files 267/267. Replays: 18 change claims, all backed. Metrics byte-identical.
+  - 17 QA tests red:
+    - "Kamis pekan depan" backed by "pekan depan" (4); `<hari> pekan/minggu depan` is in 51 articles;
+    - "akhir bulan" / "akhir Oktober" from the 21st and "pertengahan bulan ini" from the 11th, backed by today (5); future-verb uses: 267 `akhir <Bulan>`, 90 `pertengahan`, 33 `akhir bulan`;
+    - "<verb> mencapai N" (2, 43 articles);
+    - "Hingga Senin (12/10)" not a running period (6, 2,096 articles).
+- **Conclusion / do not repeat:**
+  - SYS-169/172/173 closed; SYS-171 sent back.
+  - SYS-174 (P2), SYS-175 and SYS-176 (P3) filed.
+  - The month-part hole is the general form of SYS-169: today backs any relative span that holds it, so a span still running proves nothing.
+  - A bare weekday with no suffix is unchecked, but no replay arc writes one (all carry their date): not filed.
+- **Links:** #366, #370, #371, #372, #373, #374, #375; `.10x/reviews/2026-10-16-qa-report-night.md`.

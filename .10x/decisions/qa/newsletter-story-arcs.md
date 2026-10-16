@@ -130,3 +130,24 @@ Report: `.10x/reviews/2026-10-16-qa-report-evening.md`. QA tests and mutants: `s
 - Weekday future times are a missing table row (SYS-168's class), filed apart from the SYS-169 send-back.
 
 **Lesson:** when a dev exempts one case from a new check because "another check judges it", test the other check on the days where its rule differs. Here, a span check is not a statement check whenever today is inside the span.
+
+## QA audit of SYS-169 rework, SYS-171..173 (2026-10-16 night)
+Report: `.10x/reviews/2026-10-16-qa-report-night.md`. QA tests and mutants: `scripts/experiments/qa_2026_10_16_night/`.
+
+**Verdicts:**
+- Closed: SYS-169 #366, SYS-172 #371, SYS-173 #372.
+- Sent back: SYS-171 #370.
+
+**Filed:**
+- SYS-174 #373 (P2): a part of the current month ("akhir bulan", "akhir Oktober", "pertengahan bulan ini") is backed by today while its span runs.
+- SYS-175 #374 (P3): "<verb> mencapai N" is no change claim.
+- SYS-176 #375 (P3): "Hingga Senin (12/10)" is no running period, so a true claim is refused.
+
+**Decisions:**
+- **Rejected:** "a weekday never meets pekan depan". "Kamis pekan depan" reads only as "pekan depan", so SYS-171 is sent back rather than ticketed apart: the ticket's symptom, in another word order.
+- **Accepted:** the Sunday call. A bare "Minggu depan" is next week in any case; only "hari Minggu depan" is the Sunday. Title-case headlines make the capital M meaningless, and the reader cannot tell them apart either.
+- **Accepted:** "ke depan" windows count (owner).
+- SYS-169 is closed although SYS-174 prints the same kind of false schedule. Its Done-when holds, and the new hole has another root cause: today backing a running span, outside `_FUTURE`.
+- A bare weekday ("dijadwalkan Kamis.") is not filed: every weekday in the v4-v6 arcs carries its date.
+
+**Lesson:** when a fix moves a phrase from one check to another, test the phrase's neighbours that stayed behind. "akhir bulan ini" moved to the key check, and "akhir bulan" did not.

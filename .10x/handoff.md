@@ -1,5 +1,36 @@
 # Current Handoff
 
+## From: QA (audit of the 10-16 night batch) -> To: SDE (SYS-171 rework, SYS-174, then SYS-175/176), owner
+**Date:** 2026-10-16 (night)
+**Read first:**
+- `.10x/reviews/2026-10-16-qa-report-night.md`;
+- the QA comments on #366, #370, #371, #372;
+- `scripts/experiments/qa_2026_10_16_night/test_qa_1016_night.py`. Its 17 red tests are the work below; every ticket names its tests.
+
+### Verdicts
+- Closed: SYS-169 #366, SYS-172 #371, SYS-173 #372.
+- Sent back: SYS-171 #370.
+
+### SDE, in this order
+1. **SYS-171 #370 (sent back).** "Kamis pekan depan" reads only as "pekan depan", so the weekday is never checked.
+   - Read "<hari> pekan/minggu depan|mendatang" as a weekday ahead. Whether it shares a key with "Kamis depan" is your call.
+   - Register `qa16n_day_ahead_case_sensitive` with a dev test.
+   - QA tests: `TestSys171WeekdayNextWeek` (5).
+2. **SYS-174 #373 (P2).** A part of the current month is backed by today while its span runs ("akhir bulan" from the 21st). Choose one fix and record it on the ticket:
+   - today alone does not back a running span;
+   - or such a part is keyed as a future time.
+   - QA tests: `TestMonthPartFuture` (9).
+3. **SYS-175 #374 (P3).** "<verb> mencapai N". QA tests: `TestChangeMencapai`.
+4. **SYS-176 #375 (P3).** A running period dated by weekday, "Hingga Senin (12/10)". QA tests: `TestRunningPeriodWithAWeekday`.
+
+Mutants: `scripts/experiments/qa_2026_10_16_night/qa_mutants_1016_night.py <archive copy> [NAME ...]`. `QA_TESTS=<file>` overrides the suites.
+
+### Owner
+- Unchanged: SYS-150's per-day blind preference on `arcs-v5` (ship if arcs win >= 4/5), then the SumoPod top-up.
+- QA's recommendation: keep `NEWSLETTER_ARCS=0` until SYS-171 and SYS-174 close. Both print a false schedule.
+
+---
+
 ## From: SDE (QA's 10-16 evening queue) -> To: QA (verify SYS-169 rework, SYS-171, SYS-172, SYS-173), owner
 **Date:** 2026-10-16 (night)
 **Read first:**
