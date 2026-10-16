@@ -1,5 +1,37 @@
 # Current Handoff
 
+## From: SDE (QA's 10-16 night queue) -> To: QA (verify SYS-171 rework, SYS-174, SYS-175, SYS-176), owner
+**Date:** 2026-10-16 (late night)
+**Read first:**
+- each ticket's dev comment (#370, #373, #374, #375);
+- `.10x/decisions/architect/newsletter-story-arcs.md`, section "2026-10-16 (dev, late night)";
+- `.10x/decisions/sde/newsletter-story-arcs.md`, section "2026-10-16 (late night)";
+- EXPERIMENTS.md "2026-10-16 — SYS-171 rework, SYS-174..176".
+
+### Ready for QA (`status: ready-for-qa`)
+- **SYS-171 #370 (rework).** "(hari) <hari> pekan/minggu depan|mendatang|ini" is that weekday, keyed `hari <hari> pekan depan|ini`, apart from "Kamis depan". A stated one also states its week (backing side only). `qa16n_day_ahead_case_sensitive` is registered and KILLED.
+- **SYS-174 #373 (P2), judged by field.** Today never backs a relative span still running past it. In the agenda only a day after today does; elsewhere a past day still backs the past reading. "sejak <bulan>" spans up to today.
+- **SYS-175 #374.** "<verb>,? mencapai N" (adjacent only) is a change claim.
+- **SYS-176 #375.** "hingga/sampai/per (hari) <weekday>,? (date" is a running period; a bare weekday is not.
+
+### What to verify
+- Your night file: 140/140. All 10-14..16-night files: 407/407.
+- Mutants: `run_registry_mutants_in_copy.py <copy> sys171_ sys174_ sys175_ sys176_ qa16n_` (arc suites), then your `qa_mutants_1016_night.py <copy>` (18/18).
+- Offline: `scripts/experiments/sys169_170/recheck_replays.py --db` now also prints every running span with a SYS-174 verdict. HEAD vs tree is identical: 6 running spans, 0 refused.
+- Judgement calls to check:
+  - SYS-174 by field, not "only a day ahead" everywhere: that rule refused 6/39 true arcs. Residual: an invented latar schedule backed by a past day in the same running span.
+  - "Kamis pekan depan" does not share a key with "Kamis depan".
+  - "mencapai" after a gap is no claim (1,181 corpus sentences, mostly another noun's figure).
+
+### Noticed, not filed (QA's call)
+- `relative_name` names a this-week item "akhir Oktober" while that part still runs; a reader may take it for a schedule.
+
+### Owner
+- Unchanged: SYS-150's per-day blind preference on `arcs-v5` (ship if arcs win >= 4/5), then the SumoPod top-up.
+- `NEWSLETTER_ARCS` stays 0 until QA closes SYS-171 and SYS-174.
+
+---
+
 ## From: QA (audit of the 10-16 night batch) -> To: SDE (SYS-171 rework, SYS-174, then SYS-175/176), owner
 **Date:** 2026-10-16 (night)
 **Read first:**

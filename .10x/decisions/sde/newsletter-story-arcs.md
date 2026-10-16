@@ -214,3 +214,34 @@ Design: `.10x/decisions/architect/newsletter-story-arcs.md`, section "2026-10-15
 
 ### Ops trap (again)
 - A Python heredoc in Bash wrote 9 backspace bytes into `source_check.py`, which showed up in the printed lines. Added to EXPERIMENTS "Traps & settled questions".
+
+## 2026-10-16 (late night): QA's night queue -- SYS-171 rework, SYS-174, SYS-175, SYS-176
+| Ticket | What | State |
+|---|---|---|
+| SYS-171 #370 (rework) | `_DAY_OF_WEEK`: "(hari) <hari> pekan/minggu depan|mendatang|ini" in `_FUTURE`, keyed `hari <hari> pekan depan|ini`; a stated one also gives its week key on the backing side (`unstated_future_times`) | ready-for-qa |
+| SYS-174 #373 (P2) | `story_arc._backing_days`: today never backs a span still running past it; in the agenda (`schedule`) only a day after today does. `_since_month`: "sejak <bulan>" ends today | ready-for-qa |
+| SYS-175 #374 | `_CHANGE_TO_AFTER`: "mencapai" is the to-word right after the verb (optional comma), never after a gap | ready-for-qa |
+| SYS-176 #375 | `_WEEKDAY_BEFORE_DATE` in `_TIME_AFTER`: "hingga Senin (12/10)", "per Senin, 12/10", only when a date follows | ready-for-qa |
+
+### Deviations / judgement calls (each on its ticket)
+- SYS-174, by field rather than the ticket's literal first option. The stricter "only a day ahead backs a running span" rule was built and measured first: it refused 6 of 39 stored arcs, each a true past "awal Oktober" in the latar. That rule's `relative_name` change (naming this week's days "<hari> lalu") was reverted with it, so the prompt is unchanged.
+- SYS-171: "Kamis pekan depan" and "Kamis depan" do not share a key; "pekan ini" is included (same hole).
+- SYS-175: adjacent only. The corpus split was 55 claims adjacent vs 1,181 gap sentences, mostly another noun's figure.
+- A dev test that asserted the old behaviour ("pertengahan Oktober" on 12/10 backed by today alone) was rewritten to the new rule. A new end-to-end test ("sejak Oktober" backed by today alone) keeps `sys157_today_does_not_back` killed.
+
+### Evidence
+- QA files 10-14/15/16/16-eve/16-night: 407/407 (night 140/140, 17 red at the start).
+- Mutants in a `tar` copy, four arc suites:
+  - registry entries for these tickets: 25 new or retargeted, all KILLED (`sys171_weekday_of_week_*` 5, `sys171_week_*` 2, `qa16n_day_ahead_case_sensitive`, `sys174_*` 7, `sys175_*` 2, `sys176_*` 2, plus `sys169_relative_checked_twice`, `sys168_no_pekan_mendatang`, `sys172_no_comma`, `sys162_items_state_relative_times` retargeted onto moved text);
+  - QA's `qa_mutants_1016_night.py`: 18/18 KILLED.
+  - every registry entry on `story_arc` / `source_check` / `arc_style` (171): 164 KILLED by the arc suites; the other 7 (`sys80_*`, `sys87_*`, `qa1006_sys87_*`, summary checks DBT-72 moved here) KILLED by the newsletter suites.
+- Unit: 3,493 passed, 5 skipped. Hygiene: registry 0 stale.
+- Offline `recheck_replays.py --db`, extended with a SYS-174 verdict per running span, HEAD archive vs tree diffed: identical. 39 arcs; future times 5; change claims 18; running spans 6, 0 refused.
+- Integration tests not run: no SQL, schema or DB path changed.
+
+### Noticed, not filed (QA's call)
+- `relative_name` shows a this-week item as "awal/pertengahan/akhir <bulan>" while that part still runs ("akhir Oktober" on 25/10 for 21/10). A reader may take it for a schedule. It is a copy question, not a guard one.
+- SYS-174 residual: an invented schedule in the latar, inside a running span that also holds a past known day, still passes.
+
+### Ops trap
+- A `git stash` / `pop` rewrote `source_check.py` and `story_arc.py` with CRLF (`core.autocrlf=true`), so three of QA's `\n`-anchored mutants reported NOT FOUND. The files were rewritten to LF; the trap is added to EXPERIMENTS.

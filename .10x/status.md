@@ -1,11 +1,16 @@
 # Project Status
 
 ## Project: NewsAggregator
-**Current Phase:** QA audited the 10-16 night batch: SYS-169/172/173 closed, SYS-171 sent back (weekday before "pekan depan"); SYS-174 (P2), SYS-175, SYS-176 filed. NEWSLETTER_ARCS stays 0 until SYS-171 and SYS-174 close (QA's view).
-**Last Updated:** 2026-10-16 (night) by QA
+**Current Phase:** SDE fixed QA's 10-16 night queue: SYS-171 rework, SYS-174 (P2), SYS-175, SYS-176 ready-for-qa. NEWSLETTER_ARCS stays 0 until QA closes SYS-171 and SYS-174.
+**Last Updated:** 2026-10-16 (late night) by SDE
 **Health:** On Track
 
 ## Progress
+
+### SDE 2026-10-16 (late night): QA's night queue -- done, ready-for-qa
+- Design: architect/newsletter-story-arcs.md "2026-10-16 (dev, late night)". SYS-174 is judged by field: today never backs a running span; in the agenda only a day ahead does. The stricter all-field rule refused 6/39 true replay arcs.
+- [x] SYS-171 rework  [x] SYS-174  [x] SYS-175  [x] SYS-176
+- QA files 407/407 (night 140/140); 25 new or retargeted registry mutants + QA's 18 KILLED; replays HEAD vs tree identical. Details: decisions/sde/newsletter-story-arcs.md "2026-10-16 (late night)".
 
 ### QA audit 2026-10-16 night (1eff4b1, HEAD 98bb7c0)
 - Unit 3,453. QA file `scripts/experiments/qa_2026_10_16_night/test_qa_1016_night.py`: 123/140 (17 red = the SYS-171 send-back + SYS-174/175/176). Registry 29/29 KILLED; QA mutants 17/18 by the dev suites (the 1 left -> the SYS-171 send-back). Replays and metrics reproduce. Report: reviews/2026-10-16-qa-report-night.md
