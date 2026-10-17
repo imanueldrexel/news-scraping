@@ -11,7 +11,7 @@
 - Design: ADR-019 (owner: strict per half; OMC becomes an accepted false refusal) + architect/newsletter-story-arcs.md "2026-10-17 (dev)".
 - [x] SYS-152 direction + SYS-181  [x] SYS-186  [x] SYS-182  [x] SYS-184  [x] SYS-183  [x] SYS-185  [x] DBT-82 (4018876 + SYS-186 commit)
 - Causal recheck after: 12/18 backed (lost OMC = owner, Dadang = accepted, Padang 'belum surut' = true catch); 59+6 mutants KILLED. SYS-186 replays: 12 end points, 0 refused; live MSCI refused on its real source.
-- [ ] SYS-174 rework  [ ] SYS-177  [ ] SYS-178  [ ] SYS-179
+- [x] SYS-174 rework  [x] SYS-177  [x] SYS-178  [x] SYS-179 -- QA's 10-14..10-17 arc files all green (the 27 reds fixed); 66 related mutants KILLED; replays 6 running spans (all latar) 0 refused, no new future time
 - Replay recheck before: 18 causal words in v4/v5/v6, 15 backed, 3 refused (MK, Ojol v5, karhutla v4).
 
 ### QA audit 2026-10-17: SYS-152 sent back, DBT-81 closed; SYS-181..185 + DBT-82 filed

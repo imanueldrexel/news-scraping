@@ -62,7 +62,7 @@ from newscrawler.core import newsletter_copy as copy
 from newscrawler.core import story_words
 from newscrawler.core.llm_json import Rejected, ask_json, json_object
 from newscrawler.core.source_check import (dates_in, future_phrases, future_times, off_subject, ordinal_claims,
-                                           relative_name, relative_times, resolve, stated_claims, unbacked_changes,
+                                           relative_name, relative_times, relative_times_at, resolve, stated_claims, unbacked_changes,
                                            unbacked_end_times,
                                            unstated_future_times, unsupported_number, without_dates)
 from newscrawler.core.story_summary import article_text, guard_text, words
@@ -328,29 +328,55 @@ def chronicle(latar: str, judul: str, hari_ini: str, has_alur: bool) -> List[str
     return problems
 
 
-def _backing_days(known: set, last: date, digest_date: date, schedule: bool) -> set:
+def _backing_days(known: set, last: date, digest_date: date, ahead_only: bool, today_runs: bool = False) -> set:
     """SYS-174 (#373): the `known` days that may back a span ending on `last`. Today backs only a span that has
     ended: while one still runs ("akhir bulan" from the 21st) today sits inside it whether the phrase tells a past
     event or an invented schedule. A past day inside it backs the past reading (the 10-08 arcs' "awal Oktober" for a
-    6/10 item), except in the agenda, the scheduled step, where only a day after today does ("Rabu (28/10)")."""
-    if last <= digest_date:
+    6/10 item) unless the phrase may be a schedule (`ahead_only`): then only a day after today does ("Rabu
+    (28/10)"). `today_runs` (the agenda): a span ending today still runs -- "dijadwalkan akhir bulan" on the 31st is
+    as invented as on the 30th (SYS-174 send-back)."""
+    if last < digest_date or (last == digest_date and not today_runs):
         return known
-    return {d for d in known if d > digest_date} if schedule else known - {digest_date}
+    return {d for d in known if d > digest_date} if ahead_only else known - {digest_date}
 
 
-def unbacked_times(text: str, digest_date: date, known: set, stated: str, schedule: bool = False) -> List[str]:
+# SYS-177 (#376): in the latar a running span is a schedule when a future verb stands within 4 words before it, in its
+# sentence ("Aturan barunya akan terbit akhir Oktober"); never by a future word elsewhere: the replay's "pada awal
+# Oktober, ... yang akan memanggil para ahli" is past narration.
+_FUTURE_VERB = re.compile(r"\b(?:akan|bakal|dijadwalkan|ditargetkan|direncanakan|rencananya|menyusul)\b", re.IGNORECASE)
+CUE_WORDS = 4
+# SYS-177: the fields that tell today's news, where a running span is judged like the agenda.
+PRESENT_FIELDS = ("judul", "hari_ini", "sekilas")
+
+
+def _cued(text: str, start: int) -> bool:
+    """A future verb within `CUE_WORDS` words before position `start`, in the same sentence."""
+    head = re.split(r"[.!?](?:\s|$)", text[:start])[-1]
+    return bool(_FUTURE_VERB.search(" ".join(head.split()[-CUE_WORDS:])))
+
+
+def unbacked_times(text: str, digest_date: date, known: set, stated: str, schedule: bool = False,
+                   present: bool = False) -> List[str]:
     """SYS-157: the relative time phrases of `text` ("awal Oktober", "pekan lalu") whose days hold
     none of the `known` dates (today, the chosen items' own dates, the dates the sources state) and
     that `stated` -- today's `terkait` articles only -- does not state as written. A phrase means
     something only from the day it was written: a 23/9 item's "kemarin" is 22/9 (SYS-162). A future time
     ("akhir bulan ini") is not read here: `unstated_future_times` judges it by key, never by its span (SYS-169).
-    A span still running past today is not backed by today, nor in a `schedule` (the agenda) by a past day
-    (`_backing_days`, SYS-174)."""
+    A span still running past today is not backed by today (`_backing_days`, SYS-174). Nor by a past day where the
+    phrase may be a schedule: always in the agenda (`schedule`, where a span ending today runs too unless it is a
+    start, "sejak Oktober"); in today's news, the judul, hari_ini and sekilas (`present`, SYS-177); in the latar
+    when a future verb stands before it (`_cued`, SYS-177)."""
     stated = " ".join(stated.lower().split())
-    return [phrase for phrase, first, last in relative_times(text, digest_date)
-            if not future_phrases(phrase)
-            and not any(first <= d <= last for d in _backing_days(known, last, digest_date, schedule))
-            and " ".join(phrase.lower().split()) not in stated]
+    out = []
+    for start, phrase, first, last in relative_times_at(text, digest_date):
+        ahead_only = schedule or present or _cued(text, start)
+        today_runs = schedule and not re.match(r"sejak\b", phrase, re.IGNORECASE)
+        if (not future_phrases(phrase)
+                and not any(first <= d <= last for d in _backing_days(known, last, digest_date, ahead_only,
+                                                                       today_runs))
+                and " ".join(phrase.lower().split()) not in stated):
+            out.append(phrase)
+    return out
 
 
 def overcounted(text: str, items: int, stated: set) -> List[str]:
@@ -456,9 +482,9 @@ def parse(answer: Optional[str], shown_texts: Sequence[str], timeline: Sequence[
                     "menyebutnya begitu: ceritakan angka hari ini sebagai peristiwa hari ini"
                     for claim in unbacked_changes(value, source)]
         dates += [f'waktu "{phrase}" di {key} tidak cocok dengan tanggal hari ini, tanggal cuplikan alur yang '
-                  "dipilih, atau tanggal yang tertulis di artikel" for phrase in unbacked_times(value, digest_date,
-                                                                                                days, stated_today,
-                                                                                                key == "agenda")]
+                  "dipilih, atau tanggal yang tertulis di artikel"
+                  for phrase in unbacked_times(value, digest_date, days, stated_today, schedule=key == "agenda",
+                                               present=key in PRESENT_FIELDS)]
         dates += [f'waktu "{phrase}" di {key} tidak tertulis di artikel hari ini: tulis waktunya seperti yang '
                   "tertulis di artikel, mis. tanggalnya" for phrase in unstated_future_times(value, stated_today)]
         # SYS-186: an end point ("hingga November 2026") must be one a source states as an end, not only a date

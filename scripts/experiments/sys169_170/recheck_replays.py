@@ -75,16 +75,21 @@ def main():
                 arcs += 1
                 prose = f"{story['hari_ini']}\n{story['back']}"
                 edition = date.fromisoformat(day)
-                running = [p for p, first, last in sc.relative_times(prose, edition) if last > edition]
-                spans_running += len(running)
-                for phrase in running:
+                # SYS-174/177: a span still running (or ending today) is judged by its field: the hari_ini as today's
+                # news (`present`), the back paragraph (latar + agenda) as the latar, with its future-verb cue.
+                for field, text in (("hari_ini", story["hari_ini"]), ("back", story["back"])):
+                    running = [p for p, first, last in sc.relative_times(text, edition) if last >= edition]
+                    spans_running += len(running)
+                    if not running:
+                        continue
                     known = {edition} | items.get((day, story["judul"]), set())
                     if cur:
                         known |= {sc.resolve(d, m, edition) for d, m in sc.dates_in(day_source(cur, day, story["judul"])[1])}
-                    verdict = "REFUSED" if sa.unbacked_times(phrase, edition, known - {None}, "") else "backed"
-                    spans_refused += verdict == "REFUSED"
-                    print(f"{run} {day} | running span {phrase!r} (SYS-174, as latar): {verdict} | "
-                          f"{story['judul'][:70]}")
+                    refused = sa.unbacked_times(text, edition, known - {None}, "", present=field == "hari_ini")
+                    for phrase in running:
+                        verdict = "REFUSED" if phrase in refused else "backed"
+                        spans_refused += verdict == "REFUSED"
+                        print(f"{run} {day} | running span {phrase!r} ({field}): {verdict} | {story['judul'][:70]}")
                 fut = sc.future_phrases(prose)
                 old = [m.group(0) for s in sc._sentences(prose) for m in OLD_CHANGE.finditer(s)]
                 new = [m.group(0) for s in sc._sentences(prose) for m in sc._CHANGE_CLAIM.finditer(s)]
@@ -113,7 +118,7 @@ def main():
                         verdict = "REFUSED" if sc.unbacked_changes(c, source) else "backed"
                         print(f"            new claim vs {n} articles of the day: {verdict}")
     print(f"\narcs {arcs}; future times {futures}; change claims old {claims_old} -> new {claims_new}; "
-          f"running spans {spans_running} ({spans_refused} refused by SYS-174)")
+          f"running spans {spans_running} ({spans_refused} refused by SYS-174/177)")
 
 
 if __name__ == "__main__":

@@ -313,11 +313,16 @@ def relative_times(text: str, today: date) -> List[Tuple[str, date, date]]:
     2026-10-14). "sepekan sebelumnya", "dua hari sebelumnya" are not read: they count from the event
     the sentence just told, not from today (replay 2026-10-11, the Padang flood arc), and the prompt
     lets a sequence word stand without a source."""
+    return [(phrase, first, last) for _, phrase, first, last in relative_times_at(text, today)]
+
+
+def relative_times_at(text: str, today: date) -> List[Tuple[int, str, date, date]]:
+    """`relative_times` with each phrase's position in `text`: SYS-177 reads the words before it."""
     found = []
     for m, span in _relative_matches(text):
         days = span(m, today)
         if days:
-            found.append((m.group(0), *days))
+            found.append((m.start(), m.group(0), *days))
     return found
 
 
@@ -347,16 +352,26 @@ _DAY_AHEAD = rf"(?:hari\s+(?:{'|'.join(copy.DAYS)})|{_WEEKDAY_BUT_SUNDAY})\s+(?:
 # week word after it leaves no doubt about the Sunday, so "Minggu pekan depan" is the Sunday in any case.
 _DAY_OF_WEEK = rf"(?:hari\s+)?(?:{'|'.join(copy.DAYS)})\s+(?:pekan|minggu)\s+(?:depan|mendatang|ini)"
 _WINDOW_AHEAD = rf"(?:se|(?:{'|'.join(_COUNT)}|\d+|{_VAGUE_COUNT})\s+)(?:hari|pekan|minggu|bulan|tahun)\s+ke\s+depan"
+# SYS-179 (#378): a part of a future period is keyed with its part: an article's "pekan depan" does not back an
+# invented "awal pekan depan" (55 corpus articles write the form). It was read as "pekan depan" alone.
+_FUTURE_PART = r"(?:(?:awal|pertengahan|akhir)\s+)?"
+# SYS-178 (#377): a bare "akhir tahun" / "akhir pekan" -- no ini, lalu, depan or year after it -- is this year's /
+# this week's end (141 / 21 corpus articles: "ditargetkan rampung akhir tahun"). It was read by neither table, so an
+# invented one was printed while "akhir tahun ini" was refused. Keyed as "akhir tahun ini" / "akhir pekan ini".
+_BARE_END = (r"akhir\s+(?:tahun|pekan|minggu)"
+             r"(?!\s+(?:(?:ini|lalu|depan|mendatang|kemarin|sebelumnya|berikutnya|ke\s+depan)\b|\d))")
 _FUTURE = re.compile(rf"\b(?:{_DAY_AHEAD}|{_WINDOW_AHEAD}|"
                      rf"{_DAY_OF_WEEK}|"
-                     r"b?esok(?!\s+harinya)|lusa|(?:akhir\s+)?(?:pekan|minggu)\s+(?:depan|mendatang|ini)"
-                     r"|(?:akhir\s+)?(?:bulan|tahun)\s+(?:depan|mendatang)|akhir\s+(?:bulan|tahun)\s+ini)\b",
+                     rf"b?esok(?!\s+harinya)|lusa|{_FUTURE_PART}(?:pekan|minggu)\s+(?:depan|mendatang|ini)"
+                     rf"|{_FUTURE_PART}(?:bulan|tahun)\s+(?:depan|mendatang)|akhir\s+(?:bulan|tahun)\s+ini"
+                     rf"|{_BARE_END})\b",
                      re.IGNORECASE)
 _DAY_AHEAD_ONLY = re.compile(_DAY_AHEAD, re.IGNORECASE)
 _DAY_OF_WEEK_ONLY = re.compile(_DAY_OF_WEEK, re.IGNORECASE)
 _FUTURE_SYNONYMS = ((r"\bminggu\b", "pekan"), (r"\bmendatang\b", "depan"), (r"^esok\b", "besok"),
                     (r"\bseminggu\b", "sepekan"))
 _DAY_OF_WEEK_KEY = re.compile(r"hari \w+ (?P<week>pekan (?:depan|ini))")
+_PART_KEY = re.compile(r"(?:awal|pertengahan|akhir) (?P<whole>(?:pekan|bulan|tahun) (?:depan|ini))")
 
 
 def future_phrases(text: str) -> List[Tuple[int, str]]:
@@ -377,7 +392,7 @@ def future_key(phrase: str) -> str:
         return f"hari {key.split()[-2]} depan"
     for pattern, replacement in _FUTURE_SYNONYMS:
         key = re.sub(pattern, replacement, key)
-    return key
+    return f"{key} ini" if key in ("akhir tahun", "akhir pekan") else key      # SYS-178: the bare end is this one
 
 
 def future_times(text: str) -> Set[str]:
@@ -391,9 +406,11 @@ def unstated_future_times(text: str, stated: str) -> List[str]:
     not back the model's "besok": it is the step's time only as the article wrote it. A future time that
     is also a relative phrase ("akhir bulan ini") is judged here too, never by its span: from the 21st on,
     today is inside "akhir bulan ini" and would back any invented one (QA, 2026-10-16 evening). A stated weekday
-    of a week also states the week: "Kamis pekan depan" backs "pekan depan", never the reverse (SYS-171)."""
+    of a week also states the week: "Kamis pekan depan" backs "pekan depan", never the reverse (SYS-171); so does a
+    stated part: "awal pekan depan" backs "pekan depan", never the reverse (SYS-179)."""
     given = future_times(stated)
     given |= {m.group("week") for m in map(_DAY_OF_WEEK_KEY.fullmatch, given) if m}
+    given |= {m.group("whole") for m in map(_PART_KEY.fullmatch, given) if m}       # SYS-179: a part states its whole
     return [phrase for _, phrase in future_phrases(text) if future_key(phrase) not in given]
 
 

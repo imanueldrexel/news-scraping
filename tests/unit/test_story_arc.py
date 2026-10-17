@@ -616,10 +616,41 @@ class TestRelativeTime:
         assert sa.unbacked_times(text, today, {today, past}, "", schedule=True) == [phrase]
         assert sa.unbacked_times(text, today, {today, past, ahead}, "", schedule=True) == []
 
-    def test_a_span_that_has_ended_is_backed_as_before(self):
-        """Today backs a span ending today, in the agenda too; a past span keeps its past days."""
-        assert sa.unbacked_times("pertengahan Oktober", date(2026, 10, 20), {date(2026, 10, 20)}, "", True) == []
-        assert sa.unbacked_times("akhir September", DAY, {date(2026, 9, 24)}, "", True) == []
+    def test_a_span_ending_today_runs_in_the_agenda_only(self):
+        """SYS-174 send-back: in the agenda a span ending today is still a schedule, so today does not back it (an
+        invented "dijadwalkan akhir bulan" on the 31st). Elsewhere today backs it; a past span keeps its days."""
+        day = date(2026, 10, 20)
+        assert sa.unbacked_times("pertengahan Oktober", day, {day}, "", schedule=True) == ["pertengahan Oktober"]
+        assert sa.unbacked_times("pertengahan Oktober", day, {day}, "", present=True) == []
+        assert sa.unbacked_times("pertengahan Oktober", day, {day}, "") == []
+        assert sa.unbacked_times("akhir September", DAY, {date(2026, 9, 24)}, "", schedule=True) == []
+
+    def test_a_start_is_never_a_schedule(self):
+        """"sejak Oktober" spans the month up to today; in the agenda today still backs it."""
+        assert sa.unbacked_times("Asap bertahan sejak Oktober.", DAY, {DAY}, "", schedule=True) == []
+
+    @pytest.mark.parametrize("field", ["judul", "hari_ini", "sekilas"])
+    def test_todays_news_is_judged_like_the_agenda(self, field):
+        """SYS-177: in a present field a past known day no longer backs a running span; a day ahead does."""
+        day, past, ahead = date(2026, 10, 26), date(2026, 10, 25), date(2026, 10, 29)
+        assert field in sa.PRESENT_FIELDS
+        assert sa.unbacked_times("Aturan terbit akhir bulan.", day, {day, past}, "", present=True) != []
+        assert sa.unbacked_times("Aturan terbit akhir bulan.", day, {day, past, ahead}, "", present=True) == []
+
+    @pytest.mark.parametrize("cue", ["akan terbit", "bakal terbit", "dijadwalkan terbit", "ditargetkan rampung",
+                                     "direncanakan terbit", "rencananya terbit", "menyusul"])
+    def test_in_the_latar_a_future_verb_before_the_phrase_makes_it_a_schedule(self, cue):
+        day, past = date(2026, 10, 26), date(2026, 10, 22)
+        assert sa.unbacked_times(f"Aturan barunya {cue} akhir Oktober.", day, {day, past}, "") != []
+
+    def test_in_the_latar_a_future_verb_elsewhere_does_not(self):
+        """The replay's shape: "akan" after the phrase, about something else; and a verb more than 4 words before,
+        or in the sentence before."""
+        day, item = date(2026, 10, 8), date(2026, 10, 2)
+        for latar in ["Sebelumnya, pada awal Oktober, Presiden menggelar rapat yang akan memanggil para ahli.",
+                      "Aturan akan dibahas lagi oleh para menteri kabinet pada awal Oktober.",
+                      "Aturan akan dibahas. Pada awal Oktober Presiden menggelar rapat."]:
+            assert sa.unbacked_times(latar, day, {day, item}, "") == [], latar
 
     def test_sejak_this_month_ends_today(self):
         """SYS-174: "sejak Oktober" is a start, never ahead, so its span ends today and today still backs it."""
@@ -781,6 +812,40 @@ class TestEndPoints:
         reason, _ = _reason_on(self._latar("Analis memperkirakan pembekuan berlanjut hingga review November 2026."),
                                _texts(self.SOURCE, i=1), lenient=True)
         assert reason == "date"
+
+
+class TestScheduleByField:
+    """SYS-174 send-back, SYS-177, SYS-178, end to end: TEXTS with its only next step replaced, so nothing states a
+    schedule; on 26/10 a source states the past day 25/10, inside "akhir bulan"."""
+
+    NEXT = "Rapat lanjutan dijadwalkan Kamis (15/10)."
+
+    def _reason(self, day, extra="", **fields):
+        texts = [TEXTS[0].replace(self.NEXT, "Rapat lanjutan belum dijadwalkan. " + extra), *TEXTS[1:]]
+        try:
+            sa.parse(_answer(**{"agenda": "", **fields}), texts, TIMELINE, day)
+        except Rejected as e:
+            return e.reason
+        return "kept"
+
+    @pytest.mark.parametrize("field", ["hari_ini", "sekilas"])
+    def test_a_past_source_day_does_not_back_todays_invented_schedule(self, field):
+        value = ("Presiden Prabowo Subianto memimpin rapat terbatas karhutla di Istana Negara. Aturan barunya terbit "
+                 "akhir bulan." if field == "hari_ini" else "Aturan karhutla terbit akhir bulan.")
+        assert self._reason(date(2026, 10, 26), "Asap meluas sejak Minggu (25/10).", **{field: value}) == "date"
+
+    def test_the_latar_reads_the_future_verb(self):
+        latar = FRAME + "Pada 23/9 Seskab melaporkan 209 hektare lahan masih terbakar. Aturan barunya akan terbit " \
+                        "akhir Oktober."
+        assert self._reason(date(2026, 10, 26), "Asap meluas sejak Kamis (22/10).", latar=latar) == "date"
+
+    def test_an_agenda_schedule_on_the_spans_last_day_is_refused(self):
+        assert self._reason(date(2026, 10, 31), agenda="Rapat lanjutan karhutla dijadwalkan akhir bulan.") == "date"
+
+    def test_an_invented_bare_year_end_is_refused_and_a_stated_one_kept(self):
+        agenda = "Aturan karhutla akan rampung akhir tahun."
+        assert self._reason(DAY, agenda=agenda) == "date"
+        assert self._reason(DAY, "Aturan akan rampung akhir tahun ini.", agenda=agenda) == "kept"
 
 
 class TestTimeAnchors:

@@ -531,3 +531,39 @@ class TestSys186EndPoints:
         assert key == frozenset({("day", 12), ("month", 10)})
         [(phrase, key)] = sc.end_points("HINGGA AKHIR TAHUN 2026 harga naik.")
         assert phrase == "HINGGA AKHIR TAHUN 2026" and key == frozenset({("part", "akhir"), ("year", 2026)})
+
+
+# ── SYS-178 (#377) bare "akhir tahun / pekan"; SYS-179 (#378) the parts of a future period ───────────
+
+class TestSys178BareEnd:
+    @pytest.mark.parametrize("text", ["Aturan akan rampung akhir tahun.", "Aturan rampung Akhir Tahun.",
+                                      "Rapat digelar akhir pekan, kata Menko.", "Rapat digelar akhir minggu."])
+    def test_a_bare_end_is_this_years_or_this_weeks(self, text):
+        [key] = sc.future_times(text)
+        assert key in ("akhir tahun ini", "akhir pekan ini")
+
+    @pytest.mark.parametrize("text", ["Rupiah melemah akhir pekan lalu.", "Harga naik akhir tahun lalu.",
+                                      "Proyek rampung akhir tahun 2026.", "Rapat digelar akhir pekan depan.",
+                                      "Tren berlanjut akhir pekan kemarin."])
+    def test_a_qualified_end_is_not_the_bare_one(self, text):
+        assert "akhir tahun ini" not in sc.future_times(text) and "akhir pekan ini" not in sc.future_times(text)
+
+    def test_bare_and_ini_back_each_other(self):
+        assert sc.unstated_future_times("rampung akhir tahun", "rampung akhir tahun ini") == []
+        assert sc.unstated_future_times("rampung akhir tahun ini", "rampung akhir tahun") == []
+        assert sc.unstated_future_times("rampung akhir tahun", "rampung tahun depan") == ["akhir tahun"]
+
+
+class TestSys179FuturePart:
+    @pytest.mark.parametrize("text,key", [("dijadwalkan awal pekan depan", "awal pekan depan"),
+                                          ("digelar pertengahan minggu mendatang", "pertengahan pekan depan"),
+                                          ("terbit awal bulan depan", "awal bulan depan"),
+                                          ("rampung pertengahan tahun depan", "pertengahan tahun depan"),
+                                          ("digelar awal pekan ini", "awal pekan ini")])
+    def test_the_part_is_in_the_key(self, text, key):
+        assert sc.future_times(text) == {key}
+
+    def test_a_part_states_its_whole_never_the_reverse(self):
+        assert sc.unstated_future_times("digelar pekan depan", "digelar awal pekan depan") == []
+        assert sc.unstated_future_times("digelar awal pekan depan", "digelar pekan depan") == ["awal pekan depan"]
+        assert sc.unstated_future_times("digelar awal pekan depan", "digelar akhir pekan depan") == ["awal pekan depan"]
