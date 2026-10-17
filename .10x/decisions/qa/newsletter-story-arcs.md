@@ -212,3 +212,5 @@ Report: `.10x/reviews/2026-10-17-qa-report.md`. QA tests and mutants: `scripts/e
 - Decision: recommend `NEWSLETTER_ARCS=0`, by the owner's own rule.
 - One unsourced interpretation (TNI, "menutup spekulasi") is left to the SYS-180 judge. Not ticketed, because no code check can decide it.
 - The first live `sebab` (rupiah, "disebabkan") is correctly backed.
+- **Owner review (same day):** the owner first read the story's first paragraph, where MSCI's official June 2027 date is correct. After seeing the latar sentence quoted, the owner confirmed it is an arc-writer hallucination. SYS-186 stands at P1.
+- **Lesson:** when reporting a false fact, quote the exact sentence and say which paragraph it is in. "The MSCI arc" pointed the owner at the wrong paragraph, and QA then half-conceded on a point it had right. Settle a dispute on the quoted text, not on the summary of it.
