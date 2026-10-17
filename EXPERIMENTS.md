@@ -3113,3 +3113,8 @@ SINDONEWS   old 12 new 12 | lost [] | gained []   links identical: True
   - Never treat "dan" as a clause boundary in Indonesian news; it joins names.
   - Run a guard over every window of the real sources, not only the hand-picked quote. The MK hole appeared only on the 137-article pool.
 - **Links:** SYS-152 (#342), ADR-018, DBT-81 (#380).
+- **Live replay addendum (2026-10-17 11:18, `replay_story_arcs.py --dates 2026-10-09 --out-dir digests/preview/sys152 --seed 152`, $0.1345):**
+  - 4 arcs built, 0 fallback.
+  - Refusals: style 1, alur 1, json 0, **sebab 0**.
+  - **No arc used a causal word**, the MK arc included ("MK menolak ..." instead of the invented "karena"). The new prompt rule alone steered the model off unsupported causes. The JSON stayed valid with `sebab` first.
+  - The run did not exercise a real `sebab` quote end to end: live editions will.
