@@ -7,6 +7,9 @@
 
 ## Progress
 
+### 2026-10-17: SYS-152 design = ADR-018 (owner accepted); SYS-180 #379 shadow judge filed
+- Prompt asks for a quote, code decides on both halves of the sentence, the judge only logs. Dev builds SYS-152 first.
+
 ### Owner 2026-10-17: NEWSLETTER_ARCS=1, SumoPod $6.35, extraction cap kept at $1.50
 
 ### QA 2026-10-17: SYS-150 ship gate

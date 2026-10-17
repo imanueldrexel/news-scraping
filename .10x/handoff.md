@@ -1,5 +1,17 @@
 # Current Handoff
 
+## SYS-152 design decided (2026-10-17): ADR-018, owner accepted
+- **SDE, first in queue: SYS-152 #342 (P0)**, built exactly as its rewritten body and ADR-018 say:
+  - a `sebab` quote field first in the arc JSON;
+  - a code gate (refusal reason `sebab`): the quote is a normalised substring of the source, holds a causal word, and covers BOTH halves of the prose sentence (>= 60% content words each); attribution never exempts;
+  - one retry, then fallback.
+  - Unit fixtures: QA's six hand-checked sentences (MK refused; PHK/BPIH/Defisit/OMC kept; Ojol outcome recorded).
+- Then SYS-174, SYS-177, SYS-178, SYS-179. SYS-180 #379 (shadow judge, logs only) comes after SYS-152.
+- Research: `reports/In prompt causal claim checking.md` (notes in `research_notes/In prompt causal claim checking/`).
+- Side note to verify: the research says DeepSeek retired the `deepseek-v4-flash` name (it is still accepted as an alias).
+
+---
+
 ## Owner decision 2026-10-17 09:40: arcs are LIVE (`NEWSLETTER_ARCS=1`)
 - The owner shipped ahead of SYS-152 (P0) and SYS-174/177/178/179, against QA's recommendation. The SumoPod balance is $6.35 (lasts to ~10-20/21 at the $1.50 extraction cap, which the owner kept).
 - **QA:** after each 12:00 edition, check every arc sentence (causes, schedules, relative dates, alur items) against its sources. On the first false fact, recommend `NEWSLETTER_ARCS=0`. Link the first arc edition on SYS-150 #340.

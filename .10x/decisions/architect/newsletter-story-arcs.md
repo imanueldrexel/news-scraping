@@ -286,3 +286,9 @@ data flow and the prompt are unchanged; `relative_name` (the phrase shown beside
 - SYS-174, latar: an invented schedule in the latar, inside a running span that also holds a past day from the
   sources or the timeline, is still backed. The agenda is closed; the latar keeps the past reading.
 - SYS-171: an arc's "Kamis depan" and an article's "Kamis pekan depan" for the same day do not meet. Cost: a retry.
+
+## 2026-10-17: causal claims (SYS-152) -> ADR-018
+- The owner chose the research-backed design ("better to follow that rather than we invented new approach").
+- The prompt asks for a `sebab` quote, first in the JSON. Code decides: the quote must be a normalised substring of the source, hold a causal word, and cover both halves of the prose sentence. Attribution never exempts. One retry, then fallback.
+- The judge is a shadow only, on another model family, for 2 weeks (SYS-180 #379).
+- Superseded: SYS-152's rules (a) and (b), both of which pass the MK sentence.
