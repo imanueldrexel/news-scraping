@@ -16,7 +16,14 @@
 - Measure SYS-152's replay item on days whose arcs use causal words (v4 10-08/10-11/10-12) or on the live editions' `sebab` stats.
 
 ### Owner
-- No false fact from these holes is printed yet: the 10-09 live replay wrote no causal word. QA keeps checking each 12:00 arc edition (addendum below when today's lands).
+- **First live arc edition (12:00 job, `digests/2026-10-16-ringkas.md`): 1 false fact.**
+  - The MSCI arc says the freeze lasts "hingga review November 2026". The source says until H2-2027. Filed as SYS-186 #387 (P1).
+  - **QA recommends `NEWSLETTER_ARCS=0`** before the next 12:00 run, per your rule. Details are on #340.
+- The causal gate worked live once: the rupiah arc's "disebabkan" is backed by BI's own sentence.
+- None of the SYS-181..185 holes is printed yet.
+
+### SDE addition
+- SYS-186 #387 (P1, printed): a "hingga <time>" end point must match the source. Slot it right after the SYS-152 + SYS-181 change.
 
 ---
 

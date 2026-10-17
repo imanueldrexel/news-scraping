@@ -8,6 +8,7 @@
 ## Progress
 
 ### QA audit 2026-10-17: SYS-152 sent back, DBT-81 closed; SYS-181..185 + DBT-82 filed
+- First live arc edition: 1 false fact (MSCI freeze 'hingga November 2026', source H2-2027), filed as SYS-186 #387 P1; QA recommends NEWSLETTER_ARCS=0 (#340).
 - Unit 3,537; dev mutants 20/20 KILLED; QA mutants 9/17 (DBT-82); QA file `scripts/experiments/qa_2026_10_17/test_qa_sys152.py` 9/34 green (25 red = SYS-152 direction + SYS-181..185, all `kept` through parse). Report: reviews/2026-10-17-qa-report.md
 
 ### SDE 2026-10-17: SYS-152 built (ADR-018), ready-for-qa; DBT-81 fixed

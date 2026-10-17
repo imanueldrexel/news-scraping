@@ -206,3 +206,9 @@ Report: `.10x/reviews/2026-10-17-qa-report.md`. QA tests and mutants: `scripts/e
 - **Not filed:** "berdampak (pada)" and "terdampak" as causal words. In the replays they mean "affected", not a link (SYS-184 records it). Also not filed: a numeric change inside a quote ("2,5" vs "25" normalise alike). The quote is never printed, and the number guard checks the prose.
 
 **Lesson:** a Done-when test can pass without the behaviour it names. Mutate the behaviour itself: swap the halves of a correct sentence.
+
+**First live arc edition (12:00 job, `digests/2026-10-16-ringkas.md`):**
+- 4 arcs, 1 false fact: the MSCI freeze horizon. Filed as SYS-186 #387 (P1).
+- Decision: recommend `NEWSLETTER_ARCS=0`, by the owner's own rule.
+- One unsourced interpretation (TNI, "menutup spekulasi") is left to the SYS-180 judge. Not ticketed, because no code check can decide it.
+- The first live `sebab` (rupiah, "disebabkan") is correctly backed.
