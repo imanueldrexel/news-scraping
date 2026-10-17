@@ -1,5 +1,12 @@
 # Current Handoff
 
+## Owner decision 2026-10-17 09:40: arcs are LIVE (`NEWSLETTER_ARCS=1`)
+- The owner shipped ahead of SYS-152 (P0) and SYS-174/177/178/179, against QA's recommendation. The SumoPod balance is $6.35 (lasts to ~10-20/21 at the $1.50 extraction cap, which the owner kept).
+- **QA:** after each 12:00 edition, check every arc sentence (causes, schedules, relative dates, alur items) against its sources. On the first false fact, recommend `NEWSLETTER_ARCS=0`. Link the first arc edition on SYS-150 #340.
+- **SDE:** the order is unchanged and now urgent, because the code is live: SYS-152, then SYS-174, SYS-177, SYS-178, SYS-179.
+
+---
+
 ## From: QA (SYS-150 ship gate) -> To: SDE (SYS-152 first, then the arc bugs), owner
 **Date:** 2026-10-17
 **Read first:** the QA comments of 2026-10-17 on #340 (A/B result, hand-check) and #342 (P0 move and design note).

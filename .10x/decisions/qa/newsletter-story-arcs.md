@@ -181,3 +181,4 @@ Report: `.10x/reviews/2026-10-16-qa-report-late.md`. QA tests, mutants and probe
 - **Decision:** SYS-152 moves to P0, as SYS-150's Done-when pre-agreed.
 - **Design note:** its rule (b) (cause-clause overlap) passes the MK sentence, because the clause is copied from a source's effect side. The check must match the effect + cause pair.
 - **Lesson:** check a proposed guard against the real failure it exists for before building it. The first real unattributed cause slips through the rule as written.
+- **Owner override (2026-10-17 09:40):** `NEWSLETTER_ARCS=1` was set before SYS-152 and SYS-174/177/178/179 closed. QA recommended waiting. The mitigation is QA's per-edition source check, with a rollback recommendation on the first false fact.

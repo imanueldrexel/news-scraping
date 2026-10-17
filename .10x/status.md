@@ -1,11 +1,13 @@
 # Project Status
 
 ## Project: NewsAggregator
-**Current Phase:** SYS-150 ship gate: owner A/B arcs 5/5 (pass), hand-check same_thread 93% (pass), 1 unattributed cause (MK 10-09) -> SYS-152 #342 moved to P0. Dev next: SYS-152, then SYS-174/177/178/179. NEWSLETTER_ARCS stays 0.
-**Last Updated:** 2026-10-17 by QA
-**Health:** On Track
+**Current Phase:** Story arcs LIVE since 2026-10-17 (owner set NEWSLETTER_ARCS=1 ahead of SYS-152 P0 + SYS-174/177/178/179). QA checks each 12:00 arc edition; dev fixes SYS-152 first.
+**Last Updated:** 2026-10-17 09:40 by QA
+**Health:** At Risk (known open arc defects in production)
 
 ## Progress
+
+### Owner 2026-10-17: NEWSLETTER_ARCS=1, SumoPod $6.35, extraction cap kept at $1.50
 
 ### QA 2026-10-17: SYS-150 ship gate
 - Owner's blind A/B on arcs-v5: arcs won 5/5. QA hand-check first pass: same_thread 40/43 (93%); attributed 5/6. The MK arc invents a causal link, so SYS-152 goes to P0, with a design note: rule (b) on the cause clause alone passes it. Evidence on #340 and #342.
