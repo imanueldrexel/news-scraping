@@ -292,3 +292,54 @@ data flow and the prompt are unchanged; `relative_name` (the phrase shown beside
 - The prompt asks for a `sebab` quote, first in the JSON. Code decides: the quote must be a normalised substring of the source, hold a causal word, and cover both halves of the prose sentence. Attribution never exempts. One retry, then fallback.
 - The judge is a shadow only, on another model family, for 2 weeks (SYS-180 #379).
 - Superseded: SYS-152's rules (a) and (b), both of which pass the MK sentence.
+
+# 2026-10-17 (dev): QA's SYS-152 send-back queue -> ADR-019, plus SYS-186 and SYS-174/177/178/179
+
+## Causal gate (SYS-152 send-back, SYS-181..185, DBT-82) -> ADR-019
+- The gate now matches a claim to ONE link of the quote: cause half to cause side, effect half to effect side,
+  around one causal word that lies in the quoted span. The sides are cut from the SOURCE sentences the quote
+  covers, and those are counted in the source.
+- Owner, 2026-10-17: **strict per half**. The dev's OMC fixture becomes an accepted false refusal, like Ojol.
+- Order of work: direction + one link (SYS-152 + SYS-181, the same change), then the source span (SYS-182), the
+  word table (SYS-184), the fronted cause (SYS-183), negation (SYS-185), and the DBT-82 tests.
+
+## SYS-186: "hingga / sampai <time>" is an end point, and the source must put it there
+- New `source_check.unbacked_end_times(text, source)`, wired into `story_arc.parse` as a `date` refusal in every
+  field. It is the same pattern as SYS-170's change claims: a guard on what the source SAYS about a value, not
+  only that the value exists.
+- A prose "hingga|sampai" + up to 3 words with no digit + a time (a month, a dated day, a year, "semester/kuartal"
+  + numeral, or "akhir/awal/pertengahan" + one of those) must be matched by a source sentence. That sentence must
+  put "hingga|sampai" (+ up to 3 words) before a time whose parts hold all of the prose time's parts (day, month,
+  year, part, semester/quarter). "setelah November 2026" in the source never backs "hingga November 2026".
+- No verb list. The ticket asked to count the replays first: every "hingga <time>" in v4..v6 is a period-to-date
+  figure ("Defisit APBN hingga 30 September 2026") that its source states the same way. A verb list would leave
+  "beroperasi hingga" and "melemah hingga" unguarded.
+- Relative times ("hingga kini", "hingga akhir pekan") are not read here. "kini/saat ini/hari ini" is no end
+  point, and future relative times are judged by key (SYS-169).
+- Residual: the time matches, but the subject may not ("diskon berlaku hingga Desember" backs "pembekuan berlanjut
+  hingga Desember"). That is the general fact-transplant risk the number guards share too. It is not built here.
+
+## SYS-174 rework + SYS-177: backing days by field
+`story_arc._backing_days(known, last, digest_date, ahead_only, today_runs)`:
+
+| field | a span still running past today | a span ending today |
+|---|---|---|
+| agenda | only a day after today backs it | the same (`today_runs`), except "sejak <bulan>", a start, never a schedule |
+| judul, hari_ini, sekilas (SYS-177) | only a day after today backs it | today and every known day back it (the present reading) |
+| latar, a future verb within 4 words before the phrase in its sentence (SYS-177) | only a day after today | as before |
+| latar, no such verb | a past known day backs it, today does not (SYS-174) | as before |
+
+- The future verbs: akan, bakal, dijadwalkan, ditargetkan, direncanakan, rencananya, menyusul. The verb must stand
+  BEFORE the phrase: the replay's "pada awal Oktober, ... yang akan memanggil" stays a past narration.
+
+## SYS-178: bare "akhir tahun" / "akhir pekan" are future times
+- Not followed by ini/lalu/depan/mendatang/kemarin/sebelumnya or a year. Keyed as "akhir tahun ini" and
+  "akhir pekan ini": the bare form and the "ini" form mean the same end, so either one stated backs the other.
+- A Monday article's past "akhir pekan" now costs a retry when the arc repeats it bare and the article wrote
+  "akhir pekan lalu". The replays are re-checked.
+
+## SYS-179: the parts of a future period are keyed with their part
+- `_FUTURE` reads "(awal|pertengahan|akhir) (pekan|minggu|bulan|tahun) (depan|mendatang)" and "(awal|pertengahan|akhir)
+  (pekan|minggu) ini", keyed with the part.
+- On the backing side only, a stated part also states its whole period ("awal pekan depan" backs "pekan depan"),
+  never the reverse. This is the SYS-171 rule for a weekday of a week.

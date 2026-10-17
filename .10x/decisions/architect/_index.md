@@ -10,3 +10,4 @@
 - [open-p2-p3-2026-10-12](open-p2-p3-2026-10-12.md) — SRC-59 INVESTORID via sitemap_post.xml, DBT-60 date rule, SYS-91 FAISS posted_at repair
 - [newsletter-story-arcs](newsletter-story-arcs.md) — top 3-4 stories as pure-prose arcs: in-edition stage, NEWS_L1 thread finder, model-confirmed `alur` + code guards, `NEWSLETTER_ARCS` switch, no thread store (ADR-016); core seams first: source_check, ask_json, plan/build, own composition root (ADR-017); tracker #336
 - ADR-018 (2026-10-17): story-arc causal claims anchored to one quoted source sentence, checked by code; judge shadow-only (SYS-152, SYS-180)
+- ADR-019 (2026-10-17): the causal gate matches a claim to ONE link of the quote by direction (cause to cause side, effect to effect side), with sides cut from the source sentences the quote covers; amends ADR-018 decision 2 (SYS-152/181..185)

@@ -1,5 +1,10 @@
 # Current Handoff
 
+## SDE in progress (2026-10-17 afternoon): QA's SYS-152 send-back queue
+- Design: `.10x/adrs/019-causal-gate-matches-one-link-by-direction.md` and architect/newsletter-story-arcs.md "2026-10-17 (dev)".
+- Owner decision: strict per half. The OMC fixture is now an accepted false refusal.
+- Order: SYS-152+181, SYS-186, SYS-182+184, SYS-183/185/DBT-82, then SYS-174/177/178/179.
+
 ## From: QA (audit of SYS-152 + DBT-81) -> To: SDE, owner
 **Date:** 2026-10-17 (12:00)
 **Read first:** `.10x/reviews/2026-10-17-qa-report.md`; the QA comment on #342; `scripts/experiments/qa_2026_10_17/test_qa_sys152.py` (each red class names its ticket).

@@ -2,10 +2,16 @@
 
 ## Project: NewsAggregator
 **Current Phase:** Story arcs LIVE since 2026-10-17 (owner set NEWSLETTER_ARCS=1 ahead of SYS-152 P0 + SYS-174/177/178/179). QA checks each 12:00 arc edition; dev fixes SYS-152 first.
-**Last Updated:** 2026-10-17 12:00 by QA
+**Last Updated:** 2026-10-17 afternoon by SDE
 **Health:** At Risk (known open arc defects in production)
 
 ## Progress
+
+### SDE 2026-10-17 (afternoon): QA's SYS-152 send-back queue -- in progress
+- Design: ADR-019 (owner: strict per half; OMC becomes an accepted false refusal) + architect/newsletter-story-arcs.md "2026-10-17 (dev)".
+- [ ] SYS-152 direction + SYS-181  [ ] SYS-186  [ ] SYS-182  [ ] SYS-184  [ ] SYS-183  [ ] SYS-185  [ ] DBT-82
+- [ ] SYS-174 rework  [ ] SYS-177  [ ] SYS-178  [ ] SYS-179
+- Replay recheck before: 18 causal words in v4/v5/v6, 15 backed, 3 refused (MK, Ojol v5, karhutla v4).
 
 ### QA audit 2026-10-17: SYS-152 sent back, DBT-81 closed; SYS-181..185 + DBT-82 filed
 - First live arc edition: 1 false fact (MSCI freeze 'hingga November 2026', source H2-2027), filed as SYS-186 #387 P1; QA recommends NEWSLETTER_ARCS=0 (#340).
