@@ -92,3 +92,9 @@ Layers 1 (the `sebab` prompt field) and 3 (the shadow judge, SYS-180) are unchan
 ## Dependencies
 - `story_words.content_words` (stop words), and `causal_check._root` (rough affix stripping), unchanged.
 - `story_arc.parse` wiring, unchanged: refusal reason `sebab`, one retry, fallback.
+
+## Implementation notes (measured on the v4/v5/v6 replays, 2026-10-17, same day)
+- **A name may stand anywhere in the link's sentence; the event words must be on their side** (`_covers`). Strict sides refused v4 Padang's "hujan deras memicu luapan air sungai di Koto Tangah": the source names Koto Tangah after its next causal word. OMC is unchanged: its missing words are event words. A half of names only gets no such room.
+- Negators (checked by `negation_agrees`) and frame words ("lalu", "disebut", "sebelumnya") weigh nothing as facts.
+- A source's headline and body are separate sentences (split at line breaks and at "ditebak.Dia" glue).
+- Replay recheck: 15/18 backed before, 12/18 after. The 3 lost: OMC (owner decision), Dadang (the source gives the reason only as "Alasan ..." in a headline, accepted), and v4 Padang "karena banjir belum surut" (a true catch: the source says "dan").

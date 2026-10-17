@@ -4,7 +4,7 @@ The stored arcs (arcs-v4/v5/v6) were written before the `sebab` field existed, s
 gate will ask of the model's quote, with the best quote the model COULD have given: for every causal word in an
 arc's prose, is there a window of one or two adjacent sentences in what the model saw -- that day's articles
 sharing >= 2 judul words (headline + L1 text, ARTICLE_CHARS) and the arc's alur items (headline + opening,
-OPENING_CHARS) -- that `causal_check.supports` accepts? "backed" means the gate can keep the sentence; "refused"
+OPENING_CHARS) -- that `causal_check.backs` accepts (ADR-019: one link, by direction)? "backed" means the gate can keep the sentence; "refused"
 means the retry will have to drop the causal word (or the sentence was invented).
 
     venv\\Scripts\\python.exe scripts/experiments/sys152/recheck_causes.py
@@ -83,10 +83,10 @@ def main():
                     continue
                 with_cause += 1
                 sources = day_texts(cur, day, story["judul"]) + alur_texts(cur, out_dir, day, story["judul"])
-                quotes = [w for text in sources for w in windows(text)]
+                quotes = [(w, text) for text in sources for w in windows(text)]
                 print(f"{run} {day} | {story['judul'][:70]} | {len(sources)} sources")
                 for field, span in found:
-                    ok = any(cc.supports(q, span) for q in quotes)
+                    ok = any(cc.backs(q, text, span) for q, text in quotes)
                     spans += 1
                     backed += ok
                     print(f"   {'backed ' if ok else 'REFUSED'} {field:8} {span.word!r}: {span.sentence[:150]}")

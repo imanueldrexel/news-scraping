@@ -121,9 +121,12 @@ PROMPT = (
     "  daftar, tanpa label, tanpa poin. Bahasa Indonesia baku, kalimat aktif, tanpa clickbait, tanpa\n"
     "  tanda seru, tanpa pertanyaan retoris.\n"
     "- Mulai dari yang BARU hari ini. Latar datang sesudahnya.\n"
-    "- Kata sebab-akibat (\"karena\", \"akibat\", \"lantaran\", \"dipicu\", \"memicu\", \"sehingga\", \"imbas\",\n"
-    "  \"disebabkan\", \"menyebabkan\") HANYA boleh dipakai jika SATU kalimat di teks memuat kata\n"
-    "  sebab-akibat itu bersama sebab DAN akibatnya. Salin kalimat itu persis ke \"sebab\" (boleh dua\n"
+    "- Kata sebab-akibat (\"karena\", \"dikarenakan\", \"lantaran\", \"sebab\", \"gara-gara\", \"akibat\",\n"
+    "  \"akibatnya\", \"diakibatkan\", \"mengakibatkan\", \"berakibat\", \"karenanya\", \"dipicu\", \"memicu\",\n"
+    "  \"pemicu\", \"pemicunya\", \"disebabkan\", \"menyebabkan\", \"penyebab\", \"penyebabnya\", \"sehingga\",\n"
+    "  \"imbas\", \"imbasnya\", \"berimbas\") HANYA boleh dipakai jika SATU kalimat di teks memuat kata\n"
+    "  sebab-akibat itu bersama sebab DAN akibatnya, dengan arah yang sama: yang menjadi sebab di kalimat\n"
+    "  sumber tetap menjadi sebab. Salin kalimat itu persis ke \"sebab\" (boleh dua\n"
     "  kalimat berurutan, mis. \"... Hal ini menyebabkan ...\"), dan sebutkan siapa yang mengatakannya:\n"
     "  \"yang menurut analis Phintraco Sekuritas dipicu ...\". Dua fakta yang tertulis di kalimat berbeda\n"
     "  BUKAN sebab-akibat: tulis keduanya terpisah tanpa kata sebab-akibat. Kata urutan waktu\n"
@@ -463,11 +466,14 @@ def parse(answer: Optional[str], shown_texts: Sequence[str], timeline: Sequence[
         if stray_dates:
             dates.append(f'latar menyebut tanggal {stray_dates[0][0]}/{stray_dates[0][1]} tanpa cuplikan alur: '
                          "tanpa alur, latar hanya boleh berisi mengapa peristiwa ini penting")
-    # SYS-152 (ADR-018): every causal word rests on one quoted sentence of a terkait article or a chosen alur
-    # item that holds the causal word and both halves of the claim. Checked on the retry too: fail closed.
+    # SYS-152 (ADR-018/019): every causal word rests on one link of one quoted sentence of a terkait article or a
+    # chosen alur item: the claim's cause on the link's cause side, its effect on the effect side. Checked on the
+    # retry too: fail closed.
     quotable = {**{i: shown_texts[i] for i in terkait}, **{i: item_source(t) for i, t in chosen.items()}}
     causes = causal_check.unbacked_causes([("judul", judul), ("hari_ini", hari_ini), ("latar", latar),
                                            ("agenda", agenda), ("sekilas", sekilas)], sebab, quotable)
+    if sebab:      # SYS-152's measurement on the live editions: does the model copy its quotes verbatim?
+        logger.info(f"Arc sebab quotes {causal_check.match_counts(sebab, quotable)}, refused: {bool(causes)}")
     problems = ([f"{'; '.join(style)} -- {STYLE_ASK}"] if style else []) + numbers + dates + causes
     problems += [f'artikel [{i}] tidak menyebut {", ".join(anchors)}: jika membahas peristiwa lain, pindahkan ke '
                  f'"tidak_terkait" dan jangan memakai faktanya' for i in strays]

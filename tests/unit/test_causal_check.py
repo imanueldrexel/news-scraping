@@ -1,8 +1,9 @@
-"""SYS-152 (#342, ADR-018): a story arc's causal claim must rest on one quoted source sentence.
+"""SYS-152 (#342, ADR-018, ADR-019): a story arc's causal claim must rest on one link of one quoted source sentence.
 
 The six sentences are QA's hand-check of arcs-v5 (SYS-150 #340, digests/preview/arcs-v5/handcheck.csv), each with
 the source text the arc model saw (scripts/experiments/sys152/dump_causal_fixtures.py, trimmed). MK is the
-invented link: both halves are true, no source sentence joins them.
+invented link: both halves are true, no source sentence joins them. Since ADR-019 (owner, 2026-10-17: strict per
+half) OMC is refused too: its cause half is mostly the source's effect.
 """
 import json
 
@@ -11,7 +12,7 @@ import pytest
 import newscrawler.core.story_arc as sa
 from newscrawler.core import causal_check as cc
 from newscrawler.core.llm_json import Rejected
-from tests.unit.test_story_arc import DAY, TEXTS, TIMELINE, _answer
+from tests.unit.test_story_arc import DAY, N, TEXTS, TIMELINE, _answer
 
 PHK_SRC = ("63.789 Orang Kena PHK sejak Januari-September 2026 Kemnaker mencatat 63.789 pekerja terkena PHK sepanjang "
            "Januari-September 2026. Total PHK meningkat dari 53.490 orang hingga Agustus, namun Kemnaker menyatakan data "
@@ -67,10 +68,19 @@ def _problems(prose, quote, source):
 
 class TestHandCheckedSentences:
     @pytest.mark.parametrize("prose,quote,source", [(PHK, PHK_Q, PHK_SRC), (BPIH, BPIH_Q, BPIH_SRC),
-                                                    (DEF, DEF_Q, DEF_SRC), (OMC, OMC_Q, OMC_SRC)],
-                             ids=["PHK", "BPIH", "Defisit", "OMC"])
+                                                    (DEF, DEF_Q, DEF_SRC)],
+                             ids=["PHK", "BPIH", "Defisit"])
     def test_a_true_cause_whose_sentence_is_quoted_is_kept(self, prose, quote, source):
         assert _problems(prose, quote, source) == []
+
+    def test_omc_a_cause_taken_from_the_effect_side_is_refused(self):
+        """ADR-019's accepted false refusal (owner, 2026-10-17). The source: smoke affects flights at the airport;
+        "Hal ini" moved the OMC. The arc's cause, "asap mengganggu operasi modifikasi cuaca", shares only "asap"
+        with that cause side; "operasi modifikasi cuaca" is the source's effect. The retry drops the "karena"."""
+        [claim] = cc.causal_spans(OMC)
+        [link] = cc.links(OMC_Q, OMC_SRC)[0]
+        assert cc.overlap(claim.cause, link.cause) == 0.2 and cc.overlap(claim.cause, link.effect) >= 0.6
+        assert _problems(OMC, OMC_Q, OMC_SRC)
 
     def test_mk_the_invented_link_is_refused(self):
         """Each half is true; the quoted sentence holds the cause half and a "karena", not the effect half."""
@@ -87,7 +97,7 @@ class TestHandCheckedSentences:
                   "permohonan para Pemohon tidak dapat diterima karena persoalan kedudukan hukum.")
         [span] = cc.causal_spans(MK)
         assert cc.overlap(span.before, window) >= cc.MIN_HALF_OVERLAP     # the widened half alone would pass
-        assert not cc.supports(window, span) and _problems(MK, window, window)
+        assert not cc.backs(window, window, span) and _problems(MK, window, window)
 
     def test_a_glued_paragraph_is_no_quote(self):
         glued = ("Ray menyebut putusan MK sudah bisa ditebak.Dia mengaku sempat memprediksi gugatan itu tidak "
@@ -167,7 +177,7 @@ class TestHalves:
                                  "terbit karena masih sinkronisasi aturan pada pertengahan September.")
         assert span.before_core == "Perpres Ojol disebut belum terbit"
         source = "Perpres Ojol Tak Kunjung Terbit karena Masih Sinkronisasi Aturan"
-        assert cc.supports(source, span)
+        assert cc.backs(source, source, span)
 
     def test_a_half_sharing_only_half_its_words_is_refused(self):
         """The bar is 60%: "maskapai menghentikan" shares 1 of 2 content words with the source."""
@@ -205,7 +215,9 @@ class TestParse:
         assert _outcome(PHK, [{"artikel": 0, "kutipan": PHK_Q}]) == "kept"
 
     def test_two_adjacent_sentences_are_one_quote(self):
-        prose = "Kini OMC yang semula digelar dari Palembang dipindah ke Pangkal Pinang karena asap mengganggu operasi."
+        """"Hal ini menyebabkan": the cause is the sentence before, the effect the rest of the second."""
+        prose = ("Kini OMC yang semula dilakukan dari Palembang dipindah ke Pangkal Pinang karena asap karhutla "
+                 "berdampak pada penerbangan di Bandara Sultan Mahmud Badaruddin II.")
         assert _outcome(prose, [{"artikel": 0, "kutipan": OMC_Q}], extra=OMC_SRC) == "kept"
 
     def test_mk_is_refused_as_sebab(self):
@@ -257,3 +269,281 @@ class TestParse:
 
     def test_sebab_is_a_refusal_reason(self):
         assert "sebab" in sa.REASONS
+
+
+# ── ADR-019: one link of the quote, by direction (SYS-152 send-back, SYS-181..185) ──────────────────
+
+AVTUR = "Harga tiket pesawat domestik naik tajam karena harga avtur melonjak sepanjang Oktober."
+
+
+def kept(prose, quote, source=None):
+    return _problems(prose, quote, quote if source is None else source) == []
+
+
+class TestDirection:
+    """SYS-152 send-back: the cause half must match the source's cause side, the effect half its effect side."""
+
+    def test_halves_are_named_by_the_direction_of_the_word(self):
+        [back] = cc.causal_spans("Harga naik karena pasokan seret.")
+        [forward] = cc.causal_spans("Pasokan seret sehingga harga naik.")
+        assert (back.cause, back.effect) == ("pasokan seret.", "Harga naik")
+        assert (forward.cause, forward.effect) == ("Pasokan seret", "harga naik.")
+
+    def test_a_reversed_claim_is_refused(self):
+        assert kept("Harga tiket pesawat domestik naik tajam karena harga avtur melonjak.", AVTUR)
+        assert not kept("Harga avtur melonjak karena harga tiket pesawat domestik naik tajam.", AVTUR)
+
+    def test_a_forward_connective_is_checked_with_its_halves_swapped(self):
+        assert kept("Harga avtur melonjak sehingga harga tiket pesawat domestik naik tajam.", AVTUR)
+        assert not kept("Harga tiket pesawat domestik naik tajam sehingga harga avtur melonjak.", AVTUR)
+
+    def test_mk_reversed_is_refused(self):
+        assert not kept("Para pemohon tidak memiliki kedudukan hukum karena permohonan dinyatakan tidak dapat "
+                        "diterima.", MK_Q, MK_SRC)
+
+
+MK_TWO = ("MK tidak dapat mendiskualifikasi Gibran karena hal tersebut bukan ranah MK, tapi lembaga lain. "
+          "Permohonan para pemohon dinyatakan tidak dapat diterima karena mereka tidak memiliki kedudukan hukum.")
+BERAS = "Harga beras naik karena gagal panen di Jawa, sementara harga cabai turun karena pasokan melimpah."
+
+
+class TestOneLink:
+    """SYS-181 (#381): the two halves come from the two sides of ONE causal word of the quote."""
+
+    def test_mk_from_two_adjacent_sentences_each_with_its_own_reason_is_refused(self):
+        assert not kept("MK tidak dapat mendiskualifikasi Gibran karena permohonan para pemohon tidak dapat "
+                        "diterima.", MK_TWO)
+
+    def test_two_links_of_one_sentence_are_not_crossed(self):
+        assert not kept("Harga beras naik karena pasokan cabai melimpah.", BERAS)
+
+    def test_each_link_still_backs_its_own_claim(self):
+        assert kept("Harga beras naik karena gagal panen di Jawa.", BERAS)
+        assert kept("Harga cabai turun karena pasokan melimpah.", BERAS)
+
+    def test_an_unrelated_sentence_before_lends_nothing(self):
+        source = "Harga avtur melonjak 12 persen. Harga tiket naik karena permintaan libur sekolah tinggi."
+        assert not kept("Harga avtur melonjak karena permintaan libur sekolah tinggi.", source)
+
+    def test_hal_ini_menyebabkan_takes_the_sentence_before_as_its_cause(self):
+        source = "Asap karhutla menyelimuti Palembang sejak Senin. Hal ini menyebabkan 15 penerbangan dibatalkan."
+        assert kept("Sebanyak 15 penerbangan dibatalkan karena asap karhutla menyelimuti Palembang.", source)
+
+    def test_adjacent_causal_words_are_one_link(self):
+        source = "Banjir terjadi karena dipicu hujan deras."
+        assert {(s.cause, s.effect) for s in cc.links(source, source)[0]} == {("hujan deras.", "Banjir terjadi")}
+        assert kept("Banjir terjadi karena hujan deras.", source)
+
+    def test_a_name_may_stand_anywhere_in_the_links_sentence(self):
+        """Replay 10-11 (v4): the source names the place after its next causal word; the event words are on the
+        effect side."""
+        source = ("Hujan deras pada Sabtu siang memicu luapan air sungai hingga menyebabkan tanggul jebol di Koto Tangah "
+                  "dan Kuranji.")
+        assert kept("Sehari sebelumnya, hujan deras memicu luapan air sungai di Koto Tangah dan Kuranji.", source)
+
+    def test_names_never_carry_the_event_words(self):
+        source = "Banjir surut karena pompa di Pluit, Ancol dan Muara Baru bekerja penuh."
+        prose = "Kemarin, warga Pluit Ancol Muara Baru tergenang karena pompa bekerja penuh."
+        assert cc.overlap("pompa bekerja penuh", "pompa di Pluit, Ancol dan Muara Baru bekerja penuh.") == 1.0
+        assert not kept(prose, source)            # 3 of 5 words are names in the sentence; no event word is
+
+    def test_a_negator_or_a_frame_word_is_no_fact(self):
+        """"belum", "disebut", "lalu" weigh nothing: the negation is checked on its own (replay 10-08, 10-10)."""
+        assert cc.overlap("Perpres Ojol disebut belum terbit", "Perpres Ojol Tak Kunjung Terbit") == 1.0
+        assert cc.overlap("lalu memproyeksikan defisit", "memproyeksikan defisit") == 1.0
+
+    def test_a_side_stops_at_another_causal_word(self):
+        [first, second] = cc.causal_spans("Hujan deras memicu luapan sungai, sehingga tim SAR mengevakuasi warga.")
+        assert first.effect == "luapan sungai" and second.cause == "luapan sungai"
+        [first, second] = cc.causal_spans("Hujan deras memicu luapan sungai sehingga tim SAR mengevakuasi warga.")
+        assert first.effect == "luapan sungai" and second.cause == "luapan sungai"
+
+
+TIKET_ARTICLE = ("Harga avtur melonjak sepanjang Oktober. Maskapai mengeluhkan biaya operasional. Harga tiket "
+                 "pesawat domestik naik tajam karena harga avtur melonjak.")
+TIKET = "Harga tiket pesawat domestik naik tajam karena harga avtur melonjak."
+
+
+class TestQuoteSpan:
+    """SYS-182 (#382): the sentences a quote covers are counted in the SOURCE."""
+
+    def test_an_ellipsis_bridging_three_source_sentences_is_refused(self):
+        quote = "Harga avtur melonjak sepanjang Oktober ... naik tajam karena harga avtur melonjak"
+        assert cc.quote_in(quote, TIKET_ARTICLE) and cc.quotable(quote)
+        [problem] = cc.valid_quotes([(0, quote)], {0: TIKET_ARTICLE})[1]
+        assert "lebih dari 2 kalimat" in problem and not kept(TIKET, quote, TIKET_ARTICLE)
+
+    def test_full_stops_dropped_to_hide_sentences_are_counted_in_the_source(self):
+        quote = " ".join(s.rstrip(".") for s in cc.sentences(TIKET_ARTICLE))
+        assert cc.quotable(quote) and not kept(TIKET, quote, TIKET_ARTICLE)
+
+    def test_the_one_sentence_quoted_is_kept(self):
+        assert kept(TIKET, TIKET, TIKET_ARTICLE)
+
+    def test_an_ellipsis_inside_one_sentence_is_allowed(self):
+        assert kept("Harga tiket pesawat naik tajam karena harga avtur melonjak.",
+                    "Harga tiket pesawat ... naik tajam karena harga avtur melonjak", AVTUR)
+
+    def test_the_causal_word_must_be_inside_the_quote(self):
+        """The quote points at its own text: a fragment without the sentence's "karena" backs nothing."""
+        good, problems = cc.valid_quotes([(0, "Harga tiket pesawat domestik naik tajam")], {0: AVTUR})
+        assert good == [] and "tidak memuat kata sebab-akibat" in problems[0]
+
+    def test_an_ellipsis_cannot_hide_a_negation(self):
+        source = "Harga tiket pesawat domestik naik tajam bukan karena harga avtur melonjak."
+        assert not kept("Harga tiket pesawat domestik naik tajam karena harga avtur melonjak.",
+                        "Harga tiket pesawat domestik naik tajam ... karena harga avtur melonjak", source)
+
+    def test_glued_sentences_are_two(self):
+        assert cc.sentences("Ray menyebut putusan sudah bisa ditebak.Dia mengaku kecewa.") == [
+            "Ray menyebut putusan sudah bisa ditebak.", "Dia mengaku kecewa."]
+
+
+class TestFrontedCause:
+    """SYS-183 (#383): "Karena X, Y" carries both halves in its own sentence."""
+
+    def test_the_cause_is_the_clause_after_the_word_and_the_effect_the_rest(self):
+        [span] = cc.causal_spans("Harga naik. Karena gagal panen, harga beras melonjak di Jawa.")
+        assert (span.cause, span.effect) == ("gagal panen", "harga beras melonjak di Jawa.")
+
+    def test_an_invented_effect_after_a_fronted_cause_is_refused(self):
+        source = "Hujan deras mengguyur Jakarta sejak pagi karena dipicu siklon tropis di Samudra Hindia."
+        assert not kept("Hujan deras mengguyur Jakarta sejak pagi. Karena hujan deras, KRL berhenti beroperasi.",
+                        source)
+
+    def test_a_fronted_cause_at_a_fields_start_is_kept_with_its_sentence(self):
+        assert kept("Akibat asap karhutla, 15 penerbangan di Palembang terganggu.",
+                    "Sebanyak 15 penerbangan di Palembang terganggu akibat asap karhutla.")
+
+    def test_without_a_boundary_the_effect_cannot_be_told_and_is_refused(self):
+        source = "Sebanyak 15 penerbangan di Palembang terganggu akibat asap karhutla."
+        assert not kept("Akibat asap karhutla 15 penerbangan di Palembang terganggu.", source)
+
+    def test_karena_itu_is_forward_with_the_sentence_before_as_cause(self):
+        [span] = cc.causal_spans("Harga avtur melonjak 12 persen. Karena itu, maskapai menaikkan harga tiket.")
+        assert span.cause == "Harga avtur melonjak 12 persen." and "maskapai menaikkan" in span.effect
+
+    def test_penyebabnya_takes_the_sentence_before_as_its_effect(self):
+        [span] = cc.causal_spans("Harga beras naik. Penyebabnya, gagal panen di Jawa.")
+        assert (span.cause, span.effect) == ("gagal panen di Jawa.", "Harga beras naik.")
+
+    def test_penyebab_x_adalah_y_splits_at_the_copula(self):
+        [span] = cc.causal_spans("Penyebab banjir adalah hujan deras.")
+        assert (span.cause, span.effect) == ("hujan deras.", "banjir")
+
+
+# Written out, not read from causal_check: a form dropped from its table must fail here (DBT-82).
+FORMS = ["karena", "dikarenakan", "lantaran", "sebab", "gara-gara", "akibat", "diakibatkan", "dipicu", "disebabkan",
+         "imbas", "penyebabnya", "pemicunya", "sehingga", "akibatnya", "karenanya", "imbasnya", "mengakibatkan",
+         "berakibat", "menyebabkan", "memicu", "berimbas", "penyebab", "pemicu"]
+
+
+class TestCausalWords:
+    """SYS-184 (#384): every causal form needs a quote; the prompt lists the same forms."""
+
+    @pytest.mark.parametrize("word", FORMS)
+    def test_every_form_needs_a_quote(self, word):
+        assert cc.unbacked_causes([("latar", f"Harga beras naik {word} gagal panen di Jawa.")], [], {}) != []
+
+    @pytest.mark.parametrize("prose", ["Asap karhutla mengakibatkan 15 penerbangan dibatalkan.",
+                                       "Penyebabnya, asap karhutla menutup bandara.",
+                                       "Sebanyak 15 penerbangan dibatalkan gara-gara asap karhutla.",
+                                       "Pembatalan 15 penerbangan berimbas pada jadwal haji."])
+    def test_qa_cases(self, prose):
+        assert cc.unbacked_causes([("latar", prose)], [], {}) != []
+
+    def test_the_table_is_the_list(self):
+        assert sorted(cc.CAUSAL_WORDS) == sorted(FORMS)
+
+    @pytest.mark.parametrize("prose", ["Sebanyak 498 jiwa terdampak banjir.", "Banjir berdampak pada 120 rumah.",
+                                       "Sektor pariwisata terimbas pandemi.", "Warga terpicu emosinya."])
+    def test_affected_is_no_link(self, prose):
+        assert cc.causal_spans(prose) == []
+
+    def test_the_prompt_lists_every_form(self):
+        assert [w for w in FORMS if f'"{w}"' not in sa.PROMPT] == []
+
+
+class TestNegation:
+    """SYS-185 (#385): a negation in a half, or before the causal word, must agree with the link."""
+
+    def test_a_negated_effect_is_refused(self):
+        assert not kept("Harga tiket pesawat domestik tidak naik karena harga avtur melonjak.", AVTUR)
+
+    def test_a_denied_link_is_refused(self):
+        assert not kept("Harga tiket pesawat domestik naik tajam bukan karena harga avtur melonjak.", AVTUR)
+
+    def test_a_negation_the_source_has_must_be_kept(self):
+        source = "Harga tiket kereta tidak naik karena subsidi pemerintah ditambah."
+        assert not kept("Harga tiket kereta naik karena subsidi pemerintah ditambah.", source)
+        assert kept("Harga tiket kereta tidak naik karena subsidi pemerintah ditambah.", source)
+
+    def test_a_modal_between_the_negator_and_its_verb_is_skipped(self):
+        assert cc.negation_agrees("MK tidak dapat mendiskualifikasinya", "MK tidak dapat mendiskualifikasi Gibran")
+        assert cc.negation_agrees("Perpres Ojol belum terbit", "Perpres Ojol Tak Kunjung Terbit")
+        assert cc.negation_agrees("Harga tiket tidak dapat naik", "Harga tiket tidak naik karena subsidi")
+
+    def test_a_denied_link_backs_a_denied_claim(self):
+        source = "Harga tiket naik bukan karena harga avtur melonjak, melainkan karena permintaan libur tinggi."
+        assert kept("Harga tiket naik bukan karena harga avtur melonjak.", source)
+
+
+# ── DBT-82 (#386): the rules QA's surviving mutants left unpinned ──────────────────────────────────
+
+def _reason(texts=None, timeline=None, **override):
+    try:
+        sa.parse(_answer(**override), texts or TEXTS, timeline or TIMELINE, DAY)
+    except Rejected as e:
+        return e.reason
+    return "kept"
+
+
+class TestDbt82:
+    def test_a_causal_judul_is_checked(self):
+        assert _reason() == "kept"
+        assert _reason(judul="Prabowo rapat karhutla karena asap sampai negara tetangga") == "sebab"
+
+    def test_a_causal_agenda_is_checked(self):
+        assert _reason(agenda="Rapat lanjutan dijadwalkan Kamis (15/10) karena asap sampai negara tetangga.") == \
+            "sebab"
+
+    def test_a_true_cause_quoted_from_a_chosen_alur_item_is_kept(self):
+        item = TIMELINE[1]._replace(opening="Presiden menggelar rapat terbatas karena titik api meluas di Kalimantan.")
+        latar = ("Persoalan karhutla sudah di meja Presiden sejak September. Pada 23/9 Seskab melaporkan 209 hektare "
+                 "lahan masih terbakar, dan pada 24 September Presiden menggelar rapat terbatas karena titik api "
+                 "meluas di Kalimantan.")
+        sebab = [{"artikel": N + 1, "kutipan": "Presiden menggelar rapat terbatas karena titik api meluas di "
+                                               "Kalimantan."}]
+        timeline = [TIMELINE[0], item, TIMELINE[2]]
+        assert _reason(timeline=timeline, latar=latar, sebab=sebab) == "kept"
+        assert _reason(timeline=timeline, latar=latar, sebab=[]) == "sebab"
+
+    def test_the_bar_is_sixty_percent(self):
+        below, at = "Harga tiket pesawat kereta kapal ojek naik", "Harga tiket kereta kapal naik"
+        assert cc.overlap(below, AVTUR) == 4 / 7 and cc.overlap(at, AVTUR) == 0.6
+        assert not kept(f"{below} karena harga avtur melonjak.", AVTUR)
+        assert kept(f"{at} karena harga avtur melonjak.", AVTUR)
+
+    def test_a_widened_half_never_carries_a_core_clause_the_link_lacks(self):
+        """"ditunda" alone is one content word, so the effect is widened by the clause before it; that clause is in
+        the source, "ditunda" is not. The core clause must be covered on its own (the MK replay window's shape)."""
+        source = "MK menyatakan tidak menemukan bukti ijazah Gibran setara SMA karena dokumen tidak lengkap."
+        prose = ("MK menyatakan tidak menemukan bukti ijazah Gibran setara SMA, tetapi ditunda karena dokumen tidak "
+                 "lengkap.")
+        [claim] = cc.causal_spans(prose)
+        assert claim.effect_core == "ditunda" and cc.overlap(claim.effect, source) >= cc.MIN_HALF_OVERLAP
+        assert not kept(prose, source)
+
+    def test_a_comma_ends_the_core_clause(self):
+        """The clause before the comma is another fact, never part of the effect the quote must cover."""
+        assert kept("Rupiah melemah tajam dan obligasi negara tertekan, harga tiket pesawat domestik naik tajam "
+                    "karena harga avtur melonjak.", AVTUR)
+
+
+class TestMatchCounts:
+    """SYS-152 Done-when: how many quotes fail an exact match before normalisation, measured on the live editions."""
+
+    def test_verbatim_normalised_and_absent_are_told_apart(self):
+        counts = cc.match_counts([(0, AVTUR), (0, AVTUR.upper()), (0, "Harga tiket ... karena harga avtur"),
+                                  (0, "Harga tiket turun."), (5, AVTUR)], {0: AVTUR})
+        assert counts == {"verbatim": 2, "normalised": 1, "absent": 2}
