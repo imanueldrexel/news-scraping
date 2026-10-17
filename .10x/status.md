@@ -7,6 +7,9 @@
 
 ## Progress
 
+### SDE 2026-10-17: SYS-152 built (ADR-018), ready-for-qa; DBT-81 fixed
+- causal_check.py + story_arc `sebab` gate; 43 tests, 20/20 mutants, unit 3,537; offline replay 15/18 backed, MK refused. Details: decisions/sde/newsletter-story-arcs.md.
+
 ### 2026-10-17: SYS-152 design = ADR-018 (owner accepted); SYS-180 #379 shadow judge filed
 - Prompt asks for a quote, code decides on both halves of the sentence, the judge only logs. Dev builds SYS-152 first.
 

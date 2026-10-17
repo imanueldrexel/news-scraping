@@ -24,6 +24,7 @@ One line each; read this before starting on a scraper or pipeline problem.
 - **No `git stash` / `stash pop` over uncommitted source edits (2026-10-16 late night):** `core.autocrlf=true` writes them back with CRLF, and every mutant anchored on `\n` then reports NOT FOUND. Compare against HEAD from an archive copy instead.
 - **Never write regex code through a Bash heredoc or `python -c` (2026-10-16, twice):** this harness turns `\b` into a backspace byte, silently. Use the Edit/Write tools; after any shell-written Python, count `chr(8)` in the file.
 - **Dropping today from a time guard's backing still leaves every date the day's articles state (QA 2026-10-16 late, SYS-177):** 13% of articles inside a month part state a past date in it, so about one arc in four backs an invented schedule anyway. Measure the whole backing set on real articles, and test the span's last day.
+- **A causal-claim gate must cover the clause next to the causal word on its own (2026-10-17, SYS-152):** widening a one-word clause let MK's invented "karena" pass at 0.69 on a real source window. Never split clauses on "dan" (it joins names).
 - **A capital letter does not mark a weekday in Indonesian news (2026-10-16, SYS-171):** headlines are title case ("Dilantik Minggu Depan" = next week). Only "hari Minggu" safely means the Sunday. (`_RELATIVE` still reads a capital "Minggu lalu" as the Sunday: at worst a retry.)
 
 - **Count a text guard's edge case in `articles` before ticketing it (2026-10-15, QA):** compound counts, "kemarin lusa", "setengah bulan lalu" and kuartal-with-year records occur 0-4 times in 127,559 articles; an exclusion written as "preceded by sejak" misses a table phrase that starts with it (SYS-164). -> 2026-10-15 "QA audit of the arc-guard rework" entry
@@ -3091,3 +3092,24 @@ SINDONEWS   old 12 new 12 | lost [] | gained []   links identical: True
   - A cause-clause overlap check (SYS-152 rule b) would pass the MK sentence, because its clause is copied from a source's effect side. Match the effect + cause pair.
   - Thematic backstory (an item sharing the actor, not the story) is the `same_thread` failure mode.
 - **Links:** SYS-150 (#340), SYS-152 (#342).
+
+### 2026-10-17 — SYS-152: does a one-sentence causal gate keep the true causes of the stored arcs and refuse MK?
+- **Question / hypothesis:** ADR-018's code gate keeps a causal sentence only when one quoted source sentence (or two adjacent) holds the causal word and covers both halves. Does it pass QA's 4 true hand-checked causes, refuse MK, and keep the other true causes in v4/v5/v6?
+- **Method:**
+  - `tests/unit/test_causal_check.py` on the six hand-checked sentences, with source text from `scripts/experiments/sys152/dump_causal_fixtures.py` (read-only).
+  - `scripts/experiments/sys152/recheck_causes.py` (read-only, no LLM). For every causal word in the stored arcs, it searches every 1-2 sentence window the model saw for one the gate accepts: that day's articles sharing >= 2 judul words (headline + 800 chars of L1) and the arc's alur openings.
+- **Result:**
+  - The six: PHK, BPIH, Defisit and OMC kept (worst half 0.75); MK refused; Ojol refused (no causal word in its source).
+  - **First full recheck: MK "backed" (0.69).** A real 10-09 window held MK's first clause ("menyatakan tidak menemukan bukti meyakinkan ... ijazah ... SMA") and the cause, never "mendiskualifikasi". The one-word effect clause had been widened to the long clause before it. A second false back came from a glued paragraph ("ditebak.Dia ...") counted as one sentence.
+    - Fixes: the clause next to the causal word must be covered on its own, and quotes are capped at 70 words.
+  - Two Padang causes flipped to refused after the core rule. "dan" was splitting "Koto Tangah dan Kuranji" into clauses, and "setelah" did not open a clause. Fixed by changing the clause boundaries.
+  - Final: 18 causal words in 15 of 39 arcs; **15 backed, 3 refused**:
+    - MK, a true catch;
+    - Ojol v5, as ADR-018 predicted;
+    - v4 "Gangguan penerbangan akibat asap karhutla ...", a false refusal: the cause sits inside a noun phrase.
+  - Mutants: 20/20 KILLED. Unit 3,537 passed.
+- **Conclusion / do not repeat:**
+  - Never let widening carry a half: check the clause next to the causal word on its own.
+  - Never treat "dan" as a clause boundary in Indonesian news; it joins names.
+  - Run a guard over every window of the real sources, not only the hand-picked quote. The MK hole appeared only on the 137-article pool.
+- **Links:** SYS-152 (#342), ADR-018, DBT-81 (#380).

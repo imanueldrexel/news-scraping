@@ -57,6 +57,7 @@ from datetime import date
 from typing import List, Optional, Sequence
 
 from newscrawler.core import arc_style
+from newscrawler.core import causal_check
 from newscrawler.core import newsletter_copy as copy
 from newscrawler.core import story_words
 from newscrawler.core.llm_json import Rejected, ask_json, json_object
@@ -72,7 +73,7 @@ logger.setLevel(logging.INFO)
 
 LIMITS = {"judul": 12, "hari_ini": 60, "latar": 70, "agenda": 20, "sekilas": 15}     # accepted
 ASKED = {**LIMITS, "judul": 10, "latar": 60}                                            # what PROMPT asks
-REASONS = ("json", "length", "style", "number", "date", "subject", "alur")
+REASONS = ("json", "length", "style", "number", "date", "sebab", "subject", "alur")
 ALUR_MIN_EVENT_WORDS = 1
 MAX_LATAR_DATES = 2     # SYS-156: calendar dates in a latar (13 of 19 replayed latar held >= 3)
 # SYS-156: sentences of a latar that open on a date ("Pada 24/9, ...") or, since SYS-164, a relative time
@@ -120,10 +121,13 @@ PROMPT = (
     "  daftar, tanpa label, tanpa poin. Bahasa Indonesia baku, kalimat aktif, tanpa clickbait, tanpa\n"
     "  tanda seru, tanpa pertanyaan retoris.\n"
     "- Mulai dari yang BARU hari ini. Latar datang sesudahnya.\n"
-    "- Kata sebab-akibat (\"karena\", \"akibat\", \"dipicu\", \"memicu\", \"sehingga\", \"imbas\") HANYA boleh\n"
-    "  dipakai jika hubungan itu tertulis di teks, dan sebutkan siapa yang mengatakannya: \"yang menurut\n"
-    "  analis Phintraco Sekuritas dipicu ...\". Kata urutan waktu (\"sebelumnya\", \"sejak\", \"sepekan\n"
-    "  kemudian\") boleh dipakai tanpa sumber.\n"
+    "- Kata sebab-akibat (\"karena\", \"akibat\", \"lantaran\", \"dipicu\", \"memicu\", \"sehingga\", \"imbas\",\n"
+    "  \"disebabkan\", \"menyebabkan\") HANYA boleh dipakai jika SATU kalimat di teks memuat kata\n"
+    "  sebab-akibat itu bersama sebab DAN akibatnya. Salin kalimat itu persis ke \"sebab\" (boleh dua\n"
+    "  kalimat berurutan, mis. \"... Hal ini menyebabkan ...\"), dan sebutkan siapa yang mengatakannya:\n"
+    "  \"yang menurut analis Phintraco Sekuritas dipicu ...\". Dua fakta yang tertulis di kalimat berbeda\n"
+    "  BUKAN sebab-akibat: tulis keduanya terpisah tanpa kata sebab-akibat. Kata urutan waktu\n"
+    "  (\"sebelumnya\", \"sejak\", \"sepekan kemudian\") boleh dipakai tanpa sumber.\n"
     "- Setiap fakta dari LINI MASA harus berasal dari cuplikannya.\n"
     "- Klaim urutan (\"gelombang kedua\", \"untuk ketiga kalinya\", \"tiga hari beruntun\") hanya jika\n"
     "  cuplikan alur yang kamu pilih cukup untuk menghitungnya, atau klaim itu tertulis di teks.\n"
@@ -136,9 +140,11 @@ PROMPT = (
     "- Jangan menulis fakta yang sama dua kali.\n"
     "\n"
     "Balas HANYA dengan JSON valid, tanpa teks lain:\n"
-    "{{\"judul\": \"...\", \"hari_ini\": \"...\", \"latar\": \"...\", \"agenda\": \"...\", \"sekilas\": \"...\",\n"
-    "  \"terkait\": [0, 1], \"tidak_terkait\": [2], \"alur\": [3, 5, 8]}}\n"
+    "{{\"sebab\": [{{\"artikel\": 1, \"kutipan\": \"...\"}}], \"judul\": \"...\", \"hari_ini\": \"...\", \"latar\": \"...\",\n"
+    "  \"agenda\": \"...\", \"sekilas\": \"...\", \"terkait\": [0, 1], \"tidak_terkait\": [2], \"alur\": [3, 5, 8]}}\n"
     "\n"
+    "- sebab: isi PERTAMA. Untuk setiap kalimat dengan kata sebab-akibat: nomor artikel atau cuplikan, dan\n"
+    "  kalimat sumbernya yang disalin persis, kata demi kata. [] jika tidak ada kata sebab-akibat.\n"
     "- judul: maks 10 kata. Apa yang berubah hari ini. Bukan salinan judul portal.\n"
     "- hari_ini: 2-3 kalimat, maks 60 kata: apa yang terjadi hari ini, siapa, angka terpenting, dan\n"
     "  bila ada satu kaitan terpenting dengan alur.\n"
@@ -177,7 +183,7 @@ PROMPT = (
     "Batas kata di atas mutlak: jawaban yang melebihinya ditolak.\n"
     "\n"
     "CONTOH JAWABAN (dari hari lain; hanya bentuknya yang dicontoh, jangan pakai faktanya)\n"
-    "{{\"judul\": \"IHSG turun 3,28% sepekan, koreksi dua pekan beruntun\",\n"
+    "{{\"sebab\": [], \"judul\": \"IHSG turun 3,28% sepekan, koreksi dua pekan beruntun\",\n"
     "  \"hari_ini\": \"IHSG terkoreksi 3,28% dalam sepekan meski ditutup menguat 0,46% ke 6.036,89 pada\n"
     "  Jumat (2/10). Analis meminta investor mewaspadai tekanan dari kenaikan yield US Treasury.\",\n"
     "  \"latar\": \"Ini pekan kedua beruntun IHSG ditutup merah. Pekan sebelumnya indeks sudah turun\n"
@@ -262,6 +268,18 @@ def _indexes(data: dict, key: str, lo: int, hi: int, what: str) -> List[int]:
     if len(set(value)) != len(value):
         raise Rejected("json", f'"{key}" memuat nomor yang sama dua kali')
     return value
+
+
+def _sebab(data: dict) -> List[tuple]:
+    """SYS-152 (ADR-018): the `sebab` list as [(source number, quote)]; [] when the field is missing."""
+    value = data.get("sebab")
+    if value is None:
+        return []
+    if not isinstance(value, list) or any(
+            not isinstance(e, dict) or not isinstance(e.get("artikel"), int) or isinstance(e.get("artikel"), bool)
+            or not isinstance(e.get("kutipan"), str) for e in value):
+        raise Rejected("json", '"sebab" harus daftar {"artikel": nomor, "kutipan": "kalimat sumber"}')
+    return [(e["artikel"], e["kutipan"]) for e in value]
 
 
 def _events(words: dict) -> set:
@@ -370,6 +388,7 @@ def parse(answer: Optional[str], shown_texts: Sequence[str], timeline: Sequence[
     terkait = _indexes(data, "terkait", 0, n, "artikel HARI INI")
     tidak = _indexes(data, "tidak_terkait", 0, n, "artikel HARI INI")
     alur = _indexes(data, "alur", n, n + m, "cuplikan LINI MASA")
+    sebab = _sebab(data)
     if not terkait:
         raise Rejected("json", '"terkait" tidak boleh kosong')
     if set(terkait) & set(tidak) or len(terkait) + len(tidak) != n:
@@ -444,14 +463,19 @@ def parse(answer: Optional[str], shown_texts: Sequence[str], timeline: Sequence[
         if stray_dates:
             dates.append(f'latar menyebut tanggal {stray_dates[0][0]}/{stray_dates[0][1]} tanpa cuplikan alur: '
                          "tanpa alur, latar hanya boleh berisi mengapa peristiwa ini penting")
-    problems = ([f"{'; '.join(style)} -- {STYLE_ASK}"] if style else []) + numbers + dates
+    # SYS-152 (ADR-018): every causal word rests on one quoted sentence of a terkait article or a chosen alur
+    # item that holds the causal word and both halves of the claim. Checked on the retry too: fail closed.
+    quotable = {**{i: shown_texts[i] for i in terkait}, **{i: item_source(t) for i, t in chosen.items()}}
+    causes = causal_check.unbacked_causes([("judul", judul), ("hari_ini", hari_ini), ("latar", latar),
+                                           ("agenda", agenda), ("sekilas", sekilas)], sebab, quotable)
+    problems = ([f"{'; '.join(style)} -- {STYLE_ASK}"] if style else []) + numbers + dates + causes
     problems += [f'artikel [{i}] tidak menyebut {", ".join(anchors)}: jika membahas peristiwa lain, pindahkan ke '
                  f'"tidak_terkait" dan jangan memakai faktanya' for i in strays]
     problems += [f"cuplikan [{i}] bukan bagian dari alur peristiwa ini (\"{timeline[i - n].headline[:60]}\"): "
                  "keluarkan dari alur dan jangan memakai faktanya" for i in off]
     if problems:
-        reason = ("style" if style else "number" if numbers else "date" if dates else "subject" if strays
-                  else "alur")
+        reason = ("style" if style else "number" if numbers else "date" if dates else "sebab" if causes
+                  else "subject" if strays else "alur")
         raise Rejected(reason, "; ".join(problems))
     positions = sorted(i - n for i in alur)
     return StoryArc(judul, hari_ini, latar, agenda, sekilas, terkait, tidak, positions,

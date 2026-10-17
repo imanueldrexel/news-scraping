@@ -19,7 +19,7 @@ import tempfile
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 PY = os.path.join(REPO, "venv", "Scripts", "python.exe")
 ARC_TESTS = ("tests/unit/test_story_arc.py tests/unit/test_source_check.py tests/unit/test_arc_style.py "
-             "tests/unit/test_replay_story_arcs.py")
+             "tests/unit/test_replay_story_arcs.py tests/unit/test_causal_check.py")   # SYS-152 added the fifth
 
 
 def registry(root: str) -> list:

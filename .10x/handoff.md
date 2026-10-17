@@ -1,5 +1,34 @@
 # Current Handoff
 
+## From: SDE (SYS-152 built, ADR-018) -> To: QA, owner
+**Date:** 2026-10-17 (before the 12:00 run)
+**Read first:** SYS-152 #342 dev comment; `.10x/decisions/sde/newsletter-story-arcs.md` "2026-10-17: SYS-152 built"; EXPERIMENTS.md "2026-10-17 — SYS-152".
+
+### Ready for QA
+- **SYS-152 #342 (P0).**
+  - New `core/causal_check.py`; `story_arc` adds a `sebab` field first in the JSON and a new refusal reason `"sebab"`.
+  - Each causal word must rest on one quoted terkait or alur sentence (or two adjacent) that holds a causal word and covers both halves and the clause next to the causal word (>= 60% each). Attribution exempts nothing. Checked on the retry too.
+  - Tests: `tests/unit/test_causal_check.py` (43). 20 `sys152_*` mutants KILLED by the arc suites (now five: + test_causal_check.py). Unit 3,537 passed. QA files: only the 27 known red (SYS-174/177/178/179).
+  - Offline replay check (`scripts/experiments/sys152/recheck_causes.py`): 18 causal words in v4/v5/v6, 15 backed, 3 refused:
+    - MK, a true catch;
+    - Ojol v5, the false refusal ADR-018 predicted;
+    - v4 karhutla "akibat" inside a noun phrase, a false refusal.
+  - Deviations from ADR-018 (all measured): core-clause rule, 70-word cap, modal words ignored, clause boundaries (not "dan"; plus setelah/sebelum/ketika/usai).
+- **DBT-81 #380** (found while building): the hygiene test's `_tracked` split paths on spaces; fixed with a test.
+
+### What QA should check
+- Hold out your own causal sentences:
+  - paraphrased causes;
+  - "Akibatnya," openings;
+  - attributed invented causes;
+  - quotes from a tidak_terkait article.
+- The live effect: from today's 12:00 edition, the arc refusal stats now include `sebab`. Watch the arcs-built vs fallback count.
+
+### Owner
+- The code is in the working tree that the 12:00 job imports, so today's edition runs it. It fails closed: a missing or bad `sebab` means one retry, then the plain story.
+
+---
+
 ## SYS-152 design decided (2026-10-17): ADR-018, owner accepted
 - **SDE, first in queue: SYS-152 #342 (P0)**, built exactly as its rewritten body and ADR-018 say:
   - a `sebab` quote field first in the arc JSON;

@@ -8,7 +8,15 @@ REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 
 def _tracked(pattern):
     out = subprocess.run(["git", "ls-files", pattern], cwd=REPO, capture_output=True, text=True, check=True)
-    return [os.path.join(REPO, p) for p in out.stdout.split()]
+    # One path per line: a path may hold spaces ("reports/In prompt causal claim checking.md", DBT-81).
+    return [os.path.join(REPO, p) for p in out.stdout.splitlines() if p]
+
+
+def test_tracked_keeps_a_path_with_a_space_whole():
+    """DBT-81 (#380): split() opened the fragment "reports/In" and failed the markdown hygiene tests."""
+    paths = _tracked("reports/*.md")
+    assert paths and all(os.path.exists(p) for p in paths)
+    assert any(" " in os.path.basename(p) for p in paths)
 
 
 def test_hashed_gold_fixtures_are_lf_on_disk():

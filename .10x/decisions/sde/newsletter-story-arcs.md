@@ -245,3 +245,43 @@ Design: `.10x/decisions/architect/newsletter-story-arcs.md`, section "2026-10-15
 
 ### Ops trap
 - A `git stash` / `pop` rewrote `source_check.py` and `story_arc.py` with CRLF (`core.autocrlf=true`), so three of QA's `\n`-anchored mutants reported NOT FOUND. The files were rewritten to LF; the trap is added to EXPERIMENTS.
+
+## 2026-10-17: SYS-152 built (ADR-018): causal claims gated on one quoted source sentence
+**What was built**
+- **`newscrawler/core/causal_check.py` (new, pure).**
+  - `causal_spans` (each causal word with its sentence, both halves, and the clause next to it: the "core").
+  - `quote_in` (normalised substring; "..." bridges in order).
+  - `quotable` (at most 2 sentences and 70 words).
+  - `overlap` (content-word roots via `story_words`; -nya, verb prefixes and a nasal-tail match).
+  - `supports` (the quote holds a causal word; each half AND its core are covered by at least 60%).
+  - `valid_quotes`, `unbacked_causes`.
+- **`story_arc.py`.**
+  - `sebab` is first in the prompt's JSON shape and example; the causal rule is rewritten (one sentence must hold the causal word, the cause and the effect).
+  - `_sebab()` parses the field: missing means [], a bad shape is a `json` refusal.
+  - The new refusal reason `"sebab"` sits after date and before subject, and is checked on the lenient retry too.
+  - Quotes may point only at terkait articles and chosen alur items.
+- **Tests and tools.**
+  - `tests/unit/test_causal_check.py`: 43 tests on QA's six hand-checked sentences with their real source text, plus the edge cases and end to end through `parse`.
+  - Registry: 20 `sys152_*` mutants, all KILLED. `run_registry_mutants_in_copy.py`'s ARC_TESTS gains `test_causal_check.py` (five arc suites now).
+  - `scripts/experiments/sys152/dump_causal_fixtures.py` and `recheck_causes.py` are the offline replay check.
+
+**Deviations from ADR-018, all found on the stored replays (recheck_causes.py)**
+1. A half's **core clause must be covered on its own.** Widening a one-word clause ("tidak dapat mendiskualifikasinya") to the clause before it let MK pass at 0.69 on a real 10-09 source window that never says "mendiskualifikasi".
+2. **The quote is capped at 70 words.** Scraped text glues sentences ("ditebak.Dia"), so a two-"sentence" window can be a whole paragraph.
+3. **Modal words don't count as content words** (dapat, harus, kini, semula, ...). MK's margin was 0.50 against 0.6 on "dapat" alone; it is now 0.15.
+4. **Clause boundaries changed:**
+   - not "dan"/"serta", which join names ("Koto Tangah dan Kuranji");
+   - but setelah/sebelum/ketika/usai, which open the clause that carries the event;
+   - the decimal comma ("2,85") is no boundary.
+5. **"sebab" was added to the causal words**, beyond the ADR's list.
+
+**Offline result on v4/v5/v6** (best possible quote from what the model saw): 39 arcs, 15 with a causal word, 18 causal words; **15 backed, 3 refused**.
+- MK: a true catch.
+- Ojol v5: ADR-018's accepted false refusal; the source has no causal word.
+- Karhutla v4 "Gangguan penerbangan akibat asap ...": a false refusal, because the cause sits inside a noun phrase.
+
+**Tech debt / known limits**
+- Root matching is heuristic: a paraphrase that changes most content words ("deras" vs "lebat") is refused, which costs one retry.
+- A causal word inside a noun phrase can't be split into halves. Accepted.
+
+**Also fixed:** DBT-81 #380. `test_repo_hygiene._tracked` split `git ls-files` output on whitespace and broke on the report's filename with spaces. It now uses splitlines(), with a test.
