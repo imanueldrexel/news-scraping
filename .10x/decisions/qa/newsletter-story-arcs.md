@@ -182,3 +182,27 @@ Report: `.10x/reviews/2026-10-16-qa-report-late.md`. QA tests, mutants and probe
 - **Design note:** its rule (b) (cause-clause overlap) passes the MK sentence, because the clause is copied from a source's effect side. The check must match the effect + cause pair.
 - **Lesson:** check a proposed guard against the real failure it exists for before building it. The first real unattributed cause slips through the rule as written.
 - **Owner override (2026-10-17 09:40):** `NEWSLETTER_ARCS=1` was set before SYS-152 and SYS-174/177/178/179 closed. QA recommended waiting. The mitigation is QA's per-edition source check, with a rollback recommendation on the first false fact.
+
+## QA audit of SYS-152 (ADR-018 causal gate) and DBT-81 (2026-10-17)
+Report: `.10x/reviews/2026-10-17-qa-report.md`. QA tests and mutants: `scripts/experiments/qa_2026_10_17/`.
+
+**Verdicts:**
+- Closed: DBT-81 #380.
+- Sent back: SYS-152 #342.
+  - The gate is direction-blind: "B karena A" backs "A karena B". The Done-when "sehingga checked with the halves swapped" is not built.
+  - The replay acceptance and exact-match numbers are unmeasured.
+
+**Filed:**
+- SYS-181 #381 (P1): two links in one quote (two adjacent sentences, or two clauses) back the MK shape.
+- SYS-182 #382 (P1): the sentence cap is counted on the quote, not the source, so "..." and dropped full stops span a whole article.
+- SYS-183 #383 (P2): in "Karena X, Y" the effect is never checked.
+- SYS-184 #384 (P1): affixed and synonym causal words need no quote.
+- SYS-185 #385 (P2): a negated claim is backed by the quote that states the opposite.
+- DBT-82 #386: 8 of QA's 17 mutants survive.
+
+**Decisions:**
+- **Accepted:** the dev's measured deviations from ADR-018: the core-clause rule, the 70-word cap, the modal words, and the clause boundaries without "dan". Each is evidenced in the replay log, and QA's held-out cases agree.
+- **Rejected:** "the direction does not matter because both halves are measured against the same quote". That is exactly what lets a reversed cause through. QA's design note had asked for "each on its own side of the connective".
+- **Not filed:** "berdampak (pada)" and "terdampak" as causal words. In the replays they mean "affected", not a link (SYS-184 records it). Also not filed: a numeric change inside a quote ("2,5" vs "25" normalise alike). The quote is never printed, and the number guard checks the prose.
+
+**Lesson:** a Done-when test can pass without the behaviour it names. Mutate the behaviour itself: swap the halves of a correct sentence.

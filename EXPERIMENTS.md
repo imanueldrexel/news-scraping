@@ -3118,3 +3118,26 @@ SINDONEWS   old 12 new 12 | lost [] | gained []   links identical: True
   - Refusals: style 1, alur 1, json 0, **sebab 0**.
   - **No arc used a causal word**, the MK arc included ("MK menolak ..." instead of the invented "karena"). The new prompt rule alone steered the model off unsupported causes. The JSON stayed valid with `sebab` first.
   - The run did not exercise a real `sebab` quote end to end: live editions will.
+
+### 2026-10-17 — QA: does the SYS-152 causal gate hold on held-out sentences?
+- **Question / hypothesis:** the gate keeps a causal sentence only when one quoted source sentence holds the causal word and covers both halves. Does it also refuse the invented links the dev's fixtures do not cover? Cases: reversed direction, two links in one quote, a quote spanning many sentences, a fronted cause, affixed causal words, negation.
+- **Method:**
+  - `venv\Scripts\python.exe -m pytest scripts/experiments/qa_2026_10_17/test_qa_sys152.py -q -p no:cacheprovider` (34 tests: unit level plus end to end through `story_arc.parse`, lenient).
+  - `scripts/experiments/qa_2026_10_17/qa_mutants.py <tree copy>` (17 mutants vs the five arc suites).
+  - `run_registry_mutants_in_copy.py <copy> sys152_`.
+- **Result:**
+  - Registry: 20/20 KILLED. QA mutants: 9/17 KILLED.
+  - QA tests: 9 green (the Done-when items on new sentences) and 25 red, every red one `kept` through parse:
+    - reversed cause/effect, including "sehingga" pointing the wrong way;
+    - MK with its two reasons in two adjacent quoted sentences;
+    - two links in one sentence, crossed;
+    - an "..." bridge across a 5-sentence article;
+    - full stops dropped (a 5-sentence article counted as 1 sentence);
+    - "Karena hujan deras, KRL berhenti" (the effect is never checked; at a field's start a true "Akibat X, Y" is refused);
+    - mengakibatkan, diakibatkan, dikarenakan, penyebabnya, pemicu, gara-gara, berimbas (no quote needed);
+    - "tidak naik karena" and "bukan karena".
+- **Conclusion / do not repeat:**
+  - Never measure both halves against the whole quote: each must sit on its own side of one causal word.
+  - Never count a quote's sentences on the model's copy: punctuation normalisation erases the source's sentence ends.
+  - A causal-word regex with `\b` on both sides misses every affixed form.
+- **Links:** SYS-152 (#342) sent back; SYS-181..185 (#381..#385); DBT-82 (#386); DBT-81 (#380) closed.

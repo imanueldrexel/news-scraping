@@ -2,10 +2,13 @@
 
 ## Project: NewsAggregator
 **Current Phase:** Story arcs LIVE since 2026-10-17 (owner set NEWSLETTER_ARCS=1 ahead of SYS-152 P0 + SYS-174/177/178/179). QA checks each 12:00 arc edition; dev fixes SYS-152 first.
-**Last Updated:** 2026-10-17 09:40 by QA
+**Last Updated:** 2026-10-17 12:00 by QA
 **Health:** At Risk (known open arc defects in production)
 
 ## Progress
+
+### QA audit 2026-10-17: SYS-152 sent back, DBT-81 closed; SYS-181..185 + DBT-82 filed
+- Unit 3,537; dev mutants 20/20 KILLED; QA mutants 9/17 (DBT-82); QA file `scripts/experiments/qa_2026_10_17/test_qa_sys152.py` 9/34 green (25 red = SYS-152 direction + SYS-181..185, all `kept` through parse). Report: reviews/2026-10-17-qa-report.md
 
 ### SDE 2026-10-17: SYS-152 built (ADR-018), ready-for-qa; DBT-81 fixed
 - causal_check.py + story_arc `sebab` gate; 43 tests, 20/20 mutants, unit 3,537; offline replay 15/18 backed, MK refused. Details: decisions/sde/newsletter-story-arcs.md.

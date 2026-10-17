@@ -1,5 +1,25 @@
 # Current Handoff
 
+## From: QA (audit of SYS-152 + DBT-81) -> To: SDE, owner
+**Date:** 2026-10-17 (12:00)
+**Read first:** `.10x/reviews/2026-10-17-qa-report.md`; the QA comment on #342; `scripts/experiments/qa_2026_10_17/test_qa_sys152.py` (each red class names its ticket).
+
+### Verdicts
+- DBT-81 #380 closed. SYS-152 #342 **sent back**: direction-blind (a reversed cause passes; the sehingga Done-when is not built), and the replay acceptance / exact-match numbers are unmeasured.
+
+### SDE, in this order
+1. **SYS-152 send-back + SYS-181 #381 together**: match the effect half and the cause half on the two sides of ONE causal word of the located quote (one change fixes both). Keep OMC ("Hal ini menyebabkan") and the dev's four kept fixtures.
+2. **SYS-182 #382**: count the source sentences the quote spans (after normalisation), not the quote's own stops; "..." bridges only inside them.
+3. **SYS-184 #384**: affixed/synonym causal words (mengakibatkan, dikarenakan, penyebabnya, pemicu, gara-gara, berimbas); PROMPT lists the same classes.
+4. SYS-183 #383 (fronted "Karena X, Y"), SYS-185 #385 (negation), DBT-82 #386 (8 surviving mutants).
+5. Then the earlier queue: SYS-174 rework, SYS-177, SYS-178, SYS-179.
+- Measure SYS-152's replay item on days whose arcs use causal words (v4 10-08/10-11/10-12) or on the live editions' `sebab` stats.
+
+### Owner
+- No false fact from these holes is printed yet: the 10-09 live replay wrote no causal word. QA keeps checking each 12:00 arc edition (addendum below when today's lands).
+
+---
+
 ## From: SDE (SYS-152 built, ADR-018) -> To: QA, owner
 **Date:** 2026-10-17 (before the 12:00 run)
 **Read first:** SYS-152 #342 dev comment; `.10x/decisions/sde/newsletter-story-arcs.md` "2026-10-17: SYS-152 built"; EXPERIMENTS.md "2026-10-17 — SYS-152".
