@@ -9,7 +9,8 @@
 
 ### SDE 2026-10-17 (afternoon): QA's SYS-152 send-back queue -- in progress
 - Design: ADR-019 (owner: strict per half; OMC becomes an accepted false refusal) + architect/newsletter-story-arcs.md "2026-10-17 (dev)".
-- [ ] SYS-152 direction + SYS-181  [ ] SYS-186  [ ] SYS-182  [ ] SYS-184  [ ] SYS-183  [ ] SYS-185  [ ] DBT-82
+- [x] SYS-152 direction + SYS-181  [x] SYS-186  [x] SYS-182  [x] SYS-184  [x] SYS-183  [x] SYS-185  [x] DBT-82 (4018876 + SYS-186 commit)
+- Causal recheck after: 12/18 backed (lost OMC = owner, Dadang = accepted, Padang 'belum surut' = true catch); 59+6 mutants KILLED. SYS-186 replays: 12 end points, 0 refused; live MSCI refused on its real source.
 - [ ] SYS-174 rework  [ ] SYS-177  [ ] SYS-178  [ ] SYS-179
 - Replay recheck before: 18 causal words in v4/v5/v6, 15 backed, 3 refused (MK, Ojol v5, karhutla v4).
 

@@ -470,3 +470,64 @@ def test_no_caller_defines_its_own_check(path):
     tree = ast.parse(open(full, encoding="utf-8").read())
     defined = {n.name for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
     assert not defined & _CHECKS, f"{path} defines {sorted(defined & _CHECKS)}: import it from source_check"
+
+
+# ── SYS-186 (#387): "hingga / sampai <time>" is an end point the source must state as one ──────────
+
+MSCI = ("Jelang Review MSCI November 2026, Pembekuan Saham Indonesia Diprediksi Hingga 2027\nKebijakan pembekuan saham "
+        "Indonesia diperkirakan masih berlanjut setelah evaluasi indeks pada November 2026. Freeze MSCI berpotensi "
+        "berlanjut hingga semester II-2027. MSCI menyatakan kebijakan pembekuan berlanjut hingga akhir Juni 2027.")
+
+
+class TestSys186EndPoints:
+    def test_the_live_msci_sentence_is_refused(self):
+        """Live 10-16 edition: the source puts November 2026 AFTER "setelah", and the end at semester II-2027."""
+        prose = "Sebelumnya, analis memperkirakan pembekuan saham Indonesia masih berlanjut hingga review November 2026."
+        assert sc.unbacked_end_times(prose, MSCI) == ["hingga review November 2026"]
+
+    def test_the_end_point_the_source_states_is_kept(self):
+        assert sc.unbacked_end_times("Pembekuan berlanjut hingga akhir Juni 2027.", MSCI) == []
+
+    @pytest.mark.parametrize("prose", ["Pembekuan berlanjut hingga 2027.", "Pembekuan berlanjut hingga semester II 2027.",
+                                       "Pembekuan berlanjut sampai Juni 2027.", "Pembekuan berlanjut hingga Juni."])
+    def test_a_less_precise_end_is_backed_by_a_more_precise_one(self, prose):
+        assert sc.unbacked_end_times(prose, MSCI) == []
+
+    @pytest.mark.parametrize("prose", ["Pembekuan berlanjut hingga 30 Juni 2027.",
+                                       "Pembekuan berlanjut hingga awal Juni 2027.",
+                                       "Pembekuan berlanjut hingga semester I 2027.",
+                                       "Pembekuan berlanjut hingga November."])
+    def test_a_more_precise_or_another_end_is_refused(self, prose):
+        assert sc.unbacked_end_times(prose, MSCI) != []
+
+    @pytest.mark.parametrize("source", ["Defisit APBN hingga 30 September 2026 mencapai Rp319 triliun.",
+                                        "Defisit APBN sampai dengan 30 September 2026 mencapai Rp319 triliun.",
+                                        "Defisit APBN s.d. 30 September 2026 mencapai Rp319 triliun.",
+                                        "Defisit APBN per 30 September 2026 mencapai Rp319 triliun.",
+                                        "Defisit APBN periode Januari-30 September 2026 mencapai Rp319 triliun.",
+                                        "Defisit APBN sampai 30/9/2026 mencapai Rp319 triliun."])
+    def test_a_period_to_date_is_an_end_the_source_states(self, source):
+        assert sc.unbacked_end_times("Defisit APBN hingga 30 September 2026 mencapai Rp319 triliun.", source) == []
+
+    @pytest.mark.parametrize("source", ["Kebijakan berlanjut setelah November 2026.",
+                                        "Kebijakan berlaku sejak November 2026.",
+                                        "Keputusan diumumkan paling lambat November 2026.",
+                                        "Evaluasi indeks digelar pada November 2026."])
+    def test_a_time_the_source_gives_no_end_does_not_back_one(self, source):
+        assert sc.unbacked_end_times("Kebijakan berlanjut hingga November 2026.", source) == ["hingga November 2026"]
+
+    @pytest.mark.parametrize("prose", ["Harga naik hingga 5 persen pada Oktober.",
+                                       "Harga naik hingga level tertinggi pada Oktober.", "Harga naik hingga puncaknya pada Oktober.",
+                                       "Asap sampai ke negara tetangga pada Oktober.",
+                                       "Rapat berlanjut hingga akhir pekan.", "Rapat berlanjut hingga tahun depan.",
+                                       "Banjir belum surut hingga kini."])
+    def test_no_end_point_is_read(self, prose):
+        assert sc.end_points(prose) == []
+
+    def test_the_parts_of_an_end_time(self):
+        [(_, key)] = sc.end_points("Freeze berlanjut hingga triwulan ketiga 2027.")
+        assert key == frozenset({("kuartal", 3), ("year", 2027)})
+        [(_, key)] = sc.end_points("Data hingga 12/10 menunjukkan kenaikan.")
+        assert key == frozenset({("day", 12), ("month", 10)})
+        [(phrase, key)] = sc.end_points("HINGGA AKHIR TAHUN 2026 harga naik.")
+        assert phrase == "HINGGA AKHIR TAHUN 2026" and key == frozenset({("part", "akhir"), ("year", 2026)})

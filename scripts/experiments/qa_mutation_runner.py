@@ -2109,6 +2109,20 @@ M = [
  ('dbt82_threshold_055', 'newscrawler/core/causal_check.py', 'MIN_HALF_OVERLAP = 0.6', 'MIN_HALF_OVERLAP = 0.55'),
  ('dbt82_boundary_no_comma', 'newscrawler/core/causal_check.py',
   '_BOUNDARY = re.compile(r",(?!\\d)|', '_BOUNDARY = re.compile(r"'),
+ # SYS-186 (#387): "hingga <time>" is an end point a source must state as an end. Killed by test_source_check.py
+ # TestSys186EndPoints and test_story_arc.py TestEndPoints.
+ ('sys186_not_checked', 'newscrawler/core/story_arc.py',
+  '                  for phrase in unbacked_end_times(value, source)]', '                  for phrase in []]'),
+ ('sys186_setelah_backs', 'newscrawler/core/source_check.py',
+  '|s\\.d\\.?|s/d|per){_END_GAP}', '|s\\.d\\.?|s/d|per|setelah){_END_GAP}'),
+ ('sys186_any_shared_part_backs', 'newscrawler/core/source_check.py',
+  'if not any(key <= s for s in stated)]', 'if not any(key & s for s in stated)]'),
+ ('sys186_precise_prose_backed', 'newscrawler/core/source_check.py',
+  'if not any(key <= s for s in stated)]', 'if not any(s <= key for s in stated)]'),
+ ('sys186_gap_allows_pada', 'newscrawler/core/source_check.py',
+  '(?:pada|di|ke|dari|sejak|dengan|yang', '(?:di|ke|dari|sejak|dengan|yang'),
+ ('sys186_no_range_end', 'newscrawler/core/source_check.py',
+  '{_END_GAP}\\s+|(?<=\\w)\\s*[-–]\\s*)"', '{_END_GAP}\\s+)"'),
 ]
 only = sys.argv[1:]
 # The tests each mutant runs (default: all of tests/unit). QA_MUTANT_TESTS narrows it to the files that

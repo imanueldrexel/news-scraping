@@ -758,6 +758,31 @@ class TestChangeClaims:
         assert "bertambah/naik/turun menjadi N" in sa.PROMPT and "peristiwa terpisah" in sa.PROMPT
 
 
+class TestEndPoints:
+    """SYS-186 (#387): the live 10-16 MSCI arc printed "berlanjut hingga review November 2026"; the source said the
+    freeze runs on AFTER the November review, until semester II-2027."""
+
+    SOURCE = ("Kebijakan pembekuan diperkirakan masih berlanjut setelah evaluasi indeks pada November 2026. Freeze "
+              "berpotensi berlanjut hingga semester II-2027.")
+
+    def _latar(self, sentence):
+        return _answer(latar="Persoalan karhutla sudah di meja Presiden sejak September. " + sentence)
+
+    def test_an_end_point_the_source_does_not_state_is_refused_as_date(self):
+        reason, detail = _reason_on(self._latar("Analis memperkirakan pembekuan berlanjut hingga review November 2026."),
+                                    _texts(self.SOURCE, i=1))
+        assert reason == "date" and '"hingga review November 2026" di latar menyebut batas akhir' in detail
+
+    def test_the_stated_end_point_is_kept(self):
+        assert sa.parse(self._latar("Analis memperkirakan pembekuan berlanjut hingga semester II-2027."),
+                        _texts(self.SOURCE, i=1), TIMELINE, DAY)
+
+    def test_on_the_retry_too(self):
+        reason, _ = _reason_on(self._latar("Analis memperkirakan pembekuan berlanjut hingga review November 2026."),
+                               _texts(self.SOURCE, i=1), lenient=True)
+        assert reason == "date"
+
+
 class TestTimeAnchors:
     """SYS-164 (#359): relative time counts as a time anchor in the latar's caps."""
 

@@ -565,6 +565,58 @@ def unbacked_changes(text: str, source: str) -> List[str]:
     return out
 
 
+# SYS-186 (#387): "hingga / sampai <time>" states an END point. The live 10-16 edition printed "pembekuan ... masih
+# berlanjut hingga review November 2026" where the source said the freeze runs on "setelah evaluasi indeks pada
+# November 2026", "hingga semester II-2027". The date guard accepted it: the source names November 2026. So an end
+# point must be one a source sentence states as an end: "hingga / sampai / s.d. / per" before it, or a range's dash
+# ("Januari-September 2026"). "setelah", "sejak", "paling lambat" never are. Up to two words may stand between
+# ("hingga review November 2026"), never a number ("naik hingga 5 persen pada Oktober" ends no period) nor a word
+# that attaches the time to something else ("hingga level tertinggi pada Oktober"). Only an absolute time is read:
+# a month, a date, a year, a semester or quarter. "hingga akhir pekan" / "hingga tahun depan" are future times,
+# judged by key (`unstated_future_times`).
+_YEAR = r"(?:19|20)\d{2}"
+_ORDINAL_OF = {"i": 1, "ii": 2, "iii": 3, "iv": 4, "1": 1, "2": 2, "3": 3, "4": 4, "pertama": 1, "kedua": 2,
+               "ketiga": 3, "keempat": 4}
+_END_TIME = (rf"(?:(?P<part>awal|pertengahan|akhir)\s+)?(?:"
+             rf"(?:(?P<day>\d{{1,2}})\s+)?(?P<month>{_MONTH_NAME})\b(?:\s+(?P<month_year>{_YEAR}))?"
+             rf"|(?P<period>semester|kuartal|triwulan)\s+(?P<ordinal>iv|i{{1,3}}|[1-4]|pertama|kedua|ketiga|keempat)\b"
+             rf"(?:\s*[-/]?\s*(?P<period_year>{_YEAR}))?"
+             rf"|(?:tahun\s+)?(?P<year>{_YEAR})"
+             rf"|(?P<short_day>\d{{1,2}})/(?P<short_month>\d{{1,2}})(?:/(?P<short_year>\d{{2,4}}))?)(?![\w/])")
+_END_GAP = r"(?:\s+(?!(?:pada|di|ke|dari|sejak|dengan|yang|dan|atau|setelah|sebelum)\b)[^\W\d_]+){0,2}?"
+_END_POINT = re.compile(rf"\b(?:hingga|sampai(?:\s+dengan)?){_END_GAP}\s+{_END_TIME}", re.IGNORECASE)
+_STATED_END = re.compile(rf"(?:\b(?:hingga|sampai(?:\s+dengan)?|s\.d\.?|s/d|per){_END_GAP}\s+|(?<=\w)\s*[-–]\s*)"
+                         rf"{_END_TIME}",
+                         re.IGNORECASE)
+
+
+def _end_key(m) -> frozenset:
+    """The parts of an end time: "akhir Juni 2027" is {part akhir, month 6, year 2027}."""
+    g = {k: (v or "").lower() for k, v in m.groupdict().items()}
+    key = {("part", g["part"])} if g["part"] else set()
+    if g["month"]:
+        key |= {("month", _MONTH_OF[g["month"]])} | ({("day", int(g["day"]))} if g["day"] else set())
+    if g["period"]:
+        key.add((g["period"].replace("triwulan", "kuartal"), _ORDINAL_OF[g["ordinal"]]))
+    if g["short_month"]:
+        key |= {("day", int(g["short_day"])), ("month", int(g["short_month"]))}
+    year = g["month_year"] or g["period_year"] or g["year"] or (g["short_year"] if len(g["short_year"]) == 4 else "")
+    return frozenset(key | ({("year", int(year))} if year else set()))
+
+
+def end_points(text: str) -> List[Tuple[str, frozenset]]:
+    """(phrase as written, key) of every "hingga / sampai <time>" in `text`."""
+    return [(m.group(0), _end_key(m)) for m in _END_POINT.finditer(text or "")]
+
+
+def unbacked_end_times(text: str, source: str) -> List[str]:
+    """SYS-186: the end points of `text` that no source states as an end: every part of the prose time (day, month,
+    year, part, semester or quarter) must be in one end time of `source`. A less precise prose time is backed by a
+    more precise one ("hingga 2027" by "hingga semester II-2027"), never the reverse."""
+    stated = {_end_key(m) for m in _STATED_END.finditer(source or "")}
+    return [phrase for phrase, key in end_points(text) if not any(key <= s for s in stated)]
+
+
 def off_subject(judul: str, inti: str, related: Dict[int, str]) -> Tuple[List[str], List[int]]:
     """(anchors, strays) for SYS-80 (#236). The anchors are the summary's names
     (`story_words.names` of judul + inti) that a related article mentions. A

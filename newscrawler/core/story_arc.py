@@ -63,6 +63,7 @@ from newscrawler.core import story_words
 from newscrawler.core.llm_json import Rejected, ask_json, json_object
 from newscrawler.core.source_check import (dates_in, future_phrases, future_times, off_subject, ordinal_claims,
                                            relative_name, relative_times, resolve, stated_claims, unbacked_changes,
+                                           unbacked_end_times,
                                            unstated_future_times, unsupported_number, without_dates)
 from newscrawler.core.story_summary import article_text, guard_text, words
 from newscrawler.core.summarizer import SummarizerError
@@ -460,6 +461,11 @@ def parse(answer: Optional[str], shown_texts: Sequence[str], timeline: Sequence[
                                                                                                 key == "agenda")]
         dates += [f'waktu "{phrase}" di {key} tidak tertulis di artikel hari ini: tulis waktunya seperti yang '
                   "tertulis di artikel, mis. tanggalnya" for phrase in unstated_future_times(value, stated_today)]
+        # SYS-186: an end point ("hingga November 2026") must be one a source states as an end, not only a date
+        # it names ("setelah evaluasi pada November 2026").
+        dates += [f'"{phrase}" di {key} menyebut batas akhir yang tidak tertulis begitu di artikel atau cuplikan '
+                  'alur: tulis waktunya persis seperti di sumber (mis. "setelah", "hingga")'
+                  for phrase in unbacked_end_times(value, source)]
     if not chosen:
         own = (digest_date.day, digest_date.month)
         stray_dates = [d for d in dates_in(latar) if d != own]
