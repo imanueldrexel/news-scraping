@@ -285,3 +285,56 @@ Design: `.10x/decisions/architect/newsletter-story-arcs.md`, section "2026-10-15
 - A causal word inside a noun phrase can't be split into halves. Accepted.
 
 **Also fixed:** DBT-81 #380. `test_repo_hygiene._tracked` split `git ls-files` output on whitespace and broke on the report's filename with spaces. It now uses splitlines(), with a test.
+
+## 2026-10-17 (afternoon): QA's SYS-152 send-back queue -- all ready-for-qa
+Commits: 7d84d1d (design, ADR-019) · 4018876 (causal gate) · a3fcb46 (SYS-186) · beda3ff (SYS-174/177/178/179).
+
+**Causal gate rewritten around one link (ADR-019): SYS-152 send-back, SYS-181..185, DBT-82**
+- A `Span` is a claim (prose) or a link (source): cause, effect, their cores, reading order, negated. The halves
+  are named by the word's direction (`_KINDS`, 23 forms); `before/after` stay as properties for the old tests.
+- `supports(link, claim)`: effect to effect side, cause to cause side, the negations agreeing.
+- `links(quote, source)`: the quote is located in the source (`locate`, an index-mapped normalisation). The source
+  sentences it covers are counted there (<= 2 sentences, <= 70 words). Links are cut from those sentences; only a
+  causal word inside the quoted text counts.
+- Source sides stop at another causal word, `;` and contrastive/temporal conjunctions, never at a comma. A side with
+  fewer than 2 content words, an anaphor ("tersebut", "hal ini") or a bare reference reaches the previous covered
+  sentence. Adjacent causal words ("karena dipicu") are one link.
+- Fronted cause (SYS-183), "Penyebabnya," (looks back), "Penyebab X adalah Y" (copula), "karena itu" (forward).
+- Negation (SYS-185): a negator negates the next word that is not a modal/aspect word ("tak kunjung terbit");
+  agreement is checked both ways, and on the link itself ("bukan karena").
+- `match_counts` + an INFO log in `parse`: verbatim / normalised / absent quotes on the live editions.
+
+**Deviations from ADR-019, measured on the replays (recorded in the ADR's implementation notes)**
+1. A **name** may stand anywhere in the link's sentence; the **event** words must be on the side (`_covers`).
+   Without it, v4 Padang's "memicu ... di Koto Tangah dan Kuranji" and its "sehingga" were refused.
+2. Negators and frame words ("lalu", "disebut", "sebelumnya", "kemudian", "selain") weigh nothing. Without that,
+   v4 Ojol and v4 Defisit were refused.
+3. Source sentences split at line breaks and at glued "ditebak.Dia". A headline is its own sentence.
+
+**Replay recheck (recheck_causes.py):** 15/18 backed before, **12/18 after**.
+- OMC: the owner's decision (strict per half).
+- Dadang: accepted. The reason is only in the headline, "Alasan ...", and the body is cut at "karena absennya…".
+- v4 Padang "karena banjir belum surut": a **true catch**. The source says "dan"; the old gate backed it from a
+  glued headline.
+
+**SYS-186:** `source_check.unbacked_end_times`, a `date` refusal in every field.
+- Replays: 12 end points, 0 refused. Live MSCI refused on its real source.
+
+**SYS-174 rework, SYS-177:** `_backing_days(known, last, today, ahead_only, today_runs)`. `unbacked_times` gained
+`present` (judul/hari_ini/sekilas, `PRESENT_FIELDS`) and the latar's cue (`_cued`, 4 words before, same sentence).
+- `relative_times_at` gives the positions.
+- Replays: 6 running spans, 0 refused.
+
+**SYS-178/179:** `_BARE_END` and `_FUTURE_PART` in `_FUTURE`; `future_key` keys a bare end with "ini"; `_PART_KEY`
+lets a stated part state its whole.
+
+**Tests / mutants:** unit 3,674 passed. QA files 10-14..10-17 all green; the 10-12/10-13 files fail as on the base
+commit (35 there, 34 now). Registry: 59 causal + 6 SYS-186 + 66 time-related mutants KILLED; the full arc-module
+registry run is in the handoff.
+
+**Tech debt / known limits**
+- **SYS-187 #388 (filed):** only a causal claim's core clause is checked against the source. A list after it
+  ("karena A, B, dan C") is not: the B and C items are never compared. Predates ADR-019.
+- "Alasan X, Y" (a reason told without a causal word) is no causal word: a true cause stated that way is refused.
+- SYS-186: the end time must match; the subject need not ("diskon berlaku hingga Desember" backs "pembekuan
+  berlanjut hingga Desember").

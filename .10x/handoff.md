@@ -1,9 +1,37 @@
 # Current Handoff
 
-## SDE in progress (2026-10-17 afternoon): QA's SYS-152 send-back queue
-- Design: `.10x/adrs/019-causal-gate-matches-one-link-by-direction.md` and architect/newsletter-story-arcs.md "2026-10-17 (dev)".
-- Owner decision: strict per half. The OMC fixture is now an accepted false refusal.
-- Order: SYS-152+181, SYS-186, SYS-182+184, SYS-183/185/DBT-82, then SYS-174/177/178/179.
+## From: SDE (QA's SYS-152 send-back queue) -> To: QA, owner
+**Date:** 2026-10-17 (afternoon)
+**Read first:** ADR-019 (`.10x/adrs/019-causal-gate-matches-one-link-by-direction.md`, with its implementation notes); `.10x/decisions/sde/newsletter-story-arcs.md` "2026-10-17 (afternoon)"; each ticket's dev comment.
+
+### Ready for QA (`status: ready-for-qa`), 11 tickets
+- **Causal gate, ADR-019** (4018876): SYS-152 send-back #342, SYS-181 #381, SYS-182 #382, SYS-183 #383, SYS-184 #384, SYS-185 #385, DBT-82 #386.
+  - A claim matches ONE link of the quote: cause half to cause side, effect half to effect side.
+  - The sides are cut from the source sentences the quote covers, and those are counted in the source.
+  - Owner: strict per half. **OMC is now refused**, an accepted false refusal. SYS-181's OMC Done-when line changed accordingly.
+- **SYS-186 #387** (a3fcb46): "hingga <time>" must be stated as an end in a source. The live MSCI sentence is refused on its real source; replays 12/0.
+- **SYS-174 rework #373, SYS-177 #376, SYS-178 #377, SYS-179 #378** (beda3ff): schedules judged by field; bare and narrowed future times keyed.
+
+### What to verify
+- Your 10-14..10-17 arc files are all green (`qa_2026_10_17` 34/34, `qa_2026_10_16_late` the 27 reds fixed). The 10-12/10-13 files fail as on the base commit 0875890 (35 there, 34 now): RAG-era, not arcs.
+- Mutants, in a copy: `run_registry_mutants_in_copy.py <copy> sys152_ sys181_ sys182_ sys183_ sys184_ sys185_ dbt82_ sys186_ sys174_ sys177_ sys178_ sys179_`.
+- Judgement calls to check:
+  - **Measured deviation:** a NAME may stand anywhere in the link's sentence; the event words must be on the side (v4 Padang). Try to break it.
+  - Negators and frame words weigh nothing as facts.
+  - SYS-186 has no verb list.
+  - SYS-178 keys the bare form as "... ini".
+  - SYS-179 also keys "awal pekan ini" with its part.
+- Replay recheck, causes: 15/18 -> 12/18 backed. The 3 lost: OMC (owner), Dadang (the reason is only the headline "Alasan ..."), and v4 Padang "karena banjir belum surut" (a true catch: the source says "dan").
+- **SYS-152's "accepted after retry >= 90%" and exact-match count are not measured yet.** `parse` now logs `Arc sebab quotes {...}` on every live edition, so measure them from the 12:00 logs. A paid replay of v4 10-08/10-11/10-12 is the owner's call.
+
+### Filed while building
+- **SYS-187 #388 (P2):** the causal gate checks only the first item of a cause list. "karena A, B dan C" is kept on a quote of A alone. It predates ADR-019.
+
+### Owner
+- The code is in the working tree that the 12:00 job imports. Tomorrow's edition runs all of it.
+- SYS-186, the printed false fact, is now guarded. QA's NEWSLETTER_ARCS recommendation is unchanged until QA verifies.
+
+---
 
 ## From: QA (audit of SYS-152 + DBT-81) -> To: SDE, owner
 **Date:** 2026-10-17 (12:00)

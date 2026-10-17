@@ -37,3 +37,4 @@
 - [open-p2-p3-2026-10-12](open-p2-p3-2026-10-12.md) — 2026-10-12 night: SRC-59 INVESTORID sitemap_post + id-segment placeholder hook, DBT-60 date rule, SYS-91 repair script (apply ~06:00)
 - An LLM-writing gate is only as good as the guard's precision: replay, read every refusal detail in the log, and separate the model's faults from the guard's (SYS-154..159: 3 of the refusals were the guards').
 - Long gh comment bodies: write them with the Write tool and pass `--body-file`; several heredocs in one Bash call broke the shell (unmatched quote).
+- Causal gate (ADR-019, 2026-10-17): a claim matches ONE link of the quote by direction; sides are cut from the source sentences the quote covers; names may stand anywhere in the link's sentence, event words on their side. Measure every gate change on the replays (recheck_causes.py) before landing.

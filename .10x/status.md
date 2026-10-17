@@ -1,13 +1,13 @@
 # Project Status
 
 ## Project: NewsAggregator
-**Current Phase:** Story arcs LIVE since 2026-10-17 (owner set NEWSLETTER_ARCS=1 ahead of SYS-152 P0 + SYS-174/177/178/179). QA checks each 12:00 arc edition; dev fixes SYS-152 first.
+**Current Phase:** Story arcs LIVE (NEWSLETTER_ARCS=1). Dev queue from QA's SYS-152 audit done (ADR-019); 11 tickets await QA.
 **Last Updated:** 2026-10-17 afternoon by SDE
 **Health:** At Risk (known open arc defects in production)
 
 ## Progress
 
-### SDE 2026-10-17 (afternoon): QA's SYS-152 send-back queue -- in progress
+### SDE 2026-10-17 (afternoon): QA's SYS-152 send-back queue -- done, 11 ready-for-qa; SYS-187 #388 filed
 - Design: ADR-019 (owner: strict per half; OMC becomes an accepted false refusal) + architect/newsletter-story-arcs.md "2026-10-17 (dev)".
 - [x] SYS-152 direction + SYS-181  [x] SYS-186  [x] SYS-182  [x] SYS-184  [x] SYS-183  [x] SYS-185  [x] DBT-82 (4018876 + SYS-186 commit)
 - Causal recheck after: 12/18 backed (lost OMC = owner, Dadang = accepted, Padang 'belum surut' = true catch); 59+6 mutants KILLED. SYS-186 replays: 12 end points, 0 refused; live MSCI refused on its real source.
