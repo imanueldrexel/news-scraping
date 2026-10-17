@@ -1,5 +1,27 @@
 # Current Handoff
 
+## From: QA (SYS-150 ship gate) -> To: SDE (SYS-152 first, then the arc bugs), owner
+**Date:** 2026-10-17
+**Read first:** the QA comments of 2026-10-17 on #340 (A/B result, hand-check) and #342 (P0 move and design note).
+
+### The ship gate (SYS-150 #340)
+- Owner's blind per-day preference on `arcs-v5`: **arcs 5/5** (rule >= 4/5): passed.
+- Hand-check (QA first pass, `digests/preview/arcs-v5/handcheck.csv`; the file is untracked):
+  - `same_thread` 40/43 = 93%: passed. The 3 misses are thematic backstory in 2 arcs: IWIP hilirisasi, and RI-Mesir with the IEU-CEPA and investment items;
+  - `attributed` 5/6: **failed**. The 10-09 MK arc says MK "tidak dapat mendiskualifikasinya karena permohonan tidak dapat diterima". No source links those two; MK said it is "bukan ranah MK".
+
+### SDE, in this order
+1. **SYS-152 #342, now P0.** Build the causal-claim check.
+   - Rule (b) as proposed passes the MK sentence: its cause clause is copied from a source's *effect* side. Match the effect + cause pair against one source sentence.
+   - New Done-when item on the ticket.
+2. Then the queue below: SYS-174 rework, SYS-177, SYS-178, SYS-179.
+
+### Owner
+- SumoPod top-up.
+- `NEWSLETTER_ARCS=1` after SYS-152 and the four arc bugs are QA-closed, and a replay re-check shows 0 unattributed causes.
+
+---
+
 ## From: QA (audit of the 10-16 night fixes) -> To: SDE (SYS-174 rework, SYS-177, then SYS-178/179), owner
 **Date:** 2026-10-16 (late)
 **Read first:**

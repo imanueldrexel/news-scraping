@@ -3076,3 +3076,18 @@ SINDONEWS   old 12 new 12 | lost [] | gained []   links identical: True
   - Removing today from the backing set is not enough: the day's articles state recent dates in about one arc in four. Measure the whole backing set.
   - Before reading a red test as a finding, check that its outcome is the hole (`kept`) and not another guard's refusal.
 - **Links:** #370, #373, #374, #375, #376, #377, #378; `.10x/reviews/2026-10-16-qa-report-late.md`.
+
+### 2026-10-17 — SYS-150 ship gate: the owner's blind A/B on arcs-v5 and QA's hand-check
+- **Question / hypothesis:** Does the owner prefer the arc edition (rule: >= 4 of 5 days)? Are >= 90% of chosen timeline items on the story's thread? Is every causal sentence stated by a source?
+- **Method:**
+  - The owner read `digests/preview/arcs-v5/<date>-X|Y.pdf` (10-08..10-12) on the phone, unblinded afterwards with `key.json`.
+  - QA filled `handcheck.csv`: each `alur` row against the arc's story, each causal sentence against the stored articles (read-only `~*` searches on `articles.extracted_text`).
+- **Result:**
+  - Arcs won 5/5.
+  - `same_thread` 40/43 (93%). The misses: IWIP hilirisasi's 1/10 "magang vokasi/PPh 21 2027"; RI-Mesir's 17/9 "investasi besar-besaran" and 22/9 "IEU-CEPA".
+  - Causes 5/6 backed, most near verbatim (BPIH avtur, Suahasil's 2,85%, Kemnaker, OMC "Hal ini menyebabkan"). 10-09 MK: "tidak dapat mendiskualifikasinya karena permohonan tidak dapat diterima" is stated by no source. The sources give "tidak memiliki kedudukan hukum" (inadmissible) and "bukan ranah MK" (no disqualification).
+- **Conclusion / do not repeat:**
+  - The preference gate passes; the attribution gate fails, so SYS-152 goes to P0.
+  - A cause-clause overlap check (SYS-152 rule b) would pass the MK sentence, because its clause is copied from a source's effect side. Match the effect + cause pair.
+  - Thematic backstory (an item sharing the actor, not the story) is the `same_thread` failure mode.
+- **Links:** SYS-150 (#340), SYS-152 (#342).

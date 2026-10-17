@@ -172,3 +172,12 @@ Report: `.10x/reviews/2026-10-16-qa-report-late.md`. QA tests, mutants and probe
 - **Not filed, by count:** comma "Kamis, pekan depan" (0), adverb + "mencapai" (10), "hingga <hari> malam (d/m" (22, false refusal only), `relative_name` "akhir Oktober" for a this-week item (true; the past verb carries the tense).
 
 **Lesson:** when a fix removes one day from a backing set, measure what the rest of the set still backs on real articles. Test the boundary where the fix's "has it ended?" test flips.
+
+## SYS-150 ship gate (2026-10-17)
+- Owner's blind per-day preference on arcs-v5: arcs 5/5 (rule >= 4/5).
+- QA's hand-check first pass, judged against the stored sources:
+  - `same_thread` 40/43 (93%): the 3 misses are thematic backstory, 2 of them in one arc (RI-Mesir);
+  - `attributed` 5/6: the MK arc joins two separate reasons into an invented causal link.
+- **Decision:** SYS-152 moves to P0, as SYS-150's Done-when pre-agreed.
+- **Design note:** its rule (b) (cause-clause overlap) passes the MK sentence, because the clause is copied from a source's effect side. The check must match the effect + cause pair.
+- **Lesson:** check a proposed guard against the real failure it exists for before building it. The first real unattributed cause slips through the rule as written.

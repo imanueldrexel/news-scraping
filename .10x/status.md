@@ -1,11 +1,14 @@
 # Project Status
 
 ## Project: NewsAggregator
-**Current Phase:** QA audited the 10-16 night fixes: SYS-171/175/176 closed, SYS-174 sent back (agenda on a span's last day); SYS-177 #376 (P2), SYS-178 #377 (P2), SYS-179 #378 (P3) filed. NEWSLETTER_ARCS stays 0 until SYS-174 and SYS-177 close.
-**Last Updated:** 2026-10-16 (late) by QA
+**Current Phase:** SYS-150 ship gate: owner A/B arcs 5/5 (pass), hand-check same_thread 93% (pass), 1 unattributed cause (MK 10-09) -> SYS-152 #342 moved to P0. Dev next: SYS-152, then SYS-174/177/178/179. NEWSLETTER_ARCS stays 0.
+**Last Updated:** 2026-10-17 by QA
 **Health:** On Track
 
 ## Progress
+
+### QA 2026-10-17: SYS-150 ship gate
+- Owner's blind A/B on arcs-v5: arcs won 5/5. QA hand-check first pass: same_thread 40/43 (93%); attributed 5/6. The MK arc invents a causal link, so SYS-152 goes to P0, with a design note: rule (b) on the cause clause alone passes it. Evidence on #340 and #342.
 
 ### QA audit 2026-10-16 late (eeb205c, HEAD 5445c2e)
 - Unit 3,493. QA file `scripts/experiments/qa_2026_10_16_late/test_qa_1016_late.py`: 152/179 (27 red = the SYS-174 send-back + SYS-177/178/179, every one `kept`). Registry 25/25, QA night 18/18, QA late 11/11 KILLED. Replays reproduce (6 running spans, 0 refused). Report: reviews/2026-10-16-qa-report-late.md
