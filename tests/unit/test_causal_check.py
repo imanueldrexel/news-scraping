@@ -3,7 +3,8 @@
 The six sentences are QA's hand-check of arcs-v5 (SYS-150 #340, digests/preview/arcs-v5/handcheck.csv), each with
 the source text the arc model saw (scripts/experiments/sys152/dump_causal_fixtures.py, trimmed). MK is the
 invented link: both halves are true, no source sentence joins them. Since ADR-019 (owner, 2026-10-17: strict per
-half) OMC is refused too: its cause half is mostly the source's effect.
+half) OMC is refused too: its cause half is mostly the source's effect. Since ADR-020 (owner, 2026-10-18: every word
+of a half covered) BPIH and Defisit are refused as well, each on one paraphrased verb.
 """
 import json
 
@@ -11,6 +12,7 @@ import pytest
 
 import newscrawler.core.story_arc as sa
 from newscrawler.core import causal_check as cc
+from newscrawler.core import story_words
 from newscrawler.core.llm_json import Rejected
 from tests.unit.test_story_arc import DAY, N, TEXTS, TIMELINE, _answer
 
@@ -67,11 +69,23 @@ def _problems(prose, quote, source):
 
 
 class TestHandCheckedSentences:
-    @pytest.mark.parametrize("prose,quote,source", [(PHK, PHK_Q, PHK_SRC), (BPIH, BPIH_Q, BPIH_SRC),
-                                                    (DEF, DEF_Q, DEF_SRC)],
-                             ids=["PHK", "BPIH", "Defisit"])
-    def test_a_true_cause_whose_sentence_is_quoted_is_kept(self, prose, quote, source):
-        assert _problems(prose, quote, source) == []
+    def test_a_true_cause_whose_sentence_is_quoted_is_kept(self):
+        assert _problems(PHK, PHK_Q, PHK_SRC) == []
+
+    @pytest.mark.parametrize("prose,quote,source,link_word,word", [(BPIH, BPIH_Q, BPIH_SRC, "lantaran", "membahas"),
+                                                                   (DEF, DEF_Q, DEF_SRC, "disebabkan", "melebar")],
+                             ids=["BPIH", "Defisit"])
+    def test_a_paraphrased_verb_is_refused(self, prose, quote, source, link_word, word):
+        """ADR-020's accepted false refusals (owner, 2026-10-18: "Every word covered"). The causes are true, but
+        the prose says "membahas" where the source says "mengatur", and "melebar" where it says "meningkat". Each
+        claim's effect misses that one word and nothing else; the retry writes the two facts apart."""
+        claim = cc.causal_spans(prose)[0]
+        [link] = [link for link in cc.links(quote, source)[0] if link.word.lower() == link_word]
+        missed = [w for w in story_words.content_words(claim.effect)
+                  if cc._weighs(w) and not cc._meets(cc._root(w), cc._roots(link.effect))]
+        assert missed == [word]
+        assert cc._covers(claim.cause, link.cause, link.effect, link.sentence)
+        assert _problems(prose, quote, source)
 
     def test_omc_a_cause_taken_from_the_effect_side_is_refused(self):
         """ADR-019's accepted false refusal (owner, 2026-10-17). The source: smoke affects flights at the airport;
@@ -96,7 +110,7 @@ class TestHandCheckedSentences:
                   "pendidikan paling rendah tamat SMA atau sederajat. Namun, pada saat yang sama, MK menyatakan "
                   "permohonan para Pemohon tidak dapat diterima karena persoalan kedudukan hukum.")
         [span] = cc.causal_spans(MK)
-        assert cc.overlap(span.before, window) >= cc.MIN_HALF_OVERLAP     # the widened half alone would pass
+        assert cc.overlap(span.before, window) >= 0.6     # the widened half passed ADR-019's 60% bar
         assert not cc.backs(window, window, span) and _problems(MK, window, window)
 
     def test_a_glued_paragraph_is_no_quote(self):
@@ -518,11 +532,12 @@ class TestDbt82:
         assert _reason(timeline=timeline, latar=latar, sebab=sebab) == "kept"
         assert _reason(timeline=timeline, latar=latar, sebab=[]) == "sebab"
 
-    def test_the_bar_is_sixty_percent(self):
-        below, at = "Harga tiket pesawat kereta kapal ojek naik", "Harga tiket kereta kapal naik"
-        assert cc.overlap(below, AVTUR) == 4 / 7 and cc.overlap(at, AVTUR) == 0.6
-        assert not kept(f"{below} karena harga avtur melonjak.", AVTUR)
-        assert kept(f"{at} karena harga avtur melonjak.", AVTUR)
+    def test_every_word_of_a_half_is_covered(self):
+        """ADR-020 (owner, 2026-10-18): no share. One word the source lacks refuses the half; dropping source words
+        ("domestik", "tajam") does not."""
+        assert kept("Harga tiket pesawat naik karena harga avtur melonjak.", AVTUR)
+        assert not kept("Harga tiket pesawat kereta naik karena harga avtur melonjak.", AVTUR)
+        assert not kept("Harga tiket pesawat naik karena harga avtur dan minyak melonjak.", AVTUR)
 
     def test_a_widened_half_never_carries_a_core_clause_the_link_lacks(self):
         """"ditunda" alone is one content word, so the effect is widened by the clause before it; that clause is in
@@ -531,13 +546,97 @@ class TestDbt82:
         prose = ("MK menyatakan tidak menemukan bukti ijazah Gibran setara SMA, tetapi ditunda karena dokumen tidak "
                  "lengkap.")
         [claim] = cc.causal_spans(prose)
-        assert claim.effect_core == "ditunda" and cc.overlap(claim.effect, source) >= cc.MIN_HALF_OVERLAP
+        assert claim.effect_core == "ditunda" and cc.overlap(claim.effect, source) >= 0.6
         assert not kept(prose, source)
 
     def test_a_comma_ends_the_core_clause(self):
         """The clause before the comma is another fact, never part of the effect the quote must cover."""
         assert kept("Rupiah melemah tajam dan obligasi negara tertekan, harga tiket pesawat domestik naik tajam "
                     "karena harga avtur melonjak.", AVTUR)
+
+
+class TestSys188EveryWord:
+    """SYS-188 (#389, ADR-020 decision 1): every word of a half is on its side, so a swapped subject is refused."""
+
+    @pytest.mark.parametrize("prose,source", [
+        ("Saham BBCA turun karena aksi jual asing.", "Saham BBRI turun karena aksi jual asing."),
+        ("Harga cabai naik karena cuaca buruk.", "Harga beras naik karena cuaca buruk."),
+        ("Rupiah melemah karena The Fed menaikkan suku bunga.", "Rupiah melemah karena ECB menaikkan suku bunga."),
+    ])
+    def test_a_swapped_subject_is_refused(self, prose, source):
+        assert not kept(prose, source)
+
+    def test_a_noun_meets_its_verb(self):
+        """The circumfix: "kenaikan" is "naik", "pelemahan" is "melemah" (`story_words.root`)."""
+        assert kept("Harga tiket naik karena rupiah melemah.", "Kenaikan harga tiket dipicu pelemahan rupiah.")
+
+    @pytest.mark.parametrize("word,stem", [("kenaikan", "naik"), ("pelemahan", "lemah"), ("peningkatan", "ingkat"),
+                                           ("pertengahan", "tengah"), ("menunda", "unda"), ("pekan", "pekan"),
+                                           ("selatan", "selatan")])
+    def test_the_root(self, word, stem):
+        assert story_words.root(word) == stem
+
+    def test_time_parts_and_quantifiers_weigh_nothing(self):
+        source = "Asap karhutla menyelimuti Palembang sejak Senin. Hal ini menyebabkan 15 penerbangan dibatalkan."
+        assert kept("Sebanyak 15 penerbangan dibatalkan pada pagi hari karena asap karhutla menyelimuti Palembang.",
+                    source)
+
+    def test_a_prose_reference_takes_its_own_previous_sentence(self):
+        """DBT-83 (qa18_reference_side_not_widened): "Kondisi tersebut memicu" is caused by the prose's previous
+        sentence, which must be the source's."""
+        source = "Harga beras naik tajam. Kondisi tersebut memicu inflasi pangan."
+        assert kept("Harga beras naik tajam. Kondisi tersebut memicu inflasi pangan.", source)
+        assert not kept("Harga cabai naik tajam. Kondisi tersebut memicu inflasi pangan.", source)
+        [claim] = cc.causal_spans("Harga beras naik tajam. Kondisi tersebut memicu inflasi pangan.")
+        assert claim.cause == "Harga beras naik tajam."
+
+
+class TestSys181NameRoom:
+    """SYS-181 send-back (ADR-020 decision 2): a name may stand elsewhere in the link's sentence, never on the link's
+    other side."""
+
+    def test_swapped_places_are_refused(self):
+        source = "Banjir di Padang memicu longsor di Solok."
+        assert kept("Banjir di Padang memicu longsor di Solok.", source)
+        assert not kept("Banjir di Solok memicu longsor di Padang.", source)
+
+    def test_swapped_places_around_a_backward_word_are_refused(self):
+        source = "Ribuan warga Bekasi mengungsi karena tanggul di Karawang jebol."
+        assert not kept("Warga Karawang mengungsi karena tanggul di Bekasi jebol.", source)
+
+    def test_a_half_of_names_only_gets_no_room(self):
+        """A name locates an event; with no event word in the half, the name IS the claim and must be on its side.
+        BBCA stands in the sentence, outside both sides of the "karena" link."""
+        source = "BBCA menguat sementara IHSG turun karena aksi jual asing."
+        assert kept("IHSG turun karena aksi jual asing.", source)
+        assert not kept("IHSG turun karena BBCA.", source)
+
+
+class TestSys181Anaphor:
+    """SYS-181 send-back (ADR-020 decision 3): the previous sentence is lent to an anaphor on the side's own subject
+    only when that subject names the previous sentence."""
+
+    MK_TWO = ("MK menyatakan tidak berwenang mendiskualifikasi calon. Permohonan pemohon tersebut tidak dapat "
+              "diterima karena melewati tenggat.")
+
+    def test_another_subject_with_tersebut_lends_nothing(self):
+        assert not kept("MK tidak berwenang mendiskualifikasi calon karena permohonan melewati tenggat.", self.MK_TWO)
+        assert kept("Permohonan pemohon tidak dapat diterima karena melewati tenggat.", self.MK_TWO)
+
+    def test_an_anaphor_off_the_subject_lends_nothing(self):
+        source = "Banjir merendam 200 rumah di Desa Sukamaju. Longsor di desa tersebut dipicu tanggul jebol."
+        assert not kept("Banjir merendam 200 rumah di Desa Sukamaju karena tanggul jebol.", source)
+
+    def test_a_subject_naming_the_previous_sentence_borrows_it(self):
+        source = ("Defisit APBN 2026 diproyeksikan melebar ke 2,9 persen PDB. Peningkatan proyeksi defisit tersebut "
+                  "disebabkan penerimaan pajak yang lebih rendah.")
+        assert kept("Defisit APBN 2026 diproyeksikan melebar karena penerimaan pajak lebih rendah.", source)
+
+    @pytest.mark.parametrize("side,lends", [("Peningkatan proyeksi defisit tersebut", True),
+                                            ("Permohonan pemohon tersebut tidak dapat diterima", False),
+                                            ("Longsor di desa tersebut", False), ("Hal ini", True)])
+    def test_refers_back(self, side, lends):
+        assert cc._refers_back(side, "Defisit APBN 2026 diproyeksikan melebar.") is lends
 
 
 class TestMatchCounts:

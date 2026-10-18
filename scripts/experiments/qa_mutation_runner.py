@@ -1992,11 +1992,10 @@ M = [
  # SYS-152 (#342, ADR-018/019): a causal claim rests on one LINK of one quoted source sentence: effect to effect side,
  # cause to cause side; attribution exempts nothing; checked on the retry too. Killed by tests/unit/test_causal_check.py.
  ('sys152_cause_half_only', 'newscrawler/core/causal_check.py',
-  '_covered(claim.effect_core, claim.effect, link.effect, link.sentence)', 'True'),
+  '_covers(claim.effect, link.effect, link.cause, link.sentence)', 'True'),
  ('sys152_effect_half_only', 'newscrawler/core/causal_check.py',
-  '_covered(claim.cause_core, claim.cause, link.cause, link.sentence)', 'True'),
- ('sys152_no_core_rule', 'newscrawler/core/causal_check.py',
-  'and (not _roots(core) or _covers(core, side, sentence))', 'and True'),
+  '_covers(claim.cause, link.cause, link.effect, link.sentence)', 'True'),
+ # sys152_no_core_rule retired 2026-10-18: ADR-020 covers the whole widened half, which holds the core clause.
  ('sys152_no_word_cap', 'newscrawler/core/causal_check.py', 'MAX_QUOTE_WORDS = 70 ', 'MAX_QUOTE_WORDS = 9999 '),
  ('sys152_dan_is_a_boundary', 'newscrawler/core/causal_check.py',
   'r"\\b(?:tetapi|namun|', 'r"\\b(?:dan|tetapi|namun|'),
@@ -2014,8 +2013,7 @@ M = [
   '        at = found + len(piece)', '        at = 0'),
  ('sys152_no_sentence_cap', 'newscrawler/core/causal_check.py',
   'MAX_QUOTE_SENTENCES = 2 ', 'MAX_QUOTE_SENTENCES = 99 '),
- ('sys152_threshold_half', 'newscrawler/core/causal_check.py',
-  'MIN_HALF_OVERLAP = 0.6', 'MIN_HALF_OVERLAP = 0.5'),
+ # sys152_threshold_half retired 2026-10-18: ADR-020 has no share; sys188_share_again restores one.
  ('sys152_no_previous_sentence', 'newscrawler/core/causal_check.py',
   '    if previous and (not _roots(before) or _REFERENCE.match(before)):', '    if False:'),
  ('sys152_attribution_counted', 'newscrawler/core/causal_check.py',
@@ -2047,19 +2045,19 @@ M = [
  ('sys181_no_runs', 'newscrawler/core/causal_check.py',
   '        if runs and not sentence[runs[-1][1]:m.start()].strip():', '        if False:'),
  ('sys181_previous_sentence_always', 'newscrawler/core/causal_check.py',
-  '    elif previous and source and (len(_roots(before)) < MIN_HALF_WORDS or _ANAPHOR.search(before)):',
+  '    elif previous and source and (len(_roots(before)) < MIN_HALF_WORDS or _refers_back(before, previous)):',
   '    elif previous and source:'),
  ('sys181_no_anaphor', 'newscrawler/core/causal_check.py',
-  ' < MIN_HALF_WORDS or _ANAPHOR.search(before)):', ' < MIN_HALF_WORDS):'),
- # ADR-019 (measured on the replays): a name may stand anywhere in the link's sentence, the event words on its side;
- # negators and frame words weigh nothing.
+  ' < MIN_HALF_WORDS or _refers_back(before, previous)):', ' < MIN_HALF_WORDS):'),
+ # ADR-019/020 (measured on the replays): a name may stand elsewhere in the link's sentence, never on its other side;
+ # the event words on its side; negators and frame words weigh nothing.
  ('sys181_names_on_side', 'newscrawler/core/causal_check.py',
-  '    on_side, in_sentence = _roots(side), _roots(side) | _roots(sentence)',
-  '    on_side, in_sentence = _roots(side), _roots(side)'),
+  '    room = on_side | (_roots(sentence) - _roots(other_side)) if events else on_side',
+  '    room = on_side'),
  ('sys181_names_carry_events', 'newscrawler/core/causal_check.py',
-  '    return (found / len(events) >= MIN_HALF_OVERLAP\n', '    return (True\n'),
+  ' if events else on_side\n', '\n'),
  ('sys181_negator_counted', 'newscrawler/core/causal_check.py',
-  'if w not in _GENERIC and w not in _NEGATORS}', 'if w not in _GENERIC}'),
+  'return word not in _GENERIC and word not in _NEGATORS and', 'return word not in _GENERIC and'),
  ('sys181_frame_words_counted', 'newscrawler/core/causal_check.py', 'kembali sebelumnya kemudian lalu ', 'kembali '),
  # SYS-182 (#382): the sentences a quote covers are counted in the source.
  ('sys182_span_not_counted', 'newscrawler/core/causal_check.py',
@@ -2108,9 +2106,27 @@ M = [
   '("agenda", agenda), ("sekilas", sekilas)], sebab', '("sekilas", sekilas)], sebab'),
  ('dbt82_alur_not_quotable', 'newscrawler/core/story_arc.py',
   ', **{i: item_source(t) for i, t in chosen.items()}}', '}'),
- ('dbt82_threshold_055', 'newscrawler/core/causal_check.py', 'MIN_HALF_OVERLAP = 0.6', 'MIN_HALF_OVERLAP = 0.55'),
+ # dbt82_threshold_055 retired 2026-10-18 with the share (ADR-020).
  ('dbt82_boundary_no_comma', 'newscrawler/core/causal_check.py',
   '_BOUNDARY = re.compile(r",(?!\\d)|', '_BOUNDARY = re.compile(r"'),
+ # SYS-188 (#389, ADR-020 decision 1): every word of a half is covered; a noun meets its verb (circumfix); time
+ # parts and quantifiers weigh nothing.
+ ('sys188_share_again', 'newscrawler/core/causal_check.py',
+  '    return all(_meets(r, on_side) for r in events) and',
+  '    return sum(_meets(r, on_side) for r in events) >= 0.6 * len(events) and'),
+ ('sys188_names_may_be_missing', 'newscrawler/core/causal_check.py',
+  ' and all(_meets(r, room) for r in names)', ''),
+ ('sys188_no_circumfix', 'newscrawler/core/story_words.py', '    if w.endswith("an"):\n', '    if False:\n'),
+ ('sys188_time_words_count', 'newscrawler/core/causal_check.py',
+  ' and word not in _TIME_WORDS\n', '\n'),
+ # SYS-181 send-back (ADR-020 decisions 2, 3): a name never on the link's other side; the previous sentence is lent
+ # only to an anaphor on the side's own subject that names it.
+ ('sys181_names_anywhere_in_sentence', 'newscrawler/core/causal_check.py',
+  '(_roots(sentence) - _roots(other_side))', '_roots(sentence)'),
+ ('sys181_anaphor_any_subject', 'newscrawler/core/causal_check.py',
+  '    return not subject or any(_meets(r, _roots(previous)) for r in subject)', '    return True'),
+ ('sys181_anaphor_off_subject', 'newscrawler/core/causal_check.py',
+  '    if any(w in story_words.STOPWORDS for w in opening):\n        return False\n', ''),
  # SYS-186 (#387): "hingga <time>" is an end point a source must state as an end. Killed by test_source_check.py
  # TestSys186EndPoints and test_story_arc.py TestEndPoints.
  ('sys186_not_checked', 'newscrawler/core/story_arc.py',

@@ -8,8 +8,9 @@ ini menyebabkan ...") -- that
    bridges in order), and covers at most `MAX_QUOTE_SENTENCES` sentences and `MAX_QUOTE_WORDS` words OF THE
    SOURCE (SYS-182: counted on the quote as written, "..." or dropped full stops let one "quote" span an article);
 2. holds a causal word, whose *link* -- the source's own cause side and effect side around it -- backs the claim:
-   the claim's effect shares at least `MIN_HALF_OVERLAP` of its content words (`story_words`) with the link's effect
-   side, and the claim's cause with the link's cause side (ADR-019).
+   EVERY content word (`story_words`) of the claim's effect is on the link's effect side, and every word of its
+   cause on the link's cause side (ADR-019; ADR-020: a claim may drop words of its source, never add one). A name may
+   also stand elsewhere in the link's sentence, never on the link's other side.
 
 Why one link, by direction (QA, 2026-10-17): measured against the whole quote, "Harga avtur melonjak karena harga
 tiket naik" was backed by "Harga tiket naik karena harga avtur melonjak" (reversed), and a quote holding two
@@ -34,7 +35,6 @@ from typing import Dict, List, NamedTuple, Optional, Sequence, Tuple
 
 from newscrawler.core import story_words
 
-MIN_HALF_OVERLAP = 0.6
 MAX_QUOTE_SENTENCES = 2       # one sentence, or two adjacent ("Hal ini menyebabkan ...")
 MAX_QUOTE_WORDS = 70          # scraped text glues sentences ("ditebak.Dia ..."): a paragraph is no quote
 MIN_HALF_WORDS = 2            # a clause with fewer content words is widened by one clause
@@ -75,6 +75,10 @@ _REFERENCE = re.compile(r"^\W*(?:[^\W\d_]+\s+)?(?:ini|itu|tersebut)\W*$", re.IGN
 # its cause.
 _GENERIC = frozenset("dapat harus mampu perlu tengah sedang kini semula sempat kembali sebelumnya kemudian lalu "
                      "selanjutnya selain disebut".split())
+# ADR-020: a time part says when, not what, and a quantifier how many; the date and number guards hold those ("pada
+# pertengahan September", replay 10-08; "Sebanyak 15 penerbangan dibatalkan").
+_TIME_WORDS = frozenset("awal pertengahan akhir pagi siang sore malam kemarin "
+                        "sebanyak sejumlah setidaknya sedikitnya hampir total".split())
 _NEGATORS = frozenset({"tidak", "tak", "bukan", "belum"})        # checked by negation_agrees, never as a fact
 # Skipped between a negator and the word it negates: "tak kunjung terbit", "tidak hanya", "belum juga".
 _NEGATION_SKIP = _GENERIC | frozenset("kunjung pernah lagi juga pula akan bisa boleh hanya semata terlalu".split())
@@ -84,7 +88,6 @@ _ATTRIBUTION = re.compile(r"\b(?:yang\s+)?menurut\s+[^,;]*", re.IGNORECASE)
 _SENTENCE_END = re.compile(r"(?<=[.!?])\s+|\n+|(?<=[a-z][.!?])(?=[A-Z][a-z])")
 _ELLIPSIS = re.compile(r"\.{3}|…")
 _WORD = re.compile(r"[^\W\d_][\w-]*")
-_PREFIXES = ("meng", "meny", "mem", "men", "me", "di", "ter", "ber", "per", "pe")
 
 
 def _sentence_spans(text: str) -> List[Tuple[int, int]]:
@@ -121,19 +124,16 @@ def _norm(text: str) -> str:
     return _normalised(text)[0]
 
 
-def _root(word: str) -> str:
-    """A rough Indonesian root, enough to meet "ditunda"/"menunda", "mendiskualifikasinya"/"mendiskualifikasi"."""
-    w = word.lower()
-    if w.endswith("nya") and len(w) > 6:
-        w = w[:-3]
-    for prefix in _PREFIXES:
-        if w.startswith(prefix) and len(w) - len(prefix) >= 4:
-            return w[len(prefix):]
-    return w
+_root = story_words.root
+
+
+def _weighs(word: str) -> bool:
+    """A content word that is a fact of a half: not a modal, frame, negator or time-part word."""
+    return word not in _GENERIC and word not in _NEGATORS and word not in _TIME_WORDS
 
 
 def _roots(text: str) -> set:
-    return {_root(w) for w in story_words.content_words(text) if w not in _GENERIC and w not in _NEGATORS}
+    return {_root(w) for w in story_words.content_words(text) if _weighs(w)}
 
 
 def _meets(root: str, others: set) -> bool:
@@ -247,6 +247,22 @@ def _source_side(text: str, from_end: bool) -> Tuple[str, str]:
     return side, side
 
 
+def _refers_back(side: str, previous: str) -> bool:
+    """SYS-181 (ADR-020 decision 3): `side` names the previous sentence by an anaphor on its own subject -- the
+    content words it opens with end in "tersebut" / "hal ini" -- and that subject shares a word with `previous`:
+    "Peningkatan proyeksi defisit tersebut" after "Defisit APBN 2026 diproyeksikan melebar". Not "Permohonan pemohon
+    tersebut" after a sentence about MK (another subject: the MK shape in two sentences), nor "Longsor di desa
+    tersebut", whose anaphor is not on its subject."""
+    m = _ANAPHOR.search(side)
+    if not m:
+        return False
+    opening = _WORD.findall(side[:m.start()].lower())
+    if any(w in story_words.STOPWORDS for w in opening):
+        return False
+    subject = {_root(w) for w in opening if _weighs(w)}
+    return not subject or any(_meets(r, _roots(previous)) for r in subject)
+
+
 def _fronted(text: str, side) -> Tuple[str, str, str, str]:
     """SYS-183 (#383): (cause, effect, cause core, effect core) of "Karena X, Y" from the text after the causal
     word. The cause runs to the first clause boundary after which it holds `MIN_HALF_WORDS` content words; with
@@ -299,7 +315,7 @@ def _cut(sents: List[str], i: int, m, source: bool) -> Span:
     previous = sents[i - 1] if i > 0 else ""
     if previous and (not _roots(before) or _REFERENCE.match(before)):
         before_core = before = previous + (f" {before}" if source else "")
-    elif previous and source and (len(_roots(before)) < MIN_HALF_WORDS or _ANAPHOR.search(before)):
+    elif previous and source and (len(_roots(before)) < MIN_HALF_WORDS or _refers_back(before, previous)):
         before_core = before = f"{previous} {before}"
     if kind == FORWARD:
         return Span(sentence, word, before, after, before_core, after_core, True, negated)
@@ -312,37 +328,34 @@ def causal_spans(text: str) -> List[Span]:
     return [_cut(sents, i, m, source=False) for i, sentence in enumerate(sents) for m in CAUSAL.finditer(sentence)]
 
 
-def _covers(half: str, side: str, sentence: str) -> bool:
-    """At least `MIN_HALF_OVERLAP` of `half`'s event words are on `side`, and of all its content words when a name (a
-    place, a person) may stand anywhere in the link's `sentence`. A name locates the event; the event words carry
-    the link. Replay 10-11 (v4): "hujan deras memicu luapan air sungai di Koto Tangah" -- the source names Koto
-    Tangah after its next causal word ("... memicu luapan debit air sungai hingga menyebabkan tanggul jebol di ...
-    Koto Tangah"). A half of names only gets no such room."""
+def _covers(half: str, side: str, other_side: str, sentence: str) -> bool:
+    """Every word of `half` is on `side` (ADR-020 decision 1, owner 2026-10-18: "Every word covered"). SYS-188: at
+    60% a three-word half could swap the one word that says what -- "Saham BBCA turun" was backed by "Saham BBRI
+    turun", "Harga cabai naik" by "Harga beras naik".
+
+    A name (a place, a person) of a half that has event words may also stand elsewhere in the link's `sentence`,
+    never on the link's `other_side` (SYS-181). A name locates the event: the replay's v4 Padang names Koto Tangah
+    after the source's next causal word ("... memicu luapan debit air sungai hingga menyebabkan tanggul jebol di ...
+    Koto Tangah"). "Banjir di Solok memicu longsor di Padang" is not backed by its reverse. A half of names only gets
+    no such room. The widened half holds the clause next to the causal word, so covering it whole covers that clause
+    too: context never carries a half whose own words are missing (the MK replay window)."""
     words = story_words.content_words(half)
-    events = {_root(w) for w, is_name in words.items() if not is_name and w not in _GENERIC | _NEGATORS}
-    if not events:
-        return overlap(half, side) >= MIN_HALF_OVERLAP
-    names = {_root(w) for w, is_name in words.items() if is_name} - events
-    on_side, in_sentence = _roots(side), _roots(side) | _roots(sentence)
-    found = sum(_meets(r, on_side) for r in events)
-    return (found / len(events) >= MIN_HALF_OVERLAP
-            and (found + sum(_meets(r, in_sentence) for r in names)) / (len(events) + len(names)) >= MIN_HALF_OVERLAP)
-
-
-def _covered(core: str, half: str, side: str, sentence: str) -> bool:
-    """The half is covered, and so is the clause next to the causal word on its own: widening must never let the
-    context carry a half whose own words are missing ("MK menyatakan ... SMA, tetapi tidak dapat
-    mendiskualifikasinya" -- the replay found a source holding the first clause, never "mendiskualifikasi")."""
-    return _covers(half, side, sentence) and (not _roots(core) or _covers(core, side, sentence))
+    events = {_root(w) for w, is_name in words.items() if not is_name and _weighs(w)}
+    names = {_root(w) for w, is_name in words.items() if is_name and _weighs(w)} - events
+    if not events and not names:
+        return False
+    on_side = _roots(side)
+    room = on_side | (_roots(sentence) - _roots(other_side)) if events else on_side
+    return all(_meets(r, on_side) for r in events) and all(_meets(r, room) for r in names)
 
 
 def supports(link: Span, claim: Span) -> bool:
     """`link` (a causal word of a quoted source) backs `claim`: effect to effect side, cause to cause side, the
     negations agreeing (ADR-019)."""
     return (link.negated == claim.negated
-            and _covered(claim.effect_core, claim.effect, link.effect, link.sentence)
+            and _covers(claim.effect, link.effect, link.cause, link.sentence)
             and negation_agrees(claim.effect, link.effect)
-            and _covered(claim.cause_core, claim.cause, link.cause, link.sentence)
+            and _covers(claim.cause, link.cause, link.effect, link.sentence)
             and negation_agrees(claim.cause, link.cause))
 
 

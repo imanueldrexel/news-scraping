@@ -103,3 +103,26 @@ def vocabulary(text: str) -> Set[str]:
         out.add(word)
         out.update(part for part in word.split("-") if part)
     return out
+
+
+_PREFIXES = ("meng", "meny", "mem", "men", "me", "di", "ter", "ber", "per", "pe")
+# A noun made from a verb: ke- or pe(N)-/per- with -an ("kenaikan", "pelemahan", "peningkatan", "pertengahan").
+_CIRCUMFIX_PREFIXES = ("peng", "peny", "pem", "pen", "per", "pe", "ke")
+_MIN_ROOT = 4
+
+
+def root(word: str) -> str:
+    """A rough Indonesian root, enough to meet "ditunda"/"menunda", "mendiskualifikasinya"/"mendiskualifikasi",
+    and (SYS-188, ADR-020) "kenaikan"/"naik", "pelemahan"/"melemah": the causal gate needs every word of a
+    claim's half on its side, so a noun and its verb must meet. At least 4 letters are always left."""
+    w = word.lower()
+    if w.endswith("nya") and len(w) > 6:
+        w = w[:-3]
+    if w.endswith("an"):
+        for prefix in _CIRCUMFIX_PREFIXES:
+            if w.startswith(prefix) and len(w) - len(prefix) - 2 >= _MIN_ROOT:
+                return w[len(prefix):-2]
+    for prefix in _PREFIXES:
+        if w.startswith(prefix) and len(w) - len(prefix) >= _MIN_ROOT:
+            return w[len(prefix):]
+    return w
