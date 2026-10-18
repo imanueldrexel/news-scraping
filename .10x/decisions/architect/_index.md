@@ -1,6 +1,7 @@
 # architect decisions — index
 
 ## Active features
+- [qa-1013-queue](qa-1013-queue.md) — 2026-10-19: QA 10-13 queue: SYS-144/145 own-subject rule + SYS-146 -nya roots (ADR-021), SYS-194 FTS order, DBT-60/70/71, SRC-62
 - [p1-p2-newsletter-fixes](p1-p2-newsletter-fixes.md)
 - [rag-search-redesign](rag-search-redesign.md) — tracker #272: components, data flow, boundaries, failure modes (ADR-005)
 - [rag-keyword-search](rag-keyword-search.md) — SYS-103: keyword half by rare-word anchors + IDF-weighted coverage, df from pg_stats (ADR-006)

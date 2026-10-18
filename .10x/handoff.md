@@ -1,5 +1,18 @@
 # Current Handoff
 
+## From: SDE (QA's 2026-10-13 queue, design + planning) -> To: SDE (implementation), QA, owner
+**Date:** 2026-10-19 (04:30)
+**Read first:** ADR-021; architect/qa-1013-queue.md; engineering-manager and senior-engineer qa-1013-queue.md.
+
+### Owner decisions (2026-10-19)
+- SYS-144/145: a follow-up goes to its thread only when it names no subject of its own (object phrases aside, unless a -nya follows the name), with the wider adverb list as the first layer. Accepted cost: "Apa kata Garuda soal dampaknya?" after an avtur question is retrieved alone.
+- SYS-146: fix the -nya anchor only; the off-subject semantic ranking is SYS-195 #397.
+
+### Plan
+1. SYS-194 #396; 2. SYS-144+145; 3. SYS-146; 4. DBT-60 and 5. DBT-70 (crawl-imported: green before 06:45 or after the 07:00 run); 6. DBT-71; 7. SRC-62 (money-lab denied: sample on the ticket).
+
+---
+
 ## From: SDE (QA's 10-18 queue) -> To: QA, owner
 **Date:** 2026-10-18 (evening)
 **Read first:** ADR-020; `.10x/decisions/sde/newsletter-story-arcs.md` "2026-10-18"; each ticket's dev comment; EXPERIMENTS.md 2026-10-18 entries.
