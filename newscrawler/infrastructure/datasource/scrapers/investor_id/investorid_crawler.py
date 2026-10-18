@@ -1,7 +1,8 @@
 import logging
 import re
-from typing import List, Dict
+from typing import List, Dict, Optional
 
+from newscrawler.core.importance_filter import SOURCE_SOFT_LEAVES
 from newscrawler.domain.entities.extraction.url_data import URL
 from newscrawler.domain.entities.extraction.website_name import WebsiteName
 from newscrawler.infrastructure.datasource.scrapers.crawler import Crawler
@@ -15,9 +16,12 @@ logger.setLevel(logging.INFO)
 
 _POST_SITEMAP = re.compile(r"^https://investor\.id/sitemap_post\.xml$")
 _ARTICLE_URL = re.compile(r"^https://investor\.id/[a-z-]+/\d+/[^/?#]+")
+_SECTION = re.compile(r"^https://investor\.id/([a-z-]+)/\d+/")
 
 
 class InvestorIDCrawler(Crawler):
+    SOFT_BRANCH_DENY = SOURCE_SOFT_LEAVES["INVESTORID"]     # SRC-62: one definition with the category gate
+
     def __init__(self):
         super(InvestorIDCrawler, self).__init__()
         self.website_name = WebsiteName.INVESTORID.value
@@ -46,10 +50,12 @@ class InvestorIDCrawler(Crawler):
         return bool(_ARTICLE_URL.match(link or ""))
 
     @staticmethod
-    def _get_branch_name_from_url(url) -> str:
-        branch_name = re.sub(r"(https://investor.id/)(\w+)(/)(.*)", r"\2", url)
-        if branch_name:
-            return branch_name.strip()
+    def _get_branch_name_from_url(url) -> Optional[str]:
+        """The article's section, `/<section>/<id>/<slug>`, or None (the branch name is used then).
+        SRC-62 (#333): a `re.sub` over `\\w+` returned the whole URL for a hyphenated section
+        (money-lab), which degraded to `news` and hid the section from the category gate."""
+        m = _SECTION.match(url or "")
+        return m.group(1) if m else None
 
     @staticmethod
     def _get_whole_text(soup) -> List[str]:

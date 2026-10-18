@@ -3307,3 +3307,16 @@ SINDONEWS   old 12 new 12 | lost [] | gained []   links identical: True
   - The follow-up decision rests on structure: a new name not in an object phrase, or one before the reference word, is the follow-up's own subject. The list only covers a follow-up that names nothing.
   - A resolve-level test must use a word the list does not hold, or it cannot tell the structural rule from the list.
 - **Links:** ADR-021; SYS-144 (#327), SYS-145 (#328), SYS-146 (#331), SYS-195 (#397)
+
+### 2026-10-19 — SRC-62: is investor.id's money-lab hard news, and does the section now reach the category gate?
+- **Question / hypothesis:** INVESTORID's `re.sub` over `\w+` filed every hyphenated section as `news`. Is `money-lab` a news desk or a soft vertical (SRC-39: decide from stored titles, never from the name)?
+- **Method:** production, read-only.
+  - The stored money-lab rows: `sitemaps` joined to `articles` where the link holds `investor.id/money-lab/`, newest first, with crawl_status and topic.
+  - After the fix: `check_crawlers.py --website INVESTORID --sample-size 3 --report-dir <scratch>`, and `CRAWLER_DICT["INVESTORID"].get_news_in_bulk()` counted by category through `category_gate(..., "INVESTORID")`.
+- **Result:**
+  - 90 stored money-lab rows: 72 `rejected_filter` by the probe, 18 saved (13 markets, 4 macro_policy, 1 commodities).
+  - The 3 newest are all guides: "Gaji Pertama Cepat Habis? Ini 6 Cara Efektif Mengatur Cash Flow Pekerja Muda", "Penting Bagi Pekerja Muda, Ini 3 Faktor Utama yang Memengaruhi Credit Score", "Strategi Siapkan Dana Mudik Gen Z". 22 of the newest 25 are evergreen explainers or tips; the other 3 are policy items (OJK crypto rule, fintech transparency, LPS and gold savings).
+  - INVESTORID's stored categories otherwise: market 884, business 401, national 241 ...; `news` 91, of which 90 are money-lab.
+  - After the fix: check OK (3/3 bodies, 3,064 chars). The live 100 links: market 35, business 30, national 11, international 7, **money-lab 7 (deny)**, finance 6, lifestyle 3 (deny), macroeconomy 1; no `news`.
+- **Conclusion / do not repeat:** money-lab is a guides column, so it is denied for INVESTORID only (`SOURCE_SOFT_LEAVES`, settled before fetch). The 90 stored rows keep `news`; re-labelling them is a production write left to the owner. The 18 saved explainers stay unless the owner asks.
+- **Links:** SRC-62 (#333)

@@ -6,6 +6,7 @@ that DTO got meta_data.posted_at 19700823 (193 CNBC rows, from a script that bui
 DTOs from stored rows). And `timestamp: datetime = None` rejected an explicit None.
 """
 from datetime import datetime, timezone
+from decimal import Decimal
 from types import SimpleNamespace
 
 import pytest
@@ -23,11 +24,22 @@ from newscrawler.infrastructure.repositories.dataflow.data_flow_repository_impl 
     ("20260918", datetime(2026, 9, 18)),
     (" 20260918 ", datetime(2026, 9, 18)),
     (20260918.0, datetime(2026, 9, 18)),
-    # a date string that is not digits only is pydantic's to parse
+    # DBT-60 send-back: every other numeric form of the date (QA 2026-10-13: each was 1970-08-23)
+    ("20260918.0", datetime(2026, 9, 18)),          # str() of the float above
+    ("+20260918", datetime(2026, 9, 18)),
+    (Decimal("20260918"), datetime(2026, 9, 18)),   # psycopg2 returns NUMERIC as Decimal
+    # a date string that is no number is pydantic's to parse
     ("2026-09-18T07:30:00+07:00", "2026-09-18T07:30:00+07:00"),
 ])
 def test_posted_at_datetime(value, expected):
     assert posted_at_datetime(value) == expected
+
+
+def test_a_numpy_scalar_is_read_as_a_yyyymmdd():
+    """pandas.read_sql of sitemaps.posted_at hands numpy.int64 (a numbers.Integral)."""
+    np = pytest.importorskip("numpy")
+    assert posted_at_datetime(np.int64(20260918)) == datetime(2026, 9, 18)
+    assert posted_at_datetime(np.float64(20260918.0)) == datetime(2026, 9, 18)
 
 
 @pytest.mark.parametrize("value", [
@@ -39,6 +51,12 @@ def test_posted_at_datetime(value, expected):
     -20260918,
     "20261318",             # month 13
     20260230,               # 30 February
+    "1758200000.0",         # DBT-60 send-back: Unix seconds as the str of a float...
+    Decimal("1758200000"),  # ...as a NUMERIC...
+    "+1758200000",          # ...signed
+    "NaN",                  # a number, but no date
+    "Infinity",             # int() of it raises OverflowError, which pydantic would not turn into a refusal
+    float("-inf"),
 ])
 def test_a_number_that_is_not_a_yyyymmdd_is_refused(value):
     """DBT-60: a numeric posted_at is a yyyymmdd or an error, never Unix seconds and 1970."""
@@ -52,10 +70,13 @@ def test_the_dto_reads_the_text_and_float_forms_as_that_day(timestamp):
     assert SitemapDTO(headline="h", link="l", sources="CNBC", timestamp=timestamp).timestamp == datetime(2026, 9, 18)
 
 
-def test_the_dto_refuses_unix_seconds():
+@pytest.mark.parametrize("timestamp", ["1758200000", Decimal("1758200000"), True])
+def test_the_dto_refuses_unix_seconds_and_a_bool(timestamp):
+    """A bool is a numbers.Real too: it must reach pydantic's refusal, not the number path (where
+    Decimal('True') would raise InvalidOperation, which pydantic does not turn into a ValidationError)."""
     from pydantic import ValidationError
     with pytest.raises(ValidationError):
-        SitemapDTO(headline="h", link="l", sources="CNBC", timestamp="1758200000")
+        SitemapDTO(headline="h", link="l", sources="CNBC", timestamp=timestamp)
 
 
 def test_a_stored_int_date_is_that_day_not_unix_seconds():

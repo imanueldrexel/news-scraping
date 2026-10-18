@@ -19,7 +19,7 @@ TOOLKIT = ("repair_boilerplate_bodies", "rechunk_stale_chunks", "settle_out_of_s
 NOT_A_REPAIR_STEP = {"notify_telegram"}
 STEPS = {"crawl_running", "_crawl_running", "parse_until", "too_close", "faiss_dirs", "_faiss_dirs",
          "delete_vectors", "rechunk", "rechunk_articles", "vector_ids_for", "_NoEmbeddings", "NoEmbeddings",
-         "recount_entity_counts"}
+         "recount_entity_counts", "sitemap_state", "_load_state"}
 
 
 def _script_names():
@@ -50,6 +50,37 @@ def test_no_repair_script_imports_another_script():
         if found:
             offenders[name] = found
     assert offenders == {}
+
+
+def test_no_script_imports_a_toolkit_script():
+    """DBT-70 (#332): check_store_consistency -- which the 07:00/19:00 crawl runs in-process -- imported
+    `_load_state` from repair_store_consistency, so a rename inside a repair script would break the
+    scheduled crawl's store check. What every script needs from the toolkit lives in the module."""
+    toolkit = set(TOOLKIT)
+    offenders = {}
+    for name in sorted(_script_names()):
+        found = sorted(set(_imported_modules(os.path.join(SCRIPTS, name + ".py"))) & toolkit)
+        if found:
+            offenders[name] = found
+    assert offenders == {}
+
+
+def test_terminal_has_one_definition():
+    """OPS-25's rule: an articles row is "article"; else rejected_filter or the fetch-failure cap is
+    "terminal"; else "queued"."""
+    from types import SimpleNamespace
+    from unittest.mock import MagicMock
+
+    from newscrawler.core.constants import SITEMAP_MAX_FETCH_FAILURES
+    row = lambda sid, status, fails: SimpleNamespace(sitemap_id=sid, crawl_status=status, fetch_failures=fails)  # noqa: E731
+    session = MagicMock()
+    session.execute.side_effect = [
+        [(1,)],
+        [row(1, "saved", 0), row(2, "rejected_filter", 0), row(3, "pending", SITEMAP_MAX_FETCH_FAILURES),
+         row(4, "pending", SITEMAP_MAX_FETCH_FAILURES - 1)],
+    ]
+    assert store_repair.sitemap_state(session, {1, 2, 3, 4, 5}) == {
+        1: "article", 2: "terminal", 3: "terminal", 4: "queued"}
 
 
 def test_the_module_imports_no_script_and_leaves_sys_path_alone():

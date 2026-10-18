@@ -95,6 +95,14 @@ def test_the_shadow_check_finds_a_repeated_class_and_method():
     assert sorted(_shadowed_names(source)) == ["A x2", "A.t x2"]
 
 
+def test_the_shadow_check_sees_async_definitions():
+    """DBT-71 (#334): an `async def` repeating a sync test replaces it just the same; QA's mutant that
+    dropped AsyncFunctionDef from the check survived the sync-only self-test."""
+    source = ("class T:\n    def test_x(self): pass\n    async def test_x(self): pass\n\n"
+              "async def test_y(): pass\n\ndef test_y(): pass\n")
+    assert sorted(_shadowed_names(source)) == ["T.test_x x2", "test_y x2"]
+
+
 MUTATION_RUNNER = os.path.join(REPO, "scripts", "experiments", "qa_mutation_runner.py")
 
 

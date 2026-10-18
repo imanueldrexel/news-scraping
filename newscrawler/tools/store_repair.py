@@ -73,6 +73,29 @@ ENTITY_FIX_SQL = text("""
 
 # ── Refusals ─────────────────────────────────────────────────────────────────
 
+def sitemap_state(session, sitemap_ids) -> dict:
+    """sitemap_id -> "article" (has an articles row), "terminal" (no row, and settled rejected_filter or at
+    the SITEMAP_MAX_FETCH_FAILURES cap: it can never get one) or "queued". The one definition of
+    "terminal" (OPS-25), read by repair_store_consistency and by check_store_consistency, which the
+    scheduled crawl runs (DBT-70 #332: it used to import this from the repair script). A sitemap_id with
+    no sitemaps row is left out; each caller decides what that means."""
+    from newscrawler.core.constants import SITEMAP_MAX_FETCH_FAILURES
+
+    ids = list(sitemap_ids)
+    art = {r[0] for r in session.execute(text("SELECT sitemap_id FROM articles WHERE sitemap_id = ANY(:i)"),
+                                         {"i": ids})}
+    state = {}
+    for r in session.execute(text("SELECT sitemap_id, crawl_status, fetch_failures FROM sitemaps "
+                                  "WHERE sitemap_id = ANY(:i)"), {"i": ids}):
+        if r.sitemap_id in art:
+            state[r.sitemap_id] = "article"
+        elif r.crawl_status == "rejected_filter" or r.fetch_failures >= SITEMAP_MAX_FETCH_FAILURES:
+            state[r.sitemap_id] = "terminal"
+        else:
+            state[r.sitemap_id] = "queued"
+    return state
+
+
 def crawl_running(session):
     """The `started` crawl rows of the last 4 hours: a manual crawl takes no run lock."""
     return session.execute(text(

@@ -190,9 +190,7 @@ def gather_counts() -> dict:
     same rule check_crawlers.py's own DB calls follow."""
     from sqlalchemy import text
     from newscrawler.infrastructure.network.clients.sqlalchemy_client import SQLAlchemyClient
-
-    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-    from repair_store_consistency import _load_state  # one definition of "terminal" (OPS-25)
+    from newscrawler.tools.store_repair import sitemap_state  # one definition of "terminal" (OPS-25, DBT-70)
 
     l1_ids, l1_problem = _read_level(VECTOR_DB_NAME_L1)
     l2_ids, l2_problem = _read_level(VECTOR_DB_NAME_L2)
@@ -215,7 +213,7 @@ def gather_counts() -> dict:
             text("SELECT COUNT(*) FROM chunks WHERE chunk_level = 2 AND token_count > :m"),
             {"m": CHUNK_MAX_TOKENS}).scalar()
         no_article = (set(l1_ids) | set(l2_ids)) - articles_ids
-        state = _load_state(session, no_article) if no_article else {}
+        state = sitemap_state(session, no_article) if no_article else {}
     # A sitemap row that is gone is terminal too (the repair's own rule).
     terminal = {sid for sid in no_article if state.get(sid, "terminal") == "terminal"}
 

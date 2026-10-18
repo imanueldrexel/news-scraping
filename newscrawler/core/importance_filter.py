@@ -275,6 +275,15 @@ SOURCE_SOFT_LEAVES = {
     "INEWS": frozenset({
         "inews-tv/talkshow",
     }),
+    # SRC-62 (#333): investor.id's money-lab is a personal-finance guides column, the section of each
+    # post-sitemap link (INVESTORID has one branch, so this is a category-level deny, settled before
+    # fetch by SYS-50). 2026-10-19, the 3 newest of 90 stored: "Gaji Pertama Cepat Habis? Ini 6 Cara
+    # Efektif Mengatur Cash Flow", "Penting Bagi Pekerja Muda, Ini 3 Faktor Utama yang Memengaruhi
+    # Credit Score", "Strategi Siapkan Dana Mudik Gen Z"; 22 of the newest 25 are guides, and the probe
+    # already rejected 72 of the 90.
+    "INVESTORID": frozenset({
+        "money-lab",
+    }),
 }
 
 # SYS-35 (#118): the category gate was asymmetric by accident -- a category

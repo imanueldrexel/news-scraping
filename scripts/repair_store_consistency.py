@@ -48,9 +48,11 @@ load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file_
 
 from sqlalchemy import text  # noqa: E402
 
-from newscrawler.core.constants import SITEMAP_MAX_FETCH_FAILURES, VECTOR_DB_NAME_L1, VECTOR_DB_NAME_L2  # noqa: E402
-# DBT-67 (ADR-015): shared with the other store repairs.
-from newscrawler.tools.store_repair import NoEmbeddings as _NoEmbeddings, crawl_running as _crawl_running  # noqa: E402
+from newscrawler.core.constants import VECTOR_DB_NAME_L1, VECTOR_DB_NAME_L2  # noqa: E402
+# DBT-67 (ADR-015): shared with the other store repairs; DBT-70: "terminal" too (OPS-25).
+from newscrawler.tools.store_repair import (  # noqa: E402
+    NoEmbeddings as _NoEmbeddings, crawl_running as _crawl_running, sitemap_state,
+)
 
 logging.basicConfig(format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -115,21 +117,6 @@ def _plan(index_docs, sitemap_state, chunk_rows):
     return {"delete": dict(delete), "insert": insert, "healing": healing, "counts": dict(counts)}
 
 
-def _load_state(session, sitemap_ids):
-    art = {r[0] for r in session.execute(text("SELECT sitemap_id FROM articles WHERE sitemap_id = ANY(:i)"),
-                                         {"i": list(sitemap_ids)})}
-    state = {}
-    for r in session.execute(text("SELECT sitemap_id, crawl_status, fetch_failures FROM sitemaps "
-                                  "WHERE sitemap_id = ANY(:i)"), {"i": list(sitemap_ids)}):
-        if r.sitemap_id in art:
-            state[r.sitemap_id] = "article"
-        elif r.crawl_status == "rejected_filter" or r.fetch_failures >= SITEMAP_MAX_FETCH_FAILURES:
-            state[r.sitemap_id] = "terminal"
-        else:
-            state[r.sitemap_id] = "queued"
-    return state
-
-
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--apply", action="store_true", help="Write the repair (default: dry run)")
@@ -153,7 +140,7 @@ def main(argv=None) -> int:
         chunk_rows = {(r.sitemap_id, r.chunk_level, r.chunk_index): r.embedding_id for r in session.execute(text(
             "SELECT sitemap_id, chunk_level, chunk_index, embedding_id FROM chunks"))}
         all_sids = {k[0] for by_key in index_docs.values() for k in by_key} | {k[0] for k in chunk_rows}
-        state = _load_state(session, all_sids)
+        state = sitemap_state(session, all_sids)
         running = _crawl_running(session)
     p = plan(index_docs, state, chunk_rows)
     for k, v in sorted(p["counts"].items()):

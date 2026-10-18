@@ -4,6 +4,7 @@ sitemap_post.xml, which holds the latest 100 articles, lastmod only (the base cr
 
 Fixture: the live index of 2026-10-12 ~21:10 WIB (fetched with the browser UA that BROWSER_UA_HOSTS
 gives investor.id)."""
+import pytest
 from bs4 import BeautifulSoup
 
 from newscrawler.domain.entities.extraction.url_data import URL
@@ -84,3 +85,43 @@ class TestInvestorIdPlaceholderHeadline:
                 'Menambah&nbsp; Lengkap New CBD Puri"></head></html>')
         assert InvestorIDCrawler._get_page_title(BeautifulSoup(html, "html.parser")) == \
             "Resmi Beroperasi, Universitas Ciputra Menambah Lengkap New CBD Puri"
+
+    def test_a_page_without_og_title_collapses_the_title_tags_gaps_too(self):
+        """DBT-71 (#334): SRC-59 changed both branches; QA's mutant that kept the <title> branch's
+        double spaces survived, since only the og:title branch was tested."""
+        from bs4 import BeautifulSoup
+        html = "<html><head><title>Universitas Ciputra Menambah&nbsp; Lengkap\n  New CBD Puri</title></head></html>"
+        assert InvestorIDCrawler._get_page_title(BeautifulSoup(html, "html.parser")) == \
+            "Universitas Ciputra Menambah Lengkap New CBD Puri"
+
+
+class TestInvestorIdSection:
+    """SRC-62 (#333): the stored category is the link's own section. `re.sub` over `\w+` returned the
+    whole URL for a hyphenated one, which degraded to `news` (90 money-lab rows on 2026-10-19)."""
+
+    @pytest.mark.parametrize("link, section", [
+        ("https://investor.id/money-lab/457694/raffi-ahmad-cari-berkah-dulu-kaya-kemudian", "money-lab"),
+        ("https://investor.id/market/457702/ihsg-dibuka-menguat", "market"),
+        ("https://investor.id/business/457702/medcoenergi-akuisisi-10-hak-partisipasi-eni", "business"),
+    ])
+    def test_the_section_of_an_article_link(self, link, section):
+        assert InvestorIDCrawler._get_branch_name_from_url(link) == section
+        assert InvestorIDCrawler.usable_section_name(section)
+
+    @pytest.mark.parametrize("link", [
+        "https://investor.id/money-lab",                          # no article id
+        "https://investorXid/market/457702/x",                    # the dots are literal
+        "https://example.com/market/457702/x",
+        "",
+    ])
+    def test_anything_else_is_no_section_so_the_branch_name_is_used(self, link):
+        assert InvestorIDCrawler._get_branch_name_from_url(link) is None
+        assert not InvestorIDCrawler.usable_section_name(InvestorIDCrawler._get_branch_name_from_url(link))
+
+    def test_money_lab_is_denied_for_investorid_only(self):
+        """A guides column (3 newest stored titles all soft; sample on SRC-62), so its rows are settled
+        before fetch. Source-scoped, as every SOURCE_SOFT_LEAVES entry (SRC-50)."""
+        from newscrawler.core.importance_filter import SOURCE_SOFT_LEAVES, category_gate
+        assert category_gate("money-lab", "INVESTORID") == "deny"
+        assert category_gate("money-lab", "KONTAN") is None
+        assert InvestorIDCrawler.SOFT_BRANCH_DENY is SOURCE_SOFT_LEAVES["INVESTORID"]

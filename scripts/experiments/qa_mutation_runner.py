@@ -1495,12 +1495,11 @@ M = [
   'from newscrawler.tools.store_repair import backup, crawl_running, delete_vectors, faiss_dirs  # noqa: E402\n'
   'BACKUP_DIR = os.path.join(ROOT, "backups")\n'),
  # Dev 2026-10-12 night: DBT-60 (date rule), SRC-59 (INVESTORID), SYS-91 (FAISS posted_at repair).
+ # DBT-60 send-back (2026-10-19): retargeted to _as_number.
  ('dbt60_str_not_numeric', 'newscrawler/domain/dtos/dataflow/details/site_map_dto.py',
-  'numeric = isinstance(value, (int, float)) or (isinstance(value, str) and value.strip().isdigit())',
-  'numeric = isinstance(value, (int, float))'),
+  '    elif isinstance(value, str):\n        try:', '    elif False:\n        try:'),
  ('dbt60_float_kept_as_float', 'newscrawler/domain/dtos/dataflow/details/site_map_dto.py',
-  'digits = str(int(value)) if isinstance(value, float) and value.is_integer() else str(value).strip()',
-  'digits = str(value).strip()'),
+  'digits = str(int(number)) if number == number.to_integral_value() else ""', 'digits = str(number)'),
  ('dbt60_unix_seconds_pass', 'newscrawler/domain/dtos/dataflow/details/site_map_dto.py',
   '        raise ValueError(f"posted_at {value!r} is not a yyyymmdd date (Unix seconds are never accepted)")',
   '        return value'),
@@ -1549,8 +1548,8 @@ M = [
   'ranked = leaders + [h for h in rest if h.get("sitemap_id") not in led]', 'ranked = leaders + rest'),
  ('qa1013_subject_needs_two', 'newscrawler/web/query_processor.py',
   "for w in kq.subject)}) >= 1\"", "for w in kq.subject)}) >= 2\""),
- ('qa1013_dbt60_no_strip', 'newscrawler/domain/dtos/dataflow/details/site_map_dto.py',
-  'value.strip().isdigit())', 'value.isdigit())'),
+ # qa1013_dbt60_no_strip retired 2026-10-19 (DBT-60 send-back): Decimal() ignores surrounding whitespace
+ # itself, so the strip it removed is gone; ' 20260918\n' stays tested in test_sitemap_dto_dates.py.
  ('qa1013_dbt60_bool_is_a_date', 'newscrawler/domain/dtos/dataflow/details/site_map_dto.py',
   'isinstance(value, (bool, datetime))', 'isinstance(value, datetime)'),
  ('qa1013_sys91_missing_sitemap_written', 'scripts/repair_faiss_posted_at.py',
@@ -2328,6 +2327,27 @@ M = [
   '    root = word.lower()[:-3].rstrip("-")', '    root = word.lower()[:-3]'),
  ('sys194_no_unique_key', 'newscrawler/web/query_processor.py',
   " DESC,\n                     c.chunk_id DESC\n            LIMIT :k", " DESC\n            LIMIT :k"),
+ # DBT-60 send-back (2026-10-19): every numeric form is a yyyymmdd or refused.
+ ('dbt60b_decimal_not_numeric', 'newscrawler/domain/dtos/dataflow/details/site_map_dto.py',
+  '    if isinstance(value, (numbers.Real, Decimal)):', '    if isinstance(value, (int, float)):'),
+ ('dbt60b_infinity_passes', 'newscrawler/domain/dtos/dataflow/details/site_map_dto.py',
+  '    if not number.is_finite():\n        raise', '    if False:\n        raise'),
+ ('dbt60b_fraction_truncated', 'newscrawler/domain/dtos/dataflow/details/site_map_dto.py',
+  'digits = str(int(number)) if number == number.to_integral_value() else ""', 'digits = str(int(number))'),
+ # DBT-70 (#332): "terminal" lives in store_repair; no script imports a toolkit script.
+ ('dbt70_import_from_repair_script', 'scripts/check_store_consistency.py',
+  '    from newscrawler.tools.store_repair import sitemap_state  # one definition of "terminal" (OPS-25, DBT-70)',
+  '    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))\n    from repair_store_consistency import sitemap_state'),
+ ('dbt70_cap_off_by_one', 'newscrawler/tools/store_repair.py',
+  'r.fetch_failures >= SITEMAP_MAX_FETCH_FAILURES', 'r.fetch_failures > SITEMAP_MAX_FETCH_FAILURES'),
+ # SRC-62 (#333): INVESTORID's section by re.match; money-lab denied for INVESTORID.
+ ('src62_re_sub_back', 'newscrawler/infrastructure/datasource/scrapers/investor_id/investorid_crawler.py',
+  '        m = _SECTION.match(url or "")\n        return m.group(1) if m else None',
+  '        return re.sub(r"(https://investor.id/)(\\w+)(/)(.*)", r"\\2", url)'),
+ ('src62_section_any_host', 'newscrawler/infrastructure/datasource/scrapers/investor_id/investorid_crawler.py',
+  '_SECTION = re.compile(r"^https://investor\\.id/([a-z-]+)/\\d+/")', '_SECTION = re.compile(r"/([a-z-]+)/\\d+/")'),
+ ('src62_money_lab_allowed', 'newscrawler/core/importance_filter.py',
+  '    "INVESTORID": frozenset({\n        "money-lab",\n    }),', '    "INVESTORID": frozenset(),'),
 ]
 only = sys.argv[1:]
 # The tests each mutant runs (default: all of tests/unit). QA_MUTANT_TESTS narrows it to the files that

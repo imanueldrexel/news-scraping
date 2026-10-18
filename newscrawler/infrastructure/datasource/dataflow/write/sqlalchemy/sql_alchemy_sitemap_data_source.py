@@ -391,7 +391,7 @@ class SQLAlchemySitemapDataSource:
     def terminal_with_chunks(self, website: str) -> Set[int]:
         """SYS-54 (#185), SYS-57 (#191): this source's sitemaps that can never get
         an article (no articles row, and settled rejected_filter or at the
-        SITEMAP_MAX_FETCH_FAILURES cap: repair_store_consistency._load_state's
+        SITEMAP_MAX_FETCH_FAILURES cap: store_repair.sitemap_state's
         rule, OPS-25) but still have chunk rows, so vectors to remove.
 
         Read from the store, not from what one run settled. "Settled terminal"
