@@ -24,3 +24,7 @@
 ## Levers if the budget gets tight (not chosen)
 - A lower nightly limit (e.g. $0.60): extraction is finance-first, so the knowledge base stays current on finance topics.
 - Pausing extraction: the newsletter and search cost cents a day.
+
+## 2026-10-18 (evening): arcs stay on after the ADR-020 fixes
+- **Owner decision 2026-10-18 (evening): keep `NEWSLETTER_ARCS=1`** for the 10-19 12:00 edition on the new gate code. Grounds: the new code is strictly stricter than what ran live 10-17/10-18 and fails closed to the plain story; the guards raised 0 exceptions on 6,231 real articles (EXPERIMENTS.md, fuzz_gate_on_corpus.py); SYS-152's measurement needs live sebab logs. QA keeps its sentence-by-sentence check; on the first false fact, set 0.
+- Cost check: arc retries are cents (<= 8 calls/day); the day's spend is extraction at its $1.50 cap. Balance ~$4.

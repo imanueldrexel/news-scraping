@@ -1,13 +1,14 @@
 # Project Status
 
 ## Project: NewsAggregator
-**Current Phase:** Story arcs LIVE (NEWSLETTER_ARCS=1). SDE: QA's 10-18 queue done -- 13 tickets ready-for-qa (ADR-020 + time checks). QA's NEWSLETTER_ARCS=0 recommendation stands until QA verifies.
+**Current Phase:** Story arcs LIVE (NEWSLETTER_ARCS=1). SDE: QA's 10-18 queue done -- 13 tickets ready-for-qa (ADR-020 + time checks). Owner 2026-10-18 evening: NEWSLETTER_ARCS stays 1 on the new code (QA checks each edition; 0 on the first false fact).
 **Last Updated:** 2026-10-18 evening by SDE
 **Health:** At Risk (known open arc defects in production: SYS-188/189 P1, SYS-181/186 sent back)
 
 ## Progress
 
 ### SDE 2026-10-18: QA's 10-18 queue -- done, 13 ready-for-qa
+- **Owner decision 2026-10-18 (evening): keep `NEWSLETTER_ARCS=1`** for the 10-19 12:00 edition on the new gate code. Grounds: the new code is strictly stricter than what ran live 10-17/10-18 and fails closed to the plain story; the guards raised 0 exceptions on 6,231 real articles (EXPERIMENTS.md, fuzz_gate_on_corpus.py); SYS-152's measurement needs live sebab logs. QA keeps its sentence-by-sentence check; on the first false fact, set 0.
 - Owner: SYS-188 every word of a half covered; SYS-189 gate with a purpose exemption (membuat/mendorong/menekan); SYS-192 any hedge word.
 - ADR-020 (causal) + architect "2026-10-18 (dev)" (time checks: SYS-186/191/193, SYS-177, SYS-190).
 - [x] SYS-188+181  [x] SYS-189  [x] SYS-185+192  [x] SYS-183+187  [x] SYS-186+191+193  [x] SYS-177  [x] SYS-190  [x] DBT-83 (ac5566a..e3ab148)

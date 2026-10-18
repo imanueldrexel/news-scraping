@@ -29,8 +29,9 @@
 - Moved, one definition each: `story_words.root/meets` (from causal_check), `story_words.is_verb` (from source_check).
 
 ### Owner
+- **Owner decision 2026-10-18 (evening): keep `NEWSLETTER_ARCS=1`** for the 10-19 12:00 edition on the new gate code. Grounds: the new code is strictly stricter than what ran live 10-17/10-18 and fails closed to the plain story; the guards raised 0 exceptions on 6,231 real articles (EXPERIMENTS.md, fuzz_gate_on_corpus.py); SYS-152's measurement needs live sebab logs. QA keeps its sentence-by-sentence check; on the first false fact, set 0.
 - The code is in the working tree the 12:00 job imports: tomorrow's edition runs all of it. Expect more `sebab` retries: SYS-189 gates 8 claims the replays printed unchecked, 5 of them with no backing link.
-- QA's `NEWSLETTER_ARCS=0` recommendation is QA's to lift after verification.
+- SumoPod balance ~$4 (2026-10-18): about 3 days at the $1.50 extraction cap; top-up due ~10-21.
 
 ---
 
