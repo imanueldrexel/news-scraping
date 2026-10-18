@@ -83,7 +83,9 @@ _COPULA = re.compile(r"\b(?:adalah|ialah|yakni|yaitu|merupakan)\b", re.IGNORECAS
 # event ("... penantian panjang setelah Perpres Ojol disebut belum terbit karena ..."); "sejak"/"saat" mostly open
 # a time phrase ("sejak Sabtu siang") and are not boundaries.
 _CONJUNCTION = r"\b(?:tetapi|namun|sementara|sedangkan|meski(?:pun)?|padahal|setelah|sebelum|ketika|usai)\b"
-_BOUNDARY = re.compile(r",(?!\d)|[;:()—–]|\s-\s|" + _CONJUNCTION, re.IGNORECASE)
+_PUNCT = r",(?!\d)|[;:()—–]|\s-\s"
+_BOUNDARY = re.compile(_PUNCT + "|" + _CONJUNCTION, re.IGNORECASE)
+_PUNCTUATION = re.compile(_PUNCT)
 # A source's side ends only where another clause begins: never at a comma, because a source's cause is often a list
 # ("disebabkan oleh tingginya dinamika ekonomi global, konflik geopolitik, serta fluktuasi harga komoditas").
 _SIDE_END = re.compile(r";|" + _CONJUNCTION, re.IGNORECASE)
@@ -118,8 +120,10 @@ _HEDGE = re.compile(r"\b(?:diduga|dugaan|menduga|kemungkinan|mungkin|apakah|dite
 _FRAME_WORDS = frozenset("benar anggapan bantah membantah dibantah tepis menepis ditepis tampik menampik ditampik hoaks "
                          "hoax keliru diduga dugaan menduga kemungkinan mungkin apakah ditengarai disinyalir indikasi "
                          "diindikasikan".split())
-# "yang menurut analis X" names who says it; it is not a fact of either half.
-_ATTRIBUTION = re.compile(r"\b(?:yang\s+)?menurut\s+[^,;]*", re.IGNORECASE)
+# "yang menurut analis X", ", kata Menteri Keuangan Suahasil Nazara" name who says it; that is no fact of either half
+# (the link is checked all the same). The trailing form matters since SYS-187 reads a cause to its last comma item.
+_ATTRIBUTION = re.compile(r"\b(?:yang\s+)?menurut\s+[^,;]*|,\s*(?:kata|ujar|ucap|tutur|ungkap|imbuh)\s+[^,;.]*",
+                          re.IGNORECASE)
 _SENTENCE_END = re.compile(r"(?<=[.!?])\s+|\n+|(?<=[a-z][.!?])(?=[A-Z][a-z])")
 _ELLIPSIS = re.compile(r"\.{3}|…")
 _WORD = re.compile(r"[^\W\d_][\w-]*")
@@ -275,8 +279,15 @@ class Span(NamedTuple):
 
 
 def _prose_side(text: str, from_end: bool) -> Tuple[str, str]:
-    core, widened, _ = _half(_clauses(text), from_end)
-    return core, widened
+    """(core, half) of the prose next to a causal word. Before the word (`from_end`): the clause next to it, widened
+    while short -- "Rupiah melemah, IHSG turun karena ...": the first clause is another fact. After it (SYS-187,
+    ADR-020 decision 7): every comma item up to a clause of its own (a conjunction or ";"), so each item of a list is
+    checked -- "karena dinamika ekonomi global, dan perang dagang AS-China" names two causes."""
+    if from_end:
+        core, widened, _ = _half(_clauses(text), True)
+        return core, widened
+    items = [c.strip() for c in _clauses(_SIDE_END.split(text)[0])]
+    return (items[0] if items else ""), " ".join(items)
 
 
 def _source_side(text: str, from_end: bool) -> Tuple[str, str]:
@@ -302,13 +313,20 @@ def _refers_back(side: str, previous: str) -> bool:
 
 def _fronted(text: str, side) -> Tuple[str, str, str, str]:
     """SYS-183 (#383): (cause, effect, cause core, effect core) of "Karena X, Y" from the text after the causal
-    word. The cause runs to the first clause boundary after which it holds `MIN_HALF_WORDS` content words; with
-    no such boundary the effect cannot be told apart and is empty (the claim fails closed)."""
+    word. The cause runs to the LAST punctuation boundary before the main clause (SYS-183 send-back: in "Karena A, B,
+    dan C, Y" the cause is the list and the effect Y; cut at the first comma, A caused B and C), never past a
+    conjunction, which opens a clause of its own. A boundary counts when the cause before it holds `MIN_HALF_WORDS`
+    content words and something follows it; with none, the effect cannot be told apart and is empty (the claim
+    fails closed)."""
+    end = _SIDE_END.search(text)
+    head = text[:end.start()] if end else text
     # A clause's length counts every content word: "gagal panen" is two, though "gagal" is a negator (SYS-185).
-    cut = next((b for b in _BOUNDARY.finditer(text)
-                if len(story_words.content_words(text[:b.start()])) >= MIN_HALF_WORDS), None)
-    if cut is None:
+    cuts = [b for b in _PUNCTUATION.finditer(head)
+            if len(story_words.content_words(head[:b.start()])) >= MIN_HALF_WORDS
+            and story_words.content_words(head[b.end():])]
+    if not cuts:
         return text.strip(), "", text.strip(), ""
+    cut = cuts[-1]
     cause = text[:cut.start()].strip()
     effect_core, effect = side(text[cut.end():], False)
     return cause, effect, cause, effect_core

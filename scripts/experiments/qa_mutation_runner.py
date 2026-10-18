@@ -2019,7 +2019,7 @@ M = [
  ('sys152_attribution_counted', 'newscrawler/core/causal_check.py',
   '_BOUNDARY.split(_ATTRIBUTION.sub(" ", text))', '_BOUNDARY.split(text)'),
  ('sys152_decimal_comma_splits', 'newscrawler/core/causal_check.py',
-  '_BOUNDARY = re.compile(r",(?!\\d)|', '_BOUNDARY = re.compile(r",|'),
+  '_PUNCT = r",(?!\\d)|', '_PUNCT = r",|'),
  ('sys152_generic_words_count', 'newscrawler/core/causal_check.py',
   '_GENERIC = frozenset("dapat harus mampu ', '_GENERIC = frozenset("mampu '),
  ('sys152_no_tail_match', 'newscrawler/core/causal_check.py',
@@ -2108,7 +2108,18 @@ M = [
   ', **{i: item_source(t) for i, t in chosen.items()}}', '}'),
  # dbt82_threshold_055 retired 2026-10-18 with the share (ADR-020).
  ('dbt82_boundary_no_comma', 'newscrawler/core/causal_check.py',
-  '_BOUNDARY = re.compile(r",(?!\\d)|', '_BOUNDARY = re.compile(r"'),
+  '_PUNCT = r",(?!\\d)|', '_PUNCT = r"'),
+ # SYS-183 send-back + SYS-187 (#388, ADR-020 decision 7): a fronted cause to the LAST punctuation boundary, never past
+ # a conjunction; a prose side after its word over every comma item; a trailing ", kata X" is attribution.
+ ('sys183_first_boundary', 'newscrawler/core/causal_check.py', '    cut = cuts[-1]\n', '    cut = cuts[0]\n'),
+ ('sys183_cut_past_conjunction', 'newscrawler/core/causal_check.py',
+  '    head = text[:end.start()] if end else text\n', '    head = text\n'),
+ ('sys187_first_item_only', 'newscrawler/core/causal_check.py',
+  '    return (items[0] if items else ""), " ".join(items)', '    return (items[0] if items else ""), " ".join(items[:1])'),
+ ('sys187_list_past_conjunction', 'newscrawler/core/causal_check.py',
+  '_clauses(_SIDE_END.split(text)[0])]', '_clauses(text)]'),
+ ('sys187_trailing_attribution_counted', 'newscrawler/core/causal_check.py',
+  '[^,;]*|,\\s*(?:kata|ujar|ucap|tutur|ungkap|imbuh)\\s+[^,;.]*"', '[^,;]*"'),
  # SYS-188 (#389, ADR-020 decision 1): every word of a half is covered; a noun meets its verb (circumfix); time
  # parts and quantifiers weigh nothing.
  ('sys188_share_again', 'newscrawler/core/causal_check.py',
@@ -2153,8 +2164,8 @@ M = [
   '_FRAME_WORDS = frozenset("benar anggapan bantah membantah dibantah tepis menepis ditepis ',
   '_FRAME_WORDS = frozenset("'),
  ('sys185_cut_counts_facts_only', 'newscrawler/core/causal_check.py',
-  '                if len(story_words.content_words(text[:b.start()])) >= MIN_HALF_WORDS), None)',
-  '                if len(_roots(text[:b.start()])) >= MIN_HALF_WORDS), None)'),
+  '            if len(story_words.content_words(head[:b.start()])) >= MIN_HALF_WORDS\n',
+  '            if len(_roots(head[:b.start()])) >= MIN_HALF_WORDS\n'),
  # SYS-192 (#393, ADR-020 decision 6): a hedged link backs only a hedged claim, any hedge word, anywhere in the link.
  ('sys192_hedge_ignored', 'newscrawler/core/causal_check.py', '            and (claim.hedged or not link.hedged)\n', ''),
  ('sys192_hedge_both_ways', 'newscrawler/core/causal_check.py',

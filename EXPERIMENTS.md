@@ -3232,3 +3232,10 @@ SINDONEWS   old 12 new 12 | lost [] | gained []   links identical: True
 - **Result:** replay 9/26 backed before and after: **no stored cause lost**. One trap found by the unit suite: with "gagal" a negator, "Karena gagal panen, ..." had one fact word and the fronted-cause cut never happened; the cut now counts every content word. Denial and hedge words weigh nothing as facts, so "diduga" may stand for "kemungkinan" (owner: any hedge). Unit 3,751 passed; 15 new mutants + the old sys185_* KILLED.
 - **Conclusion / do not repeat:** a word moved into a checked class (negator, hedge) must leave the fact count, and every length test that used the fact count must be re-checked.
 - **Links:** SYS-185 (#385), SYS-192 (#393), ADR-020
+
+### 2026-10-18 — SYS-183 send-back + SYS-187 built (ADR-020 decision 7): reading lists to their end
+- **Question / hypothesis:** a fronted cause cut at its LAST punctuation boundary (never past a conjunction), and a prose half after its causal word read over every comma item, refuse "Karena A, B, dan C, Y" read as A causing B and C, and an invented second cause. Do the replays' true three-cause lists (Defisit, BPIH) survive?
+- **Method:** `causal_check._fronted`, `_prose_side`, `_PUNCT`/`_PUNCTUATION`; `scripts/experiments/sys152/recheck_causes.py`.
+- **Result:** QA's TestSys183FrontedList green; both SYS-187 sentences refused, the true list kept. Replays 9/26 before and after. Trap found before landing: arcs end a cause with ", kata Menteri Keuangan Suahasil Nazara" (v4/v5 10-09); read as a list item, every true claim of that shape would be refused, so a trailing ", kata/ujar/ucap/tutur/ungkap/imbuh X" is attribution, like "menurut X". Unit 3,761 passed; 5 new + 1 retargeted mutants KILLED.
+- **Conclusion / do not repeat:** when a half grows (to a list's end), list what else now falls inside it (attributions, trailing clauses) before landing.
+- **Links:** SYS-183 (#383), SYS-187 (#388), DBT-83 (#395, the tetapi test), ADR-020

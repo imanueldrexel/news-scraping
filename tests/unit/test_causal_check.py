@@ -642,6 +642,56 @@ class TestSys181Anaphor:
         assert cc._refers_back(side, "Defisit APBN 2026 diproyeksikan melebar.") is lends
 
 
+class TestSys183And187Lists:
+    """SYS-183 send-back + SYS-187 (#388, ADR-020 decision 7): a fronted cause runs to the last punctuation boundary;
+    a prose cause (or effect) after its causal word runs over every comma item."""
+
+    FRONTED = "Karena kenaikan suku bunga, pelemahan rupiah, dan arus modal keluar, IHSG anjlok 3 persen."
+
+    def test_a_fronted_list_is_one_cause(self):
+        [link] = cc.causal_spans(self.FRONTED)
+        assert link.effect == "IHSG anjlok 3 persen."
+        assert link.cause == "kenaikan suku bunga, pelemahan rupiah, dan arus modal keluar"
+
+    def test_one_list_item_is_not_the_cause_of_the_others(self):
+        assert kept("IHSG anjlok 3 persen karena kenaikan suku bunga.", self.FRONTED)
+        assert not kept("Kenaikan suku bunga memicu pelemahan rupiah dan arus modal keluar.", self.FRONTED)
+
+    def test_a_fronted_cause_never_runs_past_a_conjunction(self):
+        [link] = cc.causal_spans("Karena hujan deras, jalan ditutup, sementara warga bertahan di rumah.")
+        assert link.cause == "hujan deras" and link.effect == "jalan ditutup"
+
+    DEFISIT = "Defisit melebar karena dinamika ekonomi global."
+
+    @pytest.mark.parametrize("prose", [
+        "Defisit melebar karena dinamika ekonomi global, dan perang dagang Amerika Serikat dengan China.",
+        "Defisit melebar karena dinamika ekonomi global, perang dagang, serta kenaikan suku bunga The Fed."])
+    def test_every_item_of_a_cause_list_is_checked(self, prose):
+        assert not kept(prose, self.DEFISIT)
+
+    def test_a_true_list_is_kept(self):
+        source = "Defisit melebar karena dinamika ekonomi global, konflik geopolitik, serta fluktuasi harga komoditas."
+        assert kept("Defisit melebar karena dinamika ekonomi global, konflik geopolitik, dan fluktuasi harga.", source)
+
+    def test_an_effect_list_after_a_forward_word_is_checked(self):
+        source = "Hujan deras memicu banjir di tiga kecamatan."
+        assert not kept("Hujan deras memicu banjir di tiga kecamatan, longsor, dan pemadaman listrik.", source)
+
+    def test_the_list_ends_at_a_clause_of_its_own(self):
+        [claim] = cc.causal_spans("IHSG turun karena aksi jual asing, sementara rupiah menguat.")
+        assert claim.cause == "aksi jual asing"
+
+    def test_a_trailing_attribution_is_no_item(self):
+        source = "Realisasi naik 2,7 persen, terutama didorong PIP dan KIP Kuliah semester II 2026."
+        assert kept("Realisasi naik 2,7 persen, terutama didorong PIP dan KIP Kuliah semester II 2026, kata Menteri "
+                    "Keuangan Suahasil Nazara.", source)
+
+    def test_a_source_side_stops_at_tetapi(self):
+        """DBT-83 (qa18_side_runs_past_tetapi): "Ekspor naik, tetapi impor turun karena X" says nothing of exports."""
+        assert not kept("Ekspor naik karena harga batu bara melonjak.",
+                        "Ekspor naik, tetapi impor turun karena harga batu bara melonjak.")
+
+
 class TestSys185LexicalNegation:
     """SYS-185 send-back (ADR-020 decision 5): batal/gagal/urung/tanpa negate the next word; a denial before the
     causal word denies the link."""
