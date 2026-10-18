@@ -20,6 +20,7 @@ from typing import Callable, Dict, List, NamedTuple, Optional, Sequence
 from sqlalchemy import text
 
 from newscrawler.core.story_words import STOPWORDS
+from newscrawler.web import nya_words
 
 MAX_TERMS = 12          # a 500-character question is not 60 lookups
 ANCHOR_DF = 0.03        # a word in fewer than 3% of paragraphs selects them
@@ -70,13 +71,20 @@ def terms(question: str, *more: str) -> List[Term]:
     """The questions' content words, in order (`question` first, then `more`), without duplicates, at
     most MAX_TERMS. A name is upper case ("KPK"), holds a digit ("2026"), or is capitalised past the
     first word *of its own question* (SYS-140: in a joined thread every question's capitalised
-    first word, "Kebijakan", would read as a name and become a required anchor)."""
+    first word, "Kebijakan", would read as a name and become a required anchor).
+
+    SYS-146 (#331, ADR-021): a possessive -nya word is its root ("pemimpinnya" -> "pemimpin"): the
+    `simple` configuration indexes the two apart, and the rare clitic form became the question's
+    heaviest required anchor (fts=0). An adverb in -nya ("sebenarnya") is no keyword at all."""
     out: List[Term] = []
     seen = set()
     for one in (question,) + more:
         for m in _TOKEN.finditer(one or ""):
             word = m.group(0).strip(".,-")
             low = word.lower()
+            if low in nya_words.ADVERBS:
+                continue
+            low = nya_words.possessive_root(low) or low
             if len(low) < 2 or low in STOPWORDS or low in QUESTION_WORDS or low in seen or "_" in low:
                 continue
             seen.add(low)

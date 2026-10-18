@@ -57,11 +57,97 @@ class TestRefersBack:
         assert not f.refers_back(question)
 
     @pytest.mark.parametrize("question", [
+        "Apa sebaiknya dilakukan investor?", "Apa sebetulnya masalah utang itu?",
+        "Bagaimana nantinya nasib karyawan?", "Sayangnya, apakah IHSG akan turun lagi?",
+        "Kapan secepatnya dibeli?", "Apakah subsidi sepenuhnya ditanggung?",
+        "Menariknya, apa yang terjadi?", "Pasalnya, siapa yang membayar?",
+    ])
+    def test_the_wider_adverb_list(self, question):
+        """SYS-144 send-back: QA's six held-out adverbs and the corpus-mined sentence adverbs
+        (scripts/experiments/sys144/mine_nya_adverbs.py)."""
+        assert not f.refers_back(question)
+
+    @pytest.mark.parametrize("question", [
         "Apa yang terjadi sesudahnya?", "Bagaimana setelahnya?", "Apa sebaliknya?",
         "Apakah Sritex akhirnya membayar utangnya?",     # an adverb does not hide a real reference
     ])
     def test_words_that_do_point_back_still_do(self, question):
         assert f.refers_back(question)
+
+
+class TestRefersToThread:
+    """ADR-021 (SYS-144/145 send-back): a follow-up points into its thread only when it holds a
+    reference word and names no subject of its own. Pairs from `scripts/experiments/sys144/
+    measure_name_gate.py` (production: on-topic cards per path)."""
+    FED = ["Apa keputusan The Fed terbaru?"]
+    OJK = ["Apa kata OJK soal kredit perbankan?"]
+    IHSG = ["Bagaimana kinerja IHSG hari ini?"]
+
+    @pytest.mark.parametrize("previous, question", [
+        (FED, "Bagaimana dampaknya ke rupiah?"),
+        (["Siapa yang dipanggil KPK pekan ini?"], "Kasusnya tentang apa?"),
+        (["Apa kabar program Makan Bergizi Gratis?"], "Siapa pengelolanya?"),
+    ])
+    def test_a_reference_with_no_name_points_into_the_thread(self, previous, question):
+        assert f.refers_to_thread(question, previous)
+
+    @pytest.mark.parametrize("previous, question", [
+        (OJK, "Bagaimana nantinya nasib karyawan Sritex?"),          # QA held-out: 1/5 -> 5/5
+        (IHSG, "Apa sebetulnya masalah utang Waskita Karya?"),         # 3/5 -> 5/5
+        (IHSG, "Berapa utang Waskita Karya dan kapan jatuh temponya?"),  # ADR-014's risk: 1/5 -> 5/5
+        (OJK, "Apa itu Danantara dan siapa pemimpinnya?"),
+        (["Berapa harga emas Antam hari ini?"], "Siapa CEO Garuda Indonesia dan berapa gajinya?"),
+    ])
+    def test_a_follow_up_that_names_its_own_subject_is_its_own_question(self, previous, question):
+        assert not f.refers_to_thread(question, previous)
+
+    def test_the_rule_does_not_rest_on_the_adverb_list(self):
+        """'selambatnya' is on no list: refers_back is fooled, refers_to_thread is not."""
+        q = "Kapan selambatnya Danantara membeli saham Garuda?"
+        assert f.refers_back(q)
+        assert not f.refers_to_thread(q, self.OJK)
+
+    @pytest.mark.parametrize("previous, question", [
+        (FED, "Bagaimana dampaknya ke IHSG?"),
+        (["Kenapa harga minyak dunia naik?"], "Apa pengaruhnya terhadap Pertamina?"),
+        (["Berapa BI-Rate terbaru?"], "Bagaimana dampaknya bagi saham BBRI?"),
+        (["Kenapa rupiah melemah pekan ini?"], "Apa imbasnya pada Garuda Indonesia?"),
+        (["Apa keputusan OPEC terbaru?"], "Apa dampaknya untuk Pertamina?"),
+        (["Kenapa saham GoTo anjlok?"], "Bagaimana reaksinya di Bursa Efek Indonesia?"),
+    ])
+    def test_a_name_in_an_object_phrase_is_what_the_thread_affects(self, previous, question):
+        assert f.refers_to_thread(question, previous)
+
+    @pytest.mark.parametrize("previous, question", [
+        (OJK, "Apa yang terjadi pada Sritex dan bagaimana nasib karyawannya?"),
+        (["Berapa harga emas Antam hari ini?"], "Bagaimana kabar terbaru di Danantara dan siapa direkturnya?"),
+    ])
+    def test_a_name_in_an_object_phrase_before_the_reference_is_its_antecedent(self, previous, question):
+        """An -nya anaphor points backward: held-out 2/5 -> 5/5 and 0/5 -> 3/5."""
+        assert not f.refers_to_thread(question, previous)
+
+    @pytest.mark.parametrize("previous, question", [
+        (["Bagaimana kasus korupsi timah?"], "Berapa kerugiannya bagi PT Timah?"),
+        (["Bagaimana nasib Sritex?"], "Apakah Sritex akhirnya membayar utangnya?"),
+        (FED, "Bagaimana dampaknya pada Oktober 2026?"),           # a month and a year are no subject
+        (FED, "Apa kata Menteri soal dampaknya?"),                  # nor is a title
+    ])
+    def test_only_a_name_the_thread_lacks_is_a_subject_of_its_own(self, previous, question):
+        assert f.refers_to_thread(question, previous)
+
+    def test_the_first_reference_decides(self):
+        """'dampaknya' has no name before it, so it points into the thread, although the later
+        'pergerakannya' finds IHSG before it."""
+        q = "Bagaimana dampaknya ke IHSG dan apa kata analis soal pergerakannya?"
+        assert f.refers_to_thread(q, self.FED)
+
+    def test_the_accepted_cost(self):
+        """ADR-021: a name before the reference that is not its antecedent reads as the follow-up's
+        own subject. Retrieved alone: 1/5 avtur cards vs 5/5 with the thread."""
+        assert not f.refers_to_thread("Apa kata Garuda soal dampaknya?", ["Kenapa harga avtur naik?"])
+
+    def test_no_reference_is_never_the_thread(self):
+        assert not f.refers_to_thread("Bagaimana dengan Pertamina?", ["Kenapa Garuda Indonesia merugi?"])
 
 
 class TestCheck:
@@ -158,6 +244,25 @@ class TestResolve:
     def test_the_fallback_for_a_new_subject_is_its_own_words(self):
         assert f.resolve("Apa itu Danantara?", self.PREVIOUS, None) == f.Retrieval(
             "Apa itu Danantara?", ("Apa itu Danantara?",), "Apa itu Danantara?", "fallback-own")
+
+    @pytest.mark.parametrize("q", [
+        "Berapa utang Waskita Karya dan kapan jatuh temponya?",   # a real reference, inside: 1/5 -> 5/5
+        "Kapan selambatnya Danantara membeli saham Garuda?",       # an adverb on no list
+    ])
+    @pytest.mark.parametrize("rewritten, how", [("same", "kept"), (None, "fallback-own")])
+    def test_a_switch_that_names_its_own_subject_stays_alone_on_both_paths(self, q, rewritten, how):
+        """ADR-021 (SYS-144/145 send-back): both questions hold a word `refers_back` flags, and both
+        name a subject the thread lacks, so neither is pulled to the OJK thread on either path."""
+        assert f.refers_back(q)
+        r = f.resolve(q, self.PREVIOUS, q if rewritten == "same" else None)
+        assert r == f.Retrieval(q, (q,), q, how)
+
+    @pytest.mark.parametrize("rewritten, how", [("same", "kept-thread"), (None, "fallback-thread")])
+    def test_an_object_name_keeps_the_thread_on_both_paths(self, rewritten, how):
+        fed = ["Apa keputusan The Fed terbaru?"]
+        q = "Bagaimana dampaknya ke IHSG?"
+        r = f.resolve(q, fed, q if rewritten == "same" else None)
+        assert r.how == how and r.text == "Bagaimana dampaknya ke IHSG? Apa keputusan The Fed terbaru?"
 
 
 class TestRewrite:

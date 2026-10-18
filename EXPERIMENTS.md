@@ -177,6 +177,9 @@ One line each; read this before starting on a scraper or pipeline problem.
 - **A story arc's back-story stops being a date-by-date chronicle only when the timeline hands the model the relative phrase to copy (SYS-154, 2026-10-14):** the rewritten rules alone still produced "Kamis (8/10)" for every past fact (4/8 accepted). Showing "(akhir September)" beside each LINI MASA item (`source_check.relative_name`, which the SYS-157 check reads back) got 18/20 accepted and 7.8% date-led sentences (was 72%). Measure with `replay_story_arcs.py` (`style` metrics, `--metrics-from` for an old run). A time check that counts from the edition's date must not read sequence words ("sepekan sebelumnya"). -> 2026-10-14 "re-runs of the arc replay" entry- **Once a prompt asks for relative time, a check keyed on calendar dates goes blind (QA, 2026-10-14):** "Awal Oktober, Polri memutasi 88 perwira." passes SYS-159's tie and SYS-156's caps. Count time anchors (calendar dates + non-"sejak" `relative_times` phrases) when judging whether an arc is a chronicle: v5 is 8/51 time-led, not only 4/51 date-led. -> 2026-10-14 QA entry, SYS-164
 - **A causal claim is checked against ONE link of the quote, by direction, with the sides cut from the source sentences it covers (ADR-019, 2026-10-17):** whole-quote overlap passes reversed, crossed and spanned claims. A place name may stand anywhere in the link's sentence; the event words must be on their side. See the 2026-10-17 ADR-019 log entry.
 
+- **A -nya adverb list cannot be completed, from data or by hand (2026-10-19, SYS-144):** connectives that point back (akibatnya, sebaliknya) look like sentence adverbs in the corpus, and the common adverbs (sebaiknya, secepatnya) rarely open a sentence. Whether a follow-up points into its thread is `followup.refers_to_thread` (ADR-021: names, object phrases, antecedent before the reference); never put the decision back on the list. -> 2026-10-19 ADR-021 entry
+- **RAG probes before SYS-194 (2026-10-19) carry +-1-card noise per question:** the keyword half's ORDER BY had no unique key, so tied paragraphs were cut differently on each run. Compare before/after only on runs from the same code base after it, or the same day with the rule patched in. -> 2026-10-19 SYS-194 entry
+
 ## Log
 
 ### 2026-09-19 — SYS-31 fix: does a category deny-list + off-topic-anchor margin actually fix filter precision?
@@ -3267,3 +3270,40 @@ SINDONEWS   old 12 new 12 | lost [] | gained []   links identical: True
 - **Result:** 2026-10-17: 2,124 articles, 16,992 calls, **0 exceptions**; 2026-10-16: 4,107 articles, 32,856 calls, **0 exceptions**. Today's live 12:00 run (old code): arcs 2/4, one refused by the causal gate itself (an MSCI "karena" no source states), sebab quotes 2/2 verbatim.
 - **Conclusion / do not repeat:** run this before any guard change goes live; a guard bug is an edition outage, not a refused arc.
 - **Links:** ADR-020, SYS-152 (#342), tracker #336
+
+### 2026-10-19 — SYS-194: is the search page's ranking deterministic?
+- **Question / hypothesis:** while measuring SYS-144, the same follow-up scored 1/5 in one column and 0/5 in the next, under the same retrieval text. Does `QueryProcessor.candidates` return the same cards for the same question on the same data?
+- **Method:** production, read-only, no model call. `QueryProcessor.candidates` six times in a row per question (inline repro on #396). Then `probe_rag_rank_breakdown.py --replay --followups --detail 5` twice, diffed.
+- **Result:**
+  - Before: "Apa yang dilakukan BI?" gave **5 different card lists in 6 runs**, and "Bagaimana kasus korupsi Pertamina?" lost its top card once in 4. `fts=20` every time: the keyword half returned a different 20 of its matches.
+  - Cause: `_fts_sql` orders by `keyword_score DESC, ts_rank_cd DESC LIMIT 20`, with no unique last key. Short paragraphs that hold the one anchor tie, and Postgres cuts the ties arbitrarily.
+  - After `, c.chunk_id DESC`: 1 list in 6 runs for each of 3 questions. The replay's 14 search-box questions are identical across two runs. Only the follow-up rows that go through the live rewrite still differ, because the model's rewrite varies.
+- **Conclusion / do not repeat:** every RAG probe before 2026-10-19 carries ±1-card noise per question. Do not read a 1-card difference between two pre-SYS-194 runs as a real change. Any `ORDER BY ... LIMIT` over tie-prone scores needs a unique last key.
+- **Links:** SYS-194 (#396)
+
+### 2026-10-19 — SYS-144/145/146 (ADR-021): can a -nya adverb list be completed, and what decides that a follow-up points into its thread?
+- **Question / hypothesis:**
+  - QA (10-13) found 6 held-out -nya adverbs missing from SYS-144's list. Through ADR-014 they pulled real topic switches to the old thread on the served path (Sritex 4/5 -> 1/5, Waskita 5/5 -> 2/5).
+  - (a) Can the list be completed from the corpus?
+  - (b) Does a structural rule hold where any list fails: "a follow-up that names a subject its thread lacks is its own question"?
+  - (c) SYS-146: "pemimpinnya" was its own rare lexeme and the question's heaviest required anchor (fts=0).
+- **Method:** production, read-only, no model call unless noted.
+  - (a) `scripts/experiments/sys144/mine_nya_adverbs.py`: every -nya word in the newest 20,000 articles, and how often it opens a sentence followed by a comma.
+  - (b) `scripts/experiments/sys144/measure_name_gate.py`: 9 pair sets. The `kept` path is forced by an echoing rewriter, the fallback runs with no rewriter, and the candidate rules are patched into `followup.resolve`. Two held-out sets (`heldout_1018`, `heldout_1018b`) were written before the rule they test first ran; each holds pairs built to break it.
+  - (c) `scripts/experiments/sys146/measure_nya_terms.py`: 10 questions, the -nya rules off ("before") vs on ("now").
+  - After building: QA's `probe_qa_heldout.py B` (real rewriter, $0.0003) and `probe_qa_followup_pairs.py --fallback` ($0.0005).
+- **Result:**
+  - (a) **No.** The opener signal ranks back-pointing connectives first (akibatnya 0.82, sebaliknya 0.77, karenanya 0.36) next to real adverbs (pasalnya 0.83, menariknya 0.81, sayangnya 0.57). QA's sebaiknya (0.00), secepatnya (0.03) and sepenuhnya (absent) almost never open a sentence. The list (now 53 words) was read by hand from it.
+  - (b) Design runs on the old terms, on-topic cards over the sets (before -> candidate):
+    - A plain name gate breaks "Bagaimana dampaknya ke IHSG?": object set 25/30 -> 5/30.
+    - Excluding object phrases (ke/kepada/terhadap/bagi/untuk/pada/di/atas + up to 4 words) gives the object set back (25/30) but loses "terjadi pada Sritex ... pailitnya": held-out #2 12 -> 8/30.
+    - Adding "a name before the reference word is its antecedent" gives held-out #1 23 -> 33/40 and held-out #2 12 -> 16/30. QA's set B goes 20 -> 27/35. Every other set is equal.
+  - (b) After building (new terms, deterministic order; before = the old rule): QA B 22 -> 30/35, held-out #1 28 -> 33/40, held-out #2 12 -> 15/30. Object, QA 10-12b and the three dev sets are equal. Per pair: 8 better, **1 worse**: "Apa kata Garuda soal dampaknya?" after avtur, 5 -> 1. That is ADR-021's accepted cost, a speaker read as the antecedent.
+  - QA's amended Done-when (`probe_qa_heldout.py B`, real rewriter): Sritex REAL 5/5 and KEPT 5/5; Waskita 5/5 and 5/5; Garuda-sebaiknya REAL 3 and KEPT 2 = ALONE 2 (ALONE was 3 in QA's run). Every switch has REAL >= ALONE, and the Fed pair is 5/5 on every path.
+  - (c) 29 -> 36 on-topic cards, none worse: "Apa itu Danantara dan siapa pemimpinnya?" 0/5 fts=0 -> 3/5 fts=20; "Apa yang sebenarnya terjadi pada Garuda Indonesia?" 3 -> 5 (the adverb was an anchor). "Siapa pemimpinnya Danantara?" builds the same anchors as "Siapa pemimpin Danantara?" and goes 0 -> 2/5. The semantic half keeps it below 3, which is SYS-195. The replay's 14 questions are byte-identical before and after.
+  - Unit tests 3,879 pass. All 22 new or retargeted follow-up/keyword mutants are KILLED: sys144b_*, sys146_*, sys194_*, the retargeted sys144/sys145/sys104/qa1013. Two of them (`sys144b_kept_path_lexical`, `sys144b_fallback_lexical`) survived the first test set, because its resolve test used an adverb that is now on the list.
+- **Conclusion / do not repeat:**
+  - Do not try to finish the -nya adverb list from corpus statistics: connectives that point back look like adverbs.
+  - The follow-up decision rests on structure: a new name not in an object phrase, or one before the reference word, is the follow-up's own subject. The list only covers a follow-up that names nothing.
+  - A resolve-level test must use a word the list does not hold, or it cannot tell the structural rule from the list.
+- **Links:** ADR-021; SYS-144 (#327), SYS-145 (#328), SYS-146 (#331), SYS-195 (#397)

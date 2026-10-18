@@ -4,14 +4,18 @@ A follow-up (a turn whose session already holds a question) is rewritten by one 
 standalone question: "Kasusnya tentang apa?" after "Siapa yang dipanggil KPK pekan ini?" becomes a
 question about the KPK cases, while "Apa itu Danantara?" after an OJK question stays as it is. The
 rewrite is then retrieved exactly as a search-box question. A rewrite equal to the follow-up
-("kept") of a follow-up that refers back is retrieved with the thread, as the fallback is (SYS-145,
-ADR-014).
+("kept") of a follow-up that refers to its thread is retrieved with the thread, as the fallback is
+(SYS-145, ADR-014).
 
 Without a usable rewrite (no provider, the page's daily cap, a timeout, an error, an output that
 fails `check`: several lines, a refusal, a list), the fallback is deterministic:
-  - a follow-up that refers back (`refers_back`) is retrieved on its own words plus the thread, its
-    keyword terms taken question by question, its recency cue from its own words only;
+  - a follow-up that refers to its thread (`refers_to_thread`) is retrieved on its own words plus the
+    thread, its keyword terms taken question by question, its recency cue from its own words only;
   - any other follow-up is retrieved on its own words.
+
+A follow-up refers to its thread when it holds a reference word and names no subject of its own
+(ADR-021): "Bagaimana dampaknya ke rupiah?" after The Fed does; "Bagaimana nantinya nasib karyawan
+Sritex?" after OJK does not, whichever adverb it holds.
 
 Everything here is pure except `rewrite`, which makes the call and never raises.
 """
@@ -19,6 +23,9 @@ import logging
 import re
 import time
 from typing import Callable, NamedTuple, Optional, Sequence, Tuple
+
+from newscrawler.core import story_words
+from newscrawler.web import nya_words
 
 logger = logging.getLogger(__name__)
 
@@ -28,18 +35,15 @@ REWRITE_MAX_CHARS = 300         # a longer "question" is an answer or a list, no
 ALONE, LLM, KEPT, KEPT_THREAD = "alone", "llm", "kept", "kept-thread"
 FALLBACK_THREAD, FALLBACK_OWN = "fallback-thread", "fallback-own"
 
-# A word that points back into the conversation. "-nya" is the usual Indonesian back-reference
-# ("pertumbuhannya", "buyback-nya"); a few common words merely end in it. "itu" is not one: "Apa
-# itu Danantara?" names its own subject.
-# SYS-144 (#327): adverbs ending in -nya have no referent ("Bagaimana nasib Sritex selanjutnya?").
-# A list, not a se-...-nya pattern: "sesudahnya", "setelahnya" and "sebaliknya" do point back.
-_NOT_REFERENCES = frozenset({
-    "hanya", "punya", "tanya", "bertanya",
-    "sebenarnya", "sesungguhnya", "selanjutnya", "sebelumnya", "biasanya", "akhirnya", "misalnya",
-    "khususnya", "terutamanya", "sepertinya", "tampaknya", "nampaknya", "kelihatannya", "rupanya",
-    "agaknya", "seharusnya", "semestinya", "setidaknya", "sekurangnya", "umumnya", "tentunya", "katanya",
-})
+# A word that points back into the conversation: a pronoun, "tersebut", or a -nya word that is
+# neither an adverb nor a non-clitic (`nya_words`, SYS-144). "itu" is not one: "Apa itu Danantara?"
+# names its own subject.
 _REFERENCE = re.compile(r"\b(?:dia|ia|mereka|beliau|tersebut)\b|\b[\w-]+nya\b", re.IGNORECASE)
+# ADR-021: a name in one of these phrases is what the thread's event affects ("Bagaimana dampaknya
+# ke IHSG?"), not the follow-up's own subject -- unless a reference word follows it. The phrase is
+# the preposition and up to 4 words. Measured on two pair sets (EXPERIMENTS.md 2026-10-19).
+_OBJECT_PHRASE = re.compile(r"\b(?:ke|kepada|terhadap|bagi|untuk|pada|di|atas)\s+((?:\S+\s+){0,3}\S+)",
+                            re.IGNORECASE)
 _LABEL = re.compile(r"^(?:pertanyaan(?:\s+(?:hasil|baru|lengkap))?|hasil)\s*:\s*", re.IGNORECASE)
 _QUOTES = "\"'“”‘’`"
 # SYS-143 (#326): a refusal or a list item is one short line too, and must not be searched
@@ -63,11 +67,43 @@ def previous_questions(history: Sequence[dict]) -> list:
     return asked[-FOLLOWUP_CONTEXT_TURNS:]
 
 
+def _references(question: str) -> list:
+    """The reference words of `question`, in order: pronouns, "tersebut" and -nya words that point
+    at something (no adverb, no "hanya")."""
+    return [m for m in _REFERENCE.finditer(question or "")
+            if not m.group(0).lower().endswith("nya") or nya_words.is_reference(m.group(0))]
+
+
 def refers_back(question: str) -> bool:
-    for m in _REFERENCE.finditer(question or ""):
-        if m.group(0).lower() not in _NOT_REFERENCES:
-            return True
-    return False
+    """The follow-up holds a word that points back. Whether it points into the THREAD is
+    `refers_to_thread`: the follow-up may hold its own antecedent."""
+    return bool(_references(question))
+
+
+def refers_to_thread(question: str, previous: Sequence[str]) -> bool:
+    """ADR-021: the follow-up holds a reference word and names no subject of its own.
+
+    Its own subject is a name the thread's words do not hold (`story_words.names`: an acronym, or
+    capitalised where no sentence starts). A name in an object phrase ("Bagaimana dampaknya ke
+    IHSG?") is what the thread's event affects, unless it stands before the first reference word: an
+    -nya anaphor points backward, so "Apa yang terjadi pada Sritex dan bagaimana nasib
+    karyawannya?" holds its own antecedent. A reference with no new name before it is unresolved
+    inside the follow-up, so it points into the thread.
+
+    Accepted cost: a name before the reference that is not its antecedent ("Apa kata Garuda soal
+    dampaknya?" after avtur) reads as the follow-up's own subject."""
+    refs = _references(question)
+    if not refs:
+        return False
+    thread = story_words.vocabulary(" ".join(previous))
+    if not story_words.names(question) - thread:
+        return True
+    outside = list(question)
+    for m in _OBJECT_PHRASE.finditer(question):
+        outside[m.start(1):m.end(1)] = " " * (m.end(1) - m.start(1))
+    if story_words.names("".join(outside)) - thread:
+        return False
+    return not story_words.names(question[:refs[0].start()]) - thread
 
 
 def prompt(question: str, previous: Sequence[str]) -> str:
@@ -118,18 +154,18 @@ def resolve(question: str, previous: Sequence[str], rewritten: Optional[str]) ->
     """The retrieval for a follow-up, given the checked rewrite (None when there is none).
 
     A rewrite equal to the follow-up means the model judged that it stands alone. If the follow-up
-    still refers back ("Bagaimana dampaknya ke rupiah?" after The Fed), the thread is used anyway
-    (SYS-145, ADR-014): the model took the object for the subject."""
+    still refers to its thread ("Bagaimana dampaknya ke rupiah?" after The Fed), the thread is used
+    anyway (SYS-145, ADR-014): the model took the object for the subject."""
     q = question.strip()
     if not previous:
         return alone(q)
     if rewritten is not None:
         if " ".join(rewritten.split()).lower() != " ".join(q.split()).lower():
             return Retrieval(rewritten, (rewritten,), rewritten, LLM)
-        if refers_back(q):
+        if refers_to_thread(q, previous):
             return _with_thread(q, previous, KEPT_THREAD)
         return Retrieval(rewritten, (rewritten,), rewritten, KEPT)
-    if refers_back(q):
+    if refers_to_thread(q, previous):
         return _with_thread(q, previous, FALLBACK_THREAD)
     return Retrieval(q, (q,), q, FALLBACK_OWN)
 

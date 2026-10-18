@@ -12,7 +12,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from newscrawler.web import keywords
+from newscrawler.web import keywords, nya_words
 from newscrawler.web.filters import Filters
 from newscrawler.web.keywords import DocFrequency, KeywordQuery, Term, terms
 from newscrawler.web.query_processor import QueryProcessor
@@ -58,6 +58,54 @@ class TestTerms:
         assert [t.word for t in terms("BI-Rate 5,75%?")] == ["bi-rate", "5,75"]
 
 
+class TestNyaWords:
+    """SYS-146 (#331, ADR-021): a possessive -nya is matched by its root; an adverb in -nya is no
+    keyword. 'Apa itu Danantara dan siapa pemimpinnya?' had anchors [danantara, pemimpinnya], fts=0
+    and 0/5 Danantara cards; with the root, fts=20 (scripts/experiments/sys146/measure_nya_terms.py)."""
+
+    def test_the_clitic_and_the_plain_form_build_the_same_anchors(self):
+        """The ticket's Done-when."""
+        df = {"pemimpin": 0.004, "danantara": 0.002}
+        a = KeywordQuery.build(terms("Siapa pemimpinnya Danantara?"), df)
+        b = KeywordQuery.build(terms("Siapa pemimpin Danantara?"), df)
+        assert a.anchors == b.anchors == ["pemimpin", "danantara"]
+
+    @pytest.mark.parametrize("question, words", [
+        ("Apa itu Danantara dan siapa pemimpinnya?", ["danantara", "pemimpin"]),
+        ("Siapa pemilik Sritex dan berapa utangnya?", ["pemilik", "sritex", "utang"]),
+        ("Kalau harga buyback-nya berapa?", ["kalau", "harga", "buyback"]),
+        ("Apa itu BPJS Kesehatan dan berapa iurannya?", ["bpjs", "kesehatan", "iuran"]),
+    ])
+    def test_a_possessive_is_its_root(self, question, words):
+        assert [t.word for t in terms(question)] == words
+
+    def test_an_adverb_in_nya_is_no_keyword(self):
+        """It was an anchor of 'Apa yang sebenarnya terjadi pada Garuda Indonesia?' (need 2): 3/5 -> 5/5."""
+        assert [t.word for t in terms("Apa yang sebenarnya terjadi pada Garuda Indonesia?")] == [
+            "terjadi", "garuda", "indonesia"]
+
+    @pytest.mark.parametrize("word", ["Kenya", "hanya", "punya", "tanya"])
+    def test_a_word_that_merely_ends_in_nya_is_kept(self, word):
+        """'Kenya' would leave 2 letters; 'hanya' is not a clitic."""
+        assert nya_words.possessive_root(word) is None
+
+    def test_the_adverbs_are_defined_once(self):
+        """One definition (ADR-021): followup and keywords both read nya_words; no module of the web
+        package keeps its own collection of -nya adverbs."""
+        import ast
+        import os
+        web = os.path.dirname(keywords.__file__)
+        holders = []
+        for f in sorted(os.listdir(web)):
+            if f.endswith(".py"):
+                tree = ast.parse(open(os.path.join(web, f), encoding="utf-8").read())
+                if any(isinstance(n, (ast.Set, ast.List, ast.Tuple))
+                       and any(isinstance(e, ast.Constant) and e.value == "sebenarnya" for e in n.elts)
+                       for n in ast.walk(tree)):
+                    holders.append(f)
+        assert holders == ["nya_words.py"]
+
+
 class TestTermsOfSeveralQuestions:
     """SYS-140 (#322): a follow-up's thread is passed question by question. A name is judged within
     its own question, so an earlier question's capitalised first word is not one."""
@@ -72,7 +120,7 @@ class TestTermsOfSeveralQuestions:
 
     def test_order_first_question_first_and_duplicates_once(self):
         got = [t.word for t in terms("Dampaknya ke kredit?", "Kredit OJK naik?")]
-        assert got == ["dampaknya", "kredit", "ojk", "naik"]
+        assert got == ["dampak", "kredit", "ojk", "naik"]       # SYS-146: a possessive is its root
 
     def test_at_most_max_terms_across_questions(self):
         first = " ".join(f"satu{i}x" for i in range(8))
@@ -317,6 +365,16 @@ class TestFtsSearch:
         assert ") > 0.9999 THEN s.posted_at END DESC NULLS LAST, ts_rank_cd(" in order
         _search(qp, BI, recent=False)
         assert "s.posted_at END" not in calls[1][0]
+
+    @pytest.mark.parametrize("recent", [False, True])
+    def test_the_order_ends_in_the_paragraphs_id(self, recent):
+        """SYS-194 (#396): ties on coverage and ts_rank_cd beyond `k` were cut differently on each run
+        ("Apa yang dilakukan BI?": 5 card sets in 6 runs). A unique last key makes the cut repeatable."""
+        qp, calls = _qp()
+        _search(qp, BI, recent=recent)
+        sql = " ".join(calls[0][0].split())
+        order = sql[sql.index("ORDER BY"):sql.index("LIMIT")]
+        assert order.rstrip().endswith("DESC, c.chunk_id DESC")
 
 
 class TestCoverage:

@@ -337,7 +337,9 @@ class QueryProcessor:
         Equal coverage is broken by `ts_rank_cd` (ADR-006 measured newest-first there: it let
         off-topic recent paragraphs in). For a question that asks for the latest news (SYS-107)
         the newest of the paragraphs that hold every word come first: a daily story has hundreds
-        of them and the rank among them is arbitrary."""
+        of them and the rank among them is arbitrary. The paragraph's id comes last (SYS-194 #396):
+        without a unique key, tied paragraphs beyond `k` were cut differently on each run, and the
+        same question got other cards."""
         start_day, end_day = filters.bounds(today)
         score, has, params = cls._word_tests(kq, "c.fts_vector")
         params.update({"k": k, "anchors": " | ".join(keywords.lexeme(w) for w in kq.anchors), "need": kq.need})
@@ -361,7 +363,8 @@ class QueryProcessor:
               AND c.chunk_level = 2
               {rule}
               {where}
-            ORDER BY keyword_score DESC, {newest}ts_rank_cd(c.fts_vector, to_tsquery('simple', :anchors)) DESC
+            ORDER BY keyword_score DESC, {newest}ts_rank_cd(c.fts_vector, to_tsquery('simple', :anchors)) DESC,
+                     c.chunk_id DESC
             LIMIT :k
         """)
         return sql, params
