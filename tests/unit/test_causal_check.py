@@ -642,6 +642,57 @@ class TestSys181Anaphor:
         assert cc._refers_back(side, "Defisit APBN 2026 diproyeksikan melebar.") is lends
 
 
+class TestSys185LexicalNegation:
+    """SYS-185 send-back (ADR-020 decision 5): batal/gagal/urung/tanpa negate the next word; a denial before the
+    causal word denies the link."""
+
+    @pytest.mark.parametrize("negator", ["batal", "gagal", "urung"])
+    def test_a_lexical_negator_must_agree(self, negator):
+        source = f"Harga BBM {negator} naik karena subsidi energi ditambah."
+        assert not kept("Harga BBM naik karena subsidi energi ditambah.", source)
+        assert kept(f"Harga BBM {negator} naik karena subsidi energi ditambah.", source)
+
+    def test_tanpa_negates_its_noun(self):
+        source = "Proyek itu berjalan tanpa izin karena pengawasan lemah."
+        assert not kept("Proyek itu berjalan dengan izin karena pengawasan lemah.", source)
+        assert kept("Proyek itu berjalan tanpa izin karena pengawasan lemah.", source)
+
+    @pytest.mark.parametrize("frame", ["menyatakan tidak benar", "membantah", "menepis anggapan bahwa", "menampik"])
+    def test_a_denied_link_backs_only_a_denial(self, frame):
+        source = f"Kemenkeu {frame} harga BBM naik karena utang Pertamina membengkak."
+        assert not kept("Harga BBM naik karena utang Pertamina membengkak.", source)
+        assert kept(f"Kemenkeu {frame} harga BBM naik karena utang Pertamina membengkak.", source)
+
+    def test_a_denial_may_be_written_in_other_words(self):
+        """Denial words are checked by the denial rule, never as facts of the half."""
+        source = "Kemenkeu membantah harga BBM naik karena utang Pertamina membengkak."
+        assert kept("Kemenkeu menepis harga BBM naik karena utang Pertamina membengkak.", source)
+
+    def test_gagal_panen_still_fronts_a_cause(self):
+        [span] = cc.causal_spans("Karena gagal panen, harga beras melonjak di Jawa.")
+        assert span.cause == "gagal panen"
+
+
+class TestSys192Hedges:
+    """SYS-192 (#393, ADR-020 decision 6): a hedged link backs only a hedged claim; any hedge word will do (owner)."""
+
+    FLAT = "Kebakaran gudang itu dipicu korsleting listrik."
+
+    @pytest.mark.parametrize("source", ["Kebakaran gudang itu diduga dipicu korsleting listrik.",
+                                        "Polisi menyelidiki apakah kebakaran gudang itu dipicu korsleting listrik.",
+                                        "Kebakaran gudang itu ditengarai dipicu korsleting listrik.",
+                                        "Kebakaran gudang itu dipicu kemungkinan korsleting listrik."])
+    def test_a_hedged_link_does_not_back_a_flat_claim(self, source):
+        assert not kept(self.FLAT, source)
+
+    def test_any_hedge_word_carries_it(self):
+        assert kept("Kebakaran gudang itu diduga dipicu korsleting listrik.",
+                    "Kebakaran gudang itu kemungkinan dipicu korsleting listrik.")
+
+    def test_a_claim_may_hedge_a_flat_link(self):
+        assert kept("Kebakaran gudang itu diduga dipicu korsleting listrik.", self.FLAT)
+
+
 class TestSys189MarketVerbs:
     """SYS-189 (#390, ADR-020 decision 4): the causal verbs of market copy are causal words with a direction;
     membuat/mendorong/menekan are none after a purpose word (owner, 2026-10-18: "Gate, exempt purpose")."""

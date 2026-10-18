@@ -100,10 +100,24 @@ _GENERIC = frozenset("dapat harus mampu perlu tengah sedang kini semula sempat k
 # pertengahan September", replay 10-08; "Sebanyak 15 penerbangan dibatalkan").
 _TIME_WORDS = frozenset("awal pertengahan akhir pagi siang sore malam kemarin "
                         "sebanyak sejumlah setidaknya sedikitnya hampir total".split())
-_NEGATORS = frozenset({"tidak", "tak", "bukan", "belum"})        # checked by negation_agrees, never as a fact
+# Checked by negation_agrees, never as a fact. SYS-185 (#385): "batal / gagal / urung naik" and "tanpa" negate the
+# next word as "tidak" does (1.6% of the corpus's causal sentences hold one).
+_NEGATORS = frozenset({"tidak", "tak", "bukan", "belum", "batal", "gagal", "urung", "tanpa"})
 # Skipped between a negator and the word it negates: "tak kunjung terbit", "tidak hanya", "belum juga".
 _NEGATION_SKIP = _GENERIC | frozenset("kunjung pernah lagi juga pula akan bisa boleh hanya semata terlalu".split())
 _NEGATED_LINK = re.compile(r"\b(?:tidak|tak|bukan|belum)\s*$", re.IGNORECASE)     # "bukan karena"
+# SYS-185: a denial before the causal word denies the link itself, as "bukan karena" does: "Kemenkeu membantah /
+# menepis anggapan bahwa / menyatakan tidak benar harga BBM naik karena ..." (0.3% of the corpus's causal sentences).
+_DENIAL = re.compile(r"\b(?:tidak\s+benar|(?:mem|di)bantah|(?:me|di)nepis|(?:di|me)nampik|hoa(?:ks|x)|keliru)\b",
+                     re.IGNORECASE)
+# SYS-192 (#393): a hedge anywhere in the link makes it a suspicion or a question (4.6% of the causal sentences).
+_HEDGE = re.compile(r"\b(?:diduga|dugaan|menduga|kemungkinan|mungkin|apakah|ditengarai|disinyalir|indikasi|"
+                    r"diindikasikan)\b", re.IGNORECASE)
+# The words of a denial or a hedge are checked by those rules, never as facts: a claim may write "diduga" for its
+# source's "kemungkinan" (owner, 2026-10-18: "Any hedge word"), or "menepis" for "membantah".
+_FRAME_WORDS = frozenset("benar anggapan bantah membantah dibantah tepis menepis ditepis tampik menampik ditampik hoaks "
+                         "hoax keliru diduga dugaan menduga kemungkinan mungkin apakah ditengarai disinyalir indikasi "
+                         "diindikasikan".split())
 # "yang menurut analis X" names who says it; it is not a fact of either half.
 _ATTRIBUTION = re.compile(r"\b(?:yang\s+)?menurut\s+[^,;]*", re.IGNORECASE)
 _SENTENCE_END = re.compile(r"(?<=[.!?])\s+|\n+|(?<=[a-z][.!?])(?=[A-Z][a-z])")
@@ -149,8 +163,8 @@ _root = story_words.root
 
 
 def _weighs(word: str) -> bool:
-    """A content word that is a fact of a half: not a modal, frame, negator or time-part word."""
-    return word not in _GENERIC and word not in _NEGATORS and word not in _TIME_WORDS
+    """A content word that is a fact of a half: not a modal, frame, negator, denial, hedge or time-part word."""
+    return word not in _GENERIC and word not in _NEGATORS and word not in _FRAME_WORDS and word not in _TIME_WORDS
 
 
 def _roots(text: str) -> set:
@@ -231,7 +245,8 @@ def _half(clauses: List[str], from_end: bool) -> Tuple[str, str, int]:
 
 class Span(NamedTuple):
     """One causal word with the cause and the effect it links. `*_core` is the clause right next to the causal word
-    (the whole side, in a source). `cause_first` is the reading order; `negated` is a denied link ("bukan karena")."""
+    (the whole side, in a source). `cause_first` is the reading order; `negated` is a denied link ("bukan karena",
+    "membantah ... karena"); `hedged` a suspected or asked one ("diduga dipicu", "apakah ... dipicu")."""
     sentence: str
     word: str
     cause: str
@@ -240,6 +255,7 @@ class Span(NamedTuple):
     effect_core: str
     cause_first: bool
     negated: bool
+    hedged: bool
 
     @property
     def before(self) -> str:
@@ -288,7 +304,9 @@ def _fronted(text: str, side) -> Tuple[str, str, str, str]:
     """SYS-183 (#383): (cause, effect, cause core, effect core) of "Karena X, Y" from the text after the causal
     word. The cause runs to the first clause boundary after which it holds `MIN_HALF_WORDS` content words; with
     no such boundary the effect cannot be told apart and is empty (the claim fails closed)."""
-    cut = next((b for b in _BOUNDARY.finditer(text) if len(_roots(text[:b.start()])) >= MIN_HALF_WORDS), None)
+    # A clause's length counts every content word: "gagal panen" is two, though "gagal" is a negator (SYS-185).
+    cut = next((b for b in _BOUNDARY.finditer(text)
+                if len(story_words.content_words(text[:b.start()])) >= MIN_HALF_WORDS), None)
     if cut is None:
         return text.strip(), "", text.strip(), ""
     cause = text[:cut.start()].strip()
@@ -320,15 +338,18 @@ def _cut(sents: List[str], i: int, m, source: bool) -> Span:
     side = _source_side if source else _prose_side
     if kind == BACKWARD and _THEREFORE.match(after_text):                          # "karena itu, ..."
         kind = FORWARD
-    negated = bool(_NEGATED_LINK.search(before_text))
+    # SYS-185: "bukan karena" right before the word, or a denial earlier in the link ("Kemenkeu membantah ... naik
+    # karena ..."). SYS-192: a hedge anywhere in the link ("diduga dipicu", "menyelidiki apakah ... dipicu").
+    negated = bool(_NEGATED_LINK.search(before_text) or _DENIAL.search(before_text))
+    hedged = bool(_HEDGE.search(sentence[left:right]))
     before_core, before = side(before_text, True)
     if not _roots(before) and word.lower() in _NOUNS:                              # "Penyebab X adalah Y"
         copula = _COPULA.search(after_text)
         effect = after_text[:copula.start()].strip() if copula else ""
         cause = after_text[copula.end():].strip() if copula else ""
-        return Span(sentence, word, cause, effect, cause, effect, False, negated)
+        return Span(sentence, word, cause, effect, cause, effect, False, negated, hedged)
     if kind == BACKWARD and not _roots(before) and word.lower() not in _REFERS_BACK:
-        return Span(sentence, word, *_fronted(after_text, side), True, negated)
+        return Span(sentence, word, *_fronted(after_text, side), True, negated, hedged)
     after_core, after = side(after_text, False)
     # A side that only points back ("Akibatnya,", "Hal ini menyebabkan") is the sentence before it. A source side
     # that names its subject by an anaphor ("Peningkatan proyeksi defisit tersebut disebabkan") takes that sentence
@@ -339,8 +360,8 @@ def _cut(sents: List[str], i: int, m, source: bool) -> Span:
     elif previous and source and (len(_roots(before)) < MIN_HALF_WORDS or _refers_back(before, previous)):
         before_core = before = f"{previous} {before}"
     if kind == FORWARD:
-        return Span(sentence, word, before, after, before_core, after_core, True, negated)
-    return Span(sentence, word, after, before, after_core, before_core, False, negated)
+        return Span(sentence, word, before, after, before_core, after_core, True, negated, hedged)
+    return Span(sentence, word, after, before, after_core, before_core, False, negated, hedged)
 
 
 def causal_spans(text: str) -> List[Span]:
@@ -372,8 +393,10 @@ def _covers(half: str, side: str, other_side: str, sentence: str) -> bool:
 
 def supports(link: Span, claim: Span) -> bool:
     """`link` (a causal word of a quoted source) backs `claim`: effect to effect side, cause to cause side, the
-    negations agreeing (ADR-019)."""
+    negations agreeing (ADR-019), and a hedged link only a hedged claim (SYS-192, ADR-020 decision 6, owner: any
+    hedge word). A claim may hedge what its source states flatly: that understates, it never invents."""
     return (link.negated == claim.negated
+            and (claim.hedged or not link.hedged)
             and _covers(claim.effect, link.effect, link.cause, link.sentence)
             and negation_agrees(claim.effect, link.effect)
             and _covers(claim.cause, link.cause, link.effect, link.sentence)

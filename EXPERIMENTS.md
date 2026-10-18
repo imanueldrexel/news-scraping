@@ -3225,3 +3225,10 @@ SINDONEWS   old 12 new 12 | lost [] | gained []   links identical: True
 - **Result:** causal words in the replays 18 -> **26** (8 new). New ones backed by a source link: **3** (gempa "membuat warga berhamburan", "dipengaruhi pernyataan pejabat The Fed", "seiring penurunan ekspektasi"). Refused: **5** ("didorong PIP dan KIP Kuliah" ×2, "membuat 672 orang mengungsi", "membuat jarak pandang turun", "tekanan eksternal ... membuat"): claims printed with no source stating the link. All 5 "mendorong" (purpose) stay free. Totals: 9 backed / 17 refused (group 1 alone: 6/12). Unit 3,735 passed; 17 sys189 + 17 related mutants KILLED.
 - **Conclusion / do not repeat:** the market verbs were the larger half of the arcs' causal language; gate them. Keep menyusul/tertekan out of the table.
 - **Links:** SYS-189 (#390), ADR-020
+
+### 2026-10-18 — SYS-185 send-back + SYS-192 built (ADR-020 decisions 5, 6): do polarity and hedge rules cost any stored cause?
+- **Question / hypothesis:** batal/gagal/urung/tanpa as negators, a denial frame before the causal word (tidak benar, membantah, menepis, menampik, hoaks, keliru) denying the link, and a hedge anywhere in the link requiring a hedge in the claim refuse QA's 9 shapes. Do they refuse any true stored cause?
+- **Method:** `causal_check._NEGATORS/_DENIAL/_HEDGE/_FRAME_WORDS`, `Span.hedged`; `scripts/experiments/sys152/recheck_causes.py`.
+- **Result:** replay 9/26 backed before and after: **no stored cause lost**. One trap found by the unit suite: with "gagal" a negator, "Karena gagal panen, ..." had one fact word and the fronted-cause cut never happened; the cut now counts every content word. Denial and hedge words weigh nothing as facts, so "diduga" may stand for "kemungkinan" (owner: any hedge). Unit 3,751 passed; 15 new mutants + the old sys185_* KILLED.
+- **Conclusion / do not repeat:** a word moved into a checked class (negator, hedge) must leave the fact count, and every length test that used the fact count must be re-checked.
+- **Links:** SYS-185 (#385), SYS-192 (#393), ADR-020
