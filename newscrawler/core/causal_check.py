@@ -48,10 +48,31 @@ _KINDS = {
     "sehingga": FORWARD, "akibatnya": FORWARD, "karenanya": FORWARD, "imbasnya": FORWARD, "mengakibatkan": FORWARD,
     "berakibat": FORWARD, "menyebabkan": FORWARD, "memicu": FORWARD, "berimbas": FORWARD, "penyebab": FORWARD,
     "pemicu": FORWARD,
+    # SYS-189 (#390, ADR-020 decision 4): the causal verbs of market copy. arcs-v5 printed "pelemahan dipengaruhi
+    # pernyataan pejabat The Fed", "terutama didorong PIP dan KIP Kuliah", "menguat seiring penurunan ekspektasi".
+    "didorong": BACKWARD, "dipengaruhi": BACKWARD, "ditopang": BACKWARD, "berkat": BACKWARD, "seiring": BACKWARD,
+    "dilatarbelakangi": BACKWARD, "bermula dari": BACKWARD,
+    "memengaruhi": FORWARD, "mempengaruhi": FORWARD, "menimbulkan": FORWARD, "membuat": FORWARD, "mendorong": FORWARD,
+    "menekan": FORWARD,
 }
 CAUSAL_WORDS = tuple(_KINDS)
-CAUSAL = re.compile(r"\b(?:" + "|".join(sorted(map(re.escape, _KINDS), key=len, reverse=True)) + r")\b",
-                    re.IGNORECASE)
+CAUSAL = re.compile(r"\b(?:" + "|".join(re.escape(w).replace(r"\ ", r"\s+")
+                                        for w in sorted(_KINDS, key=len, reverse=True)) + r")\b", re.IGNORECASE)
+# SYS-189: "membuat", "mendorong" and "menekan" also mean make, promote and press. After a purpose word they are
+# no link: all 5 "mendorong" of the replays are "untuk/termasuk mendorong <program>" (owner: "Gate, exempt purpose").
+_PURPOSE_VERBS = frozenset({"membuat", "mendorong", "menekan"})
+_PURPOSE = re.compile(r"\b(?:untuk|guna|demi|agar|supaya|termasuk|ingin|berupaya)\s+(?:[^\W\d_]+\s+)?$", re.IGNORECASE)
+
+
+def _kind(word: str) -> str:
+    return _KINDS[" ".join(word.lower().split())]
+
+
+def _causal_matches(sentence: str) -> list:
+    """The causal words of `sentence`: `CAUSAL`'s matches, less a purpose verb after a purpose word (at most one word
+    between: "untuk terus mendorong")."""
+    return [m for m in CAUSAL.finditer(sentence)
+            if not (m.group(0).lower() in _PURPOSE_VERBS and _PURPOSE.search(sentence[:m.start()]))]
 _REFERS_BACK = frozenset({"penyebabnya", "pemicunya"})     # "Harga naik. Penyebabnya, ...": the effect is before
 _NOUNS = frozenset({"penyebab", "pemicu"})                 # "Penyebab banjir adalah hujan deras"
 _THEREFORE = re.compile(r"\s*itu\b", re.IGNORECASE)        # "karena itu", "oleh sebab itu": forward
@@ -278,7 +299,7 @@ def _fronted(text: str, side) -> Tuple[str, str, str, str]:
 def _groups(sentence: str) -> List[Tuple[int, int]]:
     """(start, end) of each run of causal words with nothing but spaces between them: "karena dipicu" is one link."""
     runs: List[List[int]] = []
-    for m in CAUSAL.finditer(sentence):
+    for m in _causal_matches(sentence):
         if runs and not sentence[runs[-1][1]:m.start()].strip():
             runs[-1][1] = m.end()
         else:
@@ -290,7 +311,7 @@ def _cut(sents: List[str], i: int, m, source: bool) -> Span:
     """The claim (prose) or the link (`source`) of causal word `m` in sentence `i` of `sents`. Each side stops at
     the next causal word of the sentence: "A memicu B, sehingga C" is two links, B's cause is A, C's is B."""
     sentence, word = sents[i], m.group(0)
-    kind = _KINDS[word.lower()]
+    kind = _kind(word)
     runs = _groups(sentence)
     start, end = next((a, b) for a, b in runs if a <= m.start() < b)
     left = max([b for a, b in runs if b <= start], default=0)
@@ -325,7 +346,7 @@ def _cut(sents: List[str], i: int, m, source: bool) -> Span:
 def causal_spans(text: str) -> List[Span]:
     """Every causal claim in `text`: each causal word, with its sentence, cause and effect."""
     sents = sentences(text)
-    return [_cut(sents, i, m, source=False) for i, sentence in enumerate(sents) for m in CAUSAL.finditer(sentence)]
+    return [_cut(sents, i, m, source=False) for i, sentence in enumerate(sents) for m in _causal_matches(sentence)]
 
 
 def _covers(half: str, side: str, other_side: str, sentence: str) -> bool:
@@ -376,7 +397,7 @@ def links(quote: str, source: str) -> Tuple[List[Span], str]:
     if len(spans) > MAX_QUOTE_SENTENCES or sum(len(source[a:b].split()) for a, b in spans) > MAX_QUOTE_WORDS:
         return [], "long"
     sents = [source[a:b] for a, b in spans]
-    found = [_cut(sents, j, m, source=True) for j, s in enumerate(sents) for m in CAUSAL.finditer(s)
+    found = [_cut(sents, j, m, source=True) for j, s in enumerate(sents) for m in _causal_matches(s)
              if first <= spans[j][0] + m.start() < last]
     return found, "" if found else "no causal word"
 

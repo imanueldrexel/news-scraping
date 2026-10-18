@@ -449,7 +449,10 @@ class TestFrontedCause:
 # Written out, not read from causal_check: a form dropped from its table must fail here (DBT-82).
 FORMS = ["karena", "dikarenakan", "lantaran", "sebab", "gara-gara", "akibat", "diakibatkan", "dipicu", "disebabkan",
          "imbas", "penyebabnya", "pemicunya", "sehingga", "akibatnya", "karenanya", "imbasnya", "mengakibatkan",
-         "berakibat", "menyebabkan", "memicu", "berimbas", "penyebab", "pemicu"]
+         "berakibat", "menyebabkan", "memicu", "berimbas", "penyebab", "pemicu",
+         # SYS-189 (#390)
+         "didorong", "dipengaruhi", "ditopang", "berkat", "seiring", "dilatarbelakangi", "bermula dari",
+         "memengaruhi", "mempengaruhi", "menimbulkan", "membuat", "mendorong", "menekan"]
 
 
 class TestCausalWords:
@@ -637,6 +640,55 @@ class TestSys181Anaphor:
                                             ("Longsor di desa tersebut", False), ("Hal ini", True)])
     def test_refers_back(self, side, lends):
         assert cc._refers_back(side, "Defisit APBN 2026 diproyeksikan melebar.") is lends
+
+
+class TestSys189MarketVerbs:
+    """SYS-189 (#390, ADR-020 decision 4): the causal verbs of market copy are causal words with a direction;
+    membuat/mendorong/menekan are none after a purpose word (owner, 2026-10-18: "Gate, exempt purpose")."""
+
+    SRC = "Rupiah melemah 0,11 persen ke Rp17.895 per dolar AS pada Senin."
+
+    @pytest.mark.parametrize("prose", ["Rupiah melemah, didorong aksi jual investor asing.",
+                                       "Pelemahan rupiah dipengaruhi aksi jual investor asing.",
+                                       "Rupiah melemah seiring aksi jual investor asing.",
+                                       "Aksi jual investor asing membuat rupiah melemah.",
+                                       "Aksi jual investor asing mendorong pelemahan rupiah."])
+    def test_an_unquoted_claim_is_refused(self, prose):
+        assert cc.unbacked_causes([("latar", prose)], [], {0: self.SRC}) != []
+
+    @pytest.mark.parametrize("word", ["didorong", "dipengaruhi", "ditopang", "berkat", "seiring", "dilatarbelakangi",
+                                      "bermula dari"])
+    def test_backward_verbs_keep_their_direction(self, word):
+        source = f"Harga tiket pesawat naik {word} lonjakan harga avtur."
+        assert kept(f"Harga tiket pesawat naik {word} lonjakan harga avtur.", source)
+        assert not kept(f"Lonjakan harga avtur terjadi {word} harga tiket pesawat naik.", source)
+
+    @pytest.mark.parametrize("word", ["memengaruhi", "mempengaruhi", "menimbulkan", "membuat", "mendorong", "menekan"])
+    def test_forward_verbs_keep_their_direction(self, word):
+        source = f"Lonjakan harga avtur {word} harga tiket pesawat naik."
+        assert kept(f"Lonjakan harga avtur {word} harga tiket pesawat naik.", source)
+        assert not kept(f"Harga tiket pesawat naik {word} lonjakan harga avtur.", source)
+
+    @pytest.mark.parametrize("prose", ["Kedua presiden sepakat memperkuat kerja sama, termasuk mendorong pembentukan EPA.",
+                                       "Kebijakan ini untuk mendorong budidaya dalam negeri.",
+                                       "Pemerintah berupaya terus mendorong ekspor.",
+                                       "BI turun tangan guna menekan volatilitas rupiah."])
+    def test_a_purpose_verb_after_a_purpose_word_is_no_link(self, prose):
+        """The replays' 5 "mendorong" are all of this shape (arcs-v4/v5/v6, 2026-10-11/12)."""
+        assert cc.causal_spans(prose) == []
+
+    def test_only_the_three_verbs_are_exempt(self):
+        """"termasuk akibat cuaca buruk" ("including because of") is still a causal claim."""
+        [claim] = cc.causal_spans("Harga cabai naik, termasuk akibat cuaca buruk.")
+        assert claim.word == "akibat"
+
+    def test_a_purpose_verb_with_a_subject_is_a_link(self):
+        [claim] = cc.causal_spans("Banjir di tiga kecamatan Kota Padang membuat 672 orang mengungsi.")
+        assert claim.word == "membuat" and claim.effect == "672 orang mengungsi."
+
+    def test_a_two_word_form_is_one_word_whatever_its_spacing(self):
+        [claim] = cc.causal_spans("Sengketa itu bermula  dari utang yang tak dibayar.")
+        assert cc._kind(claim.word) == cc.BACKWARD and claim.cause.startswith("utang")
 
 
 class TestMatchCounts:
