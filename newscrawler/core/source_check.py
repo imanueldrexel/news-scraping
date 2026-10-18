@@ -422,14 +422,9 @@ _ORDINAL = re.compile(rf"(?:\b(?P<before>[^\W\d_][\w-]*)\s+)?\b(?P<ordinal>{'|'.
 # tersangka ...", replay 2026-10-10). Time words stay nouns: "pekan kedua", "hari ketiga".
 _NOT_A_NOUN = (story_words.STOPWORDS - {"hari", "tahun", "bulan", "pekan"}) | {
     "kini", "lalu", "kemudian", "akhirnya", "bahkan", "hanya", "sebanyak", "total", "seluruh", "sementara"}
-# ... and verbs: "menahan kedua tersangka", "memeriksa ketiga saksi", "bersama kedua menteri" (QA, 2026-10-14).
-# A me-/di-/ber- word is read as a verb, except the nouns listed here ("termin kedua", "rapat terbatas ketiga"
-# stay claims: ter- is not read as a verb prefix). A noun missing from the list leaves its claim unchecked,
-# as before SYS-158; a verb read as a noun would cost a retry, so the rule leans to collective.
-_VERB = re.compile(r"(?:me|di|ber)[a-z]{3,}")
-_PREFIXED_NOUNS = {"menteri", "menit", "menara", "media", "medali", "meja", "metode", "merek", "mesin", "diskusi",
-                   "dialog", "direktur", "direksi", "dirut", "divisi", "dinas", "distrik", "dimensi", "berita",
-                   "berkas"}
+# ... and verbs (`story_words.is_verb`): "menahan kedua tersangka", "memeriksa ketiga saksi", "bersama kedua menteri"
+# (QA, 2026-10-14). A noun the verb rule misses leaves its claim unchecked, as before SYS-158; a verb read as a noun
+# would cost a retry, so the rule leans to collective.
 _SEKIAN = re.compile(r"\bkesekian\s+kali(?:nya)?\b", re.IGNORECASE)
 _SERIES = re.compile(rf"\b(?P<n>dua|tiga|empat|lima|enam|tujuh|delapan|sembilan|sepuluh|\d+)\s+"
                      r"(?P<unit>hari|pekan|minggu|bulan|sesi|kuartal|tahun|kali)(?:\s+perdagangan)?\s+"
@@ -475,7 +470,7 @@ def _record_time(rest: str) -> Tuple[str, str]:
 
 def _collective(before: str, belah: bool) -> bool:
     """A word ordinal after `before` means "both"/"all N", not a count (`ordinal_claims`)."""
-    return belah or before in _NOT_A_NOUN or (bool(_VERB.fullmatch(before)) and before not in _PREFIXED_NOUNS)
+    return belah or before in _NOT_A_NOUN or story_words.is_verb(before)
 
 
 def ordinal_claims(text: str) -> List[Tuple[str, Optional[int], str]]:

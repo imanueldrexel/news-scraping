@@ -644,13 +644,29 @@ class TestRelativeTime:
         assert sa.unbacked_times(f"Aturan barunya {cue} akhir Oktober.", day, {day, past}, "") != []
 
     def test_in_the_latar_a_future_verb_elsewhere_does_not(self):
-        """The replay's shape: "akan" after the phrase, about something else; and a verb more than 4 words before,
-        or in the sentence before."""
+        """The replay's shape: "akan" after the phrase, about something else; a verb in the sentence before; a verb
+        after the phrase with another verb between."""
         day, item = date(2026, 10, 8), date(2026, 10, 2)
         for latar in ["Sebelumnya, pada awal Oktober, Presiden menggelar rapat yang akan memanggil para ahli.",
-                      "Aturan akan dibahas lagi oleh para menteri kabinet pada awal Oktober.",
-                      "Aturan akan dibahas. Pada awal Oktober Presiden menggelar rapat."]:
+                      "Aturan akan dibahas. Pada awal Oktober Presiden menggelar rapat.",
+                      "Aturan akan dibahas, dan pada awal Oktober Presiden menggelar rapat.",
+                      "Pada awal Oktober Presiden menyatakan aturan akan terbit.",
+                      "Presiden menggelar rapat awal Oktober yang akan memanggil para ahli."]:
             assert sa.unbacked_times(latar, day, {day, item}, "") == [], latar
+
+    @pytest.mark.parametrize("latar", ["Aturan akan dibahas lagi oleh para menteri kabinet pada awal Oktober.",
+                                       "Pemerintah berencana menerbitkan aturan barunya awal Oktober.",
+                                       "Aturan barunya mulai berlaku awal Oktober.",
+                                       "Menurut Menteri, awal Oktober aturan barunya akan terbit."])
+    def test_in_the_latar_a_cue_in_the_clause_makes_a_schedule(self, latar):
+        """SYS-177 send-back (#376): a plan verb anywhere before the phrase in its clause, or after it with no verb
+        and no "yang" between. 2/10 is a past day inside "awal Oktober"; it backs the past reading only."""
+        day, item = date(2026, 10, 8), date(2026, 10, 2)
+        assert sa.unbacked_times(latar, day, {day, item}, "") == ["awal Oktober"]
+
+    def test_a_bare_mulai_is_no_cue(self):
+        day, item = date(2026, 10, 8), date(2026, 10, 2)
+        assert sa.unbacked_times("Asap mulai meluas awal Oktober.", day, {day, item}, "") == []
 
     def test_sejak_this_month_ends_today(self):
         """SYS-174: "sejak Oktober" is a start, never ahead, so its span ends today and today still backs it."""

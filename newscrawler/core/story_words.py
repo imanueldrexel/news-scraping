@@ -128,6 +128,19 @@ def root(word: str) -> str:
     return w
 
 
+# A me-/di-/ber- word is read as a verb, except the nouns listed here (SYS-158: "termin kedua", "rapat terbatas
+# ketiga" stay nouns: ter- is not read as a verb prefix). Shared by the ordinal check and SYS-177's latar cue.
+_VERB = re.compile(r"(?:me|di|ber)[a-z]{3,}")
+_PREFIXED_NOUNS = {"menteri", "menit", "menara", "media", "medali", "meja", "metode", "merek", "mesin", "diskusi",
+                   "dialog", "direktur", "direksi", "dirut", "divisi", "dinas", "distrik", "dimensi", "berita",
+                   "berkas"}
+
+
+def is_verb(word: str) -> bool:
+    w = word.lower()
+    return bool(_VERB.fullmatch(w)) and w not in _PREFIXED_NOUNS
+
+
 def meets(root: str, others: set) -> bool:
     """`root` is in `others`, or one ends the other (a nasal prefix eats a letter: "unda" in "tunda")."""
     return root in others or any(min(len(root), len(o)) >= _MIN_ROOT and (root.endswith(o) or o.endswith(root))

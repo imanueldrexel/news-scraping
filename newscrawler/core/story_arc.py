@@ -343,19 +343,31 @@ def _backing_days(known: set, last: date, digest_date: date, ahead_only: bool, t
     return {d for d in known if d > digest_date} if ahead_only else known - {digest_date}
 
 
-# SYS-177 (#376): in the latar a running span is a schedule when a future verb stands within 4 words before it, in its
-# sentence ("Aturan barunya akan terbit akhir Oktober"); never by a future word elsewhere: the replay's "pada awal
-# Oktober, ... yang akan memanggil para ahli" is past narration.
-_FUTURE_VERB = re.compile(r"\b(?:akan|bakal|dijadwalkan|ditargetkan|direncanakan|rencananya|menyusul)\b", re.IGNORECASE)
-CUE_WORDS = 4
+# SYS-177 (#376): in the latar a running span is a schedule when a plan or future verb stands in its clause ("Aturan
+# barunya akan terbit akhir Oktober"). SYS-177 send-back: the plan verbs of news copy too (berencana, diperkirakan,
+# diharapkan, segera, "mulai berlaku"; a bare "mulai" is past: "asap mulai meluas awal Oktober").
+_FUTURE_VERB = re.compile(r"\b(?:akan|bakal|dijadwalkan|ditargetkan|direncanakan|rencananya|rencana|berencana|menyusul|"
+                          r"diperkirakan|diproyeksikan|diharapkan|segera|hendak|siap|mulai\s+berlaku)\b", re.IGNORECASE)
+_CLAUSE_END = re.compile(r"[,;:]|[.!?](?:\s|$)")
 # SYS-177: the fields that tell today's news, where a running span is judged like the agenda.
 PRESENT_FIELDS = ("judul", "hari_ini", "sekilas")
 
 
-def _cued(text: str, start: int) -> bool:
-    """A future verb within `CUE_WORDS` words before position `start`, in the same sentence."""
-    head = re.split(r"[.!?](?:\s|$)", text[:start])[-1]
-    return bool(_FUTURE_VERB.search(" ".join(head.split()[-CUE_WORDS:])))
+def _cued(text: str, start: int, end: int) -> bool:
+    """A plan or future verb in the clause of the time phrase at `start:end` (SYS-177 send-back): anywhere before it
+    ("Pemerintah akan menerbitkan peraturan baru soal karhutla akhir Oktober"), or after it while no "yang" and no
+    verb stands between ("akhir Oktober aturan barunya akan terbit"). The replay's past narration stays past: "pada
+    awal Oktober, Presiden menggelar rapat ... yang akan memanggil para ahli" ends the time's clause at its comma, and
+    "awal Oktober Presiden menyatakan aturan akan terbit" has "menyatakan" between."""
+    if _FUTURE_VERB.search(_CLAUSE_END.split(text[:start])[-1]):
+        return True
+    tail = _CLAUSE_END.split(text[end:])[0]
+    cue = _FUTURE_VERB.search(tail)
+    if not cue:
+        return False
+    between = tail[:cue.start()]
+    return not re.search(r"\byang\b", between, re.IGNORECASE) and not any(
+        story_words.is_verb(w) for w in story_words.WORD.findall(between))
 
 
 def unbacked_times(text: str, digest_date: date, known: set, stated: str, schedule: bool = False,
@@ -372,7 +384,7 @@ def unbacked_times(text: str, digest_date: date, known: set, stated: str, schedu
     stated = " ".join(stated.lower().split())
     out = []
     for start, phrase, first, last in relative_times_at(text, digest_date):
-        ahead_only = schedule or present or _cued(text, start)
+        ahead_only = schedule or present or _cued(text, start, start + len(phrase))
         today_runs = schedule and not re.match(r"sejak\b", phrase, re.IGNORECASE)
         if (not future_phrases(phrase)
                 and not any(first <= d <= last for d in _backing_days(known, last, digest_date, ahead_only,
