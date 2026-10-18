@@ -214,3 +214,39 @@ Report: `.10x/reviews/2026-10-17-qa-report.md`. QA tests and mutants: `scripts/e
 - The first live `sebab` (rupiah, "disebabkan") is correctly backed.
 - **Owner review (same day):** the owner first read the story's first paragraph, where MSCI's official June 2027 date is correct. After seeing the latar sentence quoted, the owner confirmed it is an arc-writer hallucination. SYS-186 stands at P1.
 - **Lesson:** when reporting a false fact, quote the exact sentence and say which paragraph it is in. "The MSCI arc" pointed the owner at the wrong paragraph, and QA then half-conceded on a point it had right. Settle a dispute on the quoted text, not on the summary of it.
+
+## QA audit of the SYS-152 send-back queue: ADR-019, SYS-186, SYS-174/177/178/179 (2026-10-18)
+Report: `.10x/reviews/2026-10-18-qa-report.md`. QA tests and mutants: `scripts/experiments/qa_2026_10_18/`.
+
+**Verdicts:**
+- **Closed:** SYS-182 #382, SYS-184 #384, DBT-82 #386, SYS-174 #373, SYS-178 #377, SYS-179 #378. All 87 of the dev's registry mutants are KILLED.
+- **Sent back:**
+  - SYS-181 #381: name room swaps places; an anaphor side with its own subject lends the whole half;
+  - SYS-183 #383: a fronted cause list;
+  - SYS-185 #385: lexical and frame negation;
+  - SYS-186 #387: the MSCI end rephrased; a part's unit; "per" as a start;
+  - SYS-177 #376: the latar cue list and window.
+- **Held:** SYS-152 #342. The ">= 90% accepted after retry" is unmeasured, and the gate has open P1s.
+
+**Filed:**
+- SYS-188 #389 (P1): a swapped subject;
+- SYS-189 #390 (P1): unlisted causal verbs;
+- SYS-190 #391 (P2): a whole future month or period;
+- SYS-191 #392 (P2): an end without "hingga";
+- SYS-192 #393 (P2): a dropped hedge;
+- SYS-193 #394 (P3): the end point's subject;
+- DBT-83 #395: 4 real QA mutant survivors.
+
+**Decisions:**
+- **Accepted:**
+  - OMC as a false refusal (owner);
+  - the replay loss 15 → 12 (QA re-ran it: 12/18);
+  - "berdampak/terdampak" stays out of the table (ADR-019 decision 7).
+- **Rejected:** the name room as built. A name may stand outside its side only if the OTHER side of the same link does not hold it.
+- **QA's own error, corrected:** the SYS-177 4-word cue window was QA's proposal. Held-out plan verbs and fronted times show it is too narrow, and the send-back says so.
+- **Severity:** SYS-188 and SYS-189 are P1. Each prints a false causal fact in a shape the arcs already write (four unlisted causal verbs in arcs-v5 Versi B).
+- **Live:** QA's recommendation stays `NEWSLETTER_ARCS=0` while those P1s are open.
+
+**Lessons:**
+- The gate's coverage runs one way, half → side. What the claim DROPS from the source (a negator, a denial, a hedge, the subject's distinctive word) is never weighed. Test dropped words.
+- A ticket's live sentence refused "as written" proves only the phrase. Rephrase it the way the model does.

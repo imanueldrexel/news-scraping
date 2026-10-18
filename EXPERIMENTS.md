@@ -3170,3 +3170,35 @@ SINDONEWS   old 12 new 12 | lost [] | gained []   links identical: True
 - **Result:** 6 running spans (all "awal Oktober" in the latar, v4/v5 8-9/10): **0 refused**. Future times: 5, the same set as before: no arc writes a bare "akhir tahun/pekan" or a narrowed future part. QA's 10-14..10-17 arc files: all green.
 - **Conclusion / do not repeat:** the field split costs nothing on the replays. Keep the cue BEFORE the phrase: "pada awal Oktober, ... yang akan memanggil" is past narration.
 - **Links:** SYS-174 (#373) · SYS-177 (#376) · SYS-178 (#377) · SYS-179 (#378) · `newscrawler/core/story_arc.py` (`_backing_days`, `unbacked_times`) · `newscrawler/core/source_check.py` (`_FUTURE`)
+
+### 2026-10-18 — QA: does the ADR-019 causal gate (and SYS-186, SYS-174/177/178/179) hold on held-out inputs?
+- **Question / hypothesis:** ADR-019 cuts the claim and the source link the same way and matches each half to its own side. Does it refuse the invented links the dev's fixtures and QA's 10-17 tests do not hold? The dev's own list of judgement calls: try to break the name room; negators; anaphors. And does SYS-186 refuse the MSCI false end in other words?
+- **Method:**
+  - `venv\Scripts\python.exe -m pytest scripts/experiments/qa_2026_10_18/test_qa_1018.py -q -p no:cacheprovider`: 104 tests, unit level plus `story_arc.parse` for the schedules.
+  - `scripts/experiments/qa_2026_10_18/qa_mutants_1018.py <tree copy>` (16 mutants), and `run_registry_mutants_in_copy.py <copy> sys152_ ... sys179_`.
+  - Corpus counts, read-only: last 30 days of articles (88,800), split by `causal_check.sentences`.
+- **Result:**
+  - The QA file is 63 red / 41 green. Every control is green. Red, each `kept`:
+    - a place swapped between the halves;
+    - the MK shape across an anaphor side that has its own subject. Corpus: 17,337 causal sentences (11.5%) have that shape;
+    - a swapped subject under the 60% bar ("Saham BBCA turun" ← BBRI quote; The Fed ← ECB);
+    - batal/gagal/urung and denied frames (tidak benar, membantah, menepis anggapan). Corpus: 1.6% and 0.3% of causal sentences;
+    - a hedge dropped ("diduga dipicu"; 4.6%);
+    - a fronted cause list;
+    - causal verbs outside the table (didorong, dipengaruhi, seiring, membuat, mendorong). arcs-v5 Versi B prints four;
+    - the MSCI end rephrased ("hingga evaluasi indeks pada November 2026", 3 gap words, "akhir 2027" ← "akhir Juni 2027", "berlaku per");
+    - an end without "hingga" ("berakhir pada");
+    - latar cues outside the list (berencana, diperkirakan, segera, mulai berlaku), a cue 6 words back, and a cue after a fronted time;
+    - a whole future month or period in the agenda ("dijadwalkan terbit Desember", "semester II 2026", "akhir 2026").
+  - QA mutants: 8/16 KILLED; 4 real survivors (DBT-83).
+  - `recheck_causes.py` reproduces 12/18 backed.
+- **Conclusion / do not repeat:**
+  - A bag-of-words share tolerates exactly the word that matters: the subject. Test subject swaps and place swaps, not only reversed halves.
+  - Coverage that runs one way (half → side) never weighs what the claim DROPS from the source. Negators, denials and hedges are all words the claim drops. Test the dropped word, not the added one.
+  - A cue-word rule for tenseless Indonesian needs the plan verbs and fronted times. QA's own 4-word window was too narrow.
+  - Guard a false fact by its meaning, not its phrase. The live MSCI sentence was refused only as written.
+- **Links:**
+  - closed: SYS-182 (#382), SYS-184 (#384), DBT-82 (#386);
+  - sent back: SYS-181 (#381), SYS-183 (#383), SYS-185 (#385), SYS-186 (#387), SYS-177 (#376);
+  - held: SYS-152 (#342);
+  - filed: SYS-188..193 (#389..#394), DBT-83 (#395).

@@ -1,5 +1,35 @@
 # Current Handoff
 
+## From: QA (audit of the SYS-152 send-back queue) -> To: SDE, owner
+**Date:** 2026-10-18 (morning)
+**Read first:** `.10x/reviews/2026-10-18-qa-report.md`; the QA comment on each ticket; `scripts/experiments/qa_2026_10_18/test_qa_1018.py`. Each red class names its ticket, and every control in it must stay green.
+
+### Verdicts
+- **Closed:** SYS-182 #382, SYS-184 #384, DBT-82 #386, SYS-174 #373, SYS-178 #377, SYS-179 #378. The dev's registry: 87/87 KILLED.
+- **Sent back:**
+  - SYS-181 #381: name room swaps places; an anaphor side with its own subject lends the whole half (MK in two sentences);
+  - SYS-183 #383: a fronted cause list;
+  - SYS-185 #385: batal/gagal/urung, "tidak benar", "membantah", "menepis anggapan";
+  - SYS-186 #387: the MSCI end rephrased ("hingga evaluasi indeks pada November 2026"); "akhir 2027" backed by "akhir Juni 2027"; "berlaku per" read as an end;
+  - SYS-177 #376: plan verbs, a cue 6 words back, a fronted time. QA's own 4-word window was too narrow.
+- **Held:** SYS-152 #342. Measure ">= 90% accepted after retry" from the `Arc sebab quotes` logs. The 2026-10-18 12:00 edition is the first with this code.
+
+### SDE, in this order
+1. **SYS-188 #389 (P1):** a swapped subject passes the 60% bar ("Saham BBCA turun" backed by a BBRI quote). Fix it together with SYS-181's name room: no name of a half goes uncovered.
+2. **SYS-181 send-back:** the anaphor allowance.
+3. **SYS-189 #390 (P1):** causal verbs outside the table (didorong, dipengaruhi, seiring, membuat, mendorong). arcs-v5 prints four.
+4. **SYS-186 send-back**, then SYS-191 #392 (an end without "hingga").
+5. SYS-185 send-back + SYS-192 #393 (hedges): both are "a word the claim drops".
+6. SYS-183 send-back, SYS-177 send-back, SYS-190 #391 (a whole future month or period), SYS-193 #394, DBT-83 #395, SYS-187 #388.
+- After each: re-run `recheck_causes.py` (12/18 today) and QA's files 10-14..10-18.
+
+### Owner
+- **QA recommends `NEWSLETTER_ARCS=0`** until SYS-188, SYS-189 and the SYS-181/186 send-backs close. Each prints a false fact the gate exists to stop, in shapes the arcs write.
+- QA checks today's 12:00 edition (`digests/2026-10-17-ringkas.md`) sentence by sentence.
+
+---
+
+
 ## From: SDE (QA's SYS-152 send-back queue) -> To: QA, owner
 **Date:** 2026-10-17 (afternoon)
 **Read first:** ADR-019 (`.10x/adrs/019-causal-gate-matches-one-link-by-direction.md`, with its implementation notes); `.10x/decisions/sde/newsletter-story-arcs.md` "2026-10-17 (afternoon)"; each ticket's dev comment.

@@ -1,11 +1,16 @@
 # Project Status
 
 ## Project: NewsAggregator
-**Current Phase:** Story arcs LIVE (NEWSLETTER_ARCS=1). Dev queue from QA's SYS-152 audit done (ADR-019); 11 tickets await QA.
-**Last Updated:** 2026-10-17 afternoon by SDE
-**Health:** At Risk (known open arc defects in production)
+**Current Phase:** Story arcs LIVE (NEWSLETTER_ARCS=1). QA audited ADR-019's queue: 6 closed, 5 sent back, SYS-152 held, 7 filed. QA recommends NEWSLETTER_ARCS=0.
+**Last Updated:** 2026-10-18 morning by QA
+**Health:** At Risk (known open arc defects in production: SYS-188/189 P1, SYS-181/186 sent back)
 
 ## Progress
+
+### QA audit 2026-10-18: the SYS-152 send-back queue (ADR-019, SYS-186, SYS-174/177/178/179)
+- Closed: SYS-182, SYS-184, DBT-82, SYS-174, SYS-178, SYS-179. Sent back: SYS-181 (name room; anaphor with own subject), SYS-183 (fronted list), SYS-185 (batal/membantah/tidak benar), SYS-186 (MSCI rephrased), SYS-177 (cue list/window). Held: SYS-152 (>= 90% unmeasured).
+- Filed: SYS-188 #389 P1 (swapped subject), SYS-189 #390 P1 (didorong/dipengaruhi/seiring unchecked), SYS-190 #391, SYS-191 #392, SYS-192 #393, SYS-193 #394, DBT-83 #395.
+- Unit 3,674; registry 87/87 KILLED; QA mutants 8/16 (4 real -> DBT-83); QA file `scripts/experiments/qa_2026_10_18/test_qa_1018.py` 41 green / 63 red; recheck_causes 12/18 reproduced. Report: reviews/2026-10-18-qa-report.md
 
 ### SDE 2026-10-17 (afternoon): QA's SYS-152 send-back queue -- done, 11 ready-for-qa; SYS-187 #388 filed
 - Design: ADR-019 (owner: strict per half; OMC becomes an accepted false refusal) + architect/newsletter-story-arcs.md "2026-10-17 (dev)".
