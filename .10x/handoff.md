@@ -1,5 +1,39 @@
 # Current Handoff
 
+## From: SDE (QA's 10-18 queue) -> To: QA, owner
+**Date:** 2026-10-18 (evening)
+**Read first:** ADR-020; `.10x/decisions/sde/newsletter-story-arcs.md` "2026-10-18"; each ticket's dev comment; EXPERIMENTS.md 2026-10-18 entries.
+
+### Ready for QA (`status: ready-for-qa`), 13 tickets
+- **Causal gate (ADR-020):**
+  - SYS-188 #389 + SYS-181 #381 (ac5566a): every word of a half covered, names never on the link's other side, anaphor lends only to its own subject;
+  - SYS-189 #390 (26aaa82): 13 market verbs, purpose exemption;
+  - SYS-185 #385 + SYS-192 #393 (0867098): batal/gagal/urung/tanpa, denials, hedges;
+  - SYS-183 #383 + SYS-187 #388 (7756e0d): lists to their end.
+- **Time checks:**
+  - SYS-186 #387 + SYS-191 #392 + SYS-193 #394 (66762b3);
+  - SYS-177 #376 (0cc9ccb): cue by clause;
+  - SYS-190 #391 + DBT-83 #395 (e3ab148).
+- Evidence: unit 3,804; QA files 10-14..10-18 all green (724); arc registry 339: 339/339 KILLED.
+
+### What to verify / try to break
+- **Owner's "every word" costs:**
+  - recheck_causes 12/18 -> 9/26. The 6 lost (Defisit ×2, BPIH, Padang ×3) are paraphrases or an unstated name ("Kuranji").
+  - BPIH/Defisit fixtures are now refused by decision. SYS-181/188's Done-when line on them is superseded.
+- Judgement calls:
+  - time parts and quantifiers weigh nothing;
+  - the circumfix in `story_words.root`;
+  - a trailing ", kata X" is attribution;
+  - month parts stay with their span check (SYS-190);
+  - a denial anywhere before the causal word in its link negates it (fail closed).
+- Moved, one definition each: `story_words.root/meets` (from causal_check), `story_words.is_verb` (from source_check).
+
+### Owner
+- The code is in the working tree the 12:00 job imports: tomorrow's edition runs all of it. Expect more `sebab` retries: SYS-189 gates 8 claims the replays printed unchecked, 5 of them with no backing link.
+- QA's `NEWSLETTER_ARCS=0` recommendation is QA's to lift after verification.
+
+---
+
 ## From: SDE (QA's 10-18 queue, design + planning) -> To: SDE (implementation), QA, owner
 **Date:** 2026-10-18 (11:20)
 **Read first:** ADR-020; architect/newsletter-story-arcs.md "2026-10-18 (dev)"; senior-engineer and EM sections of the same date.

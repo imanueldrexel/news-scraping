@@ -338,3 +338,52 @@ registry run is in the handoff.
 - "Alasan X, Y" (a reason told without a causal word) is no causal word: a true cause stated that way is refused.
 - SYS-186: the end time must match; the subject need not ("diskon berlaku hingga Desember" backs "pembekuan
   berlanjut hingga Desember").
+
+## 2026-10-18: QA's 10-18 queue -- 13 tickets ready-for-qa (ADR-020 + time checks)
+Commits: 40a2edc (design) · ac5566a (SYS-188+181) · 26aaa82 (SYS-189) · 0867098 (SYS-185+192) · 7756e0d (SYS-183+187)
+· 66762b3 (SYS-186+191+193) · 0cc9ccb (SYS-177) · e3ab148 (SYS-190+DBT-83).
+
+**Owner decisions (2026-10-18):** SYS-188 every word of a half covered; SYS-189 gated, membuat/mendorong/menekan
+exempt after a purpose word; SYS-192 any hedge word.
+
+**Causal gate (`causal_check`, ADR-020)**
+- `_covers(half, side, other_side, sentence)`: every event word on the side; a name on the side or elsewhere in the
+  link's sentence, never on its other side; a names-only half gets no room. `MIN_HALF_OVERLAP` and the core rule
+  are gone (the widened half holds the core).
+- `story_words.root` (moved, + ke-/pe(N)-/per- ... -an circumfix) and `story_words.meets` (moved). Time parts,
+  quantifiers, denial and hedge words weigh nothing as facts (`_weighs`).
+- `_refers_back`: the previous sentence is lent only to an anaphor on the side's own subject that names it.
+- `_KINDS` + 13 market verbs; `_causal_matches` (one helper) drops a purpose verb after a purpose word.
+- `_NEGATORS` + batal/gagal/urung/tanpa; `_DENIAL` negates the link; `Span.hedged` + `supports` hedge rule.
+- `_fronted` cuts at the last punctuation boundary before a conjunction; `_prose_side` after the word reads every
+  comma item; a trailing ", kata X" is attribution.
+
+**Time checks**
+- `source_check`: `_END_GAP` (3 words, "pada" tail, degree words + -nya block), `_END_OPEN` (berakhir/selesai/
+  dicabut (pada), s.d.), part keyed with its unit, `_STARTS_PER`, `_stated_ends` + subject roots (SYS-193),
+  `_sentences` ends no sentence at "s.d."; `future_periods`/`stated_periods` (SYS-190); "penghujung" = "akhir".
+- `story_arc`: `_cued(text, start, end)` by clause (SYS-177); `unstated_periods` by field (SYS-190).
+- `story_words.is_verb` (moved from source_check; SYS-158 and SYS-177 share it).
+
+**Deviations / judgement calls (each on its ticket)**
+1. Under "every word", time parts (awal/pertengahan/akhir, pagi/siang/...) and quantifiers (sebanyak, sejumlah, ...)
+   weigh nothing: the date and number guards hold them. Without it "Sebanyak 15 penerbangan dibatalkan" refused a
+   true "Hal ini menyebabkan" cause.
+2. The circumfix in `root` is morphology, not a tolerance: it gave back BPIH's "naik"/"kenaikan".
+3. SYS-181/188 Done-when "BPIH, Defisit, v4 Padang fixtures still pass" is superseded by the owner's rule: each now
+   fails on exactly one word (membahas, melebar, Kuranji), pinned by a test.
+4. SYS-190 does not judge a month part by key: its span check already does, and a key check would refuse a part
+   backed by a stated later date.
+5. A dev unit case pinned the old 4-word cue window ("Aturan akan dibahas ... pada awal Oktober" as past); it is a
+   schedule and now counts.
+
+**Evidence:** unit 3,804 passed; QA files 10-14..10-18 all green (724 tests; 10-18 104/104). Replays: causes
+12/18 -> 9/26 backed (6 lost to the owner's rule; 8 new spans from SYS-189, 3 backed); end points 12, 0 refused;
+running spans 6, 0 refused; periods 22, 0 refused.
+
+**Tech debt / known limits**
+- A denial anywhere before the causal word in its link negates it ("Kemenkeu membantah tudingan, dan harga naik
+  karena X" is read as denied): fail closed.
+- The purpose exemption reads one word back ("untuk terus mendorong"); other purpose shapes are gated.
+- A prose cause list now runs to its last comma item: a trailing new clause after a comma (no conjunction) must be
+  covered too (fail closed).

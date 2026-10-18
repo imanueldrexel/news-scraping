@@ -1,16 +1,18 @@
 # Project Status
 
 ## Project: NewsAggregator
-**Current Phase:** Story arcs LIVE (NEWSLETTER_ARCS=1). SDE working QA's 10-18 queue (13 tickets): design = ADR-020, planning done; code starts after the 12:00 job loads.
-**Last Updated:** 2026-10-18 11:20 by SDE
+**Current Phase:** Story arcs LIVE (NEWSLETTER_ARCS=1). SDE: QA's 10-18 queue done -- 13 tickets ready-for-qa (ADR-020 + time checks). QA's NEWSLETTER_ARCS=0 recommendation stands until QA verifies.
+**Last Updated:** 2026-10-18 evening by SDE
 **Health:** At Risk (known open arc defects in production: SYS-188/189 P1, SYS-181/186 sent back)
 
 ## Progress
 
-### SDE 2026-10-18: QA's 10-18 queue -- design + planning complete
+### SDE 2026-10-18: QA's 10-18 queue -- done, 13 ready-for-qa
 - Owner: SYS-188 every word of a half covered; SYS-189 gate with a purpose exemption (membuat/mendorong/menekan); SYS-192 any hedge word.
 - ADR-020 (causal) + architect "2026-10-18 (dev)" (time checks: SYS-186/191/193, SYS-177, SYS-190).
-- [ ] SYS-188+181  [ ] SYS-189  [ ] SYS-185+192  [ ] SYS-183+187  [ ] SYS-186+191+193  [ ] SYS-177  [ ] SYS-190  [ ] DBT-83
+- [x] SYS-188+181  [x] SYS-189  [x] SYS-185+192  [x] SYS-183+187  [x] SYS-186+191+193  [x] SYS-177  [x] SYS-190  [x] DBT-83 (ac5566a..e3ab148)
+- Unit 3,804; QA files 10-14..10-18 724/724 (10-18 104/104); arc registry 339: 339/339 KILLED.
+- Replays: causes 12/18 -> 9/26 backed (6 lost = owner's every-word rule; 8 new SYS-189 spans, 3 backed); end points 12/0 refused; running spans 6/0; periods 22/0.
 
 ### QA audit 2026-10-18: the SYS-152 send-back queue (ADR-019, SYS-186, SYS-174/177/178/179)
 - Closed: SYS-182, SYS-184, DBT-82, SYS-174, SYS-178, SYS-179. Sent back: SYS-181 (name room; anaphor with own subject), SYS-183 (fronted list), SYS-185 (batal/membantah/tidak benar), SYS-186 (MSCI rephrased), SYS-177 (cue list/window). Held: SYS-152 (>= 90% unmeasured).
