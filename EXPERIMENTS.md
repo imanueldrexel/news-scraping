@@ -3202,3 +3202,12 @@ SINDONEWS   old 12 new 12 | lost [] | gained []   links identical: True
   - sent back: SYS-181 (#381), SYS-183 (#383), SYS-185 (#385), SYS-186 (#387), SYS-177 (#376);
   - held: SYS-152 (#342);
   - filed: SYS-188..193 (#389..#394), DBT-83 (#395).
+
+### 2026-10-18 — ADR-020 design: what does a stricter causal half cost, and which unlisted causal verbs do the arcs write?
+- **Question / hypothesis:** QA's SYS-188 swaps a subject inside the 60% half bar ("Harga cabai naik" ← "Harga beras naik"). Which words do the 12 replay claims the gate backs actually leave uncovered, i.e. what would "names covered" / "clause subject covered" / "every word covered" cost? And for SYS-189: are didorong/mendorong/membuat/seiring in the arc prose causal?
+- **Method:** `scripts/experiments/sys188/missed_words.py` (best supporting link per backed claim; missed words marked name/verb-like/other). `scripts/experiments/sys189/unlisted_causal_verbs.py` (every candidate form in arcs-v4/v5/v6 hari_ini + latar). Read-only, no LLM.
+- **Result:**
+  - Missed words across the 12 backed claims: melebar ×2, membahas, mengevakuasi, naik (source: "kenaikan"), deras (source: "lebat"), pertengahan (a time word); names Koto/Tangah/Kuranji, which stand elsewhere in the link's sentence. **No subject noun was ever missed.** So "clause subject covered" costs 0, and "every word covered" costs ~5 of the 12 (Defisit ×2, BPIH karena, Padang sehingga, v6 Padang). "naik"/"kenaikan" is morphology, not paraphrase: `_root` does not strip the ke-…-an circumfix.
+  - Unlisted forms: menyusul 5, mendorong 5, membuat 4, tertekan 2, didorong 2, dipengaruhi 1, seiring 1. All 4 membuat are causal ("membuat 672 orang mengungsi"). All 5 mendorong are purpose ("termasuk/untuk mendorong X"), not causal. menyusul ("Kunjungan ini menyusul lawatan ...") and tertekan are sequence and state words.
+- **Conclusion / do not repeat:** the owner chose "every word covered" knowing the cost (ADR-020). Strip the circumfix rather than reintroduce a share. Gate membuat/mendorong/menekan only when no purpose word stands before them, and leave menyusul/tertekan out of the table.
+- **Links:** SYS-188 (#389), SYS-189 (#390), ADR-020 · `scripts/experiments/sys188/missed_words.py` · `scripts/experiments/sys189/unlisted_causal_verbs.py`

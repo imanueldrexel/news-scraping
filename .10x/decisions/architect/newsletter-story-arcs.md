@@ -343,3 +343,47 @@ data flow and the prompt are unchanged; `relative_name` (the phrase shown beside
   (pekan|minggu) ini", keyed with the part.
 - On the backing side only, a stated part also states its whole period ("awal pekan depan" backs "pekan depan"),
   never the reverse. This is the SYS-171 rule for a weekday of a week.
+
+# 2026-10-18 (dev): QA's 10-18 queue -> ADR-020, plus the time checks (SYS-186/191/193, SYS-177, SYS-190)
+
+## Causal gate (SYS-188, SYS-181, SYS-189, SYS-185, SYS-192, SYS-183, SYS-187, DBT-83) -> ADR-020
+- Owner, 2026-10-18: **every word of a half is covered** (no 60% share); unlisted verbs gated with a purpose
+  exemption for membuat/mendorong/menekan; a hedged link needs any hedge in the claim.
+- Names may stand elsewhere in the link's sentence, never on its opposite side. The previous sentence is lent only
+  to a reference, a near-empty side, or an anaphor on the side's own subject that names the previous sentence.
+
+## SYS-186 send-back + SYS-191 + SYS-193: what an end point is, and whose end it is
+- **Gap.** Between the opener and the time, up to 3 words, of which the last may be "pada" ("hingga evaluasi indeks
+  pada November 2026"). A digit, a degree word (level, posisi, puncak, tertinggi, terendah, rekor) or a function word
+  (di, ke, dari, sejak, dengan, yang, dan, atau, setelah, sebelum) in the gap still blocks: "hingga level tertinggi
+  pada Oktober" ends no period.
+- **A part is keyed with its unit.** ("part", "akhir", "month") is not ("part", "akhir", "year"): "akhir 2027" is
+  December 2027 and is not backed by "akhir Juni 2027". "hingga 2027" is still backed by it.
+- **"per" after berlaku/mulai/efektif is a start**, never a stated end. "Defisit APBN per 30 September" stays one.
+- **End openers without "hingga" (SYS-191).** berakhir, selesai and dicabut (each with an optional "pada"), and
+  "s.d." / "s/d", open an end point in the prose and a stated end in the source.
+- **Subject (SYS-193).** A stated end backs a prose end only when its sentence shares a content root with the prose
+  clause before the opener. A clause with no content word (a bare "Hingga Oktober, ...") needs no subject.
+
+## SYS-177 send-back: the latar's cue
+- The cue verbs: akan, bakal, dijadwalkan, ditargetkan, direncanakan, rencananya, rencana, berencana, menyusul,
+  diperkirakan, diproyeksikan, diharapkan, segera, hendak, siap, "mulai berlaku". A bare "mulai" stays out: "asap
+  mulai meluas awal Oktober" is past.
+- **Where.** Anywhere before the time in its clause (clause = up to the previous , ; : or sentence start). After the
+  time, in the same clause, only while no "yang" and no verb stands between ("akhir Oktober aturan barunya akan
+  terbit"). "awal Oktober Presiden menyatakan aturan akan terbit" stays past narration: "menyatakan" stands between.
+- `CUE_WORDS` (4) is gone.
+
+## SYS-190: a whole future month or period is keyed like a future time
+- New `source_check.future_periods(text, today)` reads a month ("Desember", "bulan Desember", "November 2026",
+  "November mendatang"), a semester/quarter with a year, and a year part ("akhir 2026", "akhir tahun 2026"). Each is
+  keyed by its parts, like an end time (`_end_key`). "penghujung" is "akhir".
+- **Which are judged:**
+  - in the agenda, every one;
+  - in the present fields (judul, hari_ini, sekilas), and in the latar under SYS-177's cue, only one that is not
+    over (its last day >= today).
+  - A bare year ("2026") is never one.
+- **Backing.** Today's terkait articles must give the same key or a more precise one: "akhir Desember" and "15
+  Desember" back "Desember", never the reverse. That is `unstated_future_times`' rule, with SYS-179's "a stated part
+  states its whole".
+- A future "akhir Desember" is still also judged by its span, as before.

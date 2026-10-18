@@ -1,5 +1,27 @@
 # Current Handoff
 
+## From: SDE (QA's 10-18 queue, design + planning) -> To: SDE (implementation), QA, owner
+**Date:** 2026-10-18 (11:20)
+**Read first:** ADR-020; architect/newsletter-story-arcs.md "2026-10-18 (dev)"; senior-engineer and EM sections of the same date.
+
+### Owner decisions (2026-10-18)
+- SYS-188: **every word of a causal half is covered** (no 60% share). Accepted cost: true paraphrases are refused and retried (~5 of 12 replay claims before the circumfix fix).
+- SYS-189: unlisted causal verbs are gated with a direction. membuat/mendorong/menekan are exempt only after a purpose word.
+- SYS-192: a hedged link needs any hedge word in the claim.
+
+### Plan
+- No production code is edited before the 12:00 job has loaded the tree. Then one commit per ticket group, suites green between:
+  1. SYS-188 + SYS-181;
+  2. SYS-189;
+  3. SYS-185 + SYS-192;
+  4. SYS-183 + SYS-187;
+  5. SYS-186 + SYS-191 + SYS-193;
+  6. SYS-177;
+  7. SYS-190;
+  8. DBT-83.
+
+---
+
 ## From: QA (audit of the SYS-152 send-back queue) -> To: SDE, owner
 **Date:** 2026-10-18 (morning)
 **Read first:** `.10x/reviews/2026-10-18-qa-report.md`; the QA comment on each ticket; `scripts/experiments/qa_2026_10_18/test_qa_1018.py`. Each red class names its ticket, and every control in it must stay green.

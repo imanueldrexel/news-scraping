@@ -24,3 +24,17 @@ ADR-016 (arcs) + ADR-017 (core seams). Tracker #336. Source: the `/deepen` revie
 | summarizer + usage accounting | `summarizer.build_summarizer(usage=)` (ADR-001) | a direct HTTP client |
 | NEWS_L1 search | DBT-74's read-only load + SYS-147's adapter | `init_crawler()` |
 | headlines/dates of past items | `SQLAlchemyNewsletterDataSource.get_timeline_rows` | FAISS metadata (ADR-005, SYS-91) |
+
+## 2026-10-18: standards for QA's 10-18 queue (ADR-020)
+- **One definition of a verb-like word.** `source_check` keeps `_VERB` / `_PREFIXED_NOUNS` for SYS-158. ADR-020's
+  purpose rule and SYS-177's "no verb in between" need the same idea, so it moves to `story_words.is_verb(word)` and
+  both modules call it. No third copy.
+- **One root function.** SYS-193 needs `causal_check._root` in `source_check`. It moves to `story_words.root` with
+  the circumfix rule, and `causal_check` imports it. A dependency from `source_check` on the causal gate would be
+  the wrong way round.
+- **Registry hygiene.** Every registry entry whose old line this change rewrites is retargeted in the same commit
+  (DBT-80's hygiene test fails on a stale one). Every new rule gets one mutant, named after its ticket.
+- **Tables pinned to the prompt.** The causal table and PROMPT's list stay one set (SYS-184's test). The cue verbs
+  and the end openers are docstring-listed beside their regex.
+- **Copy rules.** Problem strings stay Indonesian and live where the other `parse` problems do. No reader string
+  changes.
