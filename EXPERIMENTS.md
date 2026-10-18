@@ -3260,3 +3260,10 @@ SINDONEWS   old 12 new 12 | lost [] | gained []   links identical: True
 - **Result:** QA's TestFutureMonthOrPeriod 22/22; the QA 10-18 file **104/104 green**. Replays: **22 periods read, 0 refused** in every mode (hari_ini, latar, back-as-agenda); e.g. hari_ini "semester II 2026" (not over) is stated by its articles. Unit 3,804 passed. Mutant `sys190_latar_needs_no_cue` first survived: the test's source carried "(12/10/2026)", which states October; fixed with an undated source.
 - **Conclusion / do not repeat:** a short date in a source states its month; write period tests with sources that carry no date, or the source backs the phrase whatever the rule.
 - **Links:** SYS-190 (#391), DBT-83 (#395)
+
+### 2026-10-18 — Can the ADR-020 / time-check guards crash a live edition?
+- **Question / hypothesis:** `ask_json` lets only `Rejected` out of `story_arc.parse`, and `newsletter_edition` catches only quota/provider errors around an arc, so any other exception in a guard stops the whole 12:00 edition. Does any new guard raise on real article text?
+- **Method:** `scripts/experiments/sys188/fuzz_gate_on_corpus.py <day>`: every pure guard (causal_spans, links+supports, unbacked_end_times, future/stated/unstated_periods by field, unbacked_times, unbacked_changes) on the L1 text of a day's articles, as prose and as source. Read-only.
+- **Result:** 2026-10-17: 2,124 articles, 16,992 calls, **0 exceptions**; 2026-10-16: 4,107 articles, 32,856 calls, **0 exceptions**. Today's live 12:00 run (old code): arcs 2/4, one refused by the causal gate itself (an MSCI "karena" no source states), sebab quotes 2/2 verbatim.
+- **Conclusion / do not repeat:** run this before any guard change goes live; a guard bug is an edition outage, not a refused arc.
+- **Links:** ADR-020, SYS-152 (#342), tracker #336
