@@ -553,6 +553,49 @@ class TestContinuity:
         assert _parse(_answer(alur=[], latar=latar))
 
 
+class TestSys190PeriodsByField:
+    """SYS-190 (#391): a whole month or period an article does not state is refused in the agenda always, in the
+    present fields when it is not over, in the latar when it is not over and stands under a cue."""
+
+    TODAY = date(2026, 10, 12)
+    STATED = "Aturan karhutla dibahas pada rapat terbatas, Senin (12/10/2026)."
+
+    def test_the_agenda_judges_every_period(self):
+        assert sa.unstated_periods("Aturan dijadwalkan terbit Desember.", self.TODAY, self.STATED, "agenda") == [
+            "Desember"]
+        assert sa.unstated_periods("Rapat lanjutan September.", self.TODAY, self.STATED, "agenda") == ["September"]
+
+    def test_a_present_field_judges_what_is_not_over(self):
+        assert sa.unstated_periods("Aturan terbit semester II 2026.", self.TODAY, self.STATED, "hari_ini") == [
+            "semester II 2026"]
+        assert sa.unstated_periods("Data September menunjukkan kenaikan.", self.TODAY, self.STATED, "hari_ini") == []
+
+    def test_the_latar_judges_only_under_a_cue(self):
+        undated = "Aturan karhutla dibahas pada rapat terbatas."
+        assert sa.unstated_periods("Aturan akan terbit Desember.", self.TODAY, undated, "latar") == ["Desember"]
+        assert sa.unstated_periods("Karhutla meluas sepanjang Oktober.", self.TODAY, undated, "latar") == []
+        assert sa.unstated_periods("Karhutla meluas sepanjang Oktober.", self.TODAY, undated, "hari_ini") == [
+            "Oktober"]
+
+    def test_a_stated_part_or_date_backs_the_whole(self):
+        stated = self.STATED + " Aturannya ditargetkan terbit akhir Desember."
+        assert sa.unstated_periods("Aturan dijadwalkan terbit Desember.", self.TODAY, stated, "agenda") == []
+        assert sa.unstated_periods("Aturan dijadwalkan terbit akhir Desember.", self.TODAY, self.STATED + " Terbit "
+                                   "Desember.", "agenda") == []          # a month part: its span's, not this check's
+
+    def test_a_next_year_month_needs_its_year(self):
+        stated = self.STATED + " Peluncuran dijadwalkan Februari 2027."
+        assert sa.unstated_periods("Peluncuran Februari mendatang.", self.TODAY, stated, "agenda") == []
+        assert sa.unstated_periods("Peluncuran Februari mendatang.", self.TODAY,
+                                   self.STATED + " Peluncuran Februari 2026 batal.", "agenda") == ["Februari mendatang"]
+
+    def test_parse_refuses_it_as_date(self):
+        answer = _answer(agenda="Aturan karhutla dijadwalkan terbit Desember.")
+        with pytest.raises(Rejected) as e:
+            sa.parse(answer, TEXTS, TIMELINE, DAY)
+        assert e.value.reason == "date" and '"Desember"' in str(e.value)
+
+
 class TestRelativeTime:
     """SYS-157 (#352): a relative time spans today, a chosen item's date or a stated date, or is stated."""
 

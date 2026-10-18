@@ -61,9 +61,9 @@ from newscrawler.core import causal_check
 from newscrawler.core import newsletter_copy as copy
 from newscrawler.core import story_words
 from newscrawler.core.llm_json import Rejected, ask_json, json_object
-from newscrawler.core.source_check import (dates_in, future_phrases, future_times, off_subject, ordinal_claims,
-                                           relative_name, relative_times, relative_times_at, resolve, stated_claims, unbacked_changes,
-                                           unbacked_end_times,
+from newscrawler.core.source_check import (dates_in, future_periods, future_phrases, future_times, off_subject,
+                                           ordinal_claims, relative_name, relative_times, relative_times_at, resolve,
+                                           stated_claims, stated_periods, unbacked_changes, unbacked_end_times,
                                            unstated_future_times, unsupported_number, without_dates)
 from newscrawler.core.story_summary import article_text, guard_text, words
 from newscrawler.core.summarizer import SummarizerError
@@ -394,6 +394,23 @@ def unbacked_times(text: str, digest_date: date, known: set, stated: str, schedu
     return out
 
 
+def unstated_periods(text: str, digest_date: date, stated: str, field: str) -> List[str]:
+    """SYS-190 (#391): the whole months, semesters/quarters and year parts of `text` ("Desember", "semester II 2026",
+    "akhir 2026") that `stated` -- today's `terkait` articles, as for `unstated_future_times` -- does not give; a
+    stated key holding the phrase's backs it ("15 Desember", "akhir Desember" back "Desember"). The agenda judges
+    every one; the present fields one that is not over; the latar one that is not over and stands under a cue
+    (`_cued`, SYS-177): "Pada September, ..." is past narration."""
+    given = stated_periods(stated, digest_date)
+    out = []
+    for start, end, phrase, key, last in future_periods(text, digest_date):
+        if field != "agenda" and (last < digest_date
+                                  or (field not in PRESENT_FIELDS and not _cued(text, start, end))):
+            continue
+        if not any(key <= g for g in given):
+            out.append(phrase)
+    return out
+
+
 def overcounted(text: str, items: int, stated: set) -> List[str]:
     """SYS-158: the ordinal and series claims of `text` that the chosen timeline does not back -- a
     count N needs N-1 earlier items, a record ("terendah sejak") cannot be counted at all -- and
@@ -502,6 +519,9 @@ def parse(answer: Optional[str], shown_texts: Sequence[str], timeline: Sequence[
                                                present=key in PRESENT_FIELDS)]
         dates += [f'waktu "{phrase}" di {key} tidak tertulis di artikel hari ini: tulis waktunya seperti yang '
                   "tertulis di artikel, mis. tanggalnya" for phrase in unstated_future_times(value, stated_today)]
+        dates += [f'waktu "{phrase}" di {key} tidak tertulis di artikel hari ini: tulis waktunya seperti yang '
+                  "tertulis di artikel, mis. tanggalnya" for phrase in unstated_periods(value, digest_date,
+                                                                                        stated_today, key)]
         # SYS-186: an end point ("hingga November 2026") must be one a source states as an end, not only a date
         # it names ("setelah evaluasi pada November 2026").
         dates += [f'"{phrase}" di {key} menyebut batas akhir yang tidak tertulis begitu di artikel atau cuplikan '

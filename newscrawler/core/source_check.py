@@ -358,18 +358,19 @@ _FUTURE_PART = r"(?:(?:awal|pertengahan|akhir)\s+)?"
 # SYS-178 (#377): a bare "akhir tahun" / "akhir pekan" -- no ini, lalu, depan or year after it -- is this year's /
 # this week's end (141 / 21 corpus articles: "ditargetkan rampung akhir tahun"). It was read by neither table, so an
 # invented one was printed while "akhir tahun ini" was refused. Keyed as "akhir tahun ini" / "akhir pekan ini".
-_BARE_END = (r"akhir\s+(?:tahun|pekan|minggu)"
+# SYS-190 (#391): "penghujung" is "akhir" ("penghujung tahun ini", keyed "akhir tahun ini").
+_BARE_END = (r"(?:akhir|penghujung)\s+(?:tahun|pekan|minggu)"
              r"(?!\s+(?:(?:ini|lalu|depan|mendatang|kemarin|sebelumnya|berikutnya|ke\s+depan)\b|\d))")
 _FUTURE = re.compile(rf"\b(?:{_DAY_AHEAD}|{_WINDOW_AHEAD}|"
                      rf"{_DAY_OF_WEEK}|"
                      rf"b?esok(?!\s+harinya)|lusa|{_FUTURE_PART}(?:pekan|minggu)\s+(?:depan|mendatang|ini)"
-                     rf"|{_FUTURE_PART}(?:bulan|tahun)\s+(?:depan|mendatang)|akhir\s+(?:bulan|tahun)\s+ini"
+                     rf"|{_FUTURE_PART}(?:bulan|tahun)\s+(?:depan|mendatang)|(?:akhir|penghujung)\s+(?:bulan|tahun)\s+ini"
                      rf"|{_BARE_END})\b",
                      re.IGNORECASE)
 _DAY_AHEAD_ONLY = re.compile(_DAY_AHEAD, re.IGNORECASE)
 _DAY_OF_WEEK_ONLY = re.compile(_DAY_OF_WEEK, re.IGNORECASE)
 _FUTURE_SYNONYMS = ((r"\bminggu\b", "pekan"), (r"\bmendatang\b", "depan"), (r"^esok\b", "besok"),
-                    (r"\bseminggu\b", "sepekan"))
+                    (r"\bseminggu\b", "sepekan"), (r"^penghujung\b", "akhir"))
 _DAY_OF_WEEK_KEY = re.compile(r"hari \w+ (?P<week>pekan (?:depan|ini))")
 _PART_KEY = re.compile(r"(?:awal|pertengahan|akhir) (?P<whole>(?:pekan|bulan|tahun) (?:depan|ini))")
 
@@ -665,6 +666,60 @@ def unbacked_end_times(text: str, source: str) -> List[str]:
                        for s, roots in stated):
                 out.append(m.group(0))
     return out
+
+
+# SYS-190 (#391): a whole month ("Desember", "bulan Desember", "November 2026", "November mendatang"), a semester or
+# quarter ("semester II 2026"), or a part of a year ("akhir 2026", "akhir tahun 2026") is a time an arc may write for
+# a schedule that no other table reads. The number guard sees only "2026", which every source states in "(12/10/2026)".
+# Read with `_END_TIME`, so a period is parsed one way for end points and for schedules.
+_PERIOD = re.compile(rf"(?<![\w/]){_END_TIME}(?:\s+(?:mendatang|depan)\b)?", re.IGNORECASE)
+_YEAR_PART_LAST_MONTH = {"awal": 4, "pertengahan": 8, "akhir": 12}
+
+
+def _period(m, today: date) -> Optional[Tuple[frozenset, Optional[date]]]:
+    """(key, last day) of a period match. The last day is None for what the arcs' period check does not judge: a
+    date (the date guard's), a part of a month (judged by its span, `relative_times`), a bare year. A month or
+    period without a year is this year's, or next year's when that month is already past and "mendatang/depan"
+    follows. A semester past II is no period."""
+    key = _end_key(m)
+    g = {k: (v or "").lower() for k, v in m.groupdict().items()}
+    ahead = bool(re.search(r"(?:mendatang|depan)$", m.group(0), re.IGNORECASE))
+    if g["month"]:
+        month = _MONTH_OF[g["month"]]
+        year = int(g["month_year"]) if g["month_year"] else today.year + (ahead and month < today.month)
+        key = (key - {k for k in key if k[0] == "year"}) | {("year", year)}
+        whole = not g["day"] and not g["part"]
+        return frozenset(key), _whole_month(month, year)[1] if whole else None
+    if g["period"]:
+        kind, n = g["period"].replace("triwulan", "kuartal"), _ORDINAL_OF[g["ordinal"]]
+        if kind == "semester" and n > 2:
+            return None
+        year = int(g["period_year"] or today.year)
+        return frozenset(key | {("year", year)}), _whole_month((6 if kind == "semester" else 3) * n, year)[1]
+    if g["short_month"]:
+        if not 1 <= int(g["short_month"]) <= 12:
+            return None
+        year = int(g["short_year"]) if len(g["short_year"]) == 4 else today.year
+        return frozenset(key | {("year", year)}), None
+    year = int(g["year"])
+    return key, _whole_month(_YEAR_PART_LAST_MONTH[g["part"]], year)[1] if g["part"] else None
+
+
+def future_periods(text: str, today: date) -> List[Tuple[int, int, str, frozenset, date]]:
+    """(start, end, phrase as written, key, last day) of every whole month, semester/quarter or year part in `text`
+    (SYS-190), whether or not it is over: which ones a field must back is the caller's (`story_arc`)."""
+    out = []
+    for m in _PERIOD.finditer(text or ""):
+        found = _period(m, today)
+        if found and found[1]:
+            out.append((m.start(), m.end(), m.group(0), found[0], found[1]))
+    return out
+
+
+def stated_periods(text: str, today: date) -> Set[frozenset]:
+    """The period keys `text` states, dates and month parts included: "akhir Desember" and "15 Desember" each state
+    "Desember" (a key holding the prose key backs it, as `unstated_future_times` lets a part state its whole)."""
+    return {found[0] for found in (_period(m, today) for m in _PERIOD.finditer(text or "")) if found}
 
 
 def off_subject(judul: str, inti: str, related: Dict[int, str]) -> Tuple[List[str], List[int]]:

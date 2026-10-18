@@ -608,6 +608,43 @@ class TestSys193EndSubject:
         assert sc.unbacked_end_times("Hingga September 2026, ada kenaikan.", self.SRC) == []
 
 
+class TestSys190Periods:
+    """SYS-190 (#391): whole months, semesters/quarters and year parts are read with their last day; dates, month
+    parts and bare years are not (other guards hold them)."""
+
+    TODAY = date(2026, 10, 12)
+
+    def _read(self, text):
+        return [(phrase, last) for _, _, phrase, _, last in sc.future_periods(text, self.TODAY)]
+
+    @pytest.mark.parametrize("text,phrase,last", [
+        ("terbit Desember.", "Desember", date(2026, 12, 31)),
+        ("terbit November 2026.", "November 2026", date(2026, 11, 30)),
+        ("terbit semester II 2026.", "semester II 2026", date(2026, 12, 31)),
+        ("terbit kuartal IV 2026.", "kuartal IV 2026", date(2026, 12, 31)),
+        ("terbit akhir 2026.", "akhir 2026", date(2026, 12, 31)),
+        ("terbit akhir tahun 2026.", "akhir tahun 2026", date(2026, 12, 31)),
+        ("terbit Februari mendatang.", "Februari mendatang", date(2027, 2, 28)),
+    ])
+    def test_a_whole_period_is_read_with_its_last_day(self, text, phrase, last):
+        assert self._read(text) == [(phrase, last)]
+
+    @pytest.mark.parametrize("text", ["terbit akhir Desember.", "terbit 15 Desember.", "APBN 2026 disahkan.",
+                                      "terbit 15/12.", "terbit semester IV 2026."])
+    def test_dates_month_parts_and_bare_years_are_not_read(self, text):
+        assert self._read(text) == []
+
+    def test_a_part_or_a_date_states_its_whole_month(self):
+        [(_, _, _, key, _)] = sc.future_periods("terbit Desember.", self.TODAY)
+        for stated in ["Aturan terbit akhir Desember.", "Aturan terbit 15 Desember.", "Aturan terbit Desember 2026."]:
+            assert any(key <= s for s in sc.stated_periods(stated, self.TODAY)), stated
+        assert not any(key <= s for s in sc.stated_periods("Aturan terbit November.", self.TODAY))
+
+    def test_penghujung_is_akhir(self):
+        assert sc.future_times("Aturan rampung penghujung tahun ini.") == {"akhir tahun ini"}
+        assert sc.future_times("Aturan rampung penghujung tahun.") == {"akhir tahun ini"}
+
+
 class TestSys178BareEnd:
     @pytest.mark.parametrize("text", ["Aturan akan rampung akhir tahun.", "Aturan rampung Akhir Tahun.",
                                       "Rapat digelar akhir pekan, kata Menko.", "Rapat digelar akhir minggu."])
