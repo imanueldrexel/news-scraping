@@ -1,17 +1,23 @@
 # Project Status
 
 ## Project: NewsAggregator
-**Current Phase:** SDE 2026-10-19: QA's 2026-10-13 queue (SYS-144/145/146, DBT-60/70/71, SRC-62) + SYS-194 -- design and plan done (ADR-021, owner-approved), implementation in progress. The 13 arc tickets of 10-18 still await QA. NEWSLETTER_ARCS stays 1 (owner, 10-18).
-**Last Updated:** 2026-10-19 04:30 by SDE
+**Current Phase:** SDE 2026-10-19: QA's 2026-10-13 queue done -- 8 tickets ready-for-qa (SYS-144/145/146 via ADR-021, SYS-194, DBT-60/70/71, SRC-62); SYS-195 #397 filed, open. The 13 arc tickets of 10-18 still await QA. NEWSLETTER_ARCS stays 1 (owner, 10-18).
+**Last Updated:** 2026-10-19 05:10 by SDE
 **Health:** At Risk (known open arc defects in production: SYS-188/189 P1, SYS-181/186 sent back -- all ready-for-qa since 10-18)
 
 ## Progress
+
+### SDE 2026-10-19: QA's 2026-10-13 queue -- done, 8 ready-for-qa (e6637a9, 6c934c0)
+- [x] SYS-194 [x] SYS-144+145 [x] SYS-146 [x] DBT-60 [x] DBT-70 [x] DBT-71 [x] SRC-62
+- Unit 3,879 / 5 skipped; integration 225 / 1 skipped; QA file 10-13: all SYS-144/145, DBT-60, DBT-67/70 reds green (SYS-143's 5 noted-not-filed stay red, as at HEAD).
+- Mutants (copy): 22 follow-up/keyword + 9 DBT-60 + 2 DBT-70 + 3 SRC-62 + QA's 4 DBT-71/68: all KILLED; qa1013_dbt60_no_strip retired (equivalent).
+- Production (read-only): QA held-out B 22 -> 30/35, held-out sets 28 -> 33/40 and 12 -> 15/30, other sets equal; 1 pair worse = ADR-021's accepted cost. SYS-146 29 -> 36; "Siapa pemimpinnya Danantara?" 2/5 (SYS-195). Replay identical.
 
 ### SDE 2026-10-19: QA's 2026-10-13 queue -- design + plan
 - Owner (2026-10-19): ADR-021 "Anaphor gate + list" for SYS-144/145; SYS-146's off-subject ranking is a separate ticket (SYS-195 #397).
 - Measured before deciding (production, read-only, no model call): `scripts/experiments/sys144/measure_name_gate.py` -- HEAD vs list vs name gates on 9 pair sets, two held-out sets written before their runs; `sys144/mine_nya_adverbs.py` (20k articles); `sys146/measure_nya_terms.py` (29 -> 35 on-topic).
 - Filed: SYS-194 #396 (FTS ORDER BY has no unique last key: same question, different cards), SYS-195 #397.
-- Plan: engineering-manager/qa-1013-queue.md. [ ] SYS-194 [ ] SYS-144+145 [ ] SYS-146 [ ] DBT-60 [ ] DBT-70 [ ] DBT-71 [ ] SRC-62
+- Plan: engineering-manager/qa-1013-queue.md.
 
 ### SDE 2026-10-18: QA's 10-18 queue -- done, 13 ready-for-qa
 - **Owner decision 2026-10-18 (evening): keep `NEWSLETTER_ARCS=1`** for the 10-19 12:00 edition on the new gate code. Grounds: the new code is strictly stricter than what ran live 10-17/10-18 and fails closed to the plain story; the guards raised 0 exceptions on 6,231 real articles (EXPERIMENTS.md, fuzz_gate_on_corpus.py); SYS-152's measurement needs live sebab logs. QA keeps its sentence-by-sentence check; on the first false fact, set 0.

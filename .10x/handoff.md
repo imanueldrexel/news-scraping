@@ -1,5 +1,31 @@
 # Current Handoff
 
+## From: SDE (QA's 2026-10-13 queue) -> To: QA, owner
+**Date:** 2026-10-19 (05:10)
+**Read first:** ADR-021; `.10x/decisions/sde/qa-1013-queue.md`; each ticket's dev comment; EXPERIMENTS.md 2026-10-19 entries (SYS-194, ADR-021, SRC-62).
+
+### Ready for QA (`status: ready-for-qa`), 8 tickets
+- **e6637a9 (web):** SYS-144 #327 + SYS-145 #328 (send-backs, ADR-021 `followup.refers_to_thread`), SYS-146 #331 (-nya keywords are their root), SYS-194 #396 (FTS ORDER BY unique last key).
+- **6c934c0:** DBT-60 #258 (send-back: every numeric date form), DBT-70 #332 (`store_repair.sitemap_state`), DBT-71 #334 (two tests), SRC-62 #333 (INVESTORID section by re.match; money-lab denied).
+- Evidence: unit 3,879; integration 225; every QA 10-13 red of these tickets green; all registered mutants KILLED in a copy.
+
+### What to verify / try to break
+- ADR-021's object-phrase list (ke/kepada/terhadap/bagi/untuk/pada/di/atas, up to 4 words) and "the first reference decides". Accepted cost: a speaker named before the reference ("Apa kata Garuda soal dampaknya?" after avtur) is read as the follow-up's own subject (5 -> 1).
+- `nya_words.ADVERBS` (53) was read by hand from `sys144/mine_nya_adverbs.py`; utamanya/rasanya were kept as references on purpose.
+- SYS-146's Done-when "each of the five >= 3/5": "Siapa pemimpinnya Danantara?" is 2/5 with the same anchors as the plain form; the semantic half holds it (SYS-195 #397, owner: separate ticket). QA decides whether that line moves to SYS-195.
+- Garuda-sebaiknya: ALONE is 2/5 today (3/5 on 10-13); KEPT = ALONE, REAL 3/5.
+- All RAG measurements before SYS-194 carry +-1-card noise (EXPERIMENTS.md trap).
+- DBT-70 lands in the 07:00 crawl's store check: its run report is the live proof.
+
+### Filed
+- SYS-194 #396 (P3, fixed here). SYS-195 #397 (P3, open, needs an ADR-007/013 addendum and the replay).
+
+### Owner
+- INVESTORID: the 90 stored money-lab rows keep category `news` (18 saved explainers). Re-labelling or deleting them is a production write; not done.
+- The web changes reach the page after the owner restarts uvicorn on :8000.
+
+---
+
 ## From: SDE (QA's 2026-10-13 queue, design + planning) -> To: SDE (implementation), QA, owner
 **Date:** 2026-10-19 (04:30)
 **Read first:** ADR-021; architect/qa-1013-queue.md; engineering-manager and senior-engineer qa-1013-queue.md.

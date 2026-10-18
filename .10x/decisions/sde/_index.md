@@ -1,6 +1,7 @@
 # sde decisions — index
 
 ## Active features
+- [qa-1013-queue](qa-1013-queue.md) — 2026-10-19: built QA 10-13 queue: nya_words + refers_to_thread (ADR-021), -nya roots, FTS unique key, numeric dates, sitemap_state, INVESTORID section; e6637a9, 6c934c0
 - [p1-p2-newsletter-fixes](p1-p2-newsletter-fixes.md) — OPS-20/SYS-68/SYS-67/SYS-63 built; QA feedback SYS-71/72, DBT-51/52 fixed 2026-10-04; ready-for-qa
 
 - [newsletter-digest-quality](newsletter-digest-quality.md) — SYS-69, SYS-65 ready-for-qa; OPS-38 code done, job not registered (owner)
