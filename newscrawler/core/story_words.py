@@ -126,3 +126,9 @@ def root(word: str) -> str:
         if w.startswith(prefix) and len(w) - len(prefix) >= _MIN_ROOT:
             return w[len(prefix):]
     return w
+
+
+def meets(root: str, others: set) -> bool:
+    """`root` is in `others`, or one ends the other (a nasal prefix eats a letter: "unda" in "tunda")."""
+    return root in others or any(min(len(root), len(o)) >= _MIN_ROOT and (root.endswith(o) or o.endswith(root))
+                                 for o in others)

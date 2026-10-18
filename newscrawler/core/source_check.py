@@ -560,7 +560,8 @@ _TOTAL_OR_CHANGE = re.compile(rf"\b(?:{_CHANGE_VERBS}|kumulatif|akumulasi)\b"
 
 
 def _sentences(text: str) -> List[str]:
-    return [s for s in re.split(r"(?<=[.!?])\s+|\n+", text) if s.strip()]
+    """The sentences of `text`; "s.d." ("sampai dengan") ends none (SYS-191: "berlaku s.d. November 2026")."""
+    return [s for s in re.split(r"(?<=[.!?])(?<!\bs\.d\.)\s+|\n+", text, flags=re.IGNORECASE) if s.strip()]
 
 
 def unbacked_changes(text: str, source: str) -> List[str]:
@@ -600,17 +601,28 @@ _END_TIME = (rf"(?:(?P<part>awal|pertengahan|akhir)\s+)?(?:"
              rf"(?:\s*[-/]?\s*(?P<period_year>{_YEAR}))?"
              rf"|(?:tahun\s+)?(?P<year>{_YEAR})"
              rf"|(?P<short_day>\d{{1,2}})/(?P<short_month>\d{{1,2}})(?:/(?P<short_year>\d{{2,4}}))?)(?![\w/])")
-_END_GAP = r"(?:\s+(?!(?:pada|di|ke|dari|sejak|dengan|yang|dan|atau|setelah|sebelum)\b)[^\W\d_]+){0,2}?"
-_END_POINT = re.compile(rf"\b(?:hingga|sampai(?:\s+dengan)?){_END_GAP}\s+{_END_TIME}", re.IGNORECASE)
-_STATED_END = re.compile(rf"(?:\b(?:hingga|sampai(?:\s+dengan)?|s\.d\.?|s/d|per){_END_GAP}\s+|(?<=\w)\s*[-–]\s*)"
+# SYS-186 send-back (#387): up to three gap words, the last of which may be "pada" ("hingga evaluasi indeks pada November
+# 2026", the live false fact rephrased). A function word, a digit or a degree word ("hingga level tertinggi pada
+# Oktober") in the gap still attaches the time to something else.
+_END_GAP = (r"(?:\s+(?!(?:pada|di|ke|dari|sejak|dengan|yang|dan|atau|setelah|sebelum|"
+            r"(?:level|posisi|puncak|tertinggi|terendah|rekor)(?:nya)?)\b)[^\W\d_]+){0,3}?(?:\s+pada)?")
+# SYS-191 (#392): an end written without "hingga" -- "berakhir pada review November 2026", "baru dicabut pada November
+# 2026", "berlaku s.d. November 2026" -- is an end point in the prose too, and states one in a source.
+_END_OPEN = r"hingga|sampai(?:\s+dengan)?|s\.d\.?|s/d|(?:berakhir|selesai|dicabut)(?:\s+pada)?"
+_END_POINT = re.compile(rf"(?<![\w.])(?:{_END_OPEN}){_END_GAP}\s+{_END_TIME}", re.IGNORECASE)
+_STATED_END = re.compile(rf"(?:(?<![\w.])(?P<open>{_END_OPEN}|per){_END_GAP}\s+|(?<=\w)\s*[-–]\s*)"
                          rf"{_END_TIME}",
                          re.IGNORECASE)
+# SYS-186 send-back: "berlaku per November 2026" is a START ("from November"); "Defisit APBN per 30 September" ends.
+_STARTS_PER = re.compile(r"\b(?:berlaku|mulai|efektif)\s*$", re.IGNORECASE)
 
 
 def _end_key(m) -> frozenset:
-    """The parts of an end time: "akhir Juni 2027" is {part akhir, month 6, year 2027}."""
+    """The parts of an end time: "akhir Juni 2027" is {part akhir of a month, month 6, year 2027}. A part is keyed
+    with its unit (SYS-186 send-back): "akhir 2027" is December 2027, never the end of June 2027."""
     g = {k: (v or "").lower() for k, v in m.groupdict().items()}
-    key = {("part", g["part"])} if g["part"] else set()
+    unit = "month" if g["month"] else "period" if g["period"] else "year"
+    key = {("part", g["part"], unit)} if g["part"] else set()
     if g["month"]:
         key |= {("month", _MONTH_OF[g["month"]])} | ({("day", int(g["day"]))} if g["day"] else set())
     if g["period"]:
@@ -622,16 +634,42 @@ def _end_key(m) -> frozenset:
 
 
 def end_points(text: str) -> List[Tuple[str, frozenset]]:
-    """(phrase as written, key) of every "hingga / sampai <time>" in `text`."""
+    """(phrase as written, key) of every end point in `text`: "hingga / sampai / s.d. <time>", "berakhir / selesai /
+    dicabut (pada) <time>"."""
     return [(m.group(0), _end_key(m)) for m in _END_POINT.finditer(text or "")]
+
+
+def _subject_roots(text: str) -> Set[str]:
+    return {story_words.root(w) for w in story_words.content_words(text)}
+
+
+def _stated_ends(source: str) -> List[Tuple[frozenset, Set[str]]]:
+    """(key, the roots of its sentence) of every end time `source` states, never a "berlaku per" start."""
+    out = []
+    for sentence in _sentences(source or ""):
+        roots = _subject_roots(sentence)
+        out += [(_end_key(m), roots) for m in _STATED_END.finditer(sentence)
+                if not ((m.group("open") or "").lower() == "per" and _STARTS_PER.search(sentence[:m.start()]))]
+    return out
 
 
 def unbacked_end_times(text: str, source: str) -> List[str]:
     """SYS-186: the end points of `text` that no source states as an end: every part of the prose time (day, month,
-    year, part, semester or quarter) must be in one end time of `source`. A less precise prose time is backed by a
-    more precise one ("hingga 2027" by "hingga semester II-2027"), never the reverse."""
-    stated = {_end_key(m) for m in _STATED_END.finditer(source or "")}
-    return [phrase for phrase, key in end_points(text) if not any(key <= s for s in stated)]
+    year, part with its unit, semester or quarter) must be in one end time of `source`. A less precise prose time is
+    backed by a more precise one ("hingga 2027" by "hingga semester II-2027"), never the reverse.
+
+    SYS-193 (#394): and by one whose sentence shares a content word with the prose clause before the end point:
+    "Pembekuan saham berlanjut hingga 2026" is not backed by "Defisit APBN hingga September 2026". A clause with no
+    content word ("Hingga September 2026, ...") is matched by its time alone."""
+    stated = _stated_ends(source)
+    out = []
+    for sentence in _sentences(text or ""):
+        for m in _END_POINT.finditer(sentence):
+            key, subject = _end_key(m), _subject_roots(re.split(r"[,;:]", sentence[:m.start()])[-1])
+            if not any(key <= s and (not subject or any(story_words.meets(r, roots) for r in subject))
+                       for s, roots in stated):
+                out.append(m.group(0))
+    return out
 
 
 def off_subject(judul: str, inti: str, related: Dict[int, str]) -> Tuple[List[str], List[int]]:

@@ -175,10 +175,7 @@ def _roots(text: str) -> set:
     return {_root(w) for w in story_words.content_words(text) if _weighs(w)}
 
 
-def _meets(root: str, others: set) -> bool:
-    """`root` is in `others`, or one ends the other (a nasal prefix eats a letter: "unda" in "tunda")."""
-    return root in others or any(min(len(root), len(o)) >= 4 and (root.endswith(o) or o.endswith(root))
-                                 for o in others)
+_meets = story_words.meets
 
 
 def overlap(half: str, side: str) -> float:

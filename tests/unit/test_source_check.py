@@ -530,10 +530,83 @@ class TestSys186EndPoints:
         [(_, key)] = sc.end_points("Data hingga 12/10 menunjukkan kenaikan.")
         assert key == frozenset({("day", 12), ("month", 10)})
         [(phrase, key)] = sc.end_points("HINGGA AKHIR TAHUN 2026 harga naik.")
-        assert phrase == "HINGGA AKHIR TAHUN 2026" and key == frozenset({("part", "akhir"), ("year", 2026)})
+        assert phrase == "HINGGA AKHIR TAHUN 2026" and key == frozenset({("part", "akhir", "year"), ("year", 2026)})
+        [(_, key)] = sc.end_points("Freeze berlanjut hingga akhir Juni 2027.")      # SYS-186 send-back: with its unit
+        assert key == frozenset({("part", "akhir", "month"), ("month", 6), ("year", 2027)})
 
 
 # ── SYS-178 (#377) bare "akhir tahun / pekan"; SYS-179 (#378) the parts of a future period ───────────
+
+class TestSys186Rephrased:
+    """SYS-186 send-back (#387): the live MSCI false end, in the model's other words, is read and refused."""
+
+    @pytest.mark.parametrize("prose", ["Pembekuan berlanjut hingga evaluasi indeks pada November 2026.",
+                                       "Pembekuan berlanjut hingga review indeks MSCI November 2026."])
+    def test_a_pada_tail_and_three_gap_words_are_read(self, prose):
+        assert sc.end_points(prose) and sc.unbacked_end_times(prose, MSCI) != []
+
+    @pytest.mark.parametrize("prose", ["Harga naik hingga level tertinggi pada Oktober.",
+                                       "Harga naik hingga puncaknya pada Oktober.",
+                                       "Harga naik hingga 5 persen pada Oktober."])
+    def test_a_degree_word_or_a_number_still_blocks(self, prose):
+        assert sc.end_points(prose) == []
+
+    def test_a_part_is_keyed_with_its_unit(self):
+        """"akhir 2027" is December 2027, not the end of June 2027; "hingga 2027" is still backed by it."""
+        assert sc.unbacked_end_times("Pembekuan berlanjut hingga akhir 2027.", MSCI) != []
+        assert sc.unbacked_end_times("Pembekuan berlanjut hingga 2027.", MSCI) == []
+
+    def test_berlaku_per_is_a_start(self):
+        assert sc.unbacked_end_times("Pembekuan berlanjut hingga November 2026.",
+                                     "Pembekuan berlaku per November 2026.") != []
+        assert sc.unbacked_end_times("Defisit APBN hingga 30 September 2026 mencapai Rp319 triliun.",
+                                     "Defisit APBN per 30 September 2026 mencapai Rp319 triliun.") == []
+
+    def test_semester_is_not_kuartal(self):
+        """DBT-83 (qa18_semester_is_kuartal)."""
+        assert sc.unbacked_end_times("Pembekuan berlanjut hingga kuartal II 2027.",
+                                     "Freeze berlanjut hingga semester II-2027.") != []
+
+    def test_a_month_end_of_another_year_does_not_back(self):
+        """DBT-83 (qa18_month_year_ignored)."""
+        assert sc.unbacked_end_times("Pembekuan berlanjut hingga Juni 2026.",
+                                     "Pembekuan berlanjut hingga akhir Juni 2027.") != []
+
+
+class TestSys191EndOpeners:
+    """SYS-191 (#392): an end written without "hingga" is an end point, in the prose and in a source."""
+
+    @pytest.mark.parametrize("prose", ["Pembekuan berakhir pada review November 2026.",
+                                       "Pembekuan baru dicabut pada November 2026.",
+                                       "Pembekuan selesai November 2026.",
+                                       "Pembekuan berlaku s.d. November 2026."])
+    def test_an_end_the_source_does_not_state_is_refused(self, prose):
+        assert sc.end_points(prose) and sc.unbacked_end_times(prose, MSCI) != []
+
+    def test_a_stated_end_backs_it_in_any_opener(self):
+        assert sc.unbacked_end_times("Pembekuan berakhir pada Juni 2027.", MSCI) == []
+        assert sc.unbacked_end_times("Pembekuan berlanjut hingga Juni 2027.",
+                                     "Pembekuan berlaku s.d. Juni 2027 menurut MSCI.") == []
+
+    def test_s_d_ends_no_sentence(self):
+        assert sc._sentences("Pembekuan berlaku s.d. November 2026. Lalu dicabut.") == [
+            "Pembekuan berlaku s.d. November 2026.", "Lalu dicabut."]
+
+
+class TestSys193EndSubject:
+    """SYS-193 (#394): a stated end backs a prose end only for the same subject."""
+
+    SRC = "Defisit APBN hingga September 2026 mencapai Rp319 triliun. Pembekuan saham berlanjut setelah evaluasi."
+
+    def test_an_end_of_another_subject_does_not_back(self):
+        assert sc.unbacked_end_times("Pembekuan saham berlanjut hingga 2026.", self.SRC) != []
+
+    def test_the_same_subject_backs(self):
+        assert sc.unbacked_end_times("Defisit APBN hingga September 2026 melebar.", self.SRC) == []
+
+    def test_a_clause_with_no_subject_is_matched_by_its_time(self):
+        assert sc.unbacked_end_times("Hingga September 2026, ada kenaikan.", self.SRC) == []
+
 
 class TestSys178BareEnd:
     @pytest.mark.parametrize("text", ["Aturan akan rampung akhir tahun.", "Aturan rampung Akhir Tahun.",
