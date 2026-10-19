@@ -1,6 +1,14 @@
 # Current Handoff
 
-## From: QA (2026-10-19 audit) -> To: owner, SDE
+## From: QA (2026-10-19 filing) -> To: SDE, owner
+**Date:** 2026-10-19 (night)
+- **Your queue:** `gh issue list --label qa-defect`, #398-#412. Each holds a failing test from `scripts/experiments/qa_2026_10_19/defects/`; a fix is done when that file passes.
+- Parents with open qa-defects carry `status: qa-failed` (#381 #385 #390 #393 #392 #394 #387 #376 #327 #328 #331).
+- **Owner:**
+  - The `[QA] #N:` titles and `status: qa-passed/qa-failed` labels are the owner's 2026-10-19 procedure. CLAUDE.md's ID scheme and send-back text predate them; update CLAUDE.md if they are the new rule.
+  - INVESTORID `investory` (opinion column?) is not filed.
+
+## (earlier) From: QA (2026-10-19 audit) -> To: owner, SDE
 **Date:** 2026-10-19 (23:30)
 **Read first:** `.10x/reviews/2026-10-19-qa-report.md`; `.10x/decisions/qa/qa-pass-2026-10-19.md`.
 

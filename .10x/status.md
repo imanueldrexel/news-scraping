@@ -1,7 +1,7 @@
 # Project Status
 
 ## Project: NewsAggregator
-**Current Phase:** QA 2026-10-19: 21 tickets audited. 10 closed (SYS-188/187/183/190, DBT-83, SYS-194, DBT-60/70/71, SRC-62). SYS-181/185/193/177/144/145 failed on held-out inputs; SYS-189/192/191/186 met their Done-when but need new tickets; SYS-146 not closed. The 11 are left ready-for-qa until the owner decides on send-backs and filing.
+**Current Phase:** QA 2026-10-19: 21 tickets audited. 10 closed (SYS-188/187/183/190, DBT-83, SYS-194, DBT-60/70/71, SRC-62). SYS-181/185/193/177/144/145 failed on held-out inputs; SYS-189/192/191/186 met their Done-when but need new tickets; SYS-146 not closed. 15 qa-defects filed (#398-#412); the 11 parents carry `status: qa-failed`.
 **Last Updated:** 2026-10-19 23:30 by QA
 **Health:** At Risk (SYS-181 P1 class still prints a swapped-subject cause in the gate; arcs=1 live; the 10-19 edition had no false fact)
 
@@ -9,9 +9,8 @@
 
 ### QA 2026-10-19: audit of the 10-18 arc queue + 10-19 web queue
 - [x] 10 closed with evidence comments.
-- [ ] SYS-181/185/193/177/144/145: send back (owner to confirm).
-- [ ] SYS-189/192/191/186: file the new tickets, then close.
-- [ ] SYS-146: send back.
+- [x] 15 qa-defects filed (#398-#412); 11 parents `status: qa-failed`, 10 closed parents `status: qa-passed`.
+- [ ] Dev: fix #398-#412; QA re-runs `scripts/experiments/qa_2026_10_19/defects/` and closes each qa-defect.
 - Report: `.10x/reviews/2026-10-19-qa-report.md`.
 
 
