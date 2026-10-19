@@ -1,11 +1,19 @@
 # Project Status
 
 ## Project: NewsAggregator
-**Current Phase:** SDE 2026-10-19: QA's 2026-10-13 queue done -- 8 tickets ready-for-qa (SYS-144/145/146 via ADR-021, SYS-194, DBT-60/70/71, SRC-62); SYS-195 #397 filed, open. The 13 arc tickets of 10-18 still await QA. NEWSLETTER_ARCS stays 1 (owner, 10-18).
-**Last Updated:** 2026-10-19 05:10 by SDE
-**Health:** At Risk (known open arc defects in production: SYS-188/189 P1, SYS-181/186 sent back -- all ready-for-qa since 10-18)
+**Current Phase:** QA 2026-10-19: 21 tickets audited. 10 closed (SYS-188/187/183/190, DBT-83, SYS-194, DBT-60/70/71, SRC-62). SYS-181/185/193/177/144/145 failed on held-out inputs; SYS-189/192/191/186 met their Done-when but need new tickets; SYS-146 not closed. The 11 are left ready-for-qa until the owner decides on send-backs and filing.
+**Last Updated:** 2026-10-19 23:30 by QA
+**Health:** At Risk (SYS-181 P1 class still prints a swapped-subject cause in the gate; arcs=1 live; the 10-19 edition had no false fact)
 
 ## Progress
+
+### QA 2026-10-19: audit of the 10-18 arc queue + 10-19 web queue
+- [x] 10 closed with evidence comments.
+- [ ] SYS-181/185/193/177/144/145: send back (owner to confirm).
+- [ ] SYS-189/192/191/186: file the new tickets, then close.
+- [ ] SYS-146: send back.
+- Report: `.10x/reviews/2026-10-19-qa-report.md`.
+
 
 ### SDE 2026-10-19: QA's 2026-10-13 queue -- done, 8 ready-for-qa (e6637a9, 6c934c0)
 - [x] SYS-194 [x] SYS-144+145 [x] SYS-146 [x] DBT-60 [x] DBT-70 [x] DBT-71 [x] SRC-62

@@ -1,5 +1,28 @@
 # Current Handoff
 
+## From: QA (2026-10-19 audit) -> To: owner, SDE
+**Date:** 2026-10-19 (23:30)
+**Read first:** `.10x/reviews/2026-10-19-qa-report.md`; `.10x/decisions/qa/qa-pass-2026-10-19.md`.
+
+- **Closed:** SYS-188, SYS-187, SYS-183, SYS-190, DBT-83, SYS-194, DBT-60, DBT-70, DBT-71, SRC-62.
+- **Still ready-for-qa; no comment posted, owner to confirm the send-backs:**
+  - SYS-181: "IHSG turun karena aksi jual asing" is backed by a BBRI anaphor quote.
+  - SYS-185: "... dibantah maskapai" after the link; "menyangkal".
+  - SYS-193: "Hingga 2026, pembekuan saham berlanjut." is backed by the deficit's end.
+  - SYS-177: "dipastikan/dijanjikan terbit akhir Oktober".
+  - SYS-144/145: Garuda 3/5 and 5/5 -> 0/5 live on the fallback and kept paths.
+  - SYS-146: "mestinya" -> fts=0.
+- **To close once the new tickets are filed:**
+  - SYS-189: terimbas/dipacu/terdorong/buntut;
+  - SYS-192: diperkirakan/diyakini/disebut-sebut;
+  - SYS-191: dihentikan/diakhiri pada, paling lambat;
+  - SYS-186: spatial "hingga Riau pada akhir Oktober" refused.
+  - Also: INVESTORID `investory` reads as an opinion column.
+- **Live:** the 10-19 12:00 edition (ARCS=1) had no false fact. One imprecision: "26.200 KL Pertalite" is total BBM.
+
+---
+
+
 ## From: SDE (QA's 2026-10-13 queue) -> To: QA, owner
 **Date:** 2026-10-19 (05:10)
 **Read first:** ADR-021; `.10x/decisions/sde/qa-1013-queue.md`; each ticket's dev comment; EXPERIMENTS.md 2026-10-19 entries (SYS-194, ADR-021, SRC-62).

@@ -3320,3 +3320,27 @@ SINDONEWS   old 12 new 12 | lost [] | gained []   links identical: True
   - After the fix: check OK (3/3 bodies, 3,064 chars). The live 100 links: market 35, business 30, national 11, international 7, **money-lab 7 (deny)**, finance 6, lifestyle 3 (deny), macroeconomy 1; no `news`.
 - **Conclusion / do not repeat:** money-lab is a guides column, so it is denied for INVESTORID only (`SOURCE_SOFT_LEAVES`, settled before fetch). The 90 stored rows keep `news`; re-labelling them is a production write left to the owner. The 18 saved explainers stay unless the owner asks.
 - **Links:** SRC-62 (#333)
+
+### 2026-10-19 — QA: do the ADR-020 arc queue and the ADR-021 web queue hold on held-out inputs?
+- **Question / hypothesis:** the 21 ready-for-qa tickets (arc gate + time checks; follow-up/keyword/DTO/store/INVESTORID) pass their own fixtures. Do they hold on inputs of the same class that neither the dev nor QA wrote before?
+- **Method:**
+  - `venv\Scripts\python.exe -m pytest scripts/experiments/qa_2026_10_19/test_qa_1019_arcs.py scripts/experiments/qa_2026_10_19/test_qa_1019_web.py -q -p no:cacheprovider`, run in tree copies of 40a2edc / d2eecf4 (baselines) and HEAD.
+  - `scripts/experiments/qa_2026_10_19/probe_qa_1019_live.py` (production, read-only, no model call).
+  - `run_registry_mutants_in_copy.py` on the 13 arc prefixes and dbt60/dbt70/src62/qa1013_*.
+- **Result:**
+  - Arc file: 65 red at baseline, 19 at HEAD. Web file: 35 red at baseline, 9 at HEAD.
+  - Registry: 108/108 arc mutants KILLED, plus the DBT/SRC ones.
+  - Held-out reds at HEAD:
+    - an anaphor subject sharing one root lends a sentence about another subject ("IHSG turun" backed by a BBRI quote);
+    - a denial after the link ("... dibantah maskapai"), and "menyangkal";
+    - a fronted end "Hingga 2026, ..." skips the subject check;
+    - latar cues "dipastikan"/"dijanjikan";
+    - unlisted causal forms, hedges and end verbs;
+    - spatial "hingga Riau pada akhir Oktober" refused as an end;
+    - a topic switch whose name is only in an object phrase, with an unlisted adverb (harusnya/aslinya/mestinya/kayaknya), goes to the old thread: Garuda 3/5 and 5/5 -> 0/5 live, on the fallback and the kept path;
+    - "ditanya" -> "dita".
+  - SYS-194: 5 questions × 6 runs = 1 list each.
+- **Conclusion / do not repeat:**
+  - Every closed word list in these gates (causal verbs, hedges, denials, end openers, plan verbs, -nya adverbs) failed on the first unlisted synonym QA tried. Test held-out synonyms, and prefer rules that fail closed on an unknown word over longer lists.
+  - ADR-021's object-phrase removal brings the adverb list back as the deciding layer whenever the follow-up's only name is an object ("terjadi pada X"). Test that shape on every follow-up change.
+- **Links:** SYS-181 #381, SYS-185 #385, SYS-193 #394, SYS-177 #376, SYS-144 #327, SYS-145 #328, SYS-146 #331; `.10x/reviews/2026-10-19-qa-report.md`
