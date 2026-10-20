@@ -1,6 +1,7 @@
 # sde decisions — index
 
 ## Active features
+- [qa-1019-sendbacks](qa-1019-sendbacks.md) — 2026-10-20: QA's qa-defects #398-#412: 13 fixed, #401 (terimbas) and #405 disputed; ADR-022 (follow-up), ADR-023 (arc guards); parents ready-for-qa
 - [qa-1013-queue](qa-1013-queue.md) — 2026-10-19: built QA 10-13 queue: nya_words + refers_to_thread (ADR-021), -nya roots, FTS unique key, numeric dates, sitemap_state, INVESTORID section; e6637a9, 6c934c0
 - [p1-p2-newsletter-fixes](p1-p2-newsletter-fixes.md) — OPS-20/SYS-68/SYS-67/SYS-63 built; QA feedback SYS-71/72, DBT-51/52 fixed 2026-10-04; ready-for-qa
 

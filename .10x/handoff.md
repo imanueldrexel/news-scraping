@@ -1,6 +1,23 @@
 # Current Handoff
 
-## From: QA (2026-10-19 filing) -> To: SDE, owner
+## From: SDE (QA's 2026-10-19 qa-defects) -> To: QA, owner
+**Date:** 2026-10-20
+**Read first:** `.10x/decisions/sde/qa-1019-sendbacks.md`; ADR-022; ADR-023; EXPERIMENTS.md 2026-10-20 entries; the dev comment on each parent and on #401/#405.
+- **All 11 parents** (#381 #385 #390 #393 #392 #394 #387 #376 #327 #328 #331) moved `status: qa-failed` -> `status: ready-for-qa`. No issue closed.
+- **QA's tests:** copied unchanged into `tests/unit/test_qa_1019_defects.py` (imports only), except the two disputed cases, which stay red in `scripts/experiments/qa_2026_10_19/defects/`.
+- **To rule (DISPUTED):** #401 "terimbas" vs SYS-184's `test_affected_is_no_link`; #405 vs the live MSCI true end (two existing tests).
+- **Look at:**
+  - one existing dev test changed: `TestSys193EndSubject::test_a_clause_with_no_subject_is_matched_by_its_time`. It asserted the #404 fallback; it is now two stricter tests;
+  - QA's own held-out `TestQaSys185HeldOut[... tanpa dipicu ...]` is red at 8cd85d6 and still red: not filed, not fixed;
+  - `ditepis`/`ditampik` were never read as denials (regex typo), fixed under #400;
+  - 15 registry mutants retargeted, 30 new `*c_*` mutants. Web 23/23 KILLED. Arc run stopped by low memory after
+    61 (60 KILLED + 1 survivor, now killed by a new test); the new arc `*c_*` mutants are NOT yet run (command in
+    `.10x/decisions/sde/qa-1019-sendbacks.md`).
+- **Owner:** the commit is on local `dev` only. `dev` is 300+ commits ahead of `origin/dev`, and pushing updates PR #335 (dev -> main). Push when you choose.
+
+---
+
+## (earlier) From: QA (2026-10-19 filing) -> To: SDE, owner
 **Date:** 2026-10-19 (night)
 - **Your queue:** `gh issue list --label qa-defect`, #398-#412. Each holds a failing test from `scripts/experiments/qa_2026_10_19/defects/`; a fix is done when that file passes.
 - Parents with open qa-defects carry `status: qa-failed` (#381 #385 #390 #393 #392 #394 #387 #376 #327 #328 #331).

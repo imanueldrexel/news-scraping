@@ -2,10 +2,15 @@
 
 ## Project: NewsAggregator
 **Current Phase:** QA 2026-10-19: 21 tickets audited. 10 closed (SYS-188/187/183/190, DBT-83, SYS-194, DBT-60/70/71, SRC-62). SYS-181/185/193/177/144/145 failed on held-out inputs; SYS-189/192/191/186 met their Done-when but need new tickets; SYS-146 not closed. 15 qa-defects filed (#398-#412); the 11 parents carry `status: qa-failed`.
-**Last Updated:** 2026-10-19 23:30 by QA
+**Last Updated:** 2026-10-20 by SDE (QA's 15 qa-defects worked: 13 fixed, 2 disputed; all 11 parents ready-for-qa)
 **Health:** At Risk (SYS-181 P1 class still prints a swapped-subject cause in the gate; arcs=1 live; the 10-19 edition had no false fact)
 
 ## Progress
+
+### SDE 2026-10-20: QA's 2026-10-19 qa-defects (#398-#412) -- 13 FIXED, 2 DISPUTED; 11 parents back to ready-for-qa
+- [x] #398 #399 #400 #402 #403 #404 #406 #407 #408 #409 #410 #411 #412 FIXED; #401 FIXED except "terimbas" (DISPUTED, conflicts with SYS-184's test); #405 DISPUTED (refuses the live MSCI true end).
+- ADR-022 (follow-up: -nya word after "yang" is no reference; object phrase to clause end), ADR-023 (arc guards). Measured live: risk/object/held-out sets equal, QA's switches 6/20 -> 17/19.
+- Feature file: `.10x/decisions/sde/qa-1019-sendbacks.md`. Committed on `dev`, NOT pushed (dev is 300+ commits ahead of origin; owner's call).
 
 ### QA 2026-10-19: audit of the 10-18 arc queue + 10-19 web queue
 - [x] 10 closed with evidence comments.
