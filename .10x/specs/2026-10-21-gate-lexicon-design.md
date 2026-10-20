@@ -1,152 +1,214 @@
 # Design: story-arc fact gates measured by coverage (SYS-196 #426)
 
-**Date:** 2026-10-21 · **Status:** approved in brainstorming (owner, 2026-10-20/21); awaiting spec review
+**Date:** 2026-10-21 (v2, after the deep research and the `/deepen` review)
+**Status:** approved in brainstorming (owner, 2026-10-20/21); v2 awaiting spec review
 **Feature slug:** `gate-lexicon`
+**Evidence:**
+- `reports/Indonesian claim cue detection.md` (notes in `research_notes/Indonesian claim cue detection/`);
+- the `/deepen` findings, summarised in section 11.
 
 ## 1. Problem
 The arc fact gates decide *whether* to check a sentence from closed, hand-typed word lists:
 
-| Gate | Where | What it triggers |
+| Gate | Where today | What a hit triggers |
 |---|---|---|
-| cause | `causal_check._KINDS` (`CAUSAL`) | a causal link needs a quote that states it, same direction |
+| cause | `causal_check._KINDS` (`CAUSAL`) | the link needs a quote that states it, same direction |
 | hedge | `causal_check._HEDGE` | a hedged source link backs no flat claim |
 | denial | `causal_check._DENIAL` | a denied source link backs no flat claim |
 | end | `source_check._END_OPEN`, `_DEADLINE`, `_SPREAD` | a prose end point must be stated as an end by a source |
-| plan | `story_arc._FUTURE_VERB` | a running time span in the latar is judged as a schedule |
+| plan | `story_arc._FUTURE_VERB`, `_SCHEDULED`; `arc_style.NON_EVENTS` | a running span in the latar is judged as a schedule; an agenda is "scheduled" |
 
-A form that is not listed passes unchecked. Each send-back added the forms QA tested, and the next held-out set failed again (QA 2026-10-19 and 2026-10-20). The forms left out are more frequent than the ones added: tertekan 1,320 articles vs dipacu 87; rampung pada 401 vs dihentikan pada 56. The owner agreed on 2026-10-20 that this fixes tickets, not the class.
+A form that is not listed passes unchecked. Each send-back added the forms QA tested, and the next held-out set failed again. The omitted forms are the frequent ones (corpus since 2026-09-20): tertekan 1,320 articles vs dipacu 87; rampung pada 401 vs dihentikan pada 56. The owner agreed on 2026-10-20 that this fixes tickets, not the class.
 
-## 2. Decisions taken in brainstorming
-1. **Done means measured coverage.** At least 95% recall on a held-out labelled sample from our own corpus; the remaining misses are a stated, accepted risk. "Zero false facts" was not chosen: it needs a semantic check.
-2. **Scope:** the five arc fact gates above. The web follow-up's -nya lists (SYS-144..146) are out of scope; their misses cost retrieval quality, not a printed fact.
-3. **Labels:** DeepSeek (SumoPod, thinking off, as for SYS-36's gold set), plus the owner's spot-check of 50 per category.
-4. **Approach C:** a data lexicon of roots with generated word forms now. A per-category trained classifier is added only if a category's live recall stays under target (section 7).
+## 2. Decisions (owner, 2026-10-20/21)
+1. **Done means measured coverage, not zero false facts.** The remaining misses are a stated, accepted risk.
+2. **Scope:** the five arc fact gates. Out of scope: the web -nya lists (SYS-144..146).
+3. **Approach C:** a lexicon now; a trained classifier only when triggered (section 8).
+4. **Explicit causes only.** The cause gate promises >= 95% of **cued** causes (a cue word exists). Implicit causes are measured and reported monthly as an accepted risk; in English news about half of causal relations have no explicit connective (PDTB 46.75% explicit).
+5. **Budget:** a $5 cap for the gold sample (labels and second labels), from the SumoPod balance plus Gemini.
+6. **Label checks:** the owner reviews the sentences where the two labelling models disagree, plus a random 30 agreed sentences per category.
+7. **No NLI or LLM judge inside the gate.** Measured Indonesian NLI is about 74% on IndoNLI's expert set, weakest on dates (68-70%), numbers (58-65%) and negation (72-79%). English faithfulness checkers are at 70-77% balanced accuracy. None test dropped hedges.
 
 ## 3. Components
 
-### 3.1 `newscrawler/core/gate_lexicon/` (data + loader)
-One UTF-8 file per category, rows of tab-separated fields; `#` starts a comment.
-- `cause.tsv`: `root  forms  direction  flags`. For example:
-  - `tekan  meN,di,ter  auto  purpose_exempt`;
-  - `picu  meN,di,pe-noun  auto`;
-  - `karena  literal  backward`;
-  - `bermula dari  literal  backward`.
-- `hedge.tsv`, `denial.tsv`, `plan.tsv`: `root  forms  flags`. Phrases are `literal` ("tidak benar", "paling lambat").
-- `end.tsv`: `root  forms  kind`, where kind is `end` | `deadline` | `spread`. `spread` marks the verbs of extent before a place.
-- `exempt.tsv`: surface forms that are never a claim of that category, each with its condition. Per the owner's #401 decision, bare "terdampak"/"terimbas"/"terpengaruh" are exempt only when no noun phrase follows them.
-- `MANIFEST.json`: each file's sha256 and the lexicon version. `load()` raises `LexiconError` (service start fails, as `ProbeArtifactError` does) when a file is missing, malformed, or mismatched, or when a category is empty. An empty list is an open gate and must never be a silent default.
+### 3.1 `newscrawler/core/morph.py`: one Indonesian morphology (analysis)
+`analyse(word) -> List[Analysis(root, form_class)]`. It returns *candidates*, because Indonesian prefix stripping is ambiguous ("menanam" -> tanam / nanam).
 
-### 3.2 `gate_lexicon/morph.py`: the word-form generator (pure)
-`forms(root, classes) -> {surface: form_class}`. The classes:
+**Classes:**
+- meN-, with the dropped first letter restored: meny- -> s, men- + vowel -> t, mem- + vowel -> p, meng- + vowel -> k; menge- before a one-syllable root;
+- meN-...-kan, meN-...-i;
+- memper-, memper-...-kan;
+- di-, di-...-kan, di-...-i;
+- diper-, diper-...-kan;
+- ter-, ber-;
+- ke-...-an, pe(N)-, pe(N)-...-an, per-...-an, -an;
+- the particles -nya, -lah, -kah stripped first;
+- reduplication (X-X, X-meX).
 
-- **meN-**, with nasal assimilation:
-  - me- before l/m/n/r/w/y/ng/ny;
-  - mem- before b/f/v, and before p, which drops;
-  - men- before d/c/j/z, and before t, which drops;
-  - meng- before vowels/g/h/kh, and before k, which drops;
-  - meny- before s, which drops;
-  - menge- before a one-syllable root.
-- The suffixed forms: **meN-…-kan**, **meN-…-i**, **di-**, **di-…-kan**, **di-…-i**.
-- **ter-** (te- before r) and **ber-** (be- before r).
-- **pe-noun**: pe(N)-, pe(N)-…-an, -an.
+It also handles the non-standard spellings the corpus uses ("mempengaruhi" next to "memengaruhi").
+
+**Validation:**
+- Every attested surface form of a lexicon root in our corpus must analyse back to that root (section 3.2), as a unit test over a committed sample.
+- Sastrawi is used offline only, to cross-check the attested forms' roots. It is not a runtime dependency; it stems 95.2% of affixed words correctly, but cannot generate forms.
+
+**Replaces:** `story_words.root` for the lexicon. Its prefix strip without restoration gives "memicu" -> "micu", which never meets "dipicu" -> "picu", and lets "menekan" -> "ekan" meet "rekan". The half matching moves onto it in step 5 (section 6), as its own measured step.
+
+### 3.2 `newscrawler/core/gate_lexicon/`: the vocabulary, as data
+One UTF-8 file per category:
+- `cause.tsv`: `root  classes  direction  flags` (`direction` auto|backward|forward, `flags` such as `purpose_exempt`);
+- `hedge.tsv`, `denial.tsv`, `plan.tsv`, `schedule.tsv`: `root  classes  flags`;
+- `end.tsv`: `root  classes  kind` (end | deadline | spread);
+- `exempt.tsv`: forms that are never a claim of that category, each with its condition. Per the owner's #401 decision, bare "terdampak"/"terimbas"/"terpengaruh" are exempt only with no cause after them.
 
 Rules:
-- Each row opts into its classes. **Noun classes are off unless listed**, so bare "target", "janji" and "rencana" can no longer cue a schedule (#420).
-- **Direction (cause) is `auto` by form.** di-/ter- forms are passive: effect <word> cause, BACKWARD ("IHSG tertekan aksi jual"). meN- forms are active: FORWARD ("aksi jual menekan IHSG"). An explicit direction on a row overrides.
-- A generated form that collides with a common word of another meaning goes in `exempt.tsv` with a test. Each such form is found from the dev split's false triggers, never guessed.
+- Multi-word cues are `literal` rows ("tidak benar", "paling lambat", "bermula dari", "sampai dengan").
+- **Noun classes are off unless a row opts in.** Bare "target"/"janji"/"rencana" then cue nothing (#420).
+- **Direction `auto`:** a di-/diper-/ter-/ke-...-an form is passive, so effect <word> cause is BACKWARD ("IHSG tertekan aksi jual"). A meN-/memper- form is active, so FORWARD ("aksi jual menekan IHSG").
+- `attested.tsv` (generated by `scripts/gate_lexicon_mine.py`): every corpus surface form whose analysis hits a lexicon root, with its count. It is the review list for collisions and the morphology test fixture. It is not consulted at runtime.
+- `MANIFEST.json`: each file's sha256 and the lexicon version. `load()` raises `LexiconError` (the service refuses to start, as `ProbeArtifactError` does) when a file is missing, malformed, mismatched, or a category is empty. An empty list is an open gate, never a silent default.
 
-### 3.3 The gates read the lexicon
-- At import, `causal_check`, `source_check` and `story_arc` build their patterns from `gate_lexicon.load()`. The hand-typed `_KINDS`, `_HEDGE`, `_DENIAL`, `_FRAME_WORDS`, `_END_OPEN`, `_DEADLINE`, `_SPREAD` and `_FUTURE_VERB` are deleted. A test forbids a new hand-typed copy, on the model of DBT-72's single-source test.
-- `story_arc.PROMPT`'s list of causal words is generated from the lexicon. The existing "prompt = table" test stays.
-- **Unchanged:** sentence splitting, half matching, quotes, negation agreement, the anaphor rule, the purpose-verb exemption (now the `purpose_exempt` flag), the end-point subject check, and the agenda/latar time logic. Only *which words trigger* moves to data.
+### 3.3 One interface
+- `gate_lexicon.cues(category, text) -> List[Cue(start, end, surface, root, form_class, direction, flags)]`. It covers literal phrases, `analyse` for single tokens, and exemptions. Morphology, exemptions and the noun opt-in stay behind this one call.
+- The gates keep their *logic*: halves, quotes, negation agreement, the anaphor rule, the subject and time checks. They lose their *words*:
+  - deleted: `_KINDS`, `CAUSAL`, `_HEDGE`, `_DENIAL`, `_FRAME_WORDS`, `_END_OPEN`, `_DEADLINE`, `_SPREAD`, `_FUTURE_VERB`, `_SCHEDULED`;
+  - `NON_EVENTS` reads `hedge` cues.
+
+  A single-source test forbids a hand-typed copy, as DBT-72's does.
+- **Measurement seam:** each gate exposes `cue_hits(sentence, role) -> Set[category]`, a pure function built on `cues()` plus the gate's context rule. `role` is "prose" or "source". The coverage test and the monthly measure call only this, and never re-implement a gate.
+- **The prompt:** `story_arc.PROMPT` names each cause root with two or three attested example forms, generated from the lexicon. The test becomes "every word the prompt names is a lexicon cue"; it no longer requires the prompt to list every form. The gate, not the prompt, is the guarantee.
 
 ## 4. The gold sample
 
-### 4.1 Pools
-- **Arc prose:** every sentence of the hari_ini/latar/agenda/sekilas fields in the stored arcs (`digests/preview/arcs*/`, the arc trace of each live edition since 2026-10-13). All are labelled.
-- **Source:** 10,000 sentences drawn uniformly at random from `articles.extracted_text` of the 60 days before the draw date, split by `causal_check.sentences`. The draw uses a fixed seed and is not selected by any word list.
+### 4.1 Pools and draws
+- **Arc prose:** every sentence of hari_ini/latar/agenda/sekilas in the stored arcs (`digests/preview/arcs*/`) and the live editions' arc traces since 2026-10-13. All are labelled.
+- **Source, random:** sentences drawn uniformly (fixed seed) from `articles.extracted_text` of the 60 days before the draw, split by `causal_check.sentences`. The draw continues until every category has >= 670 explicit positives (about 200 held-out), or the budget stops it. Expected: 100k-150k sentences.
+- **Source, enriched** (only for a category still short after the random draw, e.g. denial):
+  - sentences nearest, by MiniLM cosine, to that category's random-draw positives;
+  - this is a signal independent of the lexicon, which an enrichment on the gate's own hits would not be;
+  - recall is computed with stratum weights (random stratum weight 1, enriched stratum weighted by its sampling rate).
 
-### 4.2 What each category is measured on
-Each gate only acts in a context:
-- **cause:** all sentences of both pools.
-- **hedge, denial:** the sentences labelled cause=yes. A hedge or denial word outside a causal link changes nothing.
-- **end:** all sentences. Spatial "hingga X" is labelled end=no.
-- **plan:** the clauses that hold a running time span (`awal / pertengahan / akhir <month>`, `<month>`, "pekan ini", ...), found by `source_check`'s existing time patterns.
-  - The gate itself runs on the latar only. The arc pool's latar clauses are enforced when not `thin`.
-  - The source pool's clauses are the same language, used for more positives.
+### 4.2 Labels (the labeller returns positives only)
+- DeepSeek (SumoPod, thinking off). Batches of 100 numbered sentences.
+- The answer is a JSON list of positives only: `{n, category, explicit, trigger, extra}`.
+  - `explicit`: a cue word stands in the sentence. For cause, `false` means implicit (two facts juxtaposed).
+  - `trigger`: the cue words as written.
+  - `extra`: for plan, the time span the cue governs; for end, `end|deadline`.
+- A sentence not listed is negative for every category.
+- **Category definitions written into the prompt:**
+  - "hingga" before a number ("naik hingga 20%"), a place ("hingga Riau") or a result ("hingga warga mengungsi") is no end point;
+  - a hedge is a word that makes the claim a suspicion, estimate or rumour;
+  - a denial is a word that says a claim is false.
+- **Where each category is enforced:** on the side where a miss lets a false fact through.
+  - **cause, end, plan:** on arc prose, plus the source pool as the same language.
+  - **hedge, denial:** on the source pool. A missed hedge or denial in a source is what backs a flat claim.
+  - **plan:** only on clauses the labeller marked with a running time span, not on clauses a word list selects.
 
-### 4.3 Labels
-- One DeepSeek call per batch of 50 sentences. JSON per sentence: for each category, `{"yes": bool, "trigger": "<the words, as written>"}`, with the category definitions above.
-- Cost estimate: under $0.50. Hard cap: $1, through `api_usage_log` like any call.
-- **Thin categories:** a category with fewer than 50 positives in a pool draws further random batches of that pool until 50 positives or the cap. If still under 50, the category is marked `thin` for that pool: reported, not enforced.
+### 4.3 Second labels and the owner's review
+- **Gemini** (another model family; the arcs are written by DeepSeek) labels the held-out split's sentences the same way, positives only:
+  - every held-out DeepSeek positive;
+  - plus 5,000 random held-out sentences with no DeepSeek positive, to estimate the positives DeepSeek missed.
+  - About 60 calls, spread over days if the free-tier limit of 20 requests a day per model applies (OPS-20).
+- **The owner reviews:**
+  - every held-out sentence where the two disagree (a category or the explicit flag);
+  - plus 30 random agreed sentences per category.
+- The owner's verdict is final. If more than 2 of a category's 30 agreed sentences are wrong, the labels the models share are not trusted: the category's definition is rewritten and the category relabelled.
+- Tool: `scripts/gate_gold.py review` writes `review_<category>.csv`; `score-review` reads it back.
 
-### 4.4 Spot-check
-- `tests/fixtures/gate_gold/handcheck_<category>.csv` holds 50 random labelled sentences per category, half of them positives.
-- The owner marks agree/disagree, and `scripts/gate_gold.py score-handcheck` scores it. Under 90% agreement for a category means its definition is rewritten and that category relabelled before use.
+### 4.4 Storage and splits
+- `tests/fixtures/gate_gold/<category>.jsonl` rows: `id, pool, stratum, weight, text, origin, label, explicit, trigger, extra, split, verdict_source` (deepseek | agreed | owner).
+- `MANIFEST.json` records sha256, seed, draw date, models, prompt hashes and costs.
+- **Split:** 70% `dev`, 30% `heldout`, by a hash of the id.
+  - Dev tooling prints only dev-split misses.
+  - QA owns `heldout`; any held-out item shown to the dev moves to `dev`.
+  - **Refresh:** at each QA closure under SYS-196, QA draws a fresh held-out batch from newer articles. Rule: Dwork et al.'s reusable holdout; Recht et al. measured 3-15 point drops on fresh test sets.
 
-### 4.5 Storage
-- `tests/fixtures/gate_gold/<category>.jsonl` rows: `id, pool, text, origin (sitemap_id or arc file + field), label, trigger, split`. Plus `MANIFEST.json` (sha256, seed, draw date, model, prompt hash).
-- Split: 70% `dev`, 30% `heldout`, by a hash of the id. QA owns `heldout`. Dev tooling may print dev-split misses only. The heldout misses are printed only by QA's coverage report.
+## 5. Coverage measurement
 
-## 5. The coverage test (unit, offline)
-`tests/unit/test_gate_coverage.py`, per category, on the held-out split:
-- **What "fires" means:**
+### Dev side: `tests/unit/test_gate_coverage.py`, on the `dev` split
+- Recall on explicit positives >= **0.97** per category, weighted by stratum. The target sits 2 points above held-out, as headroom.
+- **False triggers:** the share of negatives where `cue_hits` fires must be <= the ported baseline (step 1) + 0.01 absolute. So coverage is not bought with arc refusals (#425).
+- On failure the message lists the dev misses' trigger words and counts.
 
-  | Category | Fires when |
-  |---|---|
-  | cause | `causal_spans` finds a span on the sentence |
-  | hedge | the span is `hedged` |
-  | denial | the span is `negated` by a denial |
-  | end | `end_points` (prose) / `_stated_ends` (source) is non-empty |
-  | plan | the clause's span is judged a schedule |
+### QA side: `scripts/gate_gold.py score --split heldout`, run by QA, not part of the unit suite
+- **Pass:** a category with >= 200 held-out explicit positives passes at a weighted point recall >= **0.95**. At 200 positives that allows up to 10 misses; with 4 or fewer misses the one-sided 95% lower bound is >= 0.95 itself.
+- **Thin categories:** a category with fewer positives is reported `thin` with its Wilson interval and enforced at a point recall >= 0.95.
+- **Reported alongside:**
+  - implicit-cause recall (not enforced);
+  - the false-trigger rate;
+  - label agreement: percent agreement on positives and on negatives separately, plus Gwet's AC1. Kappa is not used: it misbehaves with rare classes.
 
-- **Recall** = fires on positives / positives. It must be >= 0.95 on the two pools pooled, and >= 0.95 per pool for each pool that is not `thin`.
-- **False triggers** = fires on negatives / negatives. The rate must be <= the rate measured on the ported lexicon (step 1) + 0.01 absolute. This keeps coverage from being bought with arc refusals (#425).
-- On failure, the message lists the missed trigger words with counts. Only the dev split's misses are shown to dev tooling.
+## 6. Rollout (each step a reviewable commit)
 
-## 6. Rollout
-1. **Port, no behaviour change.**
-   - Today's lists move into the lexicon files as `literal` rows.
-   - The equivalence test: the compiled patterns accept exactly today's forms, the whole unit suite passes unchanged, and every gold sentence gets the same fires/not verdict as on the code before.
-   - The baseline false-trigger rates are recorded in the MANIFEST.
-2. **Word forms on.** `literal` rows that are a root plus affix become root rows with classes. Re-measure on the dev split; collisions found go to `exempt.tsv` with tests.
-3. **Grow from the dev split.** The dev adds roots (never single forms) that the dev split's misses show, until the held-out recall and the false-trigger budget hold.
-4. **Before merge:**
-   - `scripts/experiments/sys152/recheck_causes.py` on the stored replays shows no new false refusal beyond the budget;
-   - QA watches 3 live editions (NEWSLETTER_ARCS=1): the refusal counts per reason are not above their last-week mean + 1 sd.
+**1. Port, no behaviour change.**
+- Today's lists become `literal` rows, behind `cues()`.
+- **Equivalence test:** every gate gives the same verdict as the code before, on the unit suite, the gold set and the stored replays.
+- The baseline false-trigger rates go into the MANIFEST.
+- **Mutation registry:**
+  - the 41 list-targeting mutants are retargeted to the data files (delete a root, flip a direction, drop an exemption);
+  - `run_registry_mutants_in_copy.py` exits non-zero on NOT FOUND for any registered prefix, so a port can never drop a guard silently.
 
-The open defects:
-- **Instances of this work:** #413, #414, #415, #417, #419, #420. QA closes each when its own failing test passes *and* the coverage test passes.
-- **#418 is split.** Its verbs of extent ("mengular", "merendam") become `spread` rows here. Its "dari X hingga Y" range is code, an ordinary fix.
-- **Ordinary tickets, outside this design:** #416 (anaphor `_lent`), #424 (the year check). #401 is implemented inside step 3 as an `exempt.tsv` condition plus the gated forms. #425 stays separate.
+**2. `morph.analyse` on.**
+- Root rows replace the `literal` rows that are a root plus an affix.
+- Collisions found in `attested.tsv` and in the dev split's false triggers go to `exempt.tsv`, each with a test.
 
-## 7. Monitoring and the classifier trigger
-- `scripts/gate_gold.py measure --month YYYY-MM` labels the month's new arc prose (all of it, ~150-250 sentences, < $0.10) and prints recall per category against the lexicon of that day. QA runs it in the first week of each month and records the numbers in EXPERIMENTS.md.
-- A category under 0.95 recall in **two consecutive months** gets a ticket for its classifier. The classifier: an embedding head trained on the gold set; when it says "claim" and no lexicon form fired, the arc is refused, then retried. Not built until triggered.
-- Each edition already logs refusals per reason (`_edition.arcs.refusals`); a rise is the first signal of new false triggers.
+**3. Grow from the dev split** until dev recall >= 0.97 and the false-trigger budget holds. The dev adds roots (never single forms) that dev misses show. #401 lands here.
 
-## 8. Out of scope
-- The web -nya lists (`nya_words`, SYS-144..146).
+**4. QA measures the held-out split.** Before merge:
+- `scripts/experiments/sys152/recheck_causes.py` on the stored replays shows no refusal rise beyond the budget;
+- QA watches 3 live editions (NEWSLETTER_ARCS=1). Each refusal reason's count must stay <= last week's mean + 1 sd.
+
+**5. Half matching on `morph.analyse`.**
+- `causal_check._roots` and `story_words.meets` use the candidate roots. The suffix-overlap rule is deleted.
+- This is a separate step, because it changes which halves meet. It is gated on the replay and on the false-refusal budget. The SYS-152 hand-checked fixtures must keep their verdicts (MK refused; PHK, BPIH, Defisit kept).
+
+**What happens to the open defects:**
+- **Instances of this work:** #413, #414, #415, #417, #419, #420. QA closes each when its own failing test passes *and* the held-out score passes.
+- **#418 is split.** Its verbs of extent become `spread` rows here; its "dari X hingga Y" range is ordinary code.
+- **Ordinary tickets:** #416 (anaphor `_lent`), #424 (year check).
+- **Separate:** #425 (arc acceptance).
+
+## 7. Failure handling
+- `LexiconError` at import on a missing, malformed or mismatched file, or an empty category. The scheduled newsletter run logs it at ERROR, and the edition is not built.
+- A labelling run stops at the $5 cap (`api_usage_log`). A partial gold set is never written over the frozen one: new draws go to a staging file, and `freeze` writes the MANIFEST.
+
+## 8. Monitoring and the classifier trigger
+- **Monthly:** `scripts/gate_gold.py measure --month YYYY-MM` labels the month's new arc prose (DeepSeek plus the Gemini second label, < $0.20). It scores it over a **rolling 3-month pool**: at ~30 positives a month, a single month cannot tell 0.95 from 0.90. QA runs it in the first week of each month and records it in EXPERIMENTS.md.
+- **A classifier ticket is filed for a category when either:**
+  - the rolling explicit recall is under 0.95; or
+  - QA's edition reads find 2 or more printed false causes in a month that a cue-word gate could not see (implicit).
+- **The classifier** is an e5-large + logistic-regression head (the SYS-37 pattern), trained on the gold set's sentences. When it says "claim" and no cue fired, the arc is refused, then retried. Expected English-level performance: about 0.90 recall at about 0.80 precision (CASE-2022 causal news).
+- Each edition's `_edition.arcs.refusals` per reason is the daily signal of new false triggers.
+
+## 9. Out of scope
+- The web -nya lists.
 - The end-point subject check (#405, an accepted lexical limit).
-- The quote/half matching itself.
-- Gates outside the arcs: the summary's number guard and `off_subject`.
+- The quote/half matching rules themselves, except step 5's root change.
+- Gates outside the arcs: the number guard, `off_subject`.
+- Splitting `source_check`: only its time-expression part is touched here. A full split into numbers / time / subjects is a later DBT ticket.
 
-## 9. Done when
-- [ ] ADR written. The lexicon is ported with the equivalence test green.
-- [ ] Gold sample built:
-  - both pools labelled;
-  - spot-check >= 90% per category;
-  - MANIFEST + sha256 in place.
-- [ ] `test_gate_coverage.py` green: held-out recall >= 0.95 per category pooled, and per non-thin pool; false triggers within budget.
-- [ ] #413, #414, #415, #417, #419, #420: their failing tests pass.
-- [ ] The replay check and 3 watched live editions show no refusal rise beyond the budget.
-- [ ] The `measure --month` command documented in OPERATIONS.md; the first monthly figure recorded.
+## 10. Done when
+- [ ] ADR written; step 1 ported, with the equivalence test green and the mutant registry retargeted (no NOT FOUND).
+- [ ] Gold sample frozen:
+  - both pools labelled, held-out second-labelled;
+  - owner review done, every category within the agreement rule;
+  - MANIFEST written; cost <= $5.
+- [ ] Dev coverage test green (>= 0.97, false-trigger budget).
+- [ ] QA held-out score >= 0.95 for every non-thin category; thin categories reported.
+- [ ] #413, #414, #415, #417, #419, #420 pass their failing tests.
+- [ ] Replay and 3 watched editions within the refusal budget.
+- [ ] Step 5 measured and merged, or explicitly deferred by the owner.
+- [ ] `measure --month` documented in OPERATIONS.md; the first monthly figure recorded.
 
-## 10. Risks
-| Risk | Mitigation |
-|---|---|
-| Model labels share a blind spot with the lists | Random pool (not list-selected); trigger words written by the labeller; owner spot-check >= 90% |
-| Word forms over-trigger (e.g. "dorongan" as a noun, "tekanan" as "pressure") | Noun classes opt-in; false-trigger budget; collisions in `exempt.tsv` with tests |
-| Dev overfits the held-out set | QA owns the held-out split; dev tooling prints dev misses only |
-| Thin categories (denial in arc prose) | Pooled enforcement; enrichment by more random draws; `thin` reported, not hidden |
-| Lexicon file corrupted or edited by hand | MANIFEST sha256; `LexiconError` at start; the list may never be empty |
+## 11. Risks and evidence
+
+| Risk | Evidence | Mitigation |
+|---|---|---|
+| Implicit causes (about half) are invisible to any lexicon | PDTB 46.75% explicit; Causal-TimeBank: 57% connectives, 36% verbs | Decision 4: enforce explicit only; implicit measured monthly; classifier trigger |
+| The labeller shares the writer's blind spots | Same-family labelling inflates recall | Gemini second label on held-out; owner reviews disagreements and agreed samples |
+| Label noise shifts measured recall | 5% false gold positives turns a true 0.95 into a measured 0.90 | Explicit flag; owner review; agreement reported per class |
+| Too few positives to prove 0.95 | 50 positives cannot prove 0.95 even with 0 misses | >= 200 held-out positives per category; thin reported with an interval |
+| Rule-generated forms are wrong or miss spellings | IndoMorph: 32% of generated forms are correct; "mempengaruhi" is non-standard | Analysis instead of generation; attested forms mined from the corpus |
+| Word forms over-trigger ("tekanan" as "pressure") | Ambiguity costs precision | Noun opt-in; false-trigger budget; `exempt.tsv` with tests |
+| The dev overfits the held-out split | Recht et al.: 3-15 point drops on fresh test sets | QA-owned held-out; shown items move to dev; refresh at each closure |
+| The port silently drops guards | 41 registry mutants target the list text | Retargeted mutants; runner fails on NOT FOUND |
+| The lexicon is corrupted or emptied | An empty list opens the gate | MANIFEST sha256; `LexiconError`; non-empty test |
