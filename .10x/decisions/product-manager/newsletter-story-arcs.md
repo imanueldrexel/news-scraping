@@ -258,3 +258,7 @@ Indexes run on: today's articles are 0..n-1, the timeline n..n+m-1, so `terkait`
 ## 2026-10-16: owner decision, the time span stays invisible
 - After reading arcs-v5, the owner finds the prose much more fluid. The reader can't tell that a back-story is stitched from several dates, and that is **accepted**. The owner chose "fine as it is" over a span line ("Mengikuti cerita sejak ..."), a "Latar" label, or more dates.
 - **Do not add** a span marker or dates to the reader's text without a new owner ask.
+
+## 2026-10-20: owner decisions after QA's audit
+- **#401:** "terimbas" / "terpengaruh" followed by a cause need a quote; a bare "affected" use stays exempt (SYS-184 narrowed).
+- **Closed word lists:** the owner agrees with QA that the send-backs fix the ticket's words, not the class (the omitted synonyms are more frequent than the added ones). The lexical gates need a design, brainstormed before more list fixes.

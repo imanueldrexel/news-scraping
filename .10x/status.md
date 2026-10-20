@@ -1,11 +1,18 @@
 # Project Status
 
 ## Project: NewsAggregator
-**Current Phase:** QA 2026-10-19: 21 tickets audited. 10 closed (SYS-188/187/183/190, DBT-83, SYS-194, DBT-60/70/71, SRC-62). SYS-181/185/193/177/144/145 failed on held-out inputs; SYS-189/192/191/186 met their Done-when but need new tickets; SYS-146 not closed. 15 qa-defects filed (#398-#412); the 11 parents carry `status: qa-failed`.
-**Last Updated:** 2026-10-20 by SDE (QA's 15 qa-defects worked: 13 fixed, 2 disputed; all 11 parents ready-for-qa)
+**Current Phase:** QA 2026-10-20: whole queue audited (26). 9 qa-passed, 13 qa-failed, 4 held (owner reads). New qa-defects #413-#425. Next: brainstorm a general design for the lexical gates (owner agrees the list fixes do not close the class).
+**Last Updated:** 2026-10-20 by QA
 **Health:** At Risk (SYS-181 P1 class still prints a swapped-subject cause in the gate; arcs=1 live; the 10-19 edition had no false fact)
 
 ## Progress
+
+### QA 2026-10-20: the whole ready-for-qa queue
+- [x] 26 tickets: qa-passed #234 #260 #320 #337 #339 #344 #345 #347 #394; qa-failed #327 #328 #331 #338 #342 #343 #376 #381 #385 #387 #390 #392 #393; held #126 #239 #240 #242.
+- [x] 13 qa-defects closed as verified, #405 not-a-defect, #401 open (owner: option a). New #413-#425.
+- [ ] Brainstorm: a design for the closed word lists (causal/hedge/denial/end/plan/-nya) before more send-back fixes.
+- Report: `.10x/reviews/2026-10-20-qa-report.md`.
+
 
 ### SDE 2026-10-20: QA's 2026-10-19 qa-defects (#398-#412) -- 13 FIXED, 2 DISPUTED; 11 parents back to ready-for-qa
 - [x] #398 #399 #400 #402 #403 #404 #406 #407 #408 #409 #410 #411 #412 FIXED; #401 FIXED except "terimbas" (DISPUTED, conflicts with SYS-184's test); #405 DISPUTED (refuses the live MSCI true end).

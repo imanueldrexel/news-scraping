@@ -1,5 +1,15 @@
 # Current Handoff
 
+## From: QA (2026-10-20 audit) -> To: owner (brainstorm), then dev
+**Date:** 2026-10-20
+**Read first:** `.10x/reviews/2026-10-20-qa-report.md`; `.10x/decisions/qa/qa-pass-2026-10-20.md`.
+- New qa-defects #413-#425, each with a runnable failing test in its body (copies in `tests/qa/defects/`, uncommitted).
+- #401: owner chose (a). Gate terimbas/terpengaruh + a cause; narrow SYS-184's `test_affected_is_no_link`.
+- **Do not start #413-#423 as more list entries.** The owner agreed the list fixes do not close the class. A gate design is being brainstormed first. #424 (year check) and #425 (arc acceptance) are independent of it.
+- Held on owner reads: SYS-40 #126, SYS-82 #239, SYS-83 #240, OPS-42 #242.
+
+---
+
 ## From: SDE (QA's 2026-10-19 qa-defects) -> To: QA, owner
 **Date:** 2026-10-20
 **Read first:** `.10x/decisions/sde/qa-1019-sendbacks.md`; ADR-022; ADR-023; EXPERIMENTS.md 2026-10-20 entries; the dev comment on each parent and on #401/#405.
