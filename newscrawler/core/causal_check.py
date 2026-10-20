@@ -27,7 +27,8 @@ words before it ("Y sehingga X"). Where nothing stands before the word in its se
 - "Penyebab X adalah Y" splits at the copula.
 
 A negation must agree (SYS-185): "tidak naik karena" is not backed by "naik karena", nor "bukan karena" by
-"karena". "berdampak", "terdampak", "terimbas" and "terpicu" are no causal words here: in the corpus they mean
+"karena", nor a link a denial anywhere in its sentence rejects ("... dibantah maskapai") by the flat claim.
+"berdampak", "terdampak", "terimbas" and "terpicu" are no causal words here: in the corpus they mean
 "affected" ("498 jiwa terdampak"), not a link between two stated facts (SYS-184).
 """
 import re
@@ -54,6 +55,8 @@ _KINDS = {
     "dilatarbelakangi": BACKWARD, "bermula dari": BACKWARD,
     "memengaruhi": FORWARD, "mempengaruhi": FORWARD, "menimbulkan": FORWARD, "membuat": FORWARD, "mendorong": FORWARD,
     "menekan": FORWARD,
+    # SYS-189 send-back (#401): "Rupiah melemah, dipacu / terdorong / buntut data tenaga kerja AS".
+    "dipacu": BACKWARD, "terpacu": BACKWARD, "terdorong": BACKWARD, "buntut": BACKWARD,
 }
 CAUSAL_WORDS = tuple(_KINDS)
 CAUSAL = re.compile(r"\b(?:" + "|".join(re.escape(w).replace(r"\ ", r"\s+")
@@ -108,18 +111,24 @@ _NEGATORS = frozenset({"tidak", "tak", "bukan", "belum", "batal", "gagal", "urun
 # Skipped between a negator and the word it negates: "tak kunjung terbit", "tidak hanya", "belum juga".
 _NEGATION_SKIP = _GENERIC | frozenset("kunjung pernah lagi juga pula akan bisa boleh hanya semata terlalu".split())
 _NEGATED_LINK = re.compile(r"\b(?:tidak|tak|bukan|belum)\s*$", re.IGNORECASE)     # "bukan karena"
-# SYS-185: a denial before the causal word denies the link itself, as "bukan karena" does: "Kemenkeu membantah /
-# menepis anggapan bahwa / menyatakan tidak benar harga BBM naik karena ..." (0.3% of the corpus's causal sentences).
-_DENIAL = re.compile(r"\b(?:tidak\s+benar|(?:mem|di)bantah|(?:me|di)nepis|(?:di|me)nampik|hoa(?:ks|x)|keliru)\b",
-                     re.IGNORECASE)
+# SYS-185: a denial anywhere in the link denies the link itself, as "bukan karena" does: "Kemenkeu membantah /
+# menepis anggapan bahwa / menyatakan tidak benar harga BBM naik karena ..." (0.3% of the corpus's causal sentences),
+# and, since the send-back (#399), after it: "Anggapan bahwa ... naik karena ... dibantah maskapai".
+# meN- drops the root's t/s ("menepis", "menyangkal"); di- keeps it ("ditepis", "disangkal").
+_DENIAL = re.compile(r"\b(?:tidak\s+benar|(?:mem|di)bantah|menepis|ditepis|menampik|ditampik|menyangkal|disangkal|"
+                     r"sangkal(?:an)?|penyangkalan|hoa(?:ks|x)|keliru)\b", re.IGNORECASE)
 # SYS-192 (#393): a hedge anywhere in the link makes it a suspicion or a question (4.6% of the causal sentences).
+# Send-back (#402): the verbs of estimate, belief and rumour, with their active forms. Not the nouns "perkiraan" /
+# "proyeksi": "Peningkatan proyeksi defisit tersebut disebabkan ..." states a fact about a projection.
 _HEDGE = re.compile(r"\b(?:diduga|dugaan|menduga|kemungkinan|mungkin|apakah|ditengarai|disinyalir|indikasi|"
-                    r"diindikasikan)\b", re.IGNORECASE)
+                    r"diindikasikan|diperkirakan|memperkirakan|dikira|mengira|diyakini|meyakini|disebut-sebut)\b",
+                    re.IGNORECASE)
 # The words of a denial or a hedge are checked by those rules, never as facts: a claim may write "diduga" for its
 # source's "kemungkinan" (owner, 2026-10-18: "Any hedge word"), or "menepis" for "membantah".
 _FRAME_WORDS = frozenset("benar anggapan bantah membantah dibantah tepis menepis ditepis tampik menampik ditampik hoaks "
-                         "hoax keliru diduga dugaan menduga kemungkinan mungkin apakah ditengarai disinyalir indikasi "
-                         "diindikasikan".split())
+                         "hoax keliru sangkal menyangkal disangkal sangkalan penyangkalan diduga dugaan menduga "
+                         "kemungkinan mungkin apakah ditengarai disinyalir indikasi diindikasikan diperkirakan "
+                         "memperkirakan dikira mengira diyakini meyakini disebut-sebut".split())
 # "yang menurut analis X", ", kata Menteri Keuangan Suahasil Nazara" name who says it; that is no fact of either half
 # (the link is checked all the same). The trailing form matters since SYS-187 reads a cause to its last comma item.
 _ATTRIBUTION = re.compile(r"\b(?:yang\s+)?menurut\s+[^,;]*|,\s*(?:kata|ujar|ucap|tutur|ungkap|imbuh)\s+[^,;.]*",
@@ -297,15 +306,41 @@ def _refers_back(side: str, previous: str) -> bool:
     content words it opens with end in "tersebut" / "hal ini" -- and that subject shares a word with `previous`:
     "Peningkatan proyeksi defisit tersebut" after "Defisit APBN 2026 diproyeksikan melebar". Not "Permohonan pemohon
     tersebut" after a sentence about MK (another subject: the MK shape in two sentences), nor "Longsor di desa
-    tersebut", whose anaphor is not on its subject."""
+    tersebut", whose anaphor is not on its subject.
+
+    SYS-181 send-back (#398): the subject's head (its first word, "Peningkatan") may name the previous sentence's
+    event in other words, but every word after it must be there: "Penurunan saham BBRI tersebut" after "IHSG turun
+    1 persen" shares "turun" and still names another subject, so it lends nothing."""
     m = _ANAPHOR.search(side)
     if not m:
         return False
     opening = _WORD.findall(side[:m.start()].lower())
     if any(w in story_words.STOPWORDS for w in opening):
         return False
-    subject = {_root(w) for w in opening if _weighs(w)}
-    return not subject or any(_meets(r, _roots(previous)) for r in subject)
+    subject = [_root(w) for w in opening if _weighs(w)]
+    said = _roots(previous)
+    return not subject or (any(_named(r, said) for r in subject) and all(_named(r, said) for r in subject[1:]))
+
+
+def _named(r: str, said: set) -> bool:
+    """`r` meets one of `said`, or begins one: "proyeksi" is in "diproyeksikan" (`_root` keeps a -kan / -i)."""
+    return _meets(r, said) or any(len(r) >= story_words._MIN_ROOT and o.startswith(r) for o in said)
+
+
+_PART = re.compile(_PUNCT + "|" + _CONJUNCTION + r"|\bdan\b", re.IGNORECASE)
+
+
+def _lent(side: str, previous: str) -> str:
+    """SYS-181 send-back (#398): what an anaphor side borrows -- the parts of `previous` (cut at clause boundaries and
+    at "dan") that hold its subject's words, not the whole sentence: "Penurunan saham BBRI tersebut" after "IHSG turun
+    1 persen dan saham BBRI turun 3 persen" borrows the BBRI clause, never the IHSG one. The whole sentence when no
+    part holds them."""
+    m = _ANAPHOR.search(side)
+    subject = [_root(w) for w in _WORD.findall(side[:m.start()].lower()) if _weighs(w)] if m else []
+    wanted = set(subject[1:] or subject)
+    parts = [p for p in _PART.split(previous) if p and p.strip()]
+    kept = [p.strip() for p in parts if any(_named(r, _roots(p)) for r in wanted)]
+    return " ".join(kept) if kept else previous
 
 
 def _fronted(text: str, side) -> Tuple[str, str, str, str]:
@@ -353,9 +388,10 @@ def _cut(sents: List[str], i: int, m, source: bool) -> Span:
     side = _source_side if source else _prose_side
     if kind == BACKWARD and _THEREFORE.match(after_text):                          # "karena itu, ..."
         kind = FORWARD
-    # SYS-185: "bukan karena" right before the word, or a denial earlier in the link ("Kemenkeu membantah ... naik
-    # karena ..."). SYS-192: a hedge anywhere in the link ("diduga dipicu", "menyelidiki apakah ... dipicu").
-    negated = bool(_NEGATED_LINK.search(before_text) or _DENIAL.search(before_text))
+    # SYS-185: "bukan karena" right before the word, or a denial anywhere in the link ("Kemenkeu membantah ... naik
+    # karena ...", "... naik karena ... dibantah maskapai"). SYS-192: a hedge anywhere in the link ("diduga dipicu",
+    # "menyelidiki apakah ... dipicu").
+    negated = bool(_NEGATED_LINK.search(before_text) or _DENIAL.search(sentence[left:right]))
     hedged = bool(_HEDGE.search(sentence[left:right]))
     before_core, before = side(before_text, True)
     if not _roots(before) and word.lower() in _NOUNS:                              # "Penyebab X adalah Y"
@@ -372,8 +408,10 @@ def _cut(sents: List[str], i: int, m, source: bool) -> Span:
     previous = sents[i - 1] if i > 0 else ""
     if previous and (not _roots(before) or _REFERENCE.match(before)):
         before_core = before = previous + (f" {before}" if source else "")
-    elif previous and source and (len(_roots(before)) < MIN_HALF_WORDS or _refers_back(before, previous)):
+    elif previous and source and len(_roots(before)) < MIN_HALF_WORDS:
         before_core = before = f"{previous} {before}"
+    elif previous and source and _refers_back(before, previous):
+        before_core = before = f"{_lent(before, previous)} {before}"
     if kind == FORWARD:
         return Span(sentence, word, before, after, before_core, after_core, True, negated, hedged)
     return Span(sentence, word, after, before, after_core, before_core, False, negated, hedged)

@@ -600,15 +600,26 @@ _END_TIME = (rf"(?:(?P<part>awal|pertengahan|akhir)\s+)?(?:"
 # SYS-186 send-back (#387): up to three gap words, the last of which may be "pada" ("hingga evaluasi indeks pada November
 # 2026", the live false fact rephrased). A function word, a digit or a degree word ("hingga level tertinggi pada
 # Oktober") in the gap still attaches the time to something else.
-_END_GAP = (r"(?:\s+(?!(?:pada|di|ke|dari|sejak|dengan|yang|dan|atau|setelah|sebelum|"
-            r"(?:level|posisi|puncak|tertinggi|terendah|rekor)(?:nya)?)\b)[^\W\d_]+){0,3}?(?:\s+pada)?")
+_END_GAP = (r"(?P<gap>(?:\s+(?!(?:pada|di|ke|dari|sejak|dengan|yang|dan|atau|setelah|sebelum|"
+            r"(?:level|posisi|puncak|tertinggi|terendah|rekor)(?:nya)?)\b)[^\W\d_]+){0,3}?)(?:\s+pada)?")
 # SYS-191 (#392): an end written without "hingga" -- "berakhir pada review November 2026", "baru dicabut pada November
-# 2026", "berlaku s.d. November 2026" -- is an end point in the prose too, and states one in a source.
-_END_OPEN = r"hingga|sampai(?:\s+dengan)?|s\.d\.?|s/d|(?:berakhir|selesai|dicabut)(?:\s+pada)?"
-_END_POINT = re.compile(rf"(?<![\w.])(?:{_END_OPEN}){_END_GAP}\s+{_END_TIME}", re.IGNORECASE)
-_STATED_END = re.compile(rf"(?:(?<![\w.])(?P<open>{_END_OPEN}|per){_END_GAP}\s+|(?<=\w)\s*[-–]\s*)"
-                         rf"{_END_TIME}",
+# 2026", "berlaku s.d. November 2026" -- is an end point in the prose too, and states one in a source. Send-back
+# (#403): the stop verbs too, "dihentikan / diakhiri / berhenti pada November 2026".
+_END_OPEN = (r"hingga|sampai(?:\s+dengan)?|s\.d\.?|s/d|"
+             r"(?:berakhir|diakhiri|selesai|dicabut|berhenti|terhenti|dihentikan)(?:\s+pada)?")
+# A deadline ("paling lambat November 2026") is an end point in the prose. In a source it states when something is
+# due, not until when something lasts, so it backs only a prose deadline (SYS-186's "Keputusan diumumkan paling lambat
+# November 2026" backs no "Kebijakan berlanjut hingga November 2026").
+_DEADLINE = r"paling\s+lambat|selambat-lambatnya"
+_END_POINT = re.compile(rf"(?<![\w.])(?:(?P<deadline>{_DEADLINE})|{_END_OPEN}){_END_GAP}\s+{_END_TIME}", re.IGNORECASE)
+_STATED_END = re.compile(rf"(?:(?<![\w.])(?:(?P<deadline>{_DEADLINE})|(?P<open>{_END_OPEN}|per)){_END_GAP}\s+"
+                         rf"|(?<=\w)\s*[-–]\s*){_END_TIME}",
                          re.IGNORECASE)
+# SYS-186 send-back (#406): "asap meluas hingga Riau pada akhir Oktober" says how far, not until when. A gap that opens
+# on a name after a verb of spread is a place; any other gap, a name included ("hingga review indeks MSCI November
+# 2026"), still attaches the time to an end.
+_SPREAD = re.compile(r"\b(?:meluas|menyebar|tersebar|merambat|menjalar|merembet|bergerak|mengalir|menjangkau|"
+                     r"menembus|terasa|dirasakan|terdengar)\b[^,;:]*$", re.IGNORECASE)
 # SYS-186 send-back: "berlaku per November 2026" is a START ("from November"); "Defisit APBN per 30 September" ends.
 _STARTS_PER = re.compile(r"\b(?:berlaku|mulai|efektif)\s*$", re.IGNORECASE)
 
@@ -629,22 +640,33 @@ def _end_key(m) -> frozenset:
     return frozenset(key | ({("year", int(year))} if year else set()))
 
 
+def _ends(pattern, text: str) -> list:
+    """`pattern`'s matches in `text`, less a place after a verb of spread (`_SPREAD`, #406)."""
+    out = []
+    for m in pattern.finditer(text):
+        gap = (m.group("gap") or "").split()
+        if not (gap and story_words.names(f"x {gap[0]}") and _SPREAD.search(text[:m.start()])):
+            out.append(m)
+    return out
+
+
 def end_points(text: str) -> List[Tuple[str, frozenset]]:
     """(phrase as written, key) of every end point in `text`: "hingga / sampai / s.d. <time>", "berakhir / selesai /
-    dicabut (pada) <time>"."""
-    return [(m.group(0), _end_key(m)) for m in _END_POINT.finditer(text or "")]
+    dicabut / dihentikan (pada) <time>", "paling lambat <time>"."""
+    return [(m.group(0), _end_key(m)) for m in _ends(_END_POINT, text or "")]
 
 
 def _subject_roots(text: str) -> Set[str]:
     return {story_words.root(w) for w in story_words.content_words(text)}
 
 
-def _stated_ends(source: str) -> List[Tuple[frozenset, Set[str]]]:
-    """(key, the roots of its sentence) of every end time `source` states, never a "berlaku per" start."""
+def _stated_ends(source: str) -> List[Tuple[frozenset, Set[str], bool]]:
+    """(key, the roots of its sentence, whether it is a deadline) of every end time `source` states, never a
+    "berlaku per" start."""
     out = []
     for sentence in _sentences(source or ""):
         roots = _subject_roots(sentence)
-        out += [(_end_key(m), roots) for m in _STATED_END.finditer(sentence)
+        out += [(_end_key(m), roots, bool(m.group("deadline"))) for m in _ends(_STATED_END, sentence)
                 if not ((m.group("open") or "").lower() == "per" and _STARTS_PER.search(sentence[:m.start()]))]
     return out
 
@@ -652,18 +674,24 @@ def _stated_ends(source: str) -> List[Tuple[frozenset, Set[str]]]:
 def unbacked_end_times(text: str, source: str) -> List[str]:
     """SYS-186: the end points of `text` that no source states as an end: every part of the prose time (day, month,
     year, part with its unit, semester or quarter) must be in one end time of `source`. A less precise prose time is
-    backed by a more precise one ("hingga 2027" by "hingga semester II-2027"), never the reverse.
+    backed by a more precise one ("hingga 2027" by "hingga semester II-2027"), never the reverse. A source's deadline
+    backs only a prose deadline.
 
-    SYS-193 (#394): and by one whose sentence shares a content word with the prose clause before the end point:
-    "Pembekuan saham berlanjut hingga 2026" is not backed by "Defisit APBN hingga September 2026". A clause with no
-    content word ("Hingga September 2026, ...") is matched by its time alone."""
+    SYS-193 (#394): and by one whose sentence shares a content word with the prose clause: "Pembekuan saham berlanjut
+    hingga 2026" is not backed by "Defisit APBN hingga September 2026". The clause is the one before the end point,
+    or, for a fronted end (send-back #404: "Hingga 2026, pembekuan saham berlanjut."), the one after it; a clause with
+    no content word on either side is matched by its time alone."""
     stated = _stated_ends(source)
     out = []
     for sentence in _sentences(text or ""):
-        for m in _END_POINT.finditer(sentence):
-            key, subject = _end_key(m), _subject_roots(re.split(r"[,;:]", sentence[:m.start()])[-1])
-            if not any(key <= s and (not subject or any(story_words.meets(r, roots) for r in subject))
-                       for s, roots in stated):
+        for m in _ends(_END_POINT, sentence):
+            key, deadline = _end_key(m), bool(m.group("deadline"))
+            subject = _subject_roots(re.split(r"[,;:]", sentence[:m.start()])[-1])
+            if not subject:
+                subject = _subject_roots(re.split(r"[,;:]", sentence[m.end():].lstrip(" ,;:"))[0])
+            if not any(key <= s and (deadline or not due)
+                       and (not subject or any(story_words.meets(r, roots) for r in subject))
+                       for s, roots, due in stated):
                 out.append(m.group(0))
     return out
 

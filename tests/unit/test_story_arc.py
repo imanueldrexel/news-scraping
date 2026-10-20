@@ -707,6 +707,14 @@ class TestRelativeTime:
         day, item = date(2026, 10, 8), date(2026, 10, 2)
         assert sa.unbacked_times(latar, day, {day, item}, "") == ["awal Oktober"]
 
+    @pytest.mark.parametrize("verb", ["ditarget", "menargetkan", "berjanji", "menjanjikan", "dipastikan", "berharap",
+                                      "terjadwal", "diprediksi", "diagendakan", "diupayakan"])
+    def test_each_plan_root_cues_with_its_affixes(self, verb):
+        """SYS-177 second send-back (#407): a plan root with its affixes, not one form of it."""
+        day, item = date(2026, 10, 8), date(2026, 10, 2)
+        latar = f"Aturan barunya {verb} terbit awal Oktober."
+        assert sa.unbacked_times(latar, day, {day, item}, "") == ["awal Oktober"]
+
     def test_a_bare_mulai_is_no_cue(self):
         day, item = date(2026, 10, 8), date(2026, 10, 2)
         assert sa.unbacked_times("Asap mulai meluas awal Oktober.", day, {day, item}, "") == []

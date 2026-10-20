@@ -551,6 +551,19 @@ class TestSys186Rephrased:
     def test_a_degree_word_or_a_number_still_blocks(self, prose):
         assert sc.end_points(prose) == []
 
+    @pytest.mark.parametrize("prose", ["Asap menyebar hingga Jambi pada akhir Oktober.",
+                                       "Getaran gempa terasa hingga Bali pada 12 Oktober."])
+    def test_a_place_after_a_verb_of_spread_is_no_end(self, prose):
+        """#406: "meluas / menyebar hingga <Place> pada <time>" says how far, not until when."""
+        assert sc.end_points(prose) == []
+
+    @pytest.mark.parametrize("prose", ["Kepengurusan berlaku hingga RUPS pada Juni 2027.",
+                                       "Asap meluas hingga wilayah Riau pada akhir Oktober.",
+                                       "Pembekuan berlanjut hingga review indeks MSCI November 2026."])
+    def test_any_other_gap_still_reads_an_end(self, prose):
+        """#406 fails closed: a name with no verb of spread, or a gap that does not open on a name, is an end."""
+        assert sc.end_points(prose)
+
     def test_a_part_is_keyed_with_its_unit(self):
         """"akhir 2027" is December 2027, not the end of June 2027; "hingga 2027" is still backed by it."""
         assert sc.unbacked_end_times("Pembekuan berlanjut hingga akhir 2027.", MSCI) != []
@@ -588,6 +601,20 @@ class TestSys191EndOpeners:
         assert sc.unbacked_end_times("Pembekuan berlanjut hingga Juni 2027.",
                                      "Pembekuan berlaku s.d. Juni 2027 menurut MSCI.") == []
 
+    @pytest.mark.parametrize("prose", ["Operasi SAR dihentikan pada 12 Oktober 2026.",
+                                       "Operasi SAR berhenti pada 12 Oktober 2026."])
+    def test_a_stop_verb_is_backed_by_the_same_stated_stop(self, prose):
+        """SYS-191 send-back (#403): the stop verbs state an end in a source too."""
+        assert sc.unbacked_end_times(prose, "Operasi SAR resmi dihentikan pada 12 Oktober 2026.") == []
+
+    def test_a_deadline_backs_a_deadline_and_an_end_backs_both(self):
+        """#403: "paling lambat" in a source states when something is due, so it backs only a prose deadline."""
+        due = "Keputusan diumumkan paling lambat November 2026."
+        assert sc.unbacked_end_times("Keputusan diumumkan selambat-lambatnya November 2026.", due) == []
+        assert sc.unbacked_end_times("Keputusan diumumkan hingga November 2026.", due) != []
+        assert sc.unbacked_end_times("Keputusan diumumkan paling lambat November 2026.",
+                                     "Masa konsultasi keputusan berlangsung hingga November 2026.") == []
+
     def test_s_d_ends_no_sentence(self):
         assert sc._sentences("Pembekuan berlaku s.d. November 2026. Lalu dicabut.") == [
             "Pembekuan berlaku s.d. November 2026.", "Lalu dicabut."]
@@ -604,8 +631,14 @@ class TestSys193EndSubject:
     def test_the_same_subject_backs(self):
         assert sc.unbacked_end_times("Defisit APBN hingga September 2026 melebar.", self.SRC) == []
 
-    def test_a_clause_with_no_subject_is_matched_by_its_time(self):
-        assert sc.unbacked_end_times("Hingga September 2026, ada kenaikan.", self.SRC) == []
+    def test_a_fronted_end_is_matched_by_the_clause_after_its_time(self):
+        """SYS-193 send-back (#404): a fronted end's subject is the clause after its time. Before, "ada kenaikan" was
+        matched by the time alone and backed by the deficit's end."""
+        assert sc.unbacked_end_times("Hingga September 2026, defisit APBN mencapai Rp319 triliun.", self.SRC) == []
+        assert sc.unbacked_end_times("Hingga September 2026, ada kenaikan.", self.SRC) == ["Hingga September 2026"]
+
+    def test_a_clause_with_no_subject_on_either_side_is_matched_by_its_time(self):
+        assert sc.unbacked_end_times("Hingga September 2026, ada 5.", self.SRC) == []
 
 
 class TestSys190Periods:

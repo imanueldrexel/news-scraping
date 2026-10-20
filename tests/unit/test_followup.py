@@ -135,6 +135,23 @@ class TestRefersToThread:
     def test_only_a_name_the_thread_lacks_is_a_subject_of_its_own(self, previous, question):
         assert f.refers_to_thread(question, previous)
 
+    @pytest.mark.parametrize("question", ["Apa yang lazimnya terjadi pada Garuda Indonesia?",
+                                          "Apa yang wajarnya dilakukan pemerintah terhadap Sritex?"])
+    def test_a_nya_word_in_an_adverbs_place_is_no_reference(self, question):
+        """ADR-022 (#408/#409): right after "yang", an -nya word on no list is an adverb, so the switch stays its
+        own question."""
+        assert not f.refers_back(question)
+        assert not f.refers_to_thread(question, ["Berapa harga emas Antam hari ini?"])
+
+    def test_a_verb_with_its_object_after_yang_still_points_back(self):
+        """ADR-022: "memimpinnya" is a verb with its object clitic: it points at the thread (dev held-out pair)."""
+        assert f.refers_to_thread("Siapa yang memimpinnya?", ["Apa kabar terbaru soal Danantara?"])
+
+    def test_the_object_phrase_runs_to_its_clause_end_not_into_a_new_question(self):
+        """ADR-022 (#410): the phrase holds "saham bank BUMN seperti BBRI", and stops before "dan apa kata ..."."""
+        assert f.refers_to_thread("Bagaimana dampaknya ke saham bank BUMN seperti BBRI?", self.FED)
+        assert not f.refers_to_thread("Bagaimana dampaknya ke IHSG dan apa kata Danantara soal itu?", self.FED)
+
     def test_the_first_reference_decides(self):
         """'dampaknya' has no name before it, so it points into the thread, although the later
         'pergerakannya' finds IHSG before it."""

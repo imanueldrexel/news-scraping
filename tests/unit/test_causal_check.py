@@ -452,7 +452,9 @@ FORMS = ["karena", "dikarenakan", "lantaran", "sebab", "gara-gara", "akibat", "d
          "berakibat", "menyebabkan", "memicu", "berimbas", "penyebab", "pemicu",
          # SYS-189 (#390)
          "didorong", "dipengaruhi", "ditopang", "berkat", "seiring", "dilatarbelakangi", "bermula dari",
-         "memengaruhi", "mempengaruhi", "menimbulkan", "membuat", "mendorong", "menekan"]
+         "memengaruhi", "mempengaruhi", "menimbulkan", "membuat", "mendorong", "menekan",
+         # SYS-189 send-back (#401)
+         "dipacu", "terpacu", "terdorong", "buntut"]
 
 
 class TestCausalWords:
@@ -630,6 +632,12 @@ class TestSys181Anaphor:
         source = "Banjir merendam 200 rumah di Desa Sukamaju. Longsor di desa tersebut dipicu tanggul jebol."
         assert not kept("Banjir merendam 200 rumah di Desa Sukamaju karena tanggul jebol.", source)
 
+    def test_an_anaphor_in_a_fronted_place_lends_nothing(self):
+        """The opening "Di desa tersebut" is a place, not the side's subject (sys181_anaphor_off_subject: since #398
+        a stop word after the head blocks lending anyway, so only a stop word that opens the side tells them apart)."""
+        source = "Banjir merendam 200 rumah di Desa Sukamaju. Di desa tersebut longsor dipicu tanggul jebol."
+        assert not kept("Banjir merendam 200 rumah di Desa Sukamaju karena tanggul jebol.", source)
+
     def test_a_subject_naming_the_previous_sentence_borrows_it(self):
         source = ("Defisit APBN 2026 diproyeksikan melebar ke 2,9 persen PDB. Peningkatan proyeksi defisit tersebut "
                   "disebabkan penerimaan pajak yang lebih rendah.")
@@ -640,6 +648,19 @@ class TestSys181Anaphor:
                                             ("Longsor di desa tersebut", False), ("Hal ini", True)])
     def test_refers_back(self, side, lends):
         assert cc._refers_back(side, "Defisit APBN 2026 diproyeksikan melebar.") is lends
+
+    def test_a_subject_whose_other_words_the_previous_sentence_lacks_lends_nothing(self):
+        """SYS-181 send-back (#398): "Penurunan saham BBRI tersebut" shares "turun" with "IHSG turun", not BBRI."""
+        assert not cc._refers_back("Penurunan saham BBRI tersebut", "IHSG turun 1 persen pada Senin.")
+
+    def test_only_the_named_part_of_the_previous_sentence_is_lent(self):
+        """SYS-181 send-back (QA's held-out, test_qa_1019_arcs): the anaphor rightly names the BBRI clause, and lends
+        that clause only, not the IHSG one joined to it by "dan"."""
+        src = ("IHSG turun 1 persen dan saham BBRI turun 3 persen pada Senin. Penurunan saham BBRI tersebut dipicu "
+               "aksi jual asing.")
+        assert cc._lent("Penurunan saham BBRI tersebut", src.split(". ")[0]) == "saham BBRI turun 3 persen pada Senin"
+        assert not kept("IHSG turun karena aksi jual asing.", src)
+        assert kept("Saham BBRI turun 3 persen karena aksi jual asing.", src)
 
 
 class TestSys183And187Lists:
@@ -718,6 +739,15 @@ class TestSys185LexicalNegation:
         source = "Kemenkeu membantah harga BBM naik karena utang Pertamina membengkak."
         assert kept("Kemenkeu menepis harga BBM naik karena utang Pertamina membengkak.", source)
 
+    @pytest.mark.parametrize("source", [
+        "Kabar harga BBM naik karena utang Pertamina membengkak adalah hoaks.",
+        "Anggapan harga BBM naik karena utang Pertamina membengkak ditepis Kemenkeu.",
+        "Penyangkalan Kemenkeu: harga BBM naik karena utang Pertamina membengkak tidak berdasar.",
+    ])
+    def test_a_denial_after_the_causal_word_denies_the_link(self, source):
+        """SYS-185 send-back (#399/#400): a denial anywhere in the link's sentence, before or after the word."""
+        assert not kept("Harga BBM naik karena utang Pertamina membengkak.", source)
+
     def test_gagal_panen_still_fronts_a_cause(self):
         [span] = cc.causal_spans("Karena gagal panen, harga beras melonjak di Jawa.")
         assert span.cause == "gagal panen"
@@ -741,6 +771,17 @@ class TestSys192Hedges:
 
     def test_a_claim_may_hedge_a_flat_link(self):
         assert kept("Kebakaran gudang itu diduga dipicu korsleting listrik.", self.FLAT)
+
+    @pytest.mark.parametrize("source", ["Polisi memperkirakan kebakaran gudang itu dipicu korsleting listrik.",
+                                        "Warga meyakini kebakaran gudang itu dipicu korsleting listrik.",
+                                        "Kebakaran gudang itu dikira dipicu korsleting listrik."])
+    def test_the_active_and_short_forms_of_a_hedge(self, source):
+        """SYS-192 send-back (#402): each hedge verb with its active form."""
+        assert not kept(self.FLAT, source)
+
+    def test_a_new_hedge_word_is_no_fact_of_the_claim(self):
+        """A claim may hedge with "diperkirakan" what the source states flatly: the hedge is no word of the half."""
+        assert kept("Kebakaran gudang itu diperkirakan dipicu korsleting listrik.", self.FLAT)
 
 
 class TestSys189MarketVerbs:

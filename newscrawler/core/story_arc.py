@@ -127,7 +127,8 @@ PROMPT = (
     "  \"pemicu\", \"pemicunya\", \"disebabkan\", \"menyebabkan\", \"penyebab\", \"penyebabnya\", \"sehingga\",\n"
     "  \"imbas\", \"imbasnya\", \"berimbas\", \"didorong\", \"dipengaruhi\", \"ditopang\", \"berkat\", \"seiring\",\n"
     "  \"dilatarbelakangi\", \"bermula dari\", \"memengaruhi\", \"mempengaruhi\", \"menimbulkan\", \"membuat\",\n"
-    "  \"mendorong\", \"menekan\"; tiga terakhir bukan kata sebab-akibat sesudah \"untuk\", \"guna\", \"agar\")\n"
+    "  \"mendorong\", \"menekan\", \"dipacu\", \"terpacu\", \"terdorong\", \"buntut\"; \"membuat\", \"mendorong\",\n"
+    "  \"menekan\" bukan kata sebab-akibat sesudah \"untuk\", \"guna\", \"agar\")\n"
     "  HANYA boleh dipakai jika SATU kalimat di teks memuat kata\n"
     "  sebab-akibat itu bersama sebab DAN akibatnya, dengan arah yang sama: yang menjadi sebab di kalimat\n"
     "  sumber tetap menjadi sebab. Salin kalimat itu persis ke \"sebab\" (boleh dua\n"
@@ -345,9 +346,18 @@ def _backing_days(known: set, last: date, digest_date: date, ahead_only: bool, t
 
 # SYS-177 (#376): in the latar a running span is a schedule when a plan or future verb stands in its clause ("Aturan
 # barunya akan terbit akhir Oktober"). SYS-177 send-back: the plan verbs of news copy too (berencana, diperkirakan,
-# diharapkan, segera, "mulai berlaku"; a bare "mulai" is past: "asap mulai meluas awal Oktober").
-_FUTURE_VERB = re.compile(r"\b(?:akan|bakal|dijadwalkan|ditargetkan|direncanakan|rencananya|rencana|berencana|menyusul|"
-                          r"diperkirakan|diproyeksikan|diharapkan|segera|hendak|siap|mulai\s+berlaku)\b", re.IGNORECASE)
+# diharapkan, segera, "mulai berlaku"; a bare "mulai" is past: "asap mulai meluas awal Oktober"). Second send-back
+# (#407): each plan root with its affixes, not one form of it -- "dipastikan", "dijanjikan", "ditarget", "berjanji".
+# Not "every running span is a schedule unless a past word stands by it" (QA's proposal): the live 10-17 and 10-18
+# latars narrate "pada pertengahan Oktober" with no such word (EXPERIMENTS.md 2026-10-20).
+_FUTURE_VERB = re.compile(r"\b(?:akan|bakal|segera|hendak|siap|menyusul|mulai\s+berlaku"
+                          r"|(?:di|ter|men)?jadwal(?:kan)?"                  # jadwal, dijadwalkan, terjadwal
+                          r"|(?:di)?target(?:kan)?|menargetkan"              # ditarget, ditargetkan
+                          r"|(?:di)?rencana(?:kan|nya)?|berencana|merencanakan"   # direncanakan, rencananya
+                          r"|(?:di|ber)?janji(?:kan)?|menjanjikan"           # dijanjikan, berjanji
+                          r"|dipastikan|memastikan|diharapkan|berharap|mengharapkan"
+                          r"|(?:di|mem)perkirakan|(?:di|mem)prediksi|(?:di|mem)proyeksikan"
+                          r"|diagendakan|diupayakan)\b", re.IGNORECASE)
 _CLAUSE_END = re.compile(r"[,;:]|[.!?](?:\s|$)")
 # SYS-177: the fields that tell today's news, where a running span is judged like the agenda.
 PRESENT_FIELDS = ("judul", "hari_ini", "sekilas")

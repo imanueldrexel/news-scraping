@@ -40,10 +40,17 @@ FALLBACK_THREAD, FALLBACK_OWN = "fallback-thread", "fallback-own"
 # names its own subject.
 _REFERENCE = re.compile(r"\b(?:dia|ia|mereka|beliau|tersebut)\b|\b[\w-]+nya\b", re.IGNORECASE)
 # ADR-021: a name in one of these phrases is what the thread's event affects ("Bagaimana dampaknya
-# ke IHSG?"), not the follow-up's own subject -- unless a reference word follows it. The phrase is
-# the preposition and up to 4 words. Measured on two pair sets (EXPERIMENTS.md 2026-10-19).
-_OBJECT_PHRASE = re.compile(r"\b(?:ke|kepada|terhadap|bagi|untuk|pada|di|atas)\s+((?:\S+\s+){0,3}\S+)",
-                            re.IGNORECASE)
+# ke IHSG?"), not the follow-up's own subject -- unless a reference word follows it. ADR-022
+# (SYS-145 send-back, #410): the phrase runs to the end of its clause ("ke saham bank BUMN seperti
+# BBRI"), not over a new question ("... ke IHSG dan apa kata analis ...").
+_OBJECT_PHRASE = re.compile(r"\b(?:ke|kepada|terhadap|bagi|untuk|pada|di|atas)\s+"
+                            r"((?:(?!\s(?:dan|atau|serta|lalu)\s+(?:apa|apakah|siapa|bagaimana|kapan|berapa|"
+                            r"mengapa|kenapa|mana|dimana)\b)[^,;:?!.])+)", re.IGNORECASE)
+# ADR-022 (SYS-144/145 send-back, #408/#409): a -nya word right after "yang" stands where an adverb
+# does -- "Apa yang harusnya / aslinya / mestinya terjadi pada Garuda?": the clause's subject is
+# "apa" -- so it points at nothing, listed or not. A verb with its object clitic does point back
+# ("Siapa yang memimpinnya?").
+_AFTER_YANG = re.compile(r"\byang\s+$", re.IGNORECASE)
 _LABEL = re.compile(r"^(?:pertanyaan(?:\s+(?:hasil|baru|lengkap))?|hasil)\s*:\s*", re.IGNORECASE)
 _QUOTES = "\"'“”‘’`"
 # SYS-143 (#326): a refusal or a list item is one short line too, and must not be searched
@@ -69,9 +76,14 @@ def previous_questions(history: Sequence[dict]) -> list:
 
 def _references(question: str) -> list:
     """The reference words of `question`, in order: pronouns, "tersebut" and -nya words that point
-    at something (no adverb, no "hanya")."""
-    return [m for m in _REFERENCE.finditer(question or "")
-            if not m.group(0).lower().endswith("nya") or nya_words.is_reference(m.group(0))]
+    at something (no adverb, no "hanya", nothing in an adverb's place after "yang")."""
+    q = question or ""
+
+    def adverb_place(m) -> bool:
+        return bool(_AFTER_YANG.search(q[:m.start()])) and not story_words.is_verb(m.group(0)[:-3])
+
+    return [m for m in _REFERENCE.finditer(q)
+            if not m.group(0).lower().endswith("nya") or (nya_words.is_reference(m.group(0)) and not adverb_place(m))]
 
 
 def refers_back(question: str) -> bool:

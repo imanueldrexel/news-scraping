@@ -15,7 +15,10 @@ setelahnya, utamanya ("tujuan utamanya"), rasanya ("bagaimana rasanya").
 """
 from typing import Optional
 
-NOT_CLITIC = frozenset({"hanya", "punya", "tanya", "bertanya"})
+# SYS-146 send-back (#412): every affixed form of "tanya" ("ditanya" was cut to "dita"). Not a suffix
+# test: "datanya", "kotanya", "lampunya" are possessives that end in -tanya / -punya.
+NOT_CLITIC = frozenset({"hanya", "punya", "tanya", "bertanya", "ditanya", "menanya", "tertanya",
+                        "tanya-tanya", "bertanya-tanya"})
 
 ADVERBS = frozenset({
     # SYS-144 (2026-10-12)
@@ -29,6 +32,11 @@ ADVERBS = frozenset({
     "pastinya", "tadinya", "mulanya", "awalnya", "kabarnya", "makanya", "tepatnya", "istilahnya", "jadinya",
     "sedikitnya", "selengkapnya", "untungnya", "kiranya", "sekiranya", "sepatutnya", "selayaknya",
     "seyogianya",
+    # SYS-146 send-back (#411): the spoken forms, which are rare enough in the corpus to become a
+    # required keyword anchor ("mestinya" -> "mesti", fts=0): a listed se-...-nya adverb without its
+    # se- (harusnya, mestinya, baiknya, ...), and QA's aslinya / kayaknya
+    "harusnya", "mestinya", "baiknya", "benarnya", "betulnya", "patutnya", "aslinya", "kayaknya",
+    "keliatannya",
 })
 
 _MIN_ROOT = 3       # "gajinya" -> "gaji"; a shorter remainder is no word of its own
