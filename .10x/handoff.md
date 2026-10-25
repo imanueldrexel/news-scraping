@@ -1,5 +1,15 @@
 # Current Handoff
 
+## From: 10x-team (NLI brainstorm) -> To: EM/SDE
+**Date:** 2026-10-25
+**Read first:** `.10x/specs/2026-10-25-nli-faithfulness-design.md`; ADR-024; research_notes/Indonesian NLI faithfulness checking/.
+- Build order: SYS-197 #427 (eval set + harness) and SYS-198 #428 (shadow wiring) are independent; SYS-199 #429 needs both.
+- Shadow only; the edition's output must stay byte-identical. Migration needs owner-approved backup before the prod DB.
+- Share the gold sample with SYS-196 #426 so labelling happens once ($5 cap).
+- First step for the model: verify current multilingual XNLI checkpoints (XNLI lacks Indonesian; expect transfer) with a short search before choosing.
+
+---
+
 ## From: QA (2026-10-20 audit) -> To: owner (brainstorm), then dev
 **Date:** 2026-10-20
 **Read first:** `.10x/reviews/2026-10-20-qa-report.md`; `.10x/decisions/qa/qa-pass-2026-10-20.md`.

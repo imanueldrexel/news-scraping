@@ -1,5 +1,10 @@
 # Project Status
 
+## NLI faithfulness (2026-10-25): design approved, planning next
+- [x] Brainstorm, spec `.10x/specs/2026-10-25-nli-faithfulness-design.md`, ADR-024, tickets SYS-197 #427 / SYS-198 #428 / SYS-199 #429.
+- [ ] Plan, then SYS-197 (eval set) and SYS-198 (shadow) in parallel; SYS-199 after both.
+- Owner decision: NLI regardless of Indonesian accuracy; shadow first; supersedes gate-lexicon decision 7.
+
 ## Project: NewsAggregator
 **Current Phase:** QA 2026-10-20: whole queue audited (26). 9 qa-passed, 13 qa-failed, 4 held (owner reads). New qa-defects #413-#425. Next: brainstorm a general design for the lexical gates (owner agrees the list fixes do not close the class).
 **Last Updated:** 2026-10-20 by QA
