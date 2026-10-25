@@ -2,7 +2,8 @@
 
 ## NLI faithfulness (2026-10-25): design approved, planning next
 - [x] Brainstorm, spec `.10x/specs/2026-10-25-nli-faithfulness-design.md`, ADR-024, tickets SYS-197 #427 / SYS-198 #428 / SYS-199 #429.
-- [ ] Plan, then SYS-197 (eval set) and SYS-198 (shadow) in parallel; SYS-199 after both.
+- [x] Planning complete (EM + senior-engineer files). Implementation started: SYS-198 T1-T5 and SYS-197 E1-E3 (no spend). E4 pair generation + E5 hand check wait on the owner.
+- [ ] (old line) SYS-197 (eval set) and SYS-198 (shadow) in parallel; SYS-199 after both.
 - Owner decision: NLI regardless of Indonesian accuracy; shadow first; supersedes gate-lexicon decision 7.
 
 ## Project: NewsAggregator
