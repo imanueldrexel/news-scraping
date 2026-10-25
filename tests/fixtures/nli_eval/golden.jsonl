@@ -1,0 +1,12 @@
+{"id": "c0", "error_type": "cause", "premise": "Harga beras naik karena pasokan seret.", "hypothesis": "Harga beras naik karena banjir", "label": "unfaithful", "kind": "corrupted"}
+{"id": "c1", "error_type": "cause", "premise": "Harga beras naik karena pasokan seret.", "hypothesis": "Harga beras naik akibat spekulan", "label": "unfaithful", "kind": "corrupted"}
+{"id": "c2", "error_type": "cause", "premise": "Harga beras naik karena pasokan seret.", "hypothesis": "Harga beras naik dipicu perang", "label": "unfaithful", "kind": "corrupted"}
+{"id": "c3", "error_type": "cause", "premise": "Harga beras naik karena pasokan seret.", "hypothesis": "Harga beras naik karena pajak", "label": "unfaithful", "kind": "corrupted"}
+{"id": "c4", "error_type": "cause", "premise": "Harga beras naik karena pasokan seret.", "hypothesis": "Harga beras naik sebab pasokan seret", "label": "faithful", "kind": "restatement"}
+{"id": "c5", "error_type": "cause", "premise": "Harga beras naik karena pasokan seret.", "hypothesis": "Pasokan seret membuat harga beras naik", "label": "faithful", "kind": "restatement"}
+{"id": "c6", "error_type": "cause", "premise": "Harga beras naik karena pasokan seret.", "hypothesis": "Harga beras naik karena pasokan seret di Jawa", "label": "faithful", "kind": "hard_positive"}
+{"id": "c7", "error_type": "cause", "premise": "Harga beras naik karena pasokan seret.", "hypothesis": "Harga beras naik karena pasokan seret.", "label": "faithful", "kind": "hard_positive"}
+{"id": "h0", "error_type": "hedge", "premise": "Pemerintah diduga lambat menyalurkan cadangan.", "hypothesis": "Pemerintah lambat menyalurkan cadangan", "label": "unfaithful", "kind": "corrupted"}
+{"id": "h1", "error_type": "hedge", "premise": "Pemerintah diduga lambat menyalurkan cadangan.", "hypothesis": "Pemerintah terbukti lambat menyalurkan cadangan", "label": "unfaithful", "kind": "corrupted"}
+{"id": "h2", "error_type": "hedge", "premise": "Pemerintah diduga lambat menyalurkan cadangan.", "hypothesis": "Pemerintah diduga lambat menyalurkan cadangan", "label": "faithful", "kind": "restatement"}
+{"id": "h3", "error_type": "hedge", "premise": "Pemerintah diduga lambat menyalurkan cadangan.", "hypothesis": "Pemerintah diduga lambat menyalurkan cadangan beras", "label": "faithful", "kind": "hard_positive"}

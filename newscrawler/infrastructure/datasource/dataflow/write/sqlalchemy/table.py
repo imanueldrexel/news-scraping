@@ -205,6 +205,24 @@ class NewsletterDigestsTable(Base):
     generation_ms = Column(Integer, nullable=True)
 
 
+class NliShadowTable(Base):
+    __tablename__ = "nli_shadow"
+
+    shadow_id      = Column(BigInteger, primary_key=True, autoincrement=True)
+    edition_date   = Column(Date, nullable=False)
+    story_id       = Column(Integer, nullable=False)
+    field          = Column(String, nullable=False)
+    sentence       = Column(String, nullable=False)
+    error_tags     = Column(String, nullable=True)
+    premise_ids    = Column(JSON, nullable=True)
+    best_premise   = Column(String, nullable=True)
+    p_entail       = Column(Float, nullable=True)
+    p_neutral      = Column(Float, nullable=True)
+    p_contradict   = Column(Float, nullable=True)
+    model_revision = Column(String, nullable=True)
+    created_at     = Column(TIMESTAMP, nullable=False, default=datetime.utcnow)
+
+
 # Columns the database owns and the ORM deliberately does not declare, and
 # tables that are tooling rather than schema. The reflection test allows
 # exactly these; anything else present in one side only is drift.

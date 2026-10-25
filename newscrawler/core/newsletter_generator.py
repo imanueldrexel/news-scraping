@@ -5,7 +5,7 @@ from datetime import date, datetime
 from typing import Callable, List, Optional, Tuple
 
 from newscrawler.core import newsletter_copy as copy
-from newscrawler.core import newsletter_edition, story_summary
+from newscrawler.core import newsletter_edition, nli_shadow, story_summary
 from newscrawler.core.constants import (
     DIGESTS_DIR,
     EMBEDDING_MODEL_HF,
@@ -16,6 +16,9 @@ from newscrawler.core.constants import (
     NEWSLETTER_MIN_CLUSTER_SIZE,
     NEWSLETTER_MIN_SUMMARY_SHARE,
     NEWSLETTER_ARCS,
+    NLI_MODEL,
+    NLI_SHADOW,
+    NLI_TIME_BUDGET_S,
     SOURCE_AUTHORITY,
 )
 from newscrawler.core.filter_rubric import TOPICS_FINANCE, TOPICS_NEWS
@@ -276,6 +279,7 @@ class NewsletterGenerator:
                     f.write(edition.markdown)
                 logger.info(f"Edition written to {path} ({edition.words} words, {edition.utama} top stories, "
                             f"{edition.sekilas} Sekilas lines, editor fallback: {edition.editor_fallback})")
+                self._nli_shadow(edition, plan.date)
                 return edition.stats(), path, edition
         except Exception as e:  # noqa: BLE001 -- the archive digest is already written and must be saved
             logger.exception("5-minute edition failed")
@@ -283,6 +287,14 @@ class NewsletterGenerator:
         if os.path.exists(path):
             os.remove(path)
         return result, None, edition
+
+    def _nli_shadow(self, edition, digest_date) -> None:
+        """SYS-198 (ADR-024): the NLI verdicts on the arcs' sentences, recorded after the edition is written.
+        Off unless NLI_SHADOW=1; it never changes the edition and never raises."""
+        if not NLI_SHADOW or not (edition.trace or {}).get("arcs"):
+            return
+        nli_shadow.record(edition, digest_date, self.ds.save_nli_shadow,
+                          nli_shadow.default_scorer(NLI_MODEL), NLI_TIME_BUDGET_S)
 
     # ── Sections ──
 

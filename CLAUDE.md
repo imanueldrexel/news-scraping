@@ -99,6 +99,7 @@ psql -U postgres -d newsaggregator -f scripts/migrate_articles_topic.sql   # SYS
 psql -U postgres -d newsaggregator -f scripts/migrate_chunks_article_id.sql   # DBT-11: backfill chunks.article_id from articles by sitemap_id (idempotent; new rows are linked by save_newsdetails)
 psql -U postgres -d newsaggregator -f scripts/migrate_api_usage_tokens.sql   # SYS-39: api_usage_log.input_tokens/output_tokens/cost_usd (the extractor's usage insert names them; apply before any extraction or newsletter run on this code)
 psql -U postgres -d newsaggregator -f scripts/migrate_entity_mentions_indexes.sql   # DBT-64: entity_mentions(chunk_id), (sitemap_id) -- every chunk delete checked the mention FK by a sequential scan
+psql -U postgres -d newsaggregator -f scripts/migrate_nli_shadow.sql   # SYS-198: nli_shadow, one row per arc sentence with the NLI verdict (shadow only, ADR-024)
 ```
 
 **A ticket that adds a `scripts/migrate_*.sql` file is not done until `scripts/migrate.py` has been run against both `newsaggregator` and `newsaggregator_test` and the closing comment quotes the result of `tests/integration`, not only `tests/unit` (DBT-22).** The integration suite's session fixture applies pending migrations to `newsaggregator_test` itself (`apply_pending` in `scripts/migrate.py`), so a new file registered in `MIGRATIONS` reaches the test DB on the next run; the production DB is never touched by it and needs the owner-approved step (backup first).

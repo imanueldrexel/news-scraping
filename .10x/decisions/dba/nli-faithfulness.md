@@ -1,0 +1,2 @@
+# DBA: nli-faithfulness
+`nli_shadow` (migrate_nli_shadow.sql): BIGSERIAL pk, edition_date DATE, story_id, field, sentence, error_tags TEXT, premise_ids JSONB, best_premise, p_* REAL NULL (NULL = no verdict), model_revision, created_at. Index on edition_date. ~20-40 rows/day; rerun of a day replaces its rows; 90-day retention in `save_nli_shadow`. Applied to newsaggregator_test by the integration fixture; production NOT applied (owner backup first).

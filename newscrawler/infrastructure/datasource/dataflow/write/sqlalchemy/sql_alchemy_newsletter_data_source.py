@@ -120,6 +120,29 @@ class SQLAlchemyNewsletterDataSource:
             session.commit()
         return row.digest_id
 
+    def save_nli_shadow(self, edition_date: date, rows: List[dict], keep_days: int = 90) -> int:
+        """SYS-198 (#428): replace the date's shadow rows (a rerun of the same day is idempotent) and drop
+        rows older than `keep_days`. Returns the rows written."""
+        import json
+        delete_day = text("DELETE FROM nli_shadow WHERE edition_date = :d")
+        delete_old = text("DELETE FROM nli_shadow WHERE created_at < NOW() - make_interval(days => :keep)")
+        insert = text("""
+            INSERT INTO nli_shadow
+                (edition_date, story_id, field, sentence, error_tags, premise_ids, best_premise,
+                 p_entail, p_neutral, p_contradict, model_revision)
+            VALUES
+                (:edition_date, :story_id, :field, :sentence, :error_tags, CAST(:premise_ids AS jsonb),
+                 :best_premise, :p_entail, :p_neutral, :p_contradict, :model_revision)
+        """)
+        params = [{**r, "premise_ids": json.dumps(r["premise_ids"])} for r in rows]
+        with self.client.get_session() as session:
+            session.execute(delete_day, {"d": edition_date})
+            session.execute(delete_old, {"keep": keep_days})
+            if params:
+                session.execute(insert, params)
+            session.commit()
+        return len(params)
+
     # OPS-05 (4): one metric's query and its (key, needs str()) pairing. Queried
     # independently -- a single missing/broken table (e.g. newsletter_digests
     # before its migration was applied, ~4 months undetected) used to blank all

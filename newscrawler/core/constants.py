@@ -215,6 +215,12 @@ NEWSLETTER_MAX_CLUSTERS_PER_STORY = int(os.getenv("NEWSLETTER_MAX_CLUSTERS_PER_S
 # NEWS_L1 for the ARC_LOOKBACK_DAYS before the date, keeps items at or over ARC_FLOOR (wide on purpose:
 # the arc writer decides membership, EXPERIMENTS.md 2026-10-13), one per day, at most ARC_MAX_ITEMS days.
 NEWSLETTER_ARCS = os.getenv("NEWSLETTER_ARCS", "0").strip() == "1"
+# SYS-198 (ADR-024): the NLI faithfulness check over the arcs' sentences, shadow only -- it records a verdict in
+# nli_shadow and changes nothing in the edition. NLI_MODEL is a Hugging Face sequence-classification NLI checkpoint;
+# NLI_TIME_BUDGET_S bounds the whole pass, the sentences left over get no verdict.
+NLI_SHADOW = os.getenv("NLI_SHADOW", "0").strip() == "1"
+NLI_MODEL = os.getenv("NLI_MODEL", "").strip()
+NLI_TIME_BUDGET_S = float(os.getenv("NLI_TIME_BUDGET_S", 120))
 ARC_LOOKBACK_DAYS = int(os.getenv("ARC_LOOKBACK_DAYS", 30))
 ARC_FLOOR = float(os.getenv("ARC_FLOOR", 0.70))
 ARC_FETCH_K = int(os.getenv("ARC_FETCH_K", 3000))

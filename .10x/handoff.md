@@ -1,5 +1,14 @@
 # Current Handoff
 
+## From: SDE (NLI shadow, 2026-10-25) -> To: owner, QA
+**Read first:** `.10x/decisions/sde/nli-faithfulness.md`; EXPERIMENTS.md 2026-10-25.
+- SYS-198 #428 code is done and OFF by default (NLI_SHADOW=0). Not labelled ready-for-qa: its Done-when needs one live edition's rows and runtime.
+- **Owner steps to go live:** (1) backup, then `venv\Scripts\python.exe scripts/migrate.py` on `newsaggregator`; (2) in `.env`: `NLI_SHADOW=1`, `NLI_MODEL=MoritzLaurer/mDeBERTa-v3-base-xnli-multilingual-nli-2mil7`, optional `NLI_TIME_BUDGET_S` (default 120); (3) next 12:00 edition with NEWSLETTER_ARCS=1 writes rows; check `SELECT error_tags, avg(p_entail), count(*) FROM nli_shadow GROUP BY 1`.
+- SYS-197 #427: harness ready; pair generation (LLM spend, inside SYS-196's $5 cap, SumoPod balance was ~0 on 10-15) and the stratified hand check (owner time) not started.
+- venv torch is CPU-only; arm B fine-tune needs a CUDA build: owner decision.
+
+---
+
 ## From: 10x-team (NLI brainstorm) -> To: EM/SDE
 **Date:** 2026-10-25
 **Read first:** `.10x/specs/2026-10-25-nli-faithfulness-design.md`; ADR-024; research_notes/Indonesian NLI faithfulness checking/.
