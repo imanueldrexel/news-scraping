@@ -1,5 +1,14 @@
 # Project Status
 
+## 2026-11-03: finish the NLI track + close the qa-passed set (owner: "finish as suggested")
+- [x] Machine was off 2026-10-26 evening -> 2026-11-03 22:18: no crawl, extraction or edition 10-27..11-02. The catch-up newsletter wrote an EMPTY 11-02 digest (correct). Not a defect.
+- [x] QA: 9 qa-passed tickets closed with the 10-20 evidence (SYS-79, SRC-59, SYS-139, SYS-147, SYS-149, SYS-193, DBT-72, DBT-73, DBT-75).
+- [x] SYS-197: owner chose ADR-025 (Claude pre-labels, owner blind 40). Claude's labels: end 40/40, schedule 39/40, hedge/cause/denial 34/40 (borderline). Scorer `score_nli_handcheck.py` + 6 tests, 3/3 mutants killed.
+- [ ] Owner: fill `tests/fixtures/nli_eval/handcheck_owner_blind.csv` (40 rows, valid y/n), then `score`.
+- [ ] SYS-198: prod migration applied 10-25, NLI_SHADOW=1 set, 0 rows so far (the 10-26 edition built 0 arcs: SumoPod connection errors). Check `nli_shadow` after the 2026-11-04 12:00 edition, then post evidence + ready-for-qa.
+- [ ] Generator filters (denial seeds without a denial verb; cause edits after 'sehingga') before SYS-199.
+- Fixed in passing: tests/fixtures/nli_eval/*.jsonl were CRLF on disk (index LF), re-checked out; unit 3,999 / 5 skipped.
+
 ## NLI faithfulness (2026-10-25): design approved, planning next
 - [x] Brainstorm, spec `.10x/specs/2026-10-25-nli-faithfulness-design.md`, ADR-024, tickets SYS-197 #427 / SYS-198 #428 / SYS-199 #429.
 - [x] Planning complete (EM + senior-engineer files). Implementation started: SYS-198 T1-T5 and SYS-197 E1-E3 (no spend). E4 pair generation + E5 hand check wait on the owner.

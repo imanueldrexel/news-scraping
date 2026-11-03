@@ -1,5 +1,21 @@
 # Current Handoff
 
+## From: QA + SDE (2026-11-03) -> To: owner, then SDE/QA for SYS-198/199
+**Read first:** ADR-025; EXPERIMENTS.md 2026-11-03 (SYS-197 pre-label); `.10x/decisions/sde/nli-faithfulness.md` "2026-11-03".
+- **Owner (about 20 min):** label `tests/fixtures/nli_eval/handcheck_owner_blind.csv`.
+  - Put `y` in `valid (y/n)` when the `intended` label is right and the pair tests its `error_type`; otherwise put `n`.
+  - Don't look at `handcheck_claude.csv` first.
+  - Then run `venv\Scripts\python.exe scripts/experiments/score_nli_handcheck.py score`. Exit 0 means Claude's labels stand. Exit 1 means label the other 160 rows.
+- **SYS-198:** the first live chance is the 2026-11-04 12:00 edition (for 11-03). Check:
+  - `SELECT error_tags, count(*), avg(p_entail) FROM nli_shadow GROUP BY 1`;
+  - the runtime in `logs/scheduled_newsletter_2026-11-04_1200.log`: the gap between the timestamps of "Edition written" and "NLI shadow: N/M arc sentences scored" (there is no explicit runtime line).
+  - Rows plus runtime under NLI_TIME_BUDGET_S meet the Done-when: post the evidence and label it ready-for-qa.
+  - 0 arcs means 0 rows. That is not a failure of SYS-198; wait for an edition with arcs.
+- **Before SYS-199:** filter the full pair set (denial seeds with no denial verb; cause corruptions edited after *sehingga*), then fix `gen_nli_pairs.py`'s seed rule.
+- Closed today as QA: SYS-79, SRC-59, SYS-139, SYS-147, SYS-149, SYS-193, DBT-72, DBT-73, DBT-75.
+
+---
+
 ## From: SDE (NLI shadow, 2026-10-25) -> To: owner, QA
 **Read first:** `.10x/decisions/sde/nli-faithfulness.md`; EXPERIMENTS.md 2026-10-25.
 - SYS-198 #428 code is done and OFF by default (NLI_SHADOW=0). Not labelled ready-for-qa: its Done-when needs one live edition's rows and runtime.
