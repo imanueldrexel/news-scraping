@@ -5,3 +5,4 @@
 # DBT-63 (#285): `**/` so the subdirectories (extraction_bakeoff_runs/) are covered too.
 tests/fixtures/**/*.jsonl text eol=lf
 *.npz binary
+data/nli_train/*.jsonl text eol=lf
