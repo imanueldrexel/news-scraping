@@ -7,7 +7,8 @@
 - [x] SYS-197 filter: `filter_nli_pairs.py` moves 142 type misfits to `other` (denial 92, cause 50); hand check 8/9 caught, 0 false; generator seed rule fixed; `pairs.jsonl` written. SYS-197 ready-for-qa.
 - [x] SYS-198: 12:00 edition wrote 20 rows (20/20 scored), +124.5 s; ready-for-qa.
 - [x] Filed SYS-200 #430: natural set from live `nli_shadow` rows (needs about 10 editions).
-- [ ] SYS-199 #429: run eval_nli.py on `pairs.jsonl` with the arm A model; report per type plus `other`; validity from 2 LLM labellers + 3 owner rulings.
+- [x] SYS-199 arm A: held-out recall 0.9 at <= 3% false flags on cause/denial/end/schedule; hedge needs tau 0.95 (36% false flags on restatements). EXPERIMENTS.md + #429 comment.
+- [ ] SYS-199: arm B (CUDA torch, owner decision), arm C (DeepSeek spend, owner), natural set SYS-200, owner sign-off per type.
 
 ## 2026-11-03: finish the NLI track + close the qa-passed set (owner: "finish as suggested")
 - [x] Machine was off 2026-10-26 evening -> 2026-11-03 22:18: no crawl, extraction or edition 10-27..11-02. The catch-up newsletter wrote an EMPTY 11-02 digest (correct). Not a defect.

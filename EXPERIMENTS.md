@@ -3422,3 +3422,31 @@ SINDONEWS   old 12 new 12 | lost [] | gained []   links identical: True
 - 10 hand mutants of the rules, all killed (one survived until a test for a link added after the effect was written).
 **Conclusion / do not repeat:** the gate's denial regex is a trigger list, not a definition of a denial: a denial seed needs an act of denying (the generator now requires it). An edit's place relative to the causal word decides cause fit, but only within its clause and only on word tokens. Do not filter on the number of diff regions: punctuation and paired date/weekday edits make it noise.
 **Links:** SYS-197 #427, SYS-199 #429, SYS-200 #430 (natural set), ADR-027.
+
+## 2026-11-04 -- SYS-199 (#429) arm A: zero-shot XNLI on the targeted pairs
+**Question:** does the arm A checkpoint (MoritzLaurer/mDeBERTa-v3-base-xnli-multilingual-nli-2mil7@b5113eb38a, CPU) reach recall >= 0.9 per type at a low false-flag rate on SYS-197's pairs, before any fine-tune?
+**Method:**
+- Scored `tests/fixtures/nli_eval/pairs.jsonl` (2,974 pairs, misfits in `other`) with `eval_nli.score_with_model`, then `eval_nli.evaluate` at recall 0.9. 277 s on CPU.
+- Held-out check: tau fitted on a random half of the seeds and measured on the other half, 20 splits x 2 (pairs of one seed never straddle the split). Plus one fixed tau of 0.5.
+- Scratch code inlined here:
+  `for rep in range(20): shuffle(seeds); half = seeds[:n//2]; tau = choose_tau(unfaithful in half, 0.9); rate(other half, tau)`
+**Result:**
+
+| type | n bad / restated / hard | tau (in-sample) | held-out recall | held-out ff restated | held-out ff hard | recall@0.5 | ff restated@0.5 | ff hard@0.5 | hyp-only |
+|---|---|---|---|---|---|---|---|---|---|
+| cause | 249 / 150 / 146 | 0.48 | 0.90 | 0.03 | 0.02 | 0.90 | 0.04 | 0.03 | 0.46 |
+| denial | 254 / 127 / 126 | 0.01 | 0.90 | 0.00 | 0.00 | 0.99 | 0.06 | 0.03 | 0.54 |
+| end | 300 / 150 / 150 | 0.01 | 0.89 | 0.00 | 0.00 | 1.00 | 0.01 | 0.01 | 0.50 |
+| hedge | 280 / 150 / 150 | 0.95 | 0.90 | **0.36** | 0.13 | **0.54** | 0.07 | 0.01 | 0.43 |
+| schedule | 300 / 150 / 150 | 0.19 | 0.89 | 0.02 | 0.02 | 0.96 | 0.07 | 0.03 | 0.49 |
+| other | 96 / 23 / 23 | 0.12 | 0.91 | 0.01 | 0.04 | 0.95 | 0.09 | 0.04 | 0.68* |
+
+\* `other` has 96 unfaithful and 46 faithful pairs, so 0.68 is the majority baseline, not a leak.
+- **Hedge** is the miss. On the hand-validated hedge corruptions (label_ok y), 12 of 17 are caught at 0.5 (median p_entail 0.08). Label noise (3 label_ok n rows) is not the cause.
+- The model reads a dropped noun hedge as entailed: *perkara dugaan korupsi* -> *perkara korupsi* scores 0.95 and 0.77, and *apakah ada* -> *ada* scores 0.75.
+**Conclusion / do not repeat:**
+- Arm A already meets recall 0.9 at <= 3% false flags (held out) on cause, denial, end and schedule.
+- Hedge needs a tau of about 0.95, which flags 36% of faithful restatements. The candidate is arm B (fine-tune), or keeping the hedge lexicon gate.
+- The promotion verdict still needs SYS-200's natural set and the owner's sign-off. Tau is chosen in-sample on LLM-written pairs, and real arc sentences are longer, with multi-sentence premises.
+- Do not read denial's and end's tau of 0.01 as the runtime threshold: these are single-sentence premises. Re-fit on the natural set.
+**Links:** SYS-199 #429, SYS-197 #427, SYS-200 #430, ADR-024.

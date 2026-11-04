@@ -41,3 +41,4 @@
 - `gen_nli_pairs.py`: a denial seed now needs DENIAL_ACT, and the cause prompt says "the part that says why, not the result". The 2,974 existing pairs were not regenerated: the filter covers them.
 - `tests/unit/test_filter_nli_pairs.py`: 23 tests, 10/10 hand mutants killed. Unit suite 4037 passed / 5 skipped.
 - Deviation: SYS-197's natural set (spec 4.3, E3) was never built, because SYS-196's gold sample does not exist. Filed SYS-200 #430 to build it from live `nli_shadow` rows after about 10 editions, labelled with the ADR-026/027 method.
+- SYS-199 arm A (2026-11-04): zero-shot on pairs.jsonl, 277 s on CPU. Held-out recall 0.9 at <= 3% false flags on cause, denial, end and schedule. Hedge misses dropped noun hedges ('perkara dugaan korupsi'); at tau 0.95 it flags 36% of restatements. Scores are not committed; they regenerate in 5 min.
