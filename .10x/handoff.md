@@ -1,5 +1,13 @@
 # Current Handoff
 
+## From: QA + SDE (2026-11-04 morning) -> To: SDE (SYS-197 filters, SYS-198 live check), QA
+**Read first:** ADR-026, ADR-027; EXPERIMENTS.md 2026-11-04.
+- The owner hand check is no longer needed. Validity is decided: label_ok is gated on Claude vs Gemini (37/40) plus the owner's 3 rulings, and type_ok is Claude's. Per-row result: `tests/fixtures/nli_eval/handcheck_final.csv`.
+- Replaces the 2026-11-03 handoff's "Owner: label handcheck_owner_blind.csv": that sheet is now only Gemini's blind input.
+- Next: filter type misfits from `pairs_raw.jsonl` (denial seeds without a denial verb; cause corruptions edited after *sehingga*). Measure the filter against `handcheck_final.csv`'s type_ok before applying it.
+
+---
+
 ## From: QA + SDE (2026-11-03) -> To: owner, then SDE/QA for SYS-198/199
 **Read first:** ADR-025; EXPERIMENTS.md 2026-11-03 (SYS-197 pre-label); `.10x/decisions/sde/nli-faithfulness.md` "2026-11-03".
 - **Owner (about 20 min):** label `tests/fixtures/nli_eval/handcheck_owner_blind.csv`.

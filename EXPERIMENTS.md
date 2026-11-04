@@ -3391,3 +3391,18 @@ SINDONEWS   old 12 new 12 | lost [] | gained []   links identical: True
   - **schedule (1):** *pekan ini -> bulan ini* widens the time, so it stays entailed.
 **Conclusion / do not repeat:** no family is dropped. Before SYS-199 measures per type, filter denial seeds without a denial verb and cause corruptions whose edit is in the clause after *sehingga*/*hingga membuat* (ADR-025 point 4). Do not treat the 85% as final until the owner's blind 40 are scored (gate >= 36/40 agreement).
 **Links:** SYS-197 #427, SYS-199 #429, ADR-025.
+
+## 2026-11-04 -- SYS-197 (#427, ADR-026/027): does a second model family agree with Claude's pair labels?
+**Question:** on the seeded blind 40 (8 per type), does gemini-2.5-flash, given the same rubric and inputs, agree with Claude's validity labels (gate >= 36/40)?
+**Method:** `scripts/experiments/label_nli_gemini.py` (4 calls of 10 rows, JSON mode; output `tests/fixtures/nli_eval/handcheck_gemini_blind.csv`), then `score_nli_handcheck.py score --final`.
+**Result:**
+- **One y/n: 33/40 (82%), gate FAILS.**
+- Of the 7 disagreements, 4 were about the rubric's "tests its type" clause, not about meaning:
+  - *keliru -> bukan keliru* and *tidak dikaitkan* as denial tests (Claude n `cue`, Gemini y);
+  - an edit to the object of *timbul dari* as a cause (Claude y, Gemini n `type`);
+  - Gemini applying "keep the cue" to a supported schedule row, which the rubric does not ask.
+- Only 3 were about whether B says something A does not. On that alone: **37/40 (92.5%), gate holds.**
+- The owner ruled the 3 in plain language: the kemarau reorder is the same meaning (Gemini right); the "who will attend" restatement changes the meaning (Claude right); *ketidakjelasan regulasi* for *kekosongan hukum* is the same cause in other words, so not a corruption (Claude right).
+- Final label_ok: cause 38/40, denial 39/40, end 40/40, hedge 35/40, schedule 39/40, all **keep**. type_ok (Claude): cause 35/38, denial 34/39, hedge 34/35, end and schedule all.
+**Conclusion / do not repeat:** do not put "is the label right" and "does it test its type" in one y/n. Labellers split on the second clause, and that hides how well they agree on meaning. Ask a human only the meaning question, and only on disagreements. The type-misfit rate (denial 5/39, cause 3/38) is what the seed filters must remove from the full 2,974 before SYS-199's per-type numbers.
+**Links:** SYS-197 #427, SYS-199 #429, ADR-026, ADR-027.

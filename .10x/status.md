@@ -1,5 +1,12 @@
 # Project Status
 
+## 2026-11-04: SYS-197 validity settled (ADR-026/027)
+- [x] The owner could not judge the ADR-025 y/n. Switched the blind labeller to Gemini (ADR-026): one y/n agreement 33/40 failed, but 4 of the 7 were rubric-definition disputes.
+- [x] Split validity into label_ok (gated: 37/40 holds; the owner ruled the 3 meaning disagreements: 1 Gemini, 2 Claude) and type_ok (Claude; a misfit goes to the `other` bucket). ADR-027.
+- [x] All 5 families keep on label_ok. `tests/fixtures/nli_eval/handcheck_final.csv` written for SYS-199. Scorer 14 + labeller 7 tests; 5/5 scorer mutants killed.
+- [ ] Next for SYS-197: seed filters on the 2,974 pairs (denial without a denial verb; cause edit after sehingga), then its Done-when evidence.
+- [ ] SYS-198: check `nli_shadow` after today's 12:00 edition.
+
 ## 2026-11-03: finish the NLI track + close the qa-passed set (owner: "finish as suggested")
 - [x] Machine was off 2026-10-26 evening -> 2026-11-03 22:18: no crawl, extraction or edition 10-27..11-02. The catch-up newsletter wrote an EMPTY 11-02 digest (correct). Not a defect.
 - [x] QA: 9 qa-passed tickets closed with the 10-20 evidence (SYS-79, SRC-59, SYS-139, SYS-147, SYS-149, SYS-193, DBT-72, DBT-73, DBT-75).

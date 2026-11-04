@@ -24,3 +24,8 @@
 - Deviation from ADR-025's first draft: the borderline family is kept and flagged instead of the owner reading its other rows (that would have been about 96 rows).
 - SYS-198 live check: still 0 `nli_shadow` rows. The only edition since go-live (10-26) built 0 arcs (SumoPod APIConnectionError at 12:05). Then the machine was off until 11-03.
 - Noted, not filed: `_write_edition` evaluates `nli_shadow.default_scorer(...)` inside the edition's try block, and that block's except deletes the edition file. Today `HfScorer.__init__` cannot raise, so it is safe. Keep scorer construction trivial, or move it inside `record()`.
+
+## 2026-11-04: ADR-026/027
+- The owner could not judge y/n. Gemini became the blind labeller: `scripts/experiments/label_nli_gemini.py` (resumes after a 429; refuses replies whose ids do not match), 7 tests.
+- Scorer reworked to two checks (`checks()`: label/garbled/copy -> label_ok n; type/cue/multi -> label_ok y, type_ok n). Precedence: owner ruling > agreement > Claude alone; an unresolved row is excluded. `--final` writes `handcheck_final.csv`. Exit 0/1/2/3. 14 tests; 5/5 mutants killed (codes swapped, rulings ignored, unresolved counted, type_ok dropped, missing-ruling exit).
+- Owner rulings: `tests/fixtures/nli_eval/handcheck_owner_rulings.csv` (3 rows, with the question asked and the answer).

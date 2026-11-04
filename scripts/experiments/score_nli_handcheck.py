@@ -1,16 +1,19 @@
-"""SYS-197 (#427, ADR-025): validity of the LLM-written NLI pairs from Claude's pre-label and the owner's blind rows.
+"""SYS-197 (#427, ADR-025/026/027): validity of the LLM-written NLI pairs.
 
-`build-blind` writes the owner's sheet: a seeded random N rows per error type from the hand-check sample, without
-Claude's labels. `score` reads both label files and prints:
-  - agreement: owner vs Claude on the rows the owner labelled (gate: >= 90%, ADR-025);
-  - per error type: valid / total, with the owner's label winning where both exist, and the verdict against the
-    81% family gate (`drop` below it, `borderline` from 81% to 87%, otherwise `keep`);
-  - the reason codes of the invalid rows.
-Exit 0 when the gate holds, 1 when it does not (then the owner labels the rest, per ADR-025), 2 when the owner's
-sheet has unlabelled rows.
+Each pair gets two checks (ADR-027):
+  - label_ok: the intended label is right. It is gated on Claude vs the blind second labeller (Gemini, ADR-026),
+    >= 90% on the rows both labelled, and the owner rules on the disagreements;
+  - type_ok: the pair tests its declared type. This is Claude's judgement; a misfit goes to the `other` bucket and is not dropped.
+Old one-letter labels map by code: label/garbled/copy -> label_ok n; type/cue/multi -> label_ok y, type_ok n.
+
+`build-blind` writes the blind sheet (a seeded N rows per type, no labels). `score` prints the label_ok agreement,
+the disagreements (with the owner's ruling, if any), and per declared type the label_ok share against the 81% family
+gate (`drop` below, `borderline` to 87%, `keep` above) next to the type_ok share. With --final it writes the per-row
+result SYS-199 reads.
+Exit 0 when the gate holds and every disagreement has a ruling; 1 when the gate fails; 3 when rulings are missing.
 Usage:
   venv\\Scripts\\python.exe scripts/experiments/score_nli_handcheck.py build-blind
-  venv\\Scripts\\python.exe scripts/experiments/score_nli_handcheck.py score
+  venv\\Scripts\\python.exe scripts/experiments/score_nli_handcheck.py score --final
 """
 import argparse
 import csv
@@ -24,7 +27,12 @@ REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 FIX = os.path.join(REPO, "tests", "fixtures", "nli_eval")
 SAMPLE = os.path.join(FIX, "handcheck_sheet.csv")
 CLAUDE = os.path.join(FIX, "handcheck_claude.csv")
-OWNER = os.path.join(FIX, "handcheck_owner_blind.csv")
+OWNER = os.path.join(FIX, "handcheck_owner_blind.csv")       # the blind sheet (ADR-025 meant the owner to fill it)
+SECOND = os.path.join(FIX, "handcheck_gemini_blind.csv")
+RULINGS = os.path.join(FIX, "handcheck_owner_rulings.csv")
+FINAL = os.path.join(FIX, "handcheck_final.csv")
+LABEL_CODES = ("label", "garbled", "copy")           # the intended label is wrong / undefined
+TYPE_CODES = ("type", "cue", "multi")                # the label is right, the pair tests another kind
 
 AGREEMENT_GATE = 0.90
 FAMILY_GATE = 0.81
@@ -64,29 +72,54 @@ def verdict(share: float) -> str:
     return "keep"
 
 
-def score(claude: List[dict], owner: List[dict]) -> dict:
-    claude_by_id = {r["id"]: r for r in claude}
-    owner_labels = {r["id"]: yn(r[VALID_COL]) for r in owner}
-    unlabelled = [i for i, v in owner_labels.items() if not v]
-    both = [i for i, v in owner_labels.items() if v and i in claude_by_id]
-    agree = sum(owner_labels[i] == yn(claude_by_id[i]["valid"]) for i in both)
-    disagreements = [(i, claude_by_id[i]["valid"], owner_labels[i]) for i in both
-                     if owner_labels[i] != yn(claude_by_id[i]["valid"])]
-    families: Dict[str, Counter] = defaultdict(Counter)
-    codes: Dict[str, Counter] = defaultdict(Counter)
+def checks(valid: str, code: str):
+    """(label_ok, type_ok) of one labeller's row; type_ok is "" when label_ok is not y."""
+    v, c = yn(valid), (code or "").strip().lower()
+    if v == "y":
+        return "y", "y"
+    if v == "n" and c in TYPE_CODES:
+        return "y", "n"
+    if v == "n":
+        return "n", ""
+    return "", ""
+
+
+def score(claude: List[dict], second: List[dict], rulings: List[dict]) -> dict:
+    second_by_id = {r["id"]: checks(r[VALID_COL], r.get("code", "")) for r in second}
+    ruled = {r["id"]: yn(r["label_ok"]) for r in rulings if yn(r["label_ok"])}
+    unlabelled = [i for i, (lab, _) in second_by_id.items() if not lab]
+    compared = agree = 0
+    disagreements, final = [], []
     for row in claude:
-        label = owner_labels.get(row["id"]) or yn(row["valid"])
-        families[row["error_type"]][label] += 1
-        if label == "n":
-            codes[row["error_type"]][row.get("code") or "owner"] += 1
+        c_label, c_type = checks(row["valid"], row.get("code", ""))
+        s_label = second_by_id.get(row["id"], ("", ""))[0]
+        label, by = c_label, "claude"
+        if s_label:
+            compared += 1
+            if s_label == c_label:
+                agree += 1
+                by = "agree"
+            else:
+                disagreements.append((row["id"], c_label, s_label, ruled.get(row["id"], "")))
+                label, by = (ruled[row["id"]], "owner") if row["id"] in ruled else ("", "unresolved")
+        elif row["id"] in ruled:
+            label, by = ruled[row["id"]], "owner"
+        type_ok = (c_type or "y") if label == "y" else ""
+        final.append({"id": row["id"], "error_type": row["error_type"], "kind": row.get("kind", ""),
+                      "intended": row["intended"], "label_ok": label, "type_ok": type_ok, "decided_by": by})
+    families: Dict[str, Counter] = defaultdict(Counter)
+    for f in final:
+        if f["label_ok"]:
+            families[f["error_type"]]["total"] += 1
+            families[f["error_type"]]["label_ok"] += f["label_ok"] == "y"
+            families[f["error_type"]]["type_ok"] += f["type_ok"] == "y"
     per_family = {}
     for t, c in sorted(families.items()):
-        total = c["y"] + c["n"]
-        share = c["y"] / total if total else 0.0
-        per_family[t] = {"valid": c["y"], "total": total, "share": share, "verdict": verdict(share),
-                         "codes": dict(codes[t])}
-    return {"agreement": agree / len(both) if both else None, "compared": len(both), "agree": agree,
-            "disagreements": disagreements, "unlabelled": unlabelled, "families": per_family}
+        share = c["label_ok"] / c["total"] if c["total"] else 0.0
+        per_family[t] = {"label_ok": c["label_ok"], "type_ok": c["type_ok"], "total": c["total"], "share": share,
+                         "verdict": verdict(share)}
+    return {"agreement": agree / compared if compared else None, "compared": compared, "agree": agree,
+            "disagreements": disagreements, "unlabelled": unlabelled, "families": per_family, "final": final}
 
 
 def main(argv=None) -> int:
@@ -98,7 +131,9 @@ def main(argv=None) -> int:
     b.add_argument("--out", default=OWNER)
     s = sub.add_parser("score")
     s.add_argument("--claude", default=CLAUDE)
-    s.add_argument("--owner", default=OWNER)
+    s.add_argument("--second", default=SECOND, help="the blind second labeller's sheet (ADR-026: Gemini's)")
+    s.add_argument("--rulings", default=RULINGS, help="the owner's label_ok rulings on disagreements (ADR-027)")
+    s.add_argument("--final", nargs="?", const=FINAL, default=None, help="write the per-row result (default path)")
     args = ap.parse_args(argv)
 
     if args.cmd == "build-blind":
@@ -113,18 +148,28 @@ def main(argv=None) -> int:
         print(f"wrote {len(rows)} rows to {args.out}")
         return 0
 
-    result = score(read(args.claude), read(args.owner))
+    rulings = read(args.rulings) if os.path.exists(args.rulings) else []
+    result = score(read(args.claude), read(args.second), rulings)
     if result["unlabelled"]:
-        print(f"owner sheet: {len(result['unlabelled'])} row(s) without y/n -- label them first")
+        print(f"second sheet: {len(result['unlabelled'])} row(s) without y/n -- label them first")
         return 2
     gate_ok = result["agreement"] is not None and result["agreement"] >= AGREEMENT_GATE
-    print(f"agreement owner vs Claude: {result['agree']}/{result['compared']} "
-          f"({result['agreement']:.0%}) -> {'HOLDS' if gate_ok else 'FAILS: owner labels the other rows'}")
-    for i, c, o in result["disagreements"]:
-        print(f"  {i}: Claude {c}, owner {o}")
+    print(f"label_ok agreement, second labeller vs Claude: {result['agree']}/{result['compared']} "
+          f"({result['agreement']:.1%}) -> {'HOLDS' if gate_ok else 'FAILS'}")
+    for i, c, o, r in result["disagreements"]:
+        print(f"  {i}: Claude {c}, second {o}, owner {r or 'NOT RULED'}")
     for t, f in result["families"].items():
-        print(f"{t:9s} {f['valid']}/{f['total']} ({f['share']:.0%}) {f['verdict']:10s} {f['codes'] or ''}")
-    return 0 if gate_ok else 1
+        print(f"{t:9s} label_ok {f['label_ok']}/{f['total']} ({f['share']:.1%}) {f['verdict']:10s} "
+              f"type_ok {f['type_ok']}/{f['label_ok']}")
+    if args.final:
+        with open(args.final, "w", encoding="utf-8-sig", newline="") as fh:
+            w = csv.DictWriter(fh, fieldnames=list(result["final"][0]))
+            w.writeheader()
+            w.writerows(result["final"])
+        print(f"wrote {args.final}")
+    if not gate_ok:
+        return 1
+    return 3 if any(not r for *_, r in result["disagreements"]) else 0
 
 
 if __name__ == "__main__":
