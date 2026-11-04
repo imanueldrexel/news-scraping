@@ -3406,3 +3406,19 @@ SINDONEWS   old 12 new 12 | lost [] | gained []   links identical: True
 - Final label_ok: cause 38/40, denial 39/40, end 40/40, hedge 35/40, schedule 39/40, all **keep**. type_ok (Claude): cause 35/38, denial 34/39, hedge 34/35, end and schedule all.
 **Conclusion / do not repeat:** do not put "is the label right" and "does it test its type" in one y/n. Labellers split on the second clause, and that hides how well they agree on meaning. Ask a human only the meaning question, and only on disagreements. The type-misfit rate (denial 5/39, cause 3/38) is what the seed filters must remove from the full 2,974 before SYS-199's per-type numbers.
 **Links:** SYS-197 #427, SYS-199 #429, ADR-026, ADR-027.
+
+## 2026-11-04 -- SYS-197 (#427, ADR-027): which rules find the type misfits in the 2,974 pairs?
+**Question:** can rules reproduce the hand check's 9 type misfits (label right, wrong kind of test) without flagging pairs judged fit, so that they can be moved to `other` in the full set?
+**Method:** scratch measurements, then `scripts/experiments/filter_nli_pairs.py --check`, against `handcheck_final.csv`'s type_ok on the 191 judged pairs. 12 out-of-sample flags were read by Claude.
+**Result:**
+- **denial-no-act** (the seed holds no *membantah / menepis / menampik / menyangkal / hoaks / tidak benar*, adverbial *secara tidak benar* excluded): 5 of 5 misfits, 0 judged fit. Full set: 23 of 150 denial seeds, 92 pairs. The gate regex let in *pandangan keliru*, *secara keliru*, *penyangkalan perubahan iklim*.
+- **cause-effect-side**, first version (nearest causal link in the sentence, edit after a forward / before a backward word): 3 misfits, **3 judged fit**:
+  - a stray leading `�` was taken as the first edit (fix: word tokens only);
+  - an edit in a *meski* clause with no link of its own (fix: only links in the edit's clause; none = not flagged);
+  - an edit to the object of *timbul dari* (fix: *timbul / berasal / bersumber dari* count as backward links).
+- With those fixes: 3 of 3, 0 judged fit; full set 53 flags. Out of sample, 10 of 12 were real effect-side edits. The other 2 added an invented motive (*agar defisit tertutup*, *demi kepentingan politik nasional*). That is a cause corruption, so an added purpose clause now counts as a cause edit: 50 flags.
+- **multi-edit** (more than one changed region in a corrupted pair): 12 flags, only 3 misfits. Dropped quotes and a weekday changed with its date both count as regions. **Rejected.** The one multi-edit misfit (a hedge) stays unfiltered (1 of 35 judged hedge pairs).
+- Applied: 142 of 2,974 pairs go to `other` (denial 92, cause 50). Per type: cause 545, denial 507, end 600, hedge 580, schedule 600. Output `tests/fixtures/nli_eval/pairs.jsonl` (`declared_type`, `misfit` kept).
+- 10 hand mutants of the rules, all killed (one survived until a test for a link added after the effect was written).
+**Conclusion / do not repeat:** the gate's denial regex is a trigger list, not a definition of a denial: a denial seed needs an act of denying (the generator now requires it). An edit's place relative to the causal word decides cause fit, but only within its clause and only on word tokens. Do not filter on the number of diff regions: punctuation and paired date/weekday edits make it noise.
+**Links:** SYS-197 #427, SYS-199 #429, SYS-200 #430 (natural set), ADR-027.

@@ -4,8 +4,10 @@
 - [x] The owner could not judge the ADR-025 y/n. Switched the blind labeller to Gemini (ADR-026): one y/n agreement 33/40 failed, but 4 of the 7 were rubric-definition disputes.
 - [x] Split validity into label_ok (gated: 37/40 holds; the owner ruled the 3 meaning disagreements: 1 Gemini, 2 Claude) and type_ok (Claude; a misfit goes to the `other` bucket). ADR-027.
 - [x] All 5 families keep on label_ok. `tests/fixtures/nli_eval/handcheck_final.csv` written for SYS-199. Scorer 14 + labeller 7 tests; 5/5 scorer mutants killed.
-- [ ] Next for SYS-197: seed filters on the 2,974 pairs (denial without a denial verb; cause edit after sehingga), then its Done-when evidence.
-- [ ] SYS-198: check `nli_shadow` after today's 12:00 edition.
+- [x] SYS-197 filter: `filter_nli_pairs.py` moves 142 type misfits to `other` (denial 92, cause 50); hand check 8/9 caught, 0 false; generator seed rule fixed; `pairs.jsonl` written. SYS-197 ready-for-qa.
+- [x] SYS-198: 12:00 edition wrote 20 rows (20/20 scored), +124.5 s; ready-for-qa.
+- [x] Filed SYS-200 #430: natural set from live `nli_shadow` rows (needs about 10 editions).
+- [ ] SYS-199 #429: run eval_nli.py on `pairs.jsonl` with the arm A model; report per type plus `other`; validity from 2 LLM labellers + 3 owner rulings.
 
 ## 2026-11-03: finish the NLI track + close the qa-passed set (owner: "finish as suggested")
 - [x] Machine was off 2026-10-26 evening -> 2026-11-03 22:18: no crawl, extraction or edition 10-27..11-02. The catch-up newsletter wrote an EMPTY 11-02 digest (correct). Not a defect.

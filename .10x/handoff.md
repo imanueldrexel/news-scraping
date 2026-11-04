@@ -1,5 +1,14 @@
 # Current Handoff
 
+## From: SDE (2026-11-04 afternoon) -> To: QA (SYS-197, SYS-198), then SDE (SYS-199)
+**Read first:** ADR-027; EXPERIMENTS.md 2026-11-04 "which rules find the type misfits"; `.10x/decisions/sde/nli-faithfulness.md` "2026-11-04 (afternoon)".
+- **QA, SYS-198 #428:** evidence on the ticket. `SELECT * FROM nli_shadow` holds 20 rows for edition 2026-11-03; the runtime comes from `logs/scheduled_newsletter_2026-11-04_1200.log:188-189`.
+- **QA, SYS-197 #427:** rerun `venv\Scripts\python.exe scripts/experiments/filter_nli_pairs.py --check` (it rewrites `pairs.jsonl` identically) and `score_nli_handcheck.py score` (exit 0). Mutate the rules in `filter_nli_pairs.py`.
+- **SDE, SYS-199 #429:** `eval_nli.py --pairs tests/fixtures/nli_eval/pairs.jsonl --model MoritzLaurer/mDeBERTa-v3-base-xnli-multilingual-nli-2mil7`. Report per type plus `other`. The report must say that validity came from Claude + Gemini plus 3 owner rulings (ADR-026/027). The promotion verdict waits for SYS-200's natural set.
+- **SYS-200 #430:** build after about 10 live editions (about 20 rows per edition).
+
+---
+
 ## From: QA + SDE (2026-11-04 morning) -> To: SDE (SYS-197 filters, SYS-198 live check), QA
 **Read first:** ADR-026, ADR-027; EXPERIMENTS.md 2026-11-04.
 - The owner hand check is no longer needed. Validity is decided: label_ok is gated on Claude vs Gemini (37/40) plus the owner's 3 rulings, and type_ok is Claude's. Per-row result: `tests/fixtures/nli_eval/handcheck_final.csv`.

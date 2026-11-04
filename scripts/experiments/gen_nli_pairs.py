@@ -33,9 +33,15 @@ MIN_WORDS, MAX_WORDS = 8, 45
 # A call is assumed to cost at most this many tokens when deciding whether it can start inside the cap.
 WORST_CALL_INPUT, WORST_CALL_OUTPUT = 1500, 1500
 
+# ADR-027: the gate's denial regex also matches judgements ("pandangan keliru", "secara tidak benar") and the noun
+# "penyangkalan"; a denial seed must hold an act of denying, or none of its pairs tests a flipped denial (5 of 5
+# denial type misfits of the hand check). "tidak benar" counts unless it is an adverb ("secara tidak benar").
+DENIAL_ACT = re.compile(r"\b(?:(?:mem|di)bantah|bantahan|menepis|ditepis|menampik|ditampik|menyangkal|disangkal|"
+                        r"hoa(?:ks|x))\b|(?<!secara\s)\btidak\s+benar\b", re.IGNORECASE)
+
 EDITS = {
-    "cause": "replace the stated cause with a different, plausible cause the sentence does not give (or state a cause "
-             "where the sentence gives none)",
+    "cause": "replace the stated cause (the part that says why, not the result) with a different, plausible cause the "
+             "sentence does not give (or state a cause where the sentence gives none)",
     "hedge": "remove the hedge (diduga, kemungkinan, dugaan, diperkirakan ...) so the claim reads as established fact",
     "denial": "flip the denial: turn what the source denies into something it affirms, or the reverse",
     "end": "change the end date, or the deadline, to a different date the sentence does not give",
@@ -61,7 +67,7 @@ def cue_check(error_type: str) -> Callable[[str], bool]:
     return {
         "cause": lambda s: bool(causal_check._causal_matches(s)),
         "hedge": lambda s: bool(causal_check._HEDGE.search(s)),
-        "denial": lambda s: bool(causal_check._DENIAL.search(s)),
+        "denial": lambda s: bool(causal_check._DENIAL.search(s)) and bool(DENIAL_ACT.search(s)),
         "end": lambda s: bool(source_check.end_points(s)),
         "schedule": lambda s: bool(source_check.future_phrases(s)),
     }[error_type]
