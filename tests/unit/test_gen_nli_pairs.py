@@ -142,3 +142,48 @@ def test_a_success_resets_the_failure_count(tmp_path):
     group = {"cause": [{"seed_id": f"cause-{i}-x", "premise": p} for i, p in enumerate(premises)]}
     stats = gen.generate(group, Flaky(), gen.Budget(3.0, price), str(tmp_path / "p.jsonl"), log=lambda m: None)
     assert stats["stopped_on_errors"] == 0 and stats["errors"] == 2 * n and stats["seeds"] == 1
+
+
+# ADR-029: faithful near-copies for seeds that already exist.
+
+NEAR = json.dumps({"near_copy": ["A naik sebab pasokan seret.", "A meningkat karena pasokan seret."]})
+
+
+def test_near_copy_mode_writes_n_faithful_near_copies_per_seed(tmp_path):
+    out = tmp_path / "n.jsonl"
+    stats = gen.generate(seeds(2), Stub(text=NEAR), gen.Budget(3.0, price), str(out), log=lambda m: None, near=2)
+    rows = [json.loads(l) for l in out.read_text(encoding="utf-8").splitlines()]
+    assert stats["pairs"] == 4 and {r["kind"] for r in rows} == {"near_copy"} and {r["label"] for r in rows} == {"faithful"}
+    assert sorted(r["id"] for r in rows) == ["cause-0-abc-n0", "cause-0-abc-n1", "cause-1-abc-n0", "cause-1-abc-n1"]
+
+
+def test_near_copy_prompt_is_used_in_near_mode():
+    class Spy(Stub):
+        def complete(self, prompt):
+            self.prompt = prompt
+            return super().complete(prompt)
+    spy = Spy(text=NEAR)
+    gen.generate(seeds(1), spy, gen.Budget(3.0, price), os.devnull, log=lambda m: None, near=1)
+    assert "near copies" in spy.prompt and "corrupted" not in spy.prompt
+
+
+def test_parse_near_needs_n_distinct_copies():
+    assert gen.parse_near(NEAR, 2) == ["A naik sebab pasokan seret.", "A meningkat karena pasokan seret."]
+    assert gen.parse_near(NEAR, 1) == ["A naik sebab pasokan seret."]
+    assert gen.parse_near(json.dumps({"near_copy": ["x", "x"]}), 2) is None
+    assert gen.parse_near("oops", 1) is None and gen.parse_near(json.dumps({"other": []}), 1) is None
+
+
+def test_a_verbatim_near_copy_is_dropped():
+    seed = {"seed_id": "s", "premise": "A naik."}
+    assert [p["hypothesis"] for p in gen.near_pairs(seed, "cause", ["a naik.", "A meningkat."])] == ["A meningkat."]
+
+
+def test_seeds_from_keeps_one_entry_per_seed_by_its_type(tmp_path):
+    rows = [{"seed_id": "cause-1-a", "error_type": "cause", "premise": "P1"},
+            {"seed_id": "cause-1-a", "error_type": "cause", "premise": "P1"},
+            {"seed_id": "denial-2-b", "error_type": "other", "premise": "P2"}]
+    src = tmp_path / "p.jsonl"
+    src.write_text("".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")
+    assert gen.seeds_from(str(src)) == {"cause": [{"seed_id": "cause-1-a", "premise": "P1"}],
+                                        "other": [{"seed_id": "denial-2-b", "premise": "P2"}]}

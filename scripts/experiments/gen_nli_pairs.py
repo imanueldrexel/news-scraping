@@ -64,6 +64,51 @@ Never copy the premise verbatim. Reply as JSON only:
 {{"corrupted": ["...", "..."], "restatement": "...", "hard_positive": "..."}}"""
 
 
+# ADR-029: faithful near-copies. Without them every near-copy a model sees is a one-edit corruption, and arm B
+# (2026-11-04) learned "near-identical = unfaithful" (96-100% of exact copies flagged).
+NEAR_PROMPT = """You write test pairs for a faithfulness checker of Indonesian news. Premise (a sentence from a real article):
+
+{premise}
+
+Write {n} different Indonesian "near copies" of the premise. Each makes exactly ONE small change that keeps the meaning
+exactly: replace one word with an exact synonym, OR move or drop an attribution phrase (kata/ujar/menurut/jelas X),
+OR reorder words inside one clause. Keep every other word as it is. Do NOT add, drop or change any fact, name,
+number, date, cause, hedge (diduga, kemungkinan ...), denial or plan. Never copy the premise verbatim.
+Reply as JSON only: {{"near_copy": ["...", ...]}}"""
+
+
+def parse_near(text: Optional[str], n: int) -> Optional[List[str]]:
+    """`n` distinct non-empty near-copies, or None."""
+    try:
+        copies = [c.strip() for c in json.loads(text or "")["near_copy"] if isinstance(c, str) and c.strip()]
+    except (ValueError, KeyError, TypeError):
+        return None
+    copies = list(dict.fromkeys(copies))
+    return copies[:n] if len(copies) >= n else None
+
+
+def near_pairs(seed: dict, error_type: str, copies: List[str]) -> List[dict]:
+    premise = seed["premise"]
+    return [{"id": f"{seed['seed_id']}-n{i}", "seed_id": seed["seed_id"], "error_type": error_type,
+             "premise": premise, "hypothesis": c, "label": "faithful", "kind": "near_copy", "verified": None}
+            for i, c in enumerate(copies) if c.strip().lower() != premise.strip().lower()]
+
+
+def seeds_from(pairs_path: str) -> Dict[str, List[dict]]:
+    """The seeds of an existing pair file, grouped by its error_type, in file order (one entry per seed)."""
+    out: Dict[str, List[dict]] = {}
+    seen = set()
+    with open(pairs_path, encoding="utf-8") as f:
+        for line in f:
+            if not line.strip():
+                continue
+            p = json.loads(line)
+            if p["seed_id"] not in seen:
+                seen.add(p["seed_id"])
+                out.setdefault(p["error_type"], []).append({"seed_id": p["seed_id"], "premise": p["premise"]})
+    return out
+
+
 def cue_check(error_type: str) -> Callable[[str], bool]:
     """The gate regex of `error_type`; imported lazily so --help and tests need no pipeline import."""
     from newscrawler.core import causal_check, source_check
@@ -158,9 +203,10 @@ MAX_ERRORS_IN_A_ROW = 10
 
 
 def generate(seeds: Dict[str, List[dict]], provider, budget: Budget, out_path: str,
-             log: Callable[[str], None] = print, workers: int = 1) -> Dict[str, int]:
+             log: Callable[[str], None] = print, workers: int = 1, near: int = 0) -> Dict[str, int]:
     """Calls run on `workers` threads; budget checks, counting and writing stay on this thread. A failed call is
-    counted and its seed left for a resumed run; MAX_ERRORS_IN_A_ROW failures in a row stop the run."""
+    counted and its seed left for a resumed run; MAX_ERRORS_IN_A_ROW failures in a row stop the run.
+    `near` > 0 writes that many faithful near-copies per seed instead of the four contrastive pairs (ADR-029)."""
     from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
     done = set()
     if os.path.exists(out_path):
@@ -185,7 +231,8 @@ def generate(seeds: Dict[str, List[dict]], provider, budget: Budget, out_path: s
                     stopping = True
                     break
                 error_type, seed = item
-                prompt = PROMPT.format(premise=seed["premise"], error_type=error_type, edit=EDITS[error_type])
+                prompt = (NEAR_PROMPT.format(premise=seed["premise"], n=near) if near else
+                          PROMPT.format(premise=seed["premise"], error_type=error_type, edit=EDITS[error_type]))
                 pending[pool.submit(provider.complete, prompt)] = item
             if not pending:
                 return stats
@@ -205,12 +252,12 @@ def generate(seeds: Dict[str, List[dict]], provider, budget: Budget, out_path: s
                     continue
                 errors_in_a_row = 0
                 budget.add(completion.input_tokens, completion.output_tokens)
-                reply = parse_reply(completion.text)
+                reply = parse_near(completion.text, near) if near else parse_reply(completion.text)
                 stats["seeds"] += 1
                 if reply is None:
                     stats["bad_reply"] += 1
                     continue
-                for pair in to_pairs(seed, error_type, reply):
+                for pair in (near_pairs(seed, error_type, reply) if near else to_pairs(seed, error_type, reply)):
                     f.write(json.dumps(pair, ensure_ascii=False) + "\n")
                     stats["pairs"] += 1
                 f.flush()
@@ -243,16 +290,22 @@ def main(argv=None) -> int:
     ap.add_argument("--exclude-pairs", action="append", default=[],
                     help="JSONL of pairs whose articles must not be seeded from (e.g. the eval set); repeatable")
     ap.add_argument("--workers", type=int, default=1, help="concurrent model calls")
+    ap.add_argument("--near-copies", type=int, default=0,
+                    help="ADR-029: write N faithful near-copies per seed instead of the contrastive pairs")
+    ap.add_argument("--seeds-from", help="take the seeds of this pair JSONL instead of sampling articles")
     args = ap.parse_args(argv)
 
     from newscrawler.core.extraction_provider import build_provider
     from newscrawler.core.peak_hours import cost_usd, is_peak
     rng = random.Random(args.seed)
-    texts = load_article_texts(args.days, args.articles)
-    excluded = set().union(*(article_ids(p) for p in args.exclude_pairs)) if args.exclude_pairs else set()
-    texts = [(a, t) for a, t in texts if str(a) not in excluded]
-    print(f"{len(texts)} articles after excluding {len(excluded)} already seeded")
-    seeds = pick_seeds(texts, args.per_type, rng)
+    if args.seeds_from:
+        seeds = seeds_from(args.seeds_from)
+    else:
+        texts = load_article_texts(args.days, args.articles)
+        excluded = set().union(*(article_ids(p) for p in args.exclude_pairs)) if args.exclude_pairs else set()
+        texts = [(a, t) for a, t in texts if str(a) not in excluded]
+        print(f"{len(texts)} articles after excluding {len(excluded)} already seeded")
+        seeds = pick_seeds(texts, args.per_type, rng)
     print({t: len(v) for t, v in seeds.items()})
     peak = is_peak()
     price = lambda i, o: cost_usd(i, o, peak)  # noqa: E731
@@ -265,7 +318,7 @@ def main(argv=None) -> int:
         print("no OPENAI_API_KEY", file=sys.stderr)
         return 2
     budget = Budget(args.max_usd, price)
-    stats = generate(seeds, provider, budget, args.out, workers=args.workers)
+    stats = generate(seeds, provider, budget, args.out, workers=args.workers, near=args.near_copies)
     print(stats, f"spent ${budget.spent:.4f} of ${args.max_usd:.2f}")
     return 0
 
