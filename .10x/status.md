@@ -9,7 +9,8 @@
 - [x] Filed SYS-200 #430: natural set from live `nli_shadow` rows (needs about 10 editions).
 - [x] SYS-199 arm A: held-out recall 0.9 at <= 3% false flags on cause/denial/end/schedule; hedge needs tau 0.95 (36% false flags on restatements). EXPERIMENTS.md + #429 comment.
 - [x] Owner chose arm B (cost-efficient, can become the production check), in a separate `venv-train/`, ~$0.75 spend (cap $2). ADR-028. Arm C not run.
-- [ ] SYS-199 arm B: B1 generator exclusion+workers, B2 training pairs, B3 venv-train, B4 trainer, B5 train, B6 score, B7 write-up.
+- [x] SYS-199 arm B: B1-B7 done ($0.72). Perfect on targeted pairs but flags 96-100% of exact copies (identity control); hedge gain not real. Not usable as trained. EXPERIMENTS.md 2026-11-04 arm B.
+- [ ] Owner: retry arm B with faithful near-copies in training + eval (small spend), or stop at arm A + hedge lexicon gate.
 - [ ] SYS-199: natural set SYS-200, owner sign-off per type.
 
 ## 2026-11-03: finish the NLI track + close the qa-passed set (owner: "finish as suggested")

@@ -53,5 +53,14 @@ def test_report_separates_true_and_wrong_premise_auc():
     pairs = pairs_for("hedge", 6)
     scores = {p["id"]: (0.9 if p["label"] == "faithful" else 0.1) for p in pairs}
     scores.update({w["id"]: 0.5 for w in cmp.wrong_premise(pairs)})
+    scores.update({i["id"]: (0.05 if i["seed_id"] == "hedge-0" else 0.99) for i in cmp.identity(pairs)})
     row = cmp.report(pairs, scores)["hedge"]
     assert row["auc"] == 1.0 and row["auc_wrong_premise"] == 0.5
+    assert abs(row["ff_identity_05"] - 1 / 6) < 1e-9
+
+
+def test_identity_is_one_faithful_copy_per_seed():
+    pairs = pairs_for("hedge", 3)
+    got = cmp.identity(pairs)
+    assert [g["id"] for g in got] == ["hedge-0~id", "hedge-1~id", "hedge-2~id"]
+    assert all(g["hypothesis"] == g["premise"] and g["label"] == "faithful" for g in got)

@@ -1,5 +1,14 @@
 # Current Handoff
 
+## From: SDE (2026-11-05 night) -> To: owner (arm B retry?), QA (SYS-197, SYS-198)
+**Read first:** EXPERIMENTS.md "2026-11-04 -- SYS-199 (#429) arm B"; ADR-028.
+- Arm B trained and measured; it fails the identity control (exact copies flagged). Do not wire `models/nli/armb-2026-11-04` anywhere.
+- Any NLI arm is judged with `scripts/experiments/compare_nli_arms.py` (identity + wrong-premise columns), not the held-out table alone.
+- Owner decision pending: retry with faithful near-copies (generator change + small spend), or stop at arm A with the hedge lexicon gate.
+- Train and score one at a time: running both together got both killed for low RAM.
+
+---
+
 ## From: Architect + EM (2026-11-04 night) -> To: SDE (SYS-199 arm B)
 **Read first:** ADR-028; `.10x/decisions/engineering-manager/nli-faithfulness.md` "arm B plan".
 - Owner approved: separate `venv-train/`, about $0.75 SumoPod (cap $2). Do not touch `venv/` or requirements.txt.

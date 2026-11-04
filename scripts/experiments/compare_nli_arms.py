@@ -47,6 +47,17 @@ def wrong_premise(pairs: Sequence[dict]) -> List[dict]:
     return [{**p, "id": p["id"] + "~wrong", "premise": premise[other[p["seed_id"]]]} for p in pairs]
 
 
+def identity(pairs: Sequence[dict]) -> List[dict]:
+    """One faithful pair per seed whose hypothesis IS the premise. The generator drops verbatim copies, so every
+    near-copy in the targeted pairs is a one-edit corruption; a model can learn "near-identical = unfaithful" and the
+    held-out table cannot see it (arm B 2026-11-04 flagged 98% of these)."""
+    seen = {}
+    for p in pairs:
+        seen.setdefault(p["seed_id"], p)
+    return [{**p, "id": s + "~id", "hypothesis": p["premise"], "label": eval_nli.FAITHFUL, "kind": "identity"}
+            for s, p in seen.items()]
+
+
 def auc(pos: Sequence[float], neg: Sequence[float]) -> float:
     """P(a faithful pair scores above an unfaithful one), ties half."""
     if not pos or not neg:
@@ -71,7 +82,8 @@ def held_out(group: Sequence[dict], scores: Dict[str, float], recall: float = 0.
                          eval_nli.rate([scores[p["id"]] for p in test if p["kind"] == "restatement"], tau),
                          eval_nli.rate([scores[p["id"]] for p in test if p["kind"] == "hard_positive"], tau)])
     mean = [sum(r[i] for r in rows if r[i] is not None) / max(sum(r[i] is not None for r in rows), 1) for i in range(3)]
-    return {"recall": mean[0], "ff_restated": mean[1], "ff_hard": mean[2], "tau_min": min(taus), "tau_max": max(taus)}
+    return {"recall": mean[0], "ff_restated": mean[1], "ff_hard": mean[2], "tau_min": min(taus), "tau_max": max(taus),
+            "tau_median": sorted(taus)[len(taus) // 2]}
 
 
 def report(pairs: Sequence[dict], scores: Dict[str, float]) -> Dict[str, dict]:
@@ -84,17 +96,21 @@ def report(pairs: Sequence[dict], scores: Dict[str, float]) -> Dict[str, dict]:
                          faithful(p["id"] for p in g if p["label"] == eval_nli.UNFAITHFUL))
         row["auc_wrong_premise"] = auc(faithful(p["id"] + "~wrong" for p in g if p["label"] == eval_nli.FAITHFUL),
                                        faithful(p["id"] + "~wrong" for p in g if p["label"] == eval_nli.UNFAITHFUL))
+        ident = [scores[s + "~id"] for s in sorted({p["seed_id"] for p in g})]
+        row["ff_identity"] = eval_nli.rate(ident, row["tau_median"])
+        row["ff_identity_05"] = eval_nli.rate(ident, 0.5)
         out[t] = row
     return out
 
 
 def table(rep: Dict[str, dict]) -> str:
-    f = lambda x: f"{x:.2f}"  # noqa: E731
-    lines = ["| type | held-out recall | ff restated | ff hard | tau range | AUC | AUC wrong premise |",
-             "|---|---|---|---|---|---|---|"]
+    f = lambda x: "-" if x is None else f"{x:.2f}"  # noqa: E731
+    lines = ["| type | held-out recall | ff restated | ff hard | tau range | AUC | AUC wrong premise "
+             "| ff identity @median tau | ff identity @0.5 |", "|---|---|---|---|---|---|---|---|---|"]
     for t, r in rep.items():
         lines.append(f"| {t} | {f(r['recall'])} | {f(r['ff_restated'])} | {f(r['ff_hard'])} | "
-                     f"{f(r['tau_min'])}-{f(r['tau_max'])} | {f(r['auc'])} | {f(r['auc_wrong_premise'])} |")
+                     f"{f(r['tau_min'])}-{f(r['tau_max'])} | {f(r['auc'])} | {f(r['auc_wrong_premise'])} | "
+                     f"{f(r['ff_identity'])} | {f(r['ff_identity_05'])} |")
     return "\n".join(lines)
 
 
@@ -105,7 +121,7 @@ def main(argv=None) -> int:
     ap.add_argument("--pairs", default=PAIRS)
     args = ap.parse_args(argv)
     pairs = eval_nli.load_pairs(args.pairs)
-    every = pairs + wrong_premise(pairs)
+    every = pairs + wrong_premise(pairs) + identity(pairs)
     scores = {}
     if os.path.exists(args.cache):
         with open(args.cache, encoding="utf-8") as f:

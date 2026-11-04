@@ -181,6 +181,7 @@ One line each; read this before starting on a scraper or pipeline problem.
 - **Do not mask only the object phrase right after a reference word (2026-10-20, ADR-022):** it fixes QA's adverb switches but loses natural thread questions whose reference is not followed by its object ("Kenapa harganya naik di Jakarta?"): risk set 24/30 -> 1/30. The adverb signal is position: an -nya word right after "yang" is no reference. -> 2026-10-20 ADR-022 entry
 - **Do not make every running latar span a schedule unless a past word stands by it (2026-10-20, SYS-177):** the live 10-17/10-18 latars narrate "pada pertengahan Oktober" with no such word (`scripts/experiments/sys177/scan_running_spans.py`). Widen the plan-verb cue by root family instead. -> 2026-10-20 ADR-023 entry
 - **RAG probes before SYS-194 (2026-10-19) carry +-1-card noise per question:** the keyword half's ORDER BY had no unique key, so tied paragraphs were cut differently on each run. Compare before/after only on runs from the same code base after it, or the same day with the rule patched in. -> 2026-10-19 SYS-194 entry
+- **An NLI checker scored only on the LLM-written targeted pairs can look perfect while it flags verbatim copies (2026-11-04, SYS-199 arm B):** the generator drops verbatim copies and every near-copy is a one-edit corruption, so a fine-tune learns "near-identical = unfaithful" (98% of exact copies below 0.5). Always run `scripts/experiments/compare_nli_arms.py` (identity + wrong-premise controls), never the held-out table alone. -> 2026-11-04 arm B entry
 
 ## Log
 
@@ -3450,3 +3451,38 @@ SINDONEWS   old 12 new 12 | lost [] | gained []   links identical: True
 - The promotion verdict still needs SYS-200's natural set and the owner's sign-off. Tau is chosen in-sample on LLM-written pairs, and real arc sentences are longer, with multi-sentence premises.
 - Do not read denial's and end's tau of 0.01 as the runtime threshold: these are single-sentence premises. Re-fit on the natural set.
 **Links:** SYS-199 #429, SYS-197 #427, SYS-200 #430, ADR-024.
+
+## 2026-11-04 -- SYS-199 (#429) arm B: fine-tuned mDeBERTa on 19,769 LLM-written pairs + IndoNLI (FAILED on a control)
+**Question:** does fine-tuning the arm A checkpoint (ADR-028) fix hedge (arm A: 36% of restatements flagged at recall 0.9) without breaking the other types?
+**Method:**
+- Training pairs: `gen_nli_pairs.py --per-type 1000 --days 365 --articles 60000 --seed 1 --workers 8 --max-usd 2 --exclude-pairs tests/fixtures/nli_eval/pairs.jsonl` -> 5,000 seeds, 19,833 pairs, 2 bad replies, **$0.7237**. 0 articles shared with the eval set; 16 seeds dropped whose premise or a hypothesis repeated an eval sentence verbatim (syndicated copies) -> `data/nli_train/train_pairs.jsonl` (19,769 pairs, sha256 909385...2138).
+- Leak check before training: a TF-IDF hypothesis-only classifier gets 0.55-0.74 by 5-fold CV on the training pairs at eval-set size, and **0.74-0.82 when trained on them and tested on the eval set** (majority 0.50-0.52). The generator's style gives the label away; this is why the controls below exist.
+- Trainer: `venv-train\Scripts\python.exe scripts/experiments/train_nli_armb.py --pairs data/nli_train/train_pairs.jsonl --indonli data/indonli/train.jsonl --out models/nli/armb-2026-11-04`. RTX 3060 Laptop 6 GB, torch 2.8.0+cu126 on driver 527.99 (works). bf16, lr 2e-5, batch 16, 2 epochs (3,580 steps, 1,326 s), word embeddings frozen (86M trainable; OOM otherwise), non-reentrant gradient checkpointing (reentrant raises "backward through the graph a second time" on DeBERTa). Best dev loss at step 894: dev pairs acc 0.92 -> 0.99, IndoNLI dev acc 0.81 -> 0.85 (no forgetting).
+- Scoring in `venv/` on CPU: `scripts/experiments/compare_nli_arms.py --model <arm> --cache <scores.json>`: arm A's held-out protocol, plus a wrong-premise control (each hypothesis against another seed's premise of its type; AUC should fall to ~0.5) and an identity control (one faithful pair per seed whose hypothesis IS the premise).
+- The first full run was killed by Claude Code's low-memory reaper while a CPU scoring job ran beside it; it left a half-written model.safetensors (771 MB of 1.1 GB), deleted. Train and score one at a time.
+**Result:**
+
+| type | arm | held-out recall | ff restated | ff hard | tau range | AUC | AUC wrong premise | ff identity @tau | ff identity @0.5 |
+|---|---|---|---|---|---|---|---|---|---|
+| cause | A | 0.89 | 0.03 | 0.02 | 0.12-0.80 | 0.99 | 0.57 | 0.23 | 0.25 |
+| cause | B | 0.90 | 0.00 | 0.01 | 0.00-0.00 | 1.00 | 0.56 | 0.01 | 1.00 |
+| denial | A | 0.90 | 0.00 | 0.00 | 0.01-0.02 | 1.00 | 0.59 | 0.00 | 0.27 |
+| denial | B | 0.90 | 0.00 | 0.00 | 0.00-0.00 | 1.00 | 0.59 | 0.00 | 0.98 |
+| end | A | 0.89 | 0.00 | 0.00 | 0.00-0.01 | 1.00 | 0.52 | 0.00 | 0.25 |
+| end | B | 0.89 | 0.00 | 0.00 | 0.00-0.00 | 1.00 | 0.52 | 0.00 | 0.96 |
+| hedge | A | 0.89 | **0.35** | 0.13 | 0.92-0.96 | 0.91 | 0.58 | **0.91** | 0.27 |
+| hedge | B | 0.89 | 0.00 | 0.00 | 0.00-0.03 | 1.00 | 0.59 | **0.80** | 0.99 |
+| schedule | A | 0.89 | 0.02 | 0.02 | 0.10-0.38 | 0.99 | 0.56 | 0.03 | 0.23 |
+| schedule | B | 0.89 | 0.00 | 0.00 | 0.00-0.00 | 1.00 | 0.55 | 0.05 | 0.99 |
+| other | A | 0.90 | 0.01 | 0.02 | 0.05-0.50 | 0.99 | 0.58 | 0.00 | 0.37 |
+| other | B | 0.90 | 0.00 | 0.00 | 0.00-0.00 | 1.00 | 0.64 | 0.02 | 1.00 |
+
+"ff identity" = share of exact copies (premise = hypothesis, faithful by construction) flagged. Also measured: arm B flags 98.4% of real article sentences and of restatements when each is its own premise (arm A 26% / 19%).
+**Conclusion / do not repeat:**
+- **Arm B is not usable as trained.** On the targeted pairs it looks perfect (AUC 1.00, 0% false flags everywhere), but it puts nearly every exact copy below 0.5: it learned "near-identical = unfaithful", because `to_pairs` drops verbatim copies and every near-copy in the training pairs is a one-edit corruption while every faithful pair is reworded or shortened. An arc sentence that follows its quote closely would be flagged.
+- **The hedge gain is not real.** At the hedge threshold, B flags 80% of exact copies (A: 91%, and 35% of restatements). Neither arm is promotable for hedge; keep the hedge lexicon gate.
+- On cause, denial, end and schedule both arms' thresholds sit near 0 and flag <= 5% of copies; B adds nothing there over A.
+- The wrong-premise control did NOT catch this (AUC 0.52-0.64 for both arms): an unrelated premise lowers every score, so it cannot show a near-copy heuristic. The identity control did.
+- Arm A also scores 19-26% of exact copies below 0.5 (XNLI never shows identical pairs). Its shadow p_entail on a sentence that copies its quote is not a reliable "faithful" signal; SYS-200's natural set must include such sentences.
+- Retrying arm B needs faithful near-copies in training (identity pairs, plus minimal faithful edits: a synonym or a dropped attribution, keeping every other word), and the same kind in the eval set, generated and validity-checked like the rest. Owner decision (small spend). Do not retrain on the current pairs alone.
+**Links:** SYS-199 #429, ADR-028, commits d22de7a 46622b2 8a0d05d feafe83 13def99; weights `models/nli/armb-2026-11-04/` (local, gitignored; train_manifest.json beside them).

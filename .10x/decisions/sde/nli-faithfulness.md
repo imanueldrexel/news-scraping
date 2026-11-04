@@ -42,3 +42,11 @@
 - `tests/unit/test_filter_nli_pairs.py`: 23 tests, 10/10 hand mutants killed. Unit suite 4037 passed / 5 skipped.
 - Deviation: SYS-197's natural set (spec 4.3, E3) was never built, because SYS-196's gold sample does not exist. Filed SYS-200 #430 to build it from live `nli_shadow` rows after about 10 editions, labelled with the ADR-026/027 method.
 - SYS-199 arm A (2026-11-04): zero-shot on pairs.jsonl, 277 s on CPU. Held-out recall 0.9 at <= 3% false flags on cause, denial, end and schedule. Hedge misses dropped noun hedges ('perkara dugaan korupsi'); at tau 0.95 it flags 36% of restatements. Scores are not committed; they regenerate in 5 min.
+
+## 2026-11-04 night: SYS-199 arm B built and measured (ADR-028) -- FAILED on the identity control
+- Built: `gen_nli_pairs.py --exclude-pairs/--workers` (d22de7a), `train_nli_armb.py` (46622b2, 8a0d05d), `data/nli_train/train_pairs.jsonl` 19,769 pairs for $0.72 (feafe83), `compare_nli_arms.py` with wrong-premise + identity controls, `requirements-train.txt`. `venv/` untouched.
+- Deviations from ADR-028/plan: word embeddings frozen (OOM at 6 GB); non-reentrant gradient checkpointing; the trainer saves the best dev-loss step (894 of 3,580).
+- Result: perfect on the targeted pairs, but 96-100% of exact copies (premise = hypothesis) score below 0.5; at the hedge tau 80% of copies are flagged (arm A 91%). Root cause is the training data: no faithful near-copies. Not usable; hedge keeps the lexicon gate.
+- Arm A also puts 19-26% of exact copies below 0.5: SYS-200's natural set must include sentences that copy their quote.
+- Weights `models/nli/armb-2026-11-04/` (sha256 53b8093d...) kept locally for the record; not wired anywhere.
+- Retry needs faithful near-copies in training and eval (owner decision, small spend).
