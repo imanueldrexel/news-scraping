@@ -50,3 +50,9 @@
 - Arm A also puts 19-26% of exact copies below 0.5: SYS-200's natural set must include sentences that copy their quote.
 - Weights `models/nli/armb-2026-11-04/` (sha256 53b8093d...) kept locally for the record; not wired anywhere.
 - Retry needs faithful near-copies in training and eval (owner decision, small spend).
+
+## 2026-11-05: SYS-199 arm B retry (ADR-029) -- PASSES every type
+- Built: generator `--near-copies/--seeds-from` (de0a0bb); trainer `--pairs` repeatable + `--identity`; compare near-copy column (0fffab9); near-copy data + 40/40 validity (fc58e0a).
+- v2 weights `models/nli/armb2-2026-11-05/` (sha256 5b6d8852...), local only, not wired. Hedge: recall 0.90, ff restated 0.04, hard 0.01, identity 0.00, near-copy 0.04. All types pass ADR-029.
+- Arm B total spend $1.13. v1 weights kept for the record (fails identity).
+- Next: SYS-200 natural set scores arm A and v2 offline; switching the shadow's NLI_MODEL is an owner decision.

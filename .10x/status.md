@@ -11,7 +11,8 @@
 - [x] Owner chose arm B (cost-efficient, can become the production check), in a separate `venv-train/`, ~$0.75 spend (cap $2). ADR-028. Arm C not run.
 - [x] SYS-199 arm B: B1-B7 done ($0.72). Perfect on targeted pairs but flags 96-100% of exact copies (identity control); hedge gain not real. Not usable as trained. EXPERIMENTS.md 2026-11-04 arm B.
 - [x] Owner: retry arm B once (2026-11-05). ADR-029: near-copies in training + separate exam file; pass criteria fixed in advance; cap $1.
-- [ ] Arm B retry R1-R7.
+- [x] Arm B retry R1-R7: v2 passes ADR-029 on all five types (hedge ff restated 0.04, identity 0.00, near-copy 0.04). Total arm B spend $1.13.
+- [ ] SYS-200: score arm A and arm B v2 offline on the natural set; owner sign-off per type; owner decides whether the shadow switches to v2.
 - [ ] SYS-199: natural set SYS-200, owner sign-off per type.
 
 ## 2026-11-03: finish the NLI track + close the qa-passed set (owner: "finish as suggested")

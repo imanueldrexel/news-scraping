@@ -181,7 +181,7 @@ One line each; read this before starting on a scraper or pipeline problem.
 - **Do not mask only the object phrase right after a reference word (2026-10-20, ADR-022):** it fixes QA's adverb switches but loses natural thread questions whose reference is not followed by its object ("Kenapa harganya naik di Jakarta?"): risk set 24/30 -> 1/30. The adverb signal is position: an -nya word right after "yang" is no reference. -> 2026-10-20 ADR-022 entry
 - **Do not make every running latar span a schedule unless a past word stands by it (2026-10-20, SYS-177):** the live 10-17/10-18 latars narrate "pada pertengahan Oktober" with no such word (`scripts/experiments/sys177/scan_running_spans.py`). Widen the plan-verb cue by root family instead. -> 2026-10-20 ADR-023 entry
 - **RAG probes before SYS-194 (2026-10-19) carry +-1-card noise per question:** the keyword half's ORDER BY had no unique key, so tied paragraphs were cut differently on each run. Compare before/after only on runs from the same code base after it, or the same day with the rule patched in. -> 2026-10-19 SYS-194 entry
-- **An NLI checker scored only on the LLM-written targeted pairs can look perfect while it flags verbatim copies (2026-11-04, SYS-199 arm B):** the generator drops verbatim copies and every near-copy is a one-edit corruption, so a fine-tune learns "near-identical = unfaithful" (98% of exact copies below 0.5). Always run `scripts/experiments/compare_nli_arms.py` (identity + wrong-premise controls), never the held-out table alone. -> 2026-11-04 arm B entry
+- **An NLI checker scored only on the LLM-written targeted pairs can look perfect while it flags verbatim copies (2026-11-04, SYS-199 arm B):** the generator drops verbatim copies and every near-copy is a one-edit corruption, so a fine-tune learns "near-identical = unfaithful" (98% of exact copies below 0.5). Always run `scripts/experiments/compare_nli_arms.py` (identity + wrong-premise controls), never the held-out table alone. Fixed by faithful near-copies in training (ADR-029). -> 2026-11-04 arm B entry, 2026-11-05 arm B retry
 
 ## Log
 
@@ -3486,3 +3486,28 @@ SINDONEWS   old 12 new 12 | lost [] | gained []   links identical: True
 - Arm A also scores 19-26% of exact copies below 0.5 (XNLI never shows identical pairs). Its shadow p_entail on a sentence that copies its quote is not a reliable "faithful" signal; SYS-200's natural set must include such sentences.
 - Retrying arm B needs faithful near-copies in training (identity pairs, plus minimal faithful edits: a synonym or a dropped attribution, keeping every other word), and the same kind in the eval set, generated and validity-checked like the rest. Owner decision (small spend). Do not retrain on the current pairs alone.
 **Links:** SYS-199 #429, ADR-028, commits d22de7a 46622b2 8a0d05d feafe83 13def99; weights `models/nli/armb-2026-11-04/` (local, gitignored; train_manifest.json beside them).
+
+## 2026-11-05 -- SYS-199 (#429) arm B retry (ADR-029): faithful near-copies in training -- PASSES every type
+**Question:** with faithful near-copies (one meaning-preserving change) and identity pairs added to training, does a fine-tune pass ADR-029's criteria, fixed before the run: per type at the median held-out tau, recall >= 0.89, false flags <= 0.05 on restatements and hard positives, <= 0.05 on identity pairs, <= 0.10 on the exam's near-copies?
+**Method:**
+- Near-copies: `gen_nli_pairs.py --near-copies 2 --seeds-from tests/fixtures/nli_eval/pairs.jsonl --workers 8` -> `tests/fixtures/nli_eval/near_copies.jsonl`, 1,371 pairs over 737 exam seeds ($0.0642 incl. one resume); `--near-copies 1 --seeds-from data/nli_train/train_pairs.jsonl` -> `data/nli_train/near_copies.jsonl`, 4,521 pairs ($0.3374; 461 verbatim replies dropped). `pairs.jsonl` unchanged. Spend for arm B overall: **$1.13** (pairs $0.72 + near-copies $0.40).
+- Validity of the exam near-copies: stratified 40 (8 per type, seed 20261105, `near_copy_blind.csv`). Claude 40/40 entailed (`near_copy_claude.csv`); Gemini blind 40/40 (`label_nli_gemini.py --blind ... --out near_copy_gemini_blind.csv`). Gate >= 36/40 and >= 87% valid: holds.
+- Training: `train_nli_armb.py --pairs data/nli_train/train_pairs.jsonl --pairs data/nli_train/near_copies.jsonl --identity --indonli data/indonli/train.jsonl --out models/nli/armb2-2026-11-05` (27,837 + 9,825 training examples, 4,708 steps, 2,000 s; best dev loss at step 1,176: dev pairs 0.87 -> 0.98, IndoNLI dev 0.81 -> 0.84). Same hyperparameters as v1.
+- `compare_nli_arms.py` for arm A, arm B v1 and arm B v2 (CPU, one at a time).
+**Result (hedge; every other type is 0.00-0.02 on all false-flag columns for v2):**
+
+| hedge | held-out recall | ff restated | ff hard | ff identity @tau | ff near-copy @tau | AUC | AUC wrong premise |
+|---|---|---|---|---|---|---|---|
+| arm A | 0.89 | 0.35 | 0.13 | 0.91 | 0.78 | 0.91 | 0.58 |
+| arm B v1 | 0.89 | 0.00 | 0.00 | 0.80 | 0.60 | 1.00 | 0.59 |
+| **arm B v2** | **0.90** | **0.04** | **0.01** | **0.00** | **0.04** | 0.98 | 0.58 |
+
+Arm B v2, all types: recall 0.89-0.90; ff restated 0.00-0.04; ff hard 0.00-0.02; ff identity 0.00 (also 0.00 at 0.5); ff near-copy 0.00-0.04. Arm A on near-copies: cause 0.15, hedge 0.78, others <= 0.04.
+Hand-written spot check (10 pairs outside the generator): v2 right on 10/10 (faithful >= 0.996, unfaithful <= 0.008), including "perkara dugaan korupsi" -> "perkara korupsi" (A 0.953, v2 0.002) and exact copies of hedge-free sentences (A 0.77, v2 0.998).
+**Conclusion / do not repeat:**
+- Arm B v2 passes ADR-029 on all five types. Hedge is fixed on the synthetic exam; on cause it also removes arm A's 15-23% false flags on copies.
+- Faithful near-copies were the missing ingredient. Any future NLI training set needs faithful near-copies next to its one-edit corruptions, and its exam needs them too.
+- Hedge's tau still swings across splits (0.06-0.93): its unfaithful scores are spread. Do not ship a hedge threshold from this set; re-fit on the natural set.
+- Still synthetic: same generator for training and exam near-copies (identity pairs and the 10 hand pairs are the only generator-free checks). This qualifies v2 for SYS-200's natural set; it does not promote anything (ADR-024).
+- The shadow keeps running arm A. SYS-200 can score both arms offline from the stored `nli_shadow` sentences and quotes.
+**Links:** SYS-199 #429, ADR-029, commits de0a0bb 0fffab9 fc58e0a; weights `models/nli/armb2-2026-11-05/` (local, gitignored, sha256 in its train_manifest.json).

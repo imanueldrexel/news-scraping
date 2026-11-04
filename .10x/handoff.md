@@ -1,5 +1,14 @@
 # Current Handoff
 
+## From: SDE (2026-11-05) -> To: owner, then SDE/QA (SYS-200)
+**Read first:** EXPERIMENTS.md "2026-11-05 -- SYS-199 (#429) arm B retry"; ADR-029.
+- Arm B v2 (`models/nli/armb2-2026-11-05/`, local) passes ADR-029 on all five types. Nothing is promoted: SYS-200's natural set decides (ADR-024).
+- SYS-200: score BOTH arm A and v2 offline from `nli_shadow` rows; include sentences that copy their quote.
+- Owner: optional switch of the shadow's NLI_MODEL to the v2 path (the .env is the owner's live config).
+- Hedge tau is unstable (0.06-0.93 across splits): no runtime hedge threshold from the synthetic set.
+
+---
+
 ## From: Architect + EM (2026-11-05) -> To: SDE (arm B retry)
 **Read first:** ADR-029 (pass criteria are fixed there; do not change them after seeing numbers).
 - One retry only. If any hedge criterion fails, SYS-199 stops at arm A + the hedge lexicon gate.
