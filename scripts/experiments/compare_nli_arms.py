@@ -26,6 +26,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import eval_nli  # noqa: E402
 
 PAIRS = os.path.join(REPO, "tests", "fixtures", "nli_eval", "pairs.jsonl")
+NEAR = os.path.join(REPO, "tests", "fixtures", "nli_eval", "near_copies.jsonl")      # ADR-029
 SPLITS = 20
 
 
@@ -86,7 +87,7 @@ def held_out(group: Sequence[dict], scores: Dict[str, float], recall: float = 0.
             "tau_median": sorted(taus)[len(taus) // 2]}
 
 
-def report(pairs: Sequence[dict], scores: Dict[str, float]) -> Dict[str, dict]:
+def report(pairs: Sequence[dict], scores: Dict[str, float], near: Sequence[dict] = ()) -> Dict[str, dict]:
     out = {}
     for t in sorted({p["error_type"] for p in pairs}):
         g = [p for p in pairs if p["error_type"] == t]
@@ -99,6 +100,7 @@ def report(pairs: Sequence[dict], scores: Dict[str, float]) -> Dict[str, dict]:
         ident = [scores[s + "~id"] for s in sorted({p["seed_id"] for p in g})]
         row["ff_identity"] = eval_nli.rate(ident, row["tau_median"])
         row["ff_identity_05"] = eval_nli.rate(ident, 0.5)
+        row["ff_near_copy"] = eval_nli.rate([scores[n["id"]] for n in near if n["error_type"] == t], row["tau_median"])
         out[t] = row
     return out
 
@@ -106,11 +108,12 @@ def report(pairs: Sequence[dict], scores: Dict[str, float]) -> Dict[str, dict]:
 def table(rep: Dict[str, dict]) -> str:
     f = lambda x: "-" if x is None else f"{x:.2f}"  # noqa: E731
     lines = ["| type | held-out recall | ff restated | ff hard | tau range | AUC | AUC wrong premise "
-             "| ff identity @median tau | ff identity @0.5 |", "|---|---|---|---|---|---|---|---|---|"]
+             "| ff identity @median tau | ff identity @0.5 | ff near-copy @median tau |",
+             "|---|---|---|---|---|---|---|---|---|---|"]
     for t, r in rep.items():
         lines.append(f"| {t} | {f(r['recall'])} | {f(r['ff_restated'])} | {f(r['ff_hard'])} | "
                      f"{f(r['tau_min'])}-{f(r['tau_max'])} | {f(r['auc'])} | {f(r['auc_wrong_premise'])} | "
-                     f"{f(r['ff_identity'])} | {f(r['ff_identity_05'])} |")
+                     f"{f(r['ff_identity'])} | {f(r['ff_identity_05'])} | {f(r.get('ff_near_copy'))} |")
     return "\n".join(lines)
 
 
@@ -119,9 +122,11 @@ def main(argv=None) -> int:
     ap.add_argument("--model", required=True)
     ap.add_argument("--cache", required=True, help="JSON {id: p_entail}; pairs missing from it are scored")
     ap.add_argument("--pairs", default=PAIRS)
+    ap.add_argument("--near-copies", default=NEAR, help="ADR-029 faithful near-copies; skipped when the file is absent")
     args = ap.parse_args(argv)
     pairs = eval_nli.load_pairs(args.pairs)
-    every = pairs + wrong_premise(pairs) + identity(pairs)
+    near = eval_nli.load_pairs(args.near_copies) if os.path.exists(args.near_copies) else []
+    every = pairs + wrong_premise(pairs) + identity(pairs) + near
     scores = {}
     if os.path.exists(args.cache):
         with open(args.cache, encoding="utf-8") as f:
@@ -132,7 +137,7 @@ def main(argv=None) -> int:
         with open(args.cache, "w", encoding="utf-8") as f:
             json.dump(scores, f)
     print(f"model: {args.model}")
-    print(table(report(pairs, scores)))
+    print(table(report(pairs, scores, near)))
     return 0
 
 

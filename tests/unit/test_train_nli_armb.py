@@ -72,3 +72,12 @@ def test_batches_cover_every_example_once():
     got = tr.batches(examples, 8, random.Random(0))
     assert [len(b) for b in got] == [8, 8, 8, 8, 5]
     assert sorted(e["i"] for b in got for e in b) == list(range(37))
+
+
+def test_identity_pairs_are_one_faithful_copy_per_seed_in_its_group():
+    pairs = [{"premise": "P1", "hypothesis": "H", "source": "pairs", "target": 0, "group": "pairs:s1", "error_type": "hedge"},
+             {"premise": "P1", "hypothesis": "H2", "source": "pairs", "target": 1, "group": "pairs:s1", "error_type": "hedge"},
+             {"premise": "P2", "hypothesis": "H3", "source": "pairs", "target": 0, "group": "pairs:s2", "error_type": "end"}]
+    got = tr.identity_pairs(pairs)
+    assert [(e["premise"], e["hypothesis"], e["target"], e["group"]) for e in got] == [
+        ("P1", "P1", 1, "pairs:s1"), ("P2", "P2", 1, "pairs:s2")]

@@ -64,3 +64,15 @@ def test_identity_is_one_faithful_copy_per_seed():
     got = cmp.identity(pairs)
     assert [g["id"] for g in got] == ["hedge-0~id", "hedge-1~id", "hedge-2~id"]
     assert all(g["hypothesis"] == g["premise"] and g["label"] == "faithful" for g in got)
+
+
+def test_near_copy_column_counts_flags_at_the_types_tau():
+    pairs = pairs_for("hedge", 6)
+    scores = {p["id"]: (0.9 if p["label"] == "faithful" else 0.1) for p in pairs}
+    scores.update({w["id"]: 0.5 for w in cmp.wrong_premise(pairs)})
+    scores.update({i["id"]: 0.99 for i in cmp.identity(pairs)})
+    near = [{"id": f"n{i}", "error_type": "hedge"} for i in range(4)] + [{"id": "x", "error_type": "end"}]
+    scores.update({"n0": 0.05, "n1": 0.95, "n2": 0.95, "n3": 0.95, "x": 0.0})
+    row = cmp.report(pairs, scores, near)["hedge"]
+    assert row["ff_near_copy"] == 0.25
+    assert cmp.report(pairs, scores)["hedge"]["ff_near_copy"] is None

@@ -49,6 +49,14 @@ def load_pairs(path: str) -> List[dict]:
     return out
 
 
+def identity_pairs(pairs: Sequence[dict]) -> List[dict]:
+    """ADR-029: one faithful pair per seed whose hypothesis IS the premise, in the seed's group (same dev side)."""
+    seen = {}
+    for e in pairs:
+        seen.setdefault(e["group"], e)
+    return [{**e, "hypothesis": e["premise"], "target": 1} for e in seen.values()]
+
+
 def load_indonli(path: str, label_index: Dict[str, int]) -> List[dict]:
     """`label_index` maps entailment/neutral/contradiction to the model's logit index."""
     out = []
@@ -129,7 +137,9 @@ def evaluate(model, tokenizer, dev: Sequence[dict], entail: int, device, size: i
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("--pairs", required=True)
+    ap.add_argument("--pairs", required=True, action="append",
+                    help="our pair JSONL(s); repeatable (ADR-029 adds the near-copies)")
+    ap.add_argument("--identity", action="store_true", help="ADR-029: add one premise=hypothesis pair per seed")
     ap.add_argument("--indonli", required=True)
     ap.add_argument("--out", required=True)
     ap.add_argument("--epochs", type=float, default=2.0)
@@ -158,7 +168,10 @@ def main(argv=None) -> int:
     label_index = {n: i for i, n in names.items()}
     entail = label_index["entailment"]
 
-    pairs, indonli = load_pairs(args.pairs), load_indonli(args.indonli, label_index)
+    pairs = [e for path in args.pairs for e in load_pairs(path)]
+    if args.identity:
+        pairs += identity_pairs(pairs)
+    indonli = load_indonli(args.indonli, label_index)
     train, dev = split(pairs + indonli)
     if args.limit:
         rng.shuffle(train)
@@ -217,7 +230,7 @@ def main(argv=None) -> int:
     best_step = min(history[1:], key=lambda h: h["loss"])
     manifest = {
         "ticket": "SYS-199 (#429) arm B, ADR-028", "base_model": BASE_MODEL, "base_revision": BASE_REVISION,
-        "data": {"pairs": {"path": args.pairs, "sha256": sha256(args.pairs)},
+        "data": {"pairs": [{"path": path, "sha256": sha256(path)} for path in args.pairs], "identity": args.identity,
                  "indonli": {"path": args.indonli, "sha256": sha256(args.indonli),
                              "url": "https://raw.githubusercontent.com/ir-nlp-csui/indonli/main/data/indonli/train.jsonl"}},
         "counts": counts, "dev_fraction": DEV_FRACTION, "max_length": MAX_LENGTH,
