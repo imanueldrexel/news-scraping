@@ -16,4 +16,4 @@
 - [qa-second-pass-fixes-2026-10-12](qa-second-pass-fixes-2026-10-12.md) — QA second pass 2026-10-12: SYS-138 subject gate (ADR-013), SYS-143/144/145 (ADR-014), DBT-68/69, DBT-67 store_repair module (ADR-015)
 - [open-p2-p3-2026-10-12](open-p2-p3-2026-10-12.md) — SRC-59 INVESTORID via sitemap_post.xml, DBT-60 date rule, SYS-91 FAISS posted_at repair
 
-- [nli-faithfulness](nli-faithfulness.md) -- approach, v1 hypothesis = whole sentence (deviation)
+- [nli-faithfulness](nli-faithfulness.md) -- approach, v1 hypothesis = whole sentence (deviation); arm B training approach

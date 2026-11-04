@@ -1,5 +1,12 @@
 # Current Handoff
 
+## From: Architect + EM (2026-11-04 night) -> To: SDE (SYS-199 arm B)
+**Read first:** ADR-028; `.10x/decisions/engineering-manager/nli-faithfulness.md` "arm B plan".
+- Owner approved: separate `venv-train/`, about $0.75 SumoPod (cap $2). Do not touch `venv/` or requirements.txt.
+- The exam (`pairs.jsonl`) is never trained on; training articles exclude its 712 articles.
+
+---
+
 ## From: SDE (2026-11-04 afternoon) -> To: QA (SYS-197, SYS-198), then SDE (SYS-199)
 **Read first:** ADR-027; EXPERIMENTS.md 2026-11-04 "which rules find the type misfits"; `.10x/decisions/sde/nli-faithfulness.md` "2026-11-04 (afternoon)".
 - **QA, SYS-198 #428:** evidence on the ticket. `SELECT * FROM nli_shadow` holds 20 rows for edition 2026-11-03; the runtime comes from `logs/scheduled_newsletter_2026-11-04_1200.log:188-189`.

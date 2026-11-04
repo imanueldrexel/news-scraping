@@ -14,4 +14,4 @@
 - ADR-019 (2026-10-17): the causal gate matches a claim to ONE link of the quote by direction (cause to cause side, effect to effect side), with sides cut from the source sentences the quote covers; amends ADR-018 decision 2 (SYS-152/181..185)
 - ADR-020 (2026-10-18): a causal half is covered whole (owner: every word), names never cross the link, the previous sentence is lent only to a reference, unlisted causal verbs gated (purpose exemption), polarity and hedges carry over, lists checked per item (SYS-188/181/189/185/192/183/187)
 
-- [nli-faithfulness](nli-faithfulness.md) -- ADR-024
+- [nli-faithfulness](nli-faithfulness.md) -- ADR-024; arm B training outside the app, ADR-028

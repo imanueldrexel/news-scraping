@@ -20,3 +20,12 @@ Tasks <= half a day each. SYS-198 and SYS-197 are independent; SYS-199 needs bot
 T1, T2 -> T3 -> T4 -> T5 -> T6; E1, E2, E3 in parallel with SYS-198; E4/E5 gated on the owner.
 ## Risks
 Owner labelling time; SumoPod balance; checkpoint download size/licence; the 12:00 job runtime.
+
+## 2026-11-04: SYS-199 arm B plan (ADR-028; owner approved separate venv + ~$0.75, cap $2)
+- B1 `gen_nli_pairs.py`: `--exclude-pairs` (skip exam articles) + `--workers` (concurrent calls; 5,000 sequential calls would take hours). Unit tests. No spend.
+- B2 generate 1,000 seeds/type -> `data/nli_train/train_pairs.jsonl` (LF), cap $2. SPEND (approved).
+- B3 `venv-train/` with torch 2.8.0+cu126 + app pins; `requirements-train.txt`; check `torch.cuda.is_available()` (driver 527.99 risk -> owner driver update).
+- B4 `scripts/experiments/train_nli_armb.py`: IndoNLI + our pairs, seed-split dev, bf16, manifest. Unit tests for the pure parts (data mixing, split, loss) in `venv/`.
+- B5 train; B6 score the exam on CPU, arm A protocol, A vs B table + hyp-only on the training pairs.
+- B7 EXPERIMENTS.md entry, #429 comment (not ready-for-qa: verdict waits for SYS-200), state files.
+- Order: B1 -> B2 (runs in background) || B3 -> B4 -> B5 -> B6 -> B7.

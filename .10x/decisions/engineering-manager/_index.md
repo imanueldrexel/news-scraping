@@ -9,4 +9,4 @@
 - [qa-second-pass-fixes-2026-10-12](qa-second-pass-fixes-2026-10-12.md) — QA second pass 2026-10-12: SYS-138 subject gate (ADR-013), SYS-143/144/145 (ADR-014), DBT-68/69, DBT-67 store_repair module (ADR-015)
 - [newsletter-story-arcs](newsletter-story-arcs.md) — 7 steps: DBT-72 → DBT-73 → SYS-147+DBT-74 → SYS-148 → DBT-75 → SYS-149 → SYS-150 (ship gate); ~6-7 dev sessions; P1 SYS-151/152
 
-- [nli-faithfulness](nli-faithfulness.md) -- plan 2026-10-25
+- [nli-faithfulness](nli-faithfulness.md) -- plan 2026-10-25; arm B plan B1-B7 2026-11-04
