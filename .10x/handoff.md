@@ -1,5 +1,11 @@
 # Current Handoff
 
+## From: Architect + EM (2026-11-05) -> To: SDE (arm B retry)
+**Read first:** ADR-029 (pass criteria are fixed there; do not change them after seeing numbers).
+- One retry only. If any hedge criterion fails, SYS-199 stops at arm A + the hedge lexicon gate.
+
+---
+
 ## From: SDE (2026-11-05 night) -> To: owner (arm B retry?), QA (SYS-197, SYS-198)
 **Read first:** EXPERIMENTS.md "2026-11-04 -- SYS-199 (#429) arm B"; ADR-028.
 - Arm B trained and measured; it fails the identity control (exact copies flagged). Do not wire `models/nli/armb-2026-11-04` anywhere.

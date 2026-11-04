@@ -10,7 +10,8 @@
 - [x] SYS-199 arm A: held-out recall 0.9 at <= 3% false flags on cause/denial/end/schedule; hedge needs tau 0.95 (36% false flags on restatements). EXPERIMENTS.md + #429 comment.
 - [x] Owner chose arm B (cost-efficient, can become the production check), in a separate `venv-train/`, ~$0.75 spend (cap $2). ADR-028. Arm C not run.
 - [x] SYS-199 arm B: B1-B7 done ($0.72). Perfect on targeted pairs but flags 96-100% of exact copies (identity control); hedge gain not real. Not usable as trained. EXPERIMENTS.md 2026-11-04 arm B.
-- [ ] Owner: retry arm B with faithful near-copies in training + eval (small spend), or stop at arm A + hedge lexicon gate.
+- [x] Owner: retry arm B once (2026-11-05). ADR-029: near-copies in training + separate exam file; pass criteria fixed in advance; cap $1.
+- [ ] Arm B retry R1-R7.
 - [ ] SYS-199: natural set SYS-200, owner sign-off per type.
 
 ## 2026-11-03: finish the NLI track + close the qa-passed set (owner: "finish as suggested")

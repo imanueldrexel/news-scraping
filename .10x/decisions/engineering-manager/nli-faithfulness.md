@@ -29,3 +29,10 @@ Owner labelling time; SumoPod balance; checkpoint download size/licence; the 12:
 - B5 train; B6 score the exam on CPU, arm A protocol, A vs B table + hyp-only on the training pairs.
 - B7 EXPERIMENTS.md entry, #429 comment (not ready-for-qa: verdict waits for SYS-200), state files.
 - Order: B1 -> B2 (runs in background) || B3 -> B4 -> B5 -> B6 -> B7.
+
+## 2026-11-05: arm B retry plan (ADR-029; owner: one retry, spend cap $1)
+- R1 generator `--near-copies N --seeds-from` mode + tests. No spend.
+- R2 generate: exam 2/seed -> tests/fixtures/nli_eval/near_copies.jsonl; training 1/seed -> data/nli_train/near_copies.jsonl. SPEND.
+- R3 validity: Claude labels a stratified 40, Gemini blind (label_nli_gemini.py --blind/--out), score >= 36/40 and >= 87% valid.
+- R4 trainer: several --pairs files, --identity. compare_nli_arms: --near-copies column.
+- R5 train (alone), R6 score A and B (one at a time), R7 verdict vs ADR-029 criteria, EXPERIMENTS.md, #429, state.
