@@ -75,3 +75,70 @@ def test_a_verbatim_copy_of_the_premise_is_dropped():
     seed = {"seed_id": "s", "premise": "A naik."}
     pairs = gen.to_pairs(seed, "cause", {"corrupted": ["A naik.", "B naik."], "restatement": "r", "hard_positive": "h"})
     assert len(pairs) == 3
+
+
+# SYS-199 arm B (ADR-028): training pairs come from other articles, with concurrent calls inside the same cap.
+
+class Flaky(Stub):
+    """Raises for the seeds whose premise mentions FAIL."""
+
+    def complete(self, prompt):
+        self.calls += 1
+        if "FAIL" in prompt:
+            raise RuntimeError("connection reset")
+        return Completion(self.text, self.tin, self.tout)
+
+
+def test_concurrent_calls_stay_inside_the_cap(tmp_path):
+    stub = Stub()
+    budget = gen.Budget(0.0065, price)
+    stats = gen.generate(seeds(10), stub, budget, str(tmp_path / "p.jsonl"), log=lambda m: None, workers=4)
+    assert stub.calls == 3 and stats["stopped_on_budget"] == 1
+    assert budget.spent <= budget.max_usd
+
+
+def test_concurrent_run_writes_every_seed_once(tmp_path):
+    out = tmp_path / "p.jsonl"
+    stats = gen.generate(seeds(12), Stub(), gen.Budget(3.0, price), str(out), log=lambda m: None, workers=5)
+    rows = [json.loads(l) for l in out.read_text(encoding="utf-8").splitlines()]
+    assert stats["seeds"] == 12 and len({r["seed_id"] for r in rows}) == 12 and len(rows) == 48
+
+
+def test_a_failed_call_leaves_its_seed_for_the_resumed_run(tmp_path):
+    out = tmp_path / "p.jsonl"
+    group = seeds(3)
+    group["cause"][1]["premise"] = "FAIL naik karena pasokan seret."
+    stats = gen.generate(group, Flaky(), gen.Budget(3.0, price), str(out), log=lambda m: None, workers=2)
+    assert stats["errors"] == 1 and stats["seeds"] == 2 and stats["stopped_on_errors"] == 0
+    group["cause"][1]["premise"] = "B naik karena pasokan seret."
+    stub = Stub()
+    gen.generate(group, stub, gen.Budget(3.0, price), str(out), log=lambda m: None)
+    assert stub.calls == 1
+
+
+def test_failures_in_a_row_stop_the_run(tmp_path):
+    group = {"cause": [{"seed_id": f"cause-{i}-x", "premise": "FAIL"} for i in range(30)]}
+    stub = Flaky()
+    stats = gen.generate(group, stub, gen.Budget(3.0, price), str(tmp_path / "p.jsonl"), log=lambda m: None)
+    assert stats["stopped_on_errors"] == 1 and stub.calls == gen.MAX_ERRORS_IN_A_ROW
+
+
+def test_output_is_lf(tmp_path):
+    out = tmp_path / "p.jsonl"
+    gen.generate(seeds(1), Stub(), gen.Budget(3.0, price), str(out), log=lambda m: None)
+    assert b"\r\n" not in out.read_bytes()
+
+
+def test_article_ids_are_the_seed_ids_second_field(tmp_path):
+    src = tmp_path / "eval.jsonl"
+    src.write_text("\n".join(json.dumps({"seed_id": s}) for s in ["cause-101-ab", "hedge-202-cd", "end-101-ef"]) + "\n",
+                   encoding="utf-8")
+    assert gen.article_ids(str(src)) == {"101", "202"}
+
+
+def test_a_success_resets_the_failure_count(tmp_path):
+    n = gen.MAX_ERRORS_IN_A_ROW - 1
+    premises = ["FAIL"] * n + ["A naik karena pasokan seret."] + ["FAIL"] * n
+    group = {"cause": [{"seed_id": f"cause-{i}-x", "premise": p} for i, p in enumerate(premises)]}
+    stats = gen.generate(group, Flaky(), gen.Budget(3.0, price), str(tmp_path / "p.jsonl"), log=lambda m: None)
+    assert stats["stopped_on_errors"] == 0 and stats["errors"] == 2 * n and stats["seeds"] == 1

@@ -14,6 +14,9 @@ could pass --max-usd (default 3.00, owner 2026-10-25), and the running total is 
 api_usage_log (replays never are); the total goes in the EXPERIMENTS.md entry.
 
   venv\\Scripts\\python.exe scripts/experiments/gen_nli_pairs.py --per-type 90 --out <path> [--max-usd 3] [--dry-run]
+
+SYS-199 arm B (ADR-028) training pairs: `--exclude-pairs tests/fixtures/nli_eval/pairs.jsonl` keeps every article of the
+eval set out, and `--workers N` runs N calls at once (the cap reserves worst case for each call in flight).
 """
 import argparse
 import hashlib
@@ -137,31 +140,70 @@ class Budget:
     def __init__(self, max_usd: float, price: Callable[[int, int], float]):
         self.max_usd, self.spent, self.price = max_usd, 0.0, price
 
-    def can_start(self) -> bool:
-        return self.spent + self.price(WORST_CALL_INPUT, WORST_CALL_OUTPUT) <= self.max_usd
+    def can_start(self, in_flight: int = 0) -> bool:
+        """`in_flight` calls already started are charged at worst case too, so concurrent calls stay inside the cap."""
+        return self.spent + (in_flight + 1) * self.price(WORST_CALL_INPUT, WORST_CALL_OUTPUT) <= self.max_usd
 
     def add(self, input_tokens: int, output_tokens: int) -> None:
         self.spent += self.price(input_tokens, output_tokens)
 
 
+def article_ids(pairs_path: str) -> set:
+    """Article ids (seed_id's second field) of every pair in a JSONL: the articles a new run must not seed from."""
+    with open(pairs_path, encoding="utf-8") as f:
+        return {json.loads(l)["seed_id"].split("-")[1] for l in f if l.strip()}
+
+
+MAX_ERRORS_IN_A_ROW = 10
+
+
 def generate(seeds: Dict[str, List[dict]], provider, budget: Budget, out_path: str,
-             log: Callable[[str], None] = print) -> Dict[str, int]:
+             log: Callable[[str], None] = print, workers: int = 1) -> Dict[str, int]:
+    """Calls run on `workers` threads; budget checks, counting and writing stay on this thread. A failed call is
+    counted and its seed left for a resumed run; MAX_ERRORS_IN_A_ROW failures in a row stop the run."""
+    from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
     done = set()
     if os.path.exists(out_path):
         with open(out_path, encoding="utf-8") as f:
             done = {json.loads(l)["seed_id"] for l in f if l.strip()}
-    stats = {"seeds": 0, "pairs": 0, "bad_reply": 0, "stopped_on_budget": 0}
-    with open(out_path, "a", encoding="utf-8") as f:
-        for error_type, group in seeds.items():
-            for seed in group:
-                if seed["seed_id"] in done:
-                    continue
-                if not budget.can_start():
+    todo = iter([(t, s) for t, group in seeds.items() for s in group if s["seed_id"] not in done])
+    stats = {"seeds": 0, "pairs": 0, "bad_reply": 0, "errors": 0, "stopped_on_budget": 0, "stopped_on_errors": 0}
+    errors_in_a_row, stopping = 0, False
+    with open(out_path, "a", encoding="utf-8", newline="\n") as f, ThreadPoolExecutor(max_workers=workers) as pool:
+        pending = {}
+        while True:
+            while not stopping and len(pending) < workers:
+                if not budget.can_start(len(pending)):
+                    if pending:
+                        break                   # wait: finished calls may cost less than their reservation
                     stats["stopped_on_budget"] = 1
                     log(f"budget: ${budget.spent:.4f} spent of ${budget.max_usd:.2f}; stopping before the next call")
-                    return stats
-                completion = provider.complete(PROMPT.format(premise=seed["premise"], error_type=error_type,
-                                                             edit=EDITS[error_type]))
+                    stopping = True
+                    break
+                item = next(todo, None)
+                if item is None:
+                    stopping = True
+                    break
+                error_type, seed = item
+                prompt = PROMPT.format(premise=seed["premise"], error_type=error_type, edit=EDITS[error_type])
+                pending[pool.submit(provider.complete, prompt)] = item
+            if not pending:
+                return stats
+            finished, _ = wait(pending, return_when=FIRST_COMPLETED)
+            for fut in finished:
+                error_type, seed = pending.pop(fut)
+                try:
+                    completion = fut.result()
+                except Exception as e:  # noqa: BLE001 -- the seed stays unwritten; a resumed run retries it
+                    stats["errors"] += 1
+                    errors_in_a_row += 1
+                    log(f"call failed for {seed['seed_id']}: {e!r}")
+                    if errors_in_a_row >= MAX_ERRORS_IN_A_ROW and not stopping:
+                        stats["stopped_on_errors"] = 1
+                        log(f"{errors_in_a_row} failed calls in a row; stopping")
+                        stopping = True
+                    continue
+                errors_in_a_row = 0
                 budget.add(completion.input_tokens, completion.output_tokens)
                 reply = parse_reply(completion.text)
                 stats["seeds"] += 1
@@ -172,9 +214,8 @@ def generate(seeds: Dict[str, List[dict]], provider, budget: Budget, out_path: s
                     f.write(json.dumps(pair, ensure_ascii=False) + "\n")
                     stats["pairs"] += 1
                 f.flush()
-                if stats["seeds"] % 25 == 0:
+                if stats["seeds"] % 100 == 0:
                     log(f"{stats['seeds']} seeds, {stats['pairs']} pairs, ${budget.spent:.4f}")
-    return stats
 
 
 def load_article_texts(days: int, limit: int) -> List[tuple]:
@@ -199,12 +240,19 @@ def main(argv=None) -> int:
     ap.add_argument("--articles", type=int, default=6000, help="articles sampled for seeds")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--dry-run", action="store_true", help="pick seeds, print counts and the cost ceiling, no calls")
+    ap.add_argument("--exclude-pairs", action="append", default=[],
+                    help="JSONL of pairs whose articles must not be seeded from (e.g. the eval set); repeatable")
+    ap.add_argument("--workers", type=int, default=1, help="concurrent model calls")
     args = ap.parse_args(argv)
 
     from newscrawler.core.extraction_provider import build_provider
     from newscrawler.core.peak_hours import cost_usd, is_peak
     rng = random.Random(args.seed)
-    seeds = pick_seeds(load_article_texts(args.days, args.articles), args.per_type, rng)
+    texts = load_article_texts(args.days, args.articles)
+    excluded = set().union(*(article_ids(p) for p in args.exclude_pairs)) if args.exclude_pairs else set()
+    texts = [(a, t) for a, t in texts if str(a) not in excluded]
+    print(f"{len(texts)} articles after excluding {len(excluded)} already seeded")
+    seeds = pick_seeds(texts, args.per_type, rng)
     print({t: len(v) for t, v in seeds.items()})
     peak = is_peak()
     price = lambda i, o: cost_usd(i, o, peak)  # noqa: E731
@@ -217,7 +265,7 @@ def main(argv=None) -> int:
         print("no OPENAI_API_KEY", file=sys.stderr)
         return 2
     budget = Budget(args.max_usd, price)
-    stats = generate(seeds, provider, budget, args.out)
+    stats = generate(seeds, provider, budget, args.out, workers=args.workers)
     print(stats, f"spent ${budget.spent:.4f} of ${args.max_usd:.2f}")
     return 0
 
