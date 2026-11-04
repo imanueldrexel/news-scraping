@@ -139,6 +139,7 @@ def main(argv=None) -> int:
     ap.add_argument("--evals-per-epoch", type=int, default=4)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--limit", type=int, default=0, help="smoke test: use only this many training examples")
+    ap.add_argument("--train-embeddings", action="store_true", help="also train the word embeddings (needs > 6 GB)")
     args = ap.parse_args(argv)
 
     import torch
@@ -169,7 +170,17 @@ def main(argv=None) -> int:
     steps_per_epoch = math.ceil(len(train) / args.batch)
     total_steps = int(steps_per_epoch * args.epochs)
     eval_every = max(steps_per_epoch // args.evals_per_epoch, 1)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=0.01)
+    if not args.train_embeddings:
+        # the 250k x 768 word-embedding table is 192M of the 278M weights; its gradients and Adam state do not fit
+        # in 6 GB next to the rest (OOM in the first optimizer step), and a few thousand pairs barely move it
+        model.get_input_embeddings().requires_grad_(False)
+    # long IndoNLI premises (multi-sentence, up to 256 tokens) ran out of memory in the forward pass at batch 16;
+    # recomputing activations in the backward pass costs about a third more time and fits
+    # (reentrant checkpointing backwards twice through DeBERTa's shared relative embeddings: RuntimeError)
+    model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
+    trainable = [p for p in model.parameters() if p.requires_grad]
+    print(f"trainable parameters: {sum(p.numel() for p in trainable) / 1e6:.0f}M")
+    optimizer = torch.optim.AdamW(trainable, lr=args.lr, weight_decay=0.01)
     scheduler = get_linear_schedule_with_warmup(optimizer, int(total_steps * args.warmup), total_steps)
 
     history = [{"step": 0, **evaluate(model, tokenizer, dev, entail, device)}]
@@ -210,7 +221,8 @@ def main(argv=None) -> int:
                  "indonli": {"path": args.indonli, "sha256": sha256(args.indonli),
                              "url": "https://raw.githubusercontent.com/ir-nlp-csui/indonli/main/data/indonli/train.jsonl"}},
         "counts": counts, "dev_fraction": DEV_FRACTION, "max_length": MAX_LENGTH,
-        "hyperparameters": {k: getattr(args, k) for k in ("epochs", "lr", "batch", "warmup", "seed", "limit")},
+        "hyperparameters": {k: getattr(args, k) for k in ("epochs", "lr", "batch", "warmup", "seed", "limit",
+                                                            "train_embeddings")},
         "precision": "bf16 autocast", "best": best_step, "history": history,
         "model_sha256": sha256(os.path.join(args.out, "model.safetensors")),
         "torch": torch.__version__, "transformers": transformers.__version__,
