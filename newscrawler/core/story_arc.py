@@ -349,15 +349,20 @@ def _backing_days(known: set, last: date, digest_date: date, ahead_only: bool, t
 # barunya akan terbit akhir Oktober"). SYS-177 send-back: the plan verbs of news copy too (berencana, diperkirakan,
 # diharapkan, segera, "mulai berlaku"; a bare "mulai" is past: "asap mulai meluas awal Oktober"). Second send-back
 # (#407): each plan root with its affixes, not one form of it -- "dipastikan", "dijanjikan", "ditarget", "berjanji".
+# Third send-back (#419, #420): BMKG's "diprakirakan", "disiapkan", "dicanangkan", "berpotensi"; never the bare
+# nouns "target" / "janji" ("Target penerimaan pajak tercapai ...") nor "memastikan", which news copy writes for a
+# past act ("Pekan lalu Gubernur ... memastikan kelangkaan selesai").
 # Not "every running span is a schedule unless a past word stands by it" (QA's proposal): the live 10-17 and 10-18
 # latars narrate "pada pertengahan Oktober" with no such word (EXPERIMENTS.md 2026-10-20).
 _FUTURE_VERB = re.compile(r"\b(?:akan|bakal|segera|hendak|siap|menyusul|mulai\s+berlaku"
                           r"|(?:di|ter|men)?jadwal(?:kan)?"                  # jadwal, dijadwalkan, terjadwal
-                          r"|(?:di)?target(?:kan)?|menargetkan"              # ditarget, ditargetkan
+                          r"|ditarget(?:kan)?|menargetkan"                   # not the noun "target" (#420)
                           r"|(?:di)?rencana(?:kan|nya)?|berencana|merencanakan"   # direncanakan, rencananya
-                          r"|(?:di|ber)?janji(?:kan)?|menjanjikan"           # dijanjikan, berjanji
-                          r"|dipastikan|memastikan|diharapkan|berharap|mengharapkan"
-                          r"|(?:di|mem)perkirakan|(?:di|mem)prediksi|(?:di|mem)proyeksikan"
+                          r"|dijanji(?:kan)?|berjanji|menjanjikan"           # not the noun "janji" (#420)
+                          r"|dipastikan|diharapkan|berharap|mengharapkan"    # "memastikan" is a past act (#420)
+                          r"|(?:di|mem)perkirakan|(?:di|mem)prediksi|(?:di|mem)proyeksi(?:kan)?"
+                          # third send-back (#419): forecast, preparation, launch, potential, estimate
+                          r"|(?:di|mem)prakirakan|di(?:per)?siapkan|dicanangkan|berpotensi|diestimasi(?:kan)?"
                           r"|diagendakan|diupayakan)\b", re.IGNORECASE)
 _CLAUSE_END = re.compile(r"[,;:]|[.!?](?:\s|$)")
 # SYS-177: the fields that tell today's news, where a running span is judged like the agenda.

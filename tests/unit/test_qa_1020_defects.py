@@ -139,3 +139,34 @@ def test_418_a_spatial_hingga_is_no_end_point(prose):
 
 def test_418_control_a_listed_spread_verb_is_spatial():
     assert sc.unbacked_end_times("Sebelumnya, asap meluas hingga Riau pada akhir Oktober.", SRC_418) == []
+
+
+# ---- #419 / #420 (SYS-177): plan cues of a latar schedule ----
+from datetime import date  # noqa: E402
+
+import newscrawler.core.story_arc as sa  # noqa: E402
+
+DAY, ITEM = date(2026, 10, 8), date(2026, 10, 2)
+
+
+@pytest.mark.parametrize("verb", ["diproyeksi", "diprakirakan", "disiapkan", "dicanangkan", "berpotensi",
+                                  "diestimasikan"])
+def test_419_a_plan_verb_makes_a_schedule(verb):
+    assert sa.unbacked_times(f"Aturan barunya {verb} terbit awal Oktober.", DAY, {DAY, ITEM}, "") == ["awal Oktober"]
+
+
+def test_419_control_a_listed_cue_makes_a_schedule():
+    assert sa.unbacked_times("Aturan barunya dijanjikan terbit awal Oktober.", DAY, {DAY, ITEM}, "") == ["awal Oktober"]
+
+
+@pytest.mark.parametrize("latar", [
+    "Target penerimaan pajak tercapai pada awal Oktober.",
+    "Mentan memastikan stok beras aman pada awal Oktober.",
+    "Janji kampanye itu ditagih warga pada awal Oktober.",
+])
+def test_420_a_past_narration_is_no_schedule(latar):
+    assert sa.unbacked_times(latar, DAY, {DAY, ITEM}, "") == []
+
+
+def test_420_control_a_bare_past_narration_is_no_schedule():
+    assert sa.unbacked_times("Penerimaan pajak tercapai pada awal Oktober.", DAY, {DAY, ITEM}, "") == []
