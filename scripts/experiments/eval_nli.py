@@ -7,8 +7,11 @@ Input: a JSONL of pairs
 p_entail < tau. Per error type this prints:
   - tau: the lowest threshold that flags >= --recall of the unfaithful pairs (None if there are none);
   - recall at tau, and the false-flag rate at tau on the faithful pairs (restatements and hard positives apart);
-  - hyp_only: cross-validated accuracy of a classifier that sees the HYPOTHESIS ALONE (> ~0.6 on balanced pairs
-    means the edits leak the label and the set measures the edit, not the source).
+  - hyp_only: cross-validated accuracy of a classifier that sees the HYPOTHESIS ALONE, folds grouped by seed
+    (> ~0.6 on balanced pairs means the edits leak the label; ADR-030 keeps the families and gates a model's
+    numbers on its wrong-premise AUC in compare_nli_arms.py instead);
+  - gate_*: the same pairs through the lexicon gate the type maps to (`GATES`), with no NLI: its recall, its false
+    flags, and the unfaithful pairs only NLI (at tau) or only the gate catches (#433).
 `--model` scores with the Hugging Face NLI checkpoint; `--scores` reads {id: p_entail} instead (no model).
 Usage:
   venv\\Scripts\\python.exe scripts/experiments/eval_nli.py --pairs tests/fixtures/nli_eval/pairs.jsonl --model <name>
@@ -19,12 +22,39 @@ import math
 import os
 import sys
 from collections import defaultdict
+from datetime import date
 from typing import Dict, List, Optional, Sequence
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, REPO)
 
+from newscrawler.core import causal_check, source_check, story_arc  # noqa: E402
+
 UNFAITHFUL, FAITHFUL = "unfaithful", "faithful"
+# What the period gate resolves a month without a year against; the pairs carry no date (any fixed day gives the same
+# key on both sides, since premise and hypothesis are resolved alike).
+GATE_TODAY = date(2026, 11, 5)
+
+
+def _causal_gate(premise: str, hypothesis: str) -> bool:
+    """The causal gate (SYS-152, ADR-019/020) with the whole premise as the one `sebab` quote -- the most it can be
+    given: cause, hedge and denial are all judged on a causal link (a hedged or denied link backs no flat claim)."""
+    return bool(causal_check.unbacked_causes([("hari_ini", hypothesis)], [(0, premise)], {0: premise}))
+
+
+def _end_gate(premise: str, hypothesis: str) -> bool:
+    return bool(source_check.unbacked_end_times(hypothesis, premise))
+
+
+def _schedule_gate(premise: str, hypothesis: str) -> bool:
+    """A future time or period the premise does not give, judged as in the agenda (every one is read)."""
+    return bool(source_check.unstated_future_times(hypothesis, premise)
+                or story_arc.unstated_periods(hypothesis, GATE_TODAY, premise, "agenda"))
+
+
+# The lexicon gate each error type maps to (#433); a type not listed (`other`) has none.
+GATES = {"cause": _causal_gate, "hedge": _causal_gate, "denial": _causal_gate, "end": _end_gate,
+         "schedule": _schedule_gate}
 
 
 def load_pairs(path: str) -> List[dict]:
@@ -52,18 +82,22 @@ def rate(scores: Sequence[float], tau: Optional[float]) -> Optional[float]:
 
 
 def hypothesis_only_accuracy(pairs: Sequence[dict], folds: int = 5) -> Optional[float]:
-    """Cross-validated accuracy of word/char n-grams of the hypothesis alone; None when a class is too small."""
+    """Cross-validated accuracy of word/char n-grams of the hypothesis alone; None when a class is too small.
+    A seed's pairs stay in one fold (#431, ADR-030): its corruptions, restatement and hard positive are near-copies
+    with opposite labels, and a shuffled split puts them on both sides, which pushes the score to chance. A pair
+    without a `seed_id` is its own group."""
     from sklearn.feature_extraction.text import TfidfVectorizer
     from sklearn.linear_model import LogisticRegression
-    from sklearn.model_selection import StratifiedKFold, cross_val_score
+    from sklearn.model_selection import GroupKFold, cross_val_score
     from sklearn.pipeline import make_pipeline
     y = [p["label"] == UNFAITHFUL for p in pairs]
+    groups = [p.get("seed_id") or p["id"] for p in pairs]
     smallest = min(sum(y), len(y) - sum(y))
-    if smallest < 2:
+    if smallest < 2 or len(set(groups)) < 2:
         return None
     model = make_pipeline(TfidfVectorizer(ngram_range=(1, 2), sublinear_tf=True), LogisticRegression(max_iter=1000))
-    cv = StratifiedKFold(n_splits=min(folds, smallest), shuffle=True, random_state=0)
-    return float(cross_val_score(model, [p["hypothesis"] for p in pairs], y, cv=cv).mean())
+    cv = GroupKFold(n_splits=min(folds, smallest, len(set(groups))))
+    return float(cross_val_score(model, [p["hypothesis"] for p in pairs], y, groups=groups, cv=cv).mean())
 
 
 def evaluate(pairs: Sequence[dict], scores: Dict[str, float], recall: float) -> Dict[str, dict]:
@@ -82,19 +116,48 @@ def evaluate(pairs: Sequence[dict], scores: Dict[str, float], recall: float) -> 
             "false_flag_restatement": rate(kinds["restatement"], tau),
             "false_flag_hard_positive": rate(kinds["hard_positive"], tau),
             "hyp_only": hypothesis_only_accuracy(group),
+            **gate_comparison(group, scores, tau, GATES.get(error_type)),
         }
     return report
+
+
+def gate_comparison(group: Sequence[dict], scores: Dict[str, float], tau: Optional[float], gate) -> dict:
+    """The lexicon gate alone on `group` (#433): its recall and false-flag rates, and per unfaithful pair which of NLI
+    (p_entail < tau) and the gate catches it. All None when the type has no gate."""
+    keys = ("gate_recall", "gate_false_flag_restatement", "gate_false_flag_hard_positive", "nli_only", "gate_only",
+            "both")
+    if gate is None:
+        return dict.fromkeys(keys)
+    flagged = {p["id"]: gate(p["premise"], p["hypothesis"]) for p in group}
+
+    def share(kind_or_label):
+        rows = [flagged[p["id"]] for p in group
+                if (p["label"] == UNFAITHFUL if kind_or_label == UNFAITHFUL
+                    else p["label"] == FAITHFUL and p["kind"] == kind_or_label)]
+        return sum(rows) / len(rows) if rows else None
+    bad = [p["id"] for p in group if p["label"] == UNFAITHFUL]
+    nli = {i: tau is not None and scores[i] < tau for i in bad}
+    return {"gate_recall": share(UNFAITHFUL), "gate_false_flag_restatement": share("restatement"),
+            "gate_false_flag_hard_positive": share("hard_positive"),
+            "nli_only": sum(nli[i] and not flagged[i] for i in bad),
+            "gate_only": sum(flagged[i] and not nli[i] for i in bad), "both": sum(nli[i] and flagged[i] for i in bad)}
 
 
 def table(report: Dict[str, dict]) -> str:
     def f(x):
         return "-" if x is None else f"{x:.2f}"
-    head = "| error type | n bad | n ok (restated / hard) | tau | recall | false-flag restated | false-flag hard | hyp-only |"
-    rows = [head, "|" + "---|" * 8]
+
+    def n(x):
+        return "-" if x is None else str(x)
+    head = ("| error type | n bad | n ok (restated / hard) | tau | recall | false-flag restated | false-flag hard | "
+            "hyp-only | gate recall | gate ff restated | gate ff hard | caught by NLI only / gate only / both |")
+    rows = [head, "|" + "---|" * 12]
     for t, r in report.items():
         rows.append(f"| {t} | {r['n_unfaithful']} | {r['n_restatement']} / {r['n_hard_positive']} | {f(r['tau'])} | "
                     f"{f(r['recall'])} | {f(r['false_flag_restatement'])} | {f(r['false_flag_hard_positive'])} | "
-                    f"{f(r['hyp_only'])} |")
+                    f"{f(r['hyp_only'])} | {f(r['gate_recall'])} | {f(r['gate_false_flag_restatement'])} | "
+                    f"{f(r['gate_false_flag_hard_positive'])} | {n(r['nli_only'])} / {n(r['gate_only'])} / "
+                    f"{n(r['both'])} |")
     return "\n".join(rows)
 
 

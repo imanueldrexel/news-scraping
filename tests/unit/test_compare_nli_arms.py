@@ -76,3 +76,15 @@ def test_near_copy_column_counts_flags_at_the_types_tau():
     row = cmp.report(pairs, scores, near)["hedge"]
     assert row["ff_near_copy"] == 0.25
     assert cmp.report(pairs, scores)["hedge"]["ff_near_copy"] is None
+
+
+def test_a_type_whose_wrong_premise_auc_is_over_the_line_is_marked_fail():
+    """ADR-030 decision 3 (#431): the targeted numbers of a type stand only when the model needs the premise."""
+    pairs = pairs_for("hedge", 6)
+    scores = {p["id"]: (0.9 if p["label"] == "faithful" else 0.1) for p in pairs}
+    scores.update({i["id"]: 0.99 for i in cmp.identity(pairs)})
+    leaky = {**scores, **{w["id"]: (0.9 if w["label"] == "faithful" else 0.1) for w in cmp.wrong_premise(pairs)}}
+    fair = {**scores, **{w["id"]: 0.5 for w in cmp.wrong_premise(pairs)}}
+    assert cmp.report(pairs, leaky)["hedge"]["premise_gate"] == "FAIL"
+    assert cmp.report(pairs, fair)["hedge"]["premise_gate"] == "ok"
+    assert "| hedge | FAIL |" in cmp.table(cmp.report(pairs, leaky))

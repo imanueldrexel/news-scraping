@@ -20,7 +20,7 @@ import os
 import re
 import sys
 from collections import Counter
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Set
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))
@@ -93,9 +93,18 @@ def misfit(pair: dict) -> Optional[str]:
     return next((name for name, rule in RULES.items() if rule(pair)), None)
 
 
-def bucket(pairs: List[dict]) -> List[dict]:
+def mislabelled(final: List[dict]) -> Set[str]:
+    """The pairs the hand check proved carry the wrong label (label_ok n, owner rulings included)."""
+    return {r["id"] for r in final if r["label_ok"] == "n"}
+
+
+def bucket(pairs: List[dict], wrong_label: Set[str] = frozenset()) -> List[dict]:
+    """Every pair, a misfit moved to `other`; a pair in `wrong_label` is dropped (#432): its label is known to be
+    wrong, so it would count against the model wherever it scored."""
     out = []
     for p in pairs:
+        if p["id"] in wrong_label:
+            continue
         reason = misfit(p)
         out.append({**p, "error_type": OTHER, "declared_type": p["error_type"], "misfit": reason} if reason
                    else {**p, "declared_type": p["error_type"], "misfit": None})
@@ -124,15 +133,19 @@ def main(argv=None) -> int:
     args = ap.parse_args(argv)
     with open(args.pairs, encoding="utf-8") as f:
         pairs = [json.loads(line) for line in f if line.strip()]
+    with open(FINAL, encoding="utf-8-sig", newline="") as f:
+        final = list(csv.DictReader(f))
     if args.check:
-        with open(FINAL, encoding="utf-8-sig", newline="") as f:
-            report = check(pairs, list(csv.DictReader(f)))
+        report = check(pairs, final)
         for name in RULES:
             r = report[name]
             print(f"{name}: hand check {r['misfit']} misfit, {len(r['fit'])} judged fit {r['fit']}; "
                   f"full set {r['full_set']} pairs")
         print(f"judged misfits no rule catches: {report['missed']}")
-    rows = bucket(pairs)
+    wrong = mislabelled(final)
+    rows = bucket(pairs, wrong)
+    dropped = Counter(p["error_type"] for p in pairs if p["id"] in wrong)
+    print(f"dropped {sum(dropped.values())} pairs the hand check proved mislabelled: {dict(sorted(dropped.items()))}")
     with open(args.out, "w", encoding="utf-8", newline="\n") as f:     # LF: .gitattributes holds fixtures to it
         for r in rows:
             f.write(json.dumps(r, ensure_ascii=False) + "\n")

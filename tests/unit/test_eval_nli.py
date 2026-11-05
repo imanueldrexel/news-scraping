@@ -68,3 +68,45 @@ def test_main_prints_a_table_from_scores(tmp_path, capsys):
     assert ev.main(["--pairs", GOLDEN, "--scores", str(scores), "--recall", "0.75"]) == 0
     out = capsys.readouterr().out
     assert "| cause | 4 | 2 / 2 |" in out and "| hedge | 2 | 1 / 1 |" in out
+
+
+def test_hypothesis_only_keeps_a_seed_in_one_fold():
+    """#431: ten seeds, each an unfaithful and a faithful near-copy with no cue shared across seeds. On unseen seeds a
+    hypothesis-only model is at chance; a shuffled split puts the twin, with the other label, in training and drives
+    the score below it."""
+    pairs = [{"id": f"s{s}-{i}", "seed_id": f"s{s}", "error_type": "t", "label": "unfaithful" if i else "faithful",
+              "hypothesis": f"kata{s} unik{s} {'x' if i else 'y'}{s}"} for s in range(10) for i in (0, 1)]
+    assert 0.4 <= ev.hypothesis_only_accuracy(pairs) <= 0.6
+
+
+def test_hypothesis_only_is_none_with_one_seed():
+    pairs = [{"id": str(i), "seed_id": "one", "label": "unfaithful" if i % 2 else "faithful", "hypothesis": "x"}
+             for i in range(6)]
+    assert ev.hypothesis_only_accuracy(pairs) is None
+
+
+def test_the_gate_columns_on_the_golden_fixture():
+    """#433: the causal gate catches every golden cause corruption and flags no faithful row; it never reads a hedge
+    with no causal word, so NLI alone catches those."""
+    report = ev.evaluate(ev.load_pairs(GOLDEN), SCORES, recall=0.75)
+    cause, hedge = report["cause"], report["hedge"]
+    assert cause["gate_recall"] == 1.0 and cause["gate_false_flag_restatement"] == 0.0
+    assert cause["gate_false_flag_hard_positive"] == 0.0
+    assert (cause["nli_only"], cause["gate_only"], cause["both"]) == (0, 1, 3)       # c3 (.6) is above tau .3
+    assert hedge["gate_recall"] == 0.0 and (hedge["nli_only"], hedge["gate_only"], hedge["both"]) == (2, 0, 0)
+
+
+def test_a_type_without_a_gate_reports_none():
+    pairs = [{"id": "o1", "error_type": "other", "premise": "a", "hypothesis": "b", "label": "unfaithful",
+              "kind": "corrupted"}]
+    assert ev.evaluate(pairs, {"o1": 0.1}, 0.9)["other"]["gate_recall"] is None
+
+
+@pytest.mark.parametrize("gate,premise,hypothesis,flagged", [
+    ("end", "Kebijakan berlaku setelah evaluasi November 2026.", "Kebijakan berlaku hingga November 2026.", True),
+    ("end", "Kebijakan berlaku hingga November 2026.", "Kebijakan berlaku hingga November 2026.", False),
+    ("schedule", "Rapat digelar Kamis (15/10).", "Rapat digelar pekan depan.", True),
+    ("schedule", "Rapat digelar pekan depan.", "Rapat digelar pekan depan.", False),
+])
+def test_end_and_schedule_gates(gate, premise, hypothesis, flagged):
+    assert ev.GATES[gate](premise, hypothesis) is flagged

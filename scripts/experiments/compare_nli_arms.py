@@ -28,6 +28,8 @@ import eval_nli  # noqa: E402
 PAIRS = os.path.join(REPO, "tests", "fixtures", "nli_eval", "pairs.jsonl")
 NEAR = os.path.join(REPO, "tests", "fixtures", "nli_eval", "near_copies.jsonl")      # ADR-029
 SPLITS = 20
+# ADR-030 decision 3: a type's targeted-set numbers stand only when the model needs the premise to get them.
+MAX_AUC_WRONG_PREMISE = 0.65
 
 
 def wrong_premise(pairs: Sequence[dict]) -> List[dict]:
@@ -101,17 +103,20 @@ def report(pairs: Sequence[dict], scores: Dict[str, float], near: Sequence[dict]
         row["ff_identity"] = eval_nli.rate(ident, row["tau_median"])
         row["ff_identity_05"] = eval_nli.rate(ident, 0.5)
         row["ff_near_copy"] = eval_nli.rate([scores[n["id"]] for n in near if n["error_type"] == t], row["tau_median"])
+        # nan (a label missing) is no pass either: nothing shows the model reads the premise
+        row["premise_gate"] = "ok" if row["auc_wrong_premise"] <= MAX_AUC_WRONG_PREMISE else "FAIL"
         out[t] = row
     return out
 
 
 def table(rep: Dict[str, dict]) -> str:
     f = lambda x: "-" if x is None else f"{x:.2f}"  # noqa: E731
-    lines = ["| type | held-out recall | ff restated | ff hard | tau range | AUC | AUC wrong premise "
-             "| ff identity @median tau | ff identity @0.5 | ff near-copy @median tau |",
-             "|---|---|---|---|---|---|---|---|---|---|"]
+    lines = [f"| type | ADR-030 (AUC wrong premise <= {MAX_AUC_WRONG_PREMISE}) | held-out recall | ff restated | ff hard "
+             "| tau range | AUC | AUC wrong premise | ff identity @median tau | ff identity @0.5 "
+             "| ff near-copy @median tau |",
+             "|---|---|---|---|---|---|---|---|---|---|---|"]
     for t, r in rep.items():
-        lines.append(f"| {t} | {f(r['recall'])} | {f(r['ff_restated'])} | {f(r['ff_hard'])} | "
+        lines.append(f"| {t} | {r['premise_gate']} | {f(r['recall'])} | {f(r['ff_restated'])} | {f(r['ff_hard'])} | "
                      f"{f(r['tau_min'])}-{f(r['tau_max'])} | {f(r['auc'])} | {f(r['auc_wrong_premise'])} | "
                      f"{f(r['ff_identity'])} | {f(r['ff_identity_05'])} | {f(r.get('ff_near_copy'))} |")
     return "\n".join(lines)
