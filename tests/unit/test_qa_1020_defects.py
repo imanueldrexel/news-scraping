@@ -100,3 +100,42 @@ def test_416_the_other_name_is_not_backed_through_the_anaphor():
 
 def test_416_control_the_anaphors_own_name_stays_kept():
     assert kept("Saham BMRI turun karena aksi jual asing.", SRC_416)
+
+
+# ---- #417 (SYS-191): unlisted end openers ----
+from newscrawler.core import source_check as sc  # noqa: E402
+
+MSCI = ("Kebijakan pembekuan saham Indonesia diperkirakan masih berlanjut setelah evaluasi indeks pada November 2026. "
+        "Freeze MSCI berpotensi berlanjut hingga semester II-2027. Wilbert memperkirakan MSCI akan memperpanjang "
+        "kebijakan pembekuan pada evaluasi November 2026.")
+
+
+@pytest.mark.parametrize("prose", [
+    "Pembekuan rampung pada November 2026.",
+    "Pembekuan tuntas pada November 2026.",
+    "Masa pembekuan habis pada November 2026.",
+    "Pembekuan ditutup pada November 2026.",
+])
+def test_417_an_unstated_end_is_refused(prose):
+    assert sc.unbacked_end_times(prose, MSCI) != []
+
+
+def test_417_control_a_listed_opener_is_refused():
+    assert sc.unbacked_end_times("Pembekuan dihentikan pada November 2026.", MSCI) != []
+
+
+# ---- #418 (SYS-186): a spatial "hingga" is no end point ----
+SRC_418 = "Asap meluas sejak Kamis (22/10). Rapat lanjutan belum dijadwalkan."
+
+
+@pytest.mark.parametrize("prose", [
+    "Sebelumnya, antrean kendaraan mengular hingga Cikampek pada akhir Oktober.",
+    "Sebelumnya, banjir merendam permukiman hingga Kampung Melayu pada akhir Oktober.",
+    "Sebelumnya, bantuan disalurkan dari Sabang hingga Merauke pada akhir Oktober.",
+])
+def test_418_a_spatial_hingga_is_no_end_point(prose):
+    assert sc.unbacked_end_times(prose, SRC_418) == []
+
+
+def test_418_control_a_listed_spread_verb_is_spatial():
+    assert sc.unbacked_end_times("Sebelumnya, asap meluas hingga Riau pada akhir Oktober.", SRC_418) == []

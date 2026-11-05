@@ -2197,7 +2197,7 @@ M = [
  # sys186_gap_allows_pada retired 2026-10-18: the send-back allows "pada" as the gap's last word, so blocking it in
  # the middle of a gap changes no reading a test can tell (QA: it survived the five arc suites).
  ('sys186_no_range_end', 'newscrawler/core/source_check.py',
-  'rf"|(?<=\\w)\\s*[-–]\\s*){_END_TIME}"', 'rf"){_END_TIME}"'),
+  '|(?<=\\w)\\s*[-–]\\s*){_END_TIME}"', '){_END_TIME}"'),
  # SYS-186 send-back (#387): a "pada" tail and three gap words; degree words (with -nya) block; a part keyed with its
  # unit; "berlaku per" a start. DBT-83 (#395): QA's two survivors on the period and month-year keys.
  ('sys186b_no_pada_tail', 'newscrawler/core/source_check.py', '{0,3}?)(?:\\s+pada)?")', '{0,3}?)")'),
@@ -2410,9 +2410,21 @@ M = [
  ('sys193c_fronted_by_time_alone', 'newscrawler/core/source_check.py',
   '            if not subject:\n                subject = _subject_roots(', '            if False:\n                subject = _subject_roots('),
  ('sys186c_spread_ignored', 'newscrawler/core/source_check.py',
-  '        if not (gap and story_words.names(f"x {gap[0]}") and _SPREAD.search(text[:m.start()])):',
+  '        if not (place and (_SPREAD.search(text[:m.start()]) or _from_place(text[:m.start()]))):',
   '        if True:'),
- ('sys186c_spread_any_gap', 'newscrawler/core/source_check.py', ' and story_words.names(f"x {gap[0]}")', ''),
+ ('sys186c_spread_any_gap', 'newscrawler/core/source_check.py', '        place = gap and story_words.names(f"x {gap[0]}")',
+  '        place = gap'),
+ # QA 2026-10-20 (#418 spatial hingga, #417 direct end openers).
+ ('sys186d_no_mengular', 'newscrawler/core/source_check.py', 'r"mengular|memanjang|', 'r"memanjang|'),
+ ('sys186d_no_from_place', 'newscrawler/core/source_check.py', ' or _from_place(text[:m.start()])', ''),
+ ('sys186d_any_word_after_dari', 'newscrawler/core/source_check.py',
+  '    return bool(m and story_words.names(f"x {m.group(1)}"))', '    return bool(m)'),
+ ('sys191d_no_rampung', 'newscrawler/core/source_check.py', '_END_CLOSE = r"(?:rampung|tuntas|', '_END_CLOSE = r"(?:tuntas|'),
+ ('sys191d_no_ditutup', 'newscrawler/core/source_check.py', '|habis|ditutup)\\s+pada"', '|habis)\\s+pada"'),
+ ('sys191d_close_takes_a_gap', 'newscrawler/core/source_check.py',
+  '{_END_OPEN}){_END_GAP}|{_END_CLOSE})\\s+{_END_TIME}",', '{_END_OPEN}|{_END_CLOSE}){_END_GAP}\\s+{_END_TIME}",'),
+ ('sys191d_source_close_unread', 'newscrawler/core/source_check.py', '                         rf"|{_END_CLOSE})\\s+|',
+  '                         rf")\\s+|'),
  ('sys177c_no_dipastikan', 'newscrawler/core/story_arc.py', '|dipastikan|memastikan|', '|memastikan|'),
  ('sys177c_no_janji', 'newscrawler/core/story_arc.py', '|(?:di|ber)?janji(?:kan)?|menjanjikan"', '"'),
  ('sys177c_no_ditarget', 'newscrawler/core/story_arc.py', '|(?:di)?target(?:kan)?|menargetkan"', '|ditargetkan"'),

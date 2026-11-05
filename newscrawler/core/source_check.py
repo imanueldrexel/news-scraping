@@ -611,15 +611,24 @@ _END_OPEN = (r"hingga|sampai(?:\s+dengan)?|s\.d\.?|s/d|"
 # due, not until when something lasts, so it backs only a prose deadline (SYS-186's "Keputusan diumumkan paling lambat
 # November 2026" backs no "Kebijakan berlanjut hingga November 2026").
 _DEADLINE = r"paling\s+lambat|selambat-lambatnya"
-_END_POINT = re.compile(rf"(?<![\w.])(?:(?P<deadline>{_DEADLINE})|{_END_OPEN}){_END_GAP}\s+{_END_TIME}", re.IGNORECASE)
-_STATED_END = re.compile(rf"(?:(?<![\w.])(?:(?P<deadline>{_DEADLINE})|(?P<open>{_END_OPEN}|per)){_END_GAP}\s+"
-                         rf"|(?<=\w)\s*[-–]\s*){_END_TIME}",
+# QA 2026-10-20 (#417): "rampung / tuntas / habis / ditutup pada <time>" ends a period too ("Pembekuan rampung pada
+# November 2026"; corpus: "rampung pada" 401, "ditutup pada" 349). The time must follow "pada" at once: "IHSG ditutup
+# melemah pada 12 Oktober" is a close of trading, not an end point.
+_END_CLOSE = r"(?:rampung|tuntas|habis|ditutup)\s+pada"
+_END_POINT = re.compile(rf"(?<![\w.])(?:(?:(?P<deadline>{_DEADLINE})|{_END_OPEN}){_END_GAP}|{_END_CLOSE})\s+{_END_TIME}",
+                        re.IGNORECASE)
+_STATED_END = re.compile(rf"(?:(?<![\w.])(?:(?:(?P<deadline>{_DEADLINE})|(?P<open>{_END_OPEN}|per)){_END_GAP}"
+                         rf"|{_END_CLOSE})\s+|(?<=\w)\s*[-–]\s*){_END_TIME}",
                          re.IGNORECASE)
 # SYS-186 send-back (#406): "asap meluas hingga Riau pada akhir Oktober" says how far, not until when. A gap that opens
 # on a name after a verb of spread is a place; any other gap, a name included ("hingga review indeks MSCI November
 # 2026"), still attaches the time to an end.
 _SPREAD = re.compile(r"\b(?:meluas|menyebar|tersebar|merambat|menjalar|merembet|bergerak|mengalir|menjangkau|"
-                     r"menembus|terasa|dirasakan|terdengar)\b[^,;:]*$", re.IGNORECASE)
+                     r"menembus|terasa|dirasakan|terdengar|"
+                     # QA 2026-10-20 (#418): verbs of extent ("antrean mengular hingga Cikampek", 155 in the corpus)
+                     r"mengular|memanjang|membentang|merendam|terendam|menggenangi|tergenang)\b[^,;:]*$", re.IGNORECASE)
+# ... and a range of places: "dari Sabang hingga Merauke" (#418). A month after "dari" is no name.
+_FROM_PLACE = re.compile(r"\bdari\s+([^\W\d_][\w-]*(?:\s+[^\W\d_][\w-]*){0,2})\s*$", re.IGNORECASE)
 # SYS-186 send-back: "berlaku per November 2026" is a START ("from November"); "Defisit APBN per 30 September" ends.
 _STARTS_PER = re.compile(r"\b(?:berlaku|mulai|efektif)\s*$", re.IGNORECASE)
 
@@ -640,12 +649,19 @@ def _end_key(m) -> frozenset:
     return frozenset(key | ({("year", int(year))} if year else set()))
 
 
+def _from_place(before: str) -> bool:
+    m = _FROM_PLACE.search(before)
+    return bool(m and story_words.names(f"x {m.group(1)}"))
+
+
 def _ends(pattern, text: str) -> list:
-    """`pattern`'s matches in `text`, less a place after a verb of spread (`_SPREAD`, #406)."""
+    """`pattern`'s matches in `text`, less a place after a verb of spread (`_SPREAD`, #406) or after "dari <place>"
+    (#418)."""
     out = []
     for m in pattern.finditer(text):
         gap = (m.group("gap") or "").split()
-        if not (gap and story_words.names(f"x {gap[0]}") and _SPREAD.search(text[:m.start()])):
+        place = gap and story_words.names(f"x {gap[0]}")
+        if not (place and (_SPREAD.search(text[:m.start()]) or _from_place(text[:m.start()]))):
             out.append(m)
     return out
 

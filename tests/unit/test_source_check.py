@@ -710,3 +710,21 @@ class TestSys179FuturePart:
         assert sc.unstated_future_times("digelar pekan depan", "digelar awal pekan depan") == []
         assert sc.unstated_future_times("digelar awal pekan depan", "digelar pekan depan") == ["awal pekan depan"]
         assert sc.unstated_future_times("digelar awal pekan depan", "digelar akhir pekan depan") == ["awal pekan depan"]
+
+
+class TestQa1020EndPoints:
+    """QA 2026-10-20: "rampung / tuntas / habis / ditutup pada <time>" (#417) and spatial "hingga" (#418)."""
+
+    def test_a_close_of_trading_is_no_end_point(self):
+        assert sc.end_points("IHSG ditutup melemah pada 12 Oktober 2026.") == []
+
+    def test_a_direct_close_is_an_end_point_and_a_source_states_it(self):
+        assert [p for p, _ in sc.end_points("Pendaftaran ditutup pada 30 Oktober 2026.")] == \
+            ["ditutup pada 30 Oktober 2026"]
+        assert sc.unbacked_end_times("Pendaftaran berlangsung hingga 30 Oktober 2026.",
+                                     "Pendaftaran ditutup pada 30 Oktober 2026.") == []
+
+    def test_dari_a_day_is_no_place(self):
+        """Only a range of places is spatial: "dari Senin hingga Harbolnas Desember 2026" still ends a period."""
+        assert sc.unbacked_end_times("Diskon berlaku dari Senin hingga Harbolnas Desember 2026.",
+                                     "Diskon mulai berlaku Senin.") != []
