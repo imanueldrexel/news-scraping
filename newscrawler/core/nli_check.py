@@ -18,7 +18,7 @@ from newscrawler.core.causal_check import sentences
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
-MAX_PREMISES = 60          # pairs scored per hypothesis; a story's quotes are a few dozen sentences
+MAX_PREMISES = 60          # units scored per quote; a quote (headline + opening) is a dozen or so
 MAX_LENGTH = 256
 BATCH = 16
 
@@ -32,6 +32,10 @@ class NliVerdict:
     revision: str
 
 
+class NliUnavailable(Exception):
+    """The model did not load; raised by every `score` call after the one that warned (#438)."""
+
+
 class Scorer(Protocol):
     revision: str
 
@@ -40,17 +44,21 @@ class Scorer(Protocol):
 
 
 def premise_units(texts: Sequence[str]) -> List[str]:
-    """Each text's sentences and its adjacent sentence pairs, in order, de-duplicated, at most MAX_PREMISES."""
+    """Each text's sentences and its adjacent sentence pairs, in order, de-duplicated, at most MAX_PREMISES
+    per text: the cap is per quote, so the quotes listed first cannot crowd out the last ones (#437: the
+    alur items come after the terkait articles)."""
     units: List[str] = []
     seen = set()
     for text in texts:
         sents = [s.strip() for s in sentences(text) if s.strip()]
+        own = 0
         for i, s in enumerate(sents):
             for unit in (s, f"{s} {sents[i + 1]}" if i + 1 < len(sents) else None):
-                if unit and unit not in seen:
+                if unit and unit not in seen and own < MAX_PREMISES:
                     seen.add(unit)
                     units.append(unit)
-    return units[:MAX_PREMISES]
+                    own += 1
+    return units
 
 
 def best_verdict(scorer: Optional[Scorer], premises: Sequence[str], hypothesis: str) -> Optional[NliVerdict]:
@@ -62,6 +70,8 @@ def best_verdict(scorer: Optional[Scorer], premises: Sequence[str], hypothesis: 
         return None
     try:
         scores = scorer.score([(u, hypothesis) for u in units])
+    except NliUnavailable:
+        return None                         # warned once, where the load failed
     except Exception as e:  # noqa: BLE001 -- shadow: a model failure is "no verdict", never the edition's failure
         logger.warning(f"NLI scoring failed: {type(e).__name__}: {e}")
         return None
@@ -83,6 +93,7 @@ class HfScorer:
         self._tokenizer = None
         self._model = None
         self._order = None                  # indexes of (entailment, neutral, contradiction) in the logits
+        self._failed: Optional[str] = None  # why the load failed; it is not retried
 
     def _load(self) -> None:
         import torch
@@ -101,9 +112,16 @@ class HfScorer:
         self.revision = f"{self.model_name}@{commit[:10]}" if commit else self.model_name
 
     def score(self, pairs: Sequence[Tuple[str, str]]) -> List[Tuple[float, float, float]]:
-        import torch
+        if self._failed:
+            raise NliUnavailable(self._failed)
         if self._model is None:
-            self._load()
+            try:
+                self._load()
+            except Exception as e:  # noqa: BLE001 -- one load, one WARNING; the later calls raise at once
+                self._failed = f"{type(e).__name__}: {e}"
+                logger.warning(f"NLI model {self.model_name} did not load, no verdicts this run: {self._failed}")
+                raise NliUnavailable(self._failed) from e
+        import torch
         out: List[Tuple[float, float, float]] = []
         for start in range(0, len(pairs), BATCH):
             chunk = pairs[start:start + BATCH]

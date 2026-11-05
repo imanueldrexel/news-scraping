@@ -37,12 +37,18 @@ logger = logging.getLogger("preview_newsletter")
 
 
 class ReadOnlyNewsletterDataSource(SQLAlchemyNewsletterDataSource):
-    """The real reads; `save_digest` only reports what it would have stored."""
+    """The real reads; `save_digest` and `save_nli_shadow` only report what they would have stored."""
 
     def save_digest(self, digest_date, file_path, cluster_count, article_count, categories, source_ids,
                     generation_ms):
         logger.info("preview: would store %s (%d clusters, %d articles) categories=%s",
                     file_path, cluster_count, article_count, categories.get(newsletter_generator.SUMMARIES_KEY))
+        return 0
+
+    def save_nli_shadow(self, edition_date, rows, keep_days=90):
+        # #436: the real one replaces the live edition's rows for the date, SYS-200's source
+        logger.info("preview: would store %d nli_shadow rows for %s (%d scored)",
+                    len(rows), edition_date, sum(r["p_entail"] is not None for r in rows))
         return 0
 
 
