@@ -37,6 +37,7 @@ _MONTH_OF.update({m.lower(): k for k, m in enumerate(copy.MONTHS_SHORT, 1)})
 # "24 September", "24 Sep 2026": the year is part of the date, not a number of its own. Not inside a
 # word: "M2 Agustus 2026" is the money supply of August (replay 2026-09-24), not 2 August.
 _LONG_DATE = re.compile(rf"(?<![\w.,])(\d{{1,2}})\s+({'|'.join(_MONTH_WORDS)})\b(?:\s+(\d{{4}}))?", re.IGNORECASE)
+_ANY_YEAR = re.compile(r"(?<!\d)(?:19|20)\d{2}(?!\d)")       # a source that names any year (#424)
 
 
 def _canonical(whole: str, fraction: str = "") -> str:
@@ -116,12 +117,18 @@ def unsupported_number(text: str, source: str, dates: Iterable[Tuple[int, int]] 
     form, or when it is one of `dates` -- (day, month) pairs known to be right
     that no source text states, such as a timeline item's own date (SYS-148);
     they never make their numbers available. A date's day is never checked as
-    a bare number (SYS-153)."""
+    a bare number (SYS-153). A written-out date's year must be a number of the
+    source when the source names any year (#424: "24 September 2025" against
+    "(24/9/2026)"); a source that names none cannot contradict it ("Kamis (24/9)")."""
     available = {value for number in _NUMBER.findall(source) for value in values(number)}
     known = set(dates)
     for _, day, month, written in _dates(text):
         if (day, month) not in known and not _date_in(day, month, source):
             return written
+    if _ANY_YEAR.search(source):
+        for m in _LONG_DATE.finditer(text):
+            if m.group(3) and not values(m.group(3)) & available:
+                return m.group(0)
     for number in _NUMBER.findall(without_dates(text)):
         if not values(number) & available:
             return number

@@ -2428,6 +2428,11 @@ M = [
  ('sys177c_no_dipastikan', 'newscrawler/core/story_arc.py', 'r"|dipastikan|diharapkan|', 'r"|diharapkan|'),
  ('sys177c_no_janji', 'newscrawler/core/story_arc.py', '|dijanji(?:kan)?|berjanji|menjanjikan"', '"'),
  ('sys177c_no_ditarget', 'newscrawler/core/story_arc.py', '|ditarget(?:kan)?|menargetkan"', '|ditargetkan"'),
+ # QA 2026-10-20 (#424): a written-out date's year is checked when the source names a year.
+ ('sys153d_year_unchecked', 'newscrawler/core/source_check.py', '            if m.group(3) and not values(m.group(3)) & available:',
+  '            if False:'),
+ ('sys153d_year_needs_a_year_less_source', 'newscrawler/core/source_check.py', '    if _ANY_YEAR.search(source):',
+  '    if True:'),
  # QA 2026-10-20 (#419 more plan cues, #420 nouns and past acts).
  ('sys177d_no_prakirakan', 'newscrawler/core/story_arc.py', 'r"|(?:di|mem)prakirakan|', 'r"|'),
  ('sys177d_no_disiapkan', 'newscrawler/core/story_arc.py', '|di(?:per)?siapkan|', '|'),

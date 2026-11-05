@@ -170,3 +170,16 @@ def test_420_a_past_narration_is_no_schedule(latar):
 
 def test_420_control_a_bare_past_narration_is_no_schedule():
     assert sa.unbacked_times("Penerimaan pajak tercapai pada awal Oktober.", DAY, {DAY, ITEM}, "") == []
+
+
+# ---- #424 (SYS-153): a written-out date's year is checked ----
+@pytest.mark.parametrize("prose,source", [
+    ("Pada 24 September 2025 rapat digelar.", "Rapat digelar Rabu (24/9/2026)."),
+    ("Kebijakan berlaku hingga 31 Desember 2027.", "Kebijakan berlaku hingga 31 Desember 2026."),
+])
+def test_424_an_invented_year_is_refused(prose, source):
+    assert sc.unsupported_number(prose, source) is not None
+
+
+def test_424_control_the_right_year_passes():
+    assert sc.unsupported_number("Pada 24 September 2026 rapat digelar.", "Rapat digelar Rabu (24/9/2026).") is None

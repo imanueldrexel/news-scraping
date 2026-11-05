@@ -728,3 +728,12 @@ class TestQa1020EndPoints:
         """Only a range of places is spatial: "dari Senin hingga Harbolnas Desember 2026" still ends a period."""
         assert sc.unbacked_end_times("Diskon berlaku dari Senin hingga Harbolnas Desember 2026.",
                                      "Diskon mulai berlaku Senin.") != []
+
+
+def test_a_known_date_with_an_invented_year_names_the_date():
+    """#424: a timeline item's own date passes by day and month, but the year it is written with must be a year the
+    source states when it states any; a source with no year cannot contradict it (DBT-72's case above)."""
+    assert sc.unsupported_number("Pada 24 September 2025 rapat digelar.", "Rapat 2026 digelar.", [(24, 9)]) == \
+        "24 September 2025"
+    assert sc.unsupported_number("Pada 24 September 2025 rapat digelar.", "Rapat digelar.", [(24, 9)]) is None
+    assert sc.unsupported_number("Pada 24 September rapat digelar.", "Rapat 2026 digelar.", [(24, 9)]) is None
