@@ -1,5 +1,12 @@
 # Project Status
 
+## 2026-11-05: QA of SYS-197/198 + owner decisions (ADR-030)
+- [x] QA: SYS-197 (#427) and SYS-198 (#428) qa-failed. Filed #431-#439 (qa-defect).
+- [x] Owner decisions (ADR-030): (1) the whole sentence is the hypothesis, #435 closed not-a-defect; (2) the natural set lives in SYS-200, no export before #436/#437; (3) families kept, leak gated by wrong-premise AUC <= 0.65 (measured: A 0.52-0.59, B v2 0.51-0.62, holds).
+- [ ] Dev: SYS-197 open defects #431 (narrowed: grouped folds + restated numbers + AUC mark in compare), #432, #433, #434.
+- [ ] Dev: SYS-198 open defects #436, #437 (both block SYS-200), #438, #439.
+- [ ] Still held on owner reads: SYS-40 (#126), SYS-82 (#239), SYS-83 (#240), OPS-42 (#242).
+
 ## 2026-11-04: SYS-197 validity settled (ADR-026/027)
 - [x] The owner could not judge the ADR-025 y/n. Switched the blind labeller to Gemini (ADR-026): one y/n agreement 33/40 failed, but 4 of the 7 were rubric-definition disputes.
 - [x] Split validity into label_ok (gated: 37/40 holds; the owner ruled the 3 meaning disagreements: 1 Gemini, 2 Claude) and type_ok (Claude; a misfit goes to the `other` bucket). ADR-027.

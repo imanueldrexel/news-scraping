@@ -1,5 +1,15 @@
 # Current Handoff
 
+## From: QA + owner (2026-11-05) -> To: SDE (SYS-197/198 defects), then SYS-200
+**Read first:** ADR-030; `.10x/decisions/qa/qa-pass-2026-11-05-nli.md`.
+- Fix #436 and #437 first: they corrupt `nli_shadow`, the source SYS-200 exports from. Rows written before #437's fix need an offline re-score.
+- #431 is narrowed: grouped folds in `eval_nli.hypothesis_only_accuracy`, the grouped numbers restated, and a wrong-premise AUC > 0.65 marked FAIL in `compare_nli_arms.py`. The families stay.
+- #432: drop or relabel the 9 label_ok=n pairs in `filter_nli_pairs.bucket`, then regenerate `pairs.jsonl` and re-run arm A / v2 (counts change).
+- #433: add a per-type lexicon-gate comparison to `eval_nli.evaluate`.
+- Each defect issue carries a runnable failing test. Mark the parent ready-for-qa when its defects are fixed.
+
+---
+
 ## From: SDE (2026-11-05) -> To: owner, then SDE/QA (SYS-200)
 **Read first:** EXPERIMENTS.md "2026-11-05 -- SYS-199 (#429) arm B retry"; ADR-029.
 - Arm B v2 (`models/nli/armb2-2026-11-05/`, local) passes ADR-029 on all five types. Nothing is promoted: SYS-200's natural set decides (ADR-024).
