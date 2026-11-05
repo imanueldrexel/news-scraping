@@ -51,3 +51,40 @@ def test_413_an_invented_link_is_refused(prose, source):
 
 def test_413_control_a_listed_form_is_refused():
     assert not kept("IHSG turun, didorong aksi jual investor asing.", IHSG_NO_REASON)
+
+
+# ---- #414 (SYS-192): unlisted hedges are dropped ----
+FACT = "Kebakaran gudang itu dipicu korsleting listrik."
+
+
+@pytest.mark.parametrize("src", [
+    "Kebakaran gudang itu diprediksi dipicu korsleting listrik.",
+    "Kebakaran gudang itu dicurigai dipicu korsleting listrik.",
+    "Kebakaran gudang itu dikabarkan dipicu korsleting listrik.",
+    "Kebakaran gudang itu tampaknya dipicu korsleting listrik.",
+    "Kebakaran gudang itu barangkali dipicu korsleting listrik.",
+    "Kebakaran gudang itu ditaksir dipicu korsleting listrik.",
+])
+def test_414_a_dropped_hedge_is_refused(src):
+    assert not kept(FACT, src)
+
+
+def test_414_control_a_listed_hedge_is_refused():
+    assert not kept(FACT, "Kebakaran gudang itu diperkirakan dipicu korsleting listrik.")
+
+
+# ---- #415 (SYS-185): unlisted denials do not negate the link ----
+CLAIM = "Harga tiket pesawat domestik naik karena harga avtur melonjak."
+
+
+@pytest.mark.parametrize("src", [
+    "Maskapai menolak anggapan harga tiket pesawat domestik naik karena harga avtur melonjak.",
+    "Maskapai menyatakan tidak tepat bahwa harga tiket pesawat domestik naik karena harga avtur melonjak.",
+    "Maskapai menyebut tidak betul harga tiket pesawat domestik naik karena harga avtur melonjak.",
+])
+def test_415_a_denied_link_backs_no_flat_claim(src):
+    assert not kept(CLAIM, src)
+
+
+def test_415_control_a_listed_denial_is_read():
+    assert not kept(CLAIM, "Maskapai menyangkal harga tiket pesawat domestik naik karena harga avtur melonjak.")

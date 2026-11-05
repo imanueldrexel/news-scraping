@@ -141,13 +141,27 @@ _NEGATED_LINK = re.compile(r"\b(?:tidak|tak|bukan|belum)\s*$", re.IGNORECASE)   
 # menepis anggapan bahwa / menyatakan tidak benar harga BBM naik karena ..." (0.3% of the corpus's causal sentences),
 # and, since the send-back (#399), after it: "Anggapan bahwa ... naik karena ... dibantah maskapai".
 # meN- drops the root's t/s ("menepis", "menyangkal"); di- keeps it ("ditepis", "disangkal").
+# Second send-back (#415): a verdict that stands BEFORE the statement it denies. "menolak anggapan / tuduhan /
+# tudingan / klaim" (not "menolak" alone: "menolak usulan" rejects a proposal; not "menolak klaim ini karena ...": the
+# link is the rejection's reason), and "tidak tepat / betul" before "bahwa / jika" or after a verb of saying with the
+# statement next. In the corpus "tidak tepat" mostly judges a thing ("subsidi tidak tepat sasaran" 157, "penyimpanan
+# tidak tepat", "dinilai tidak tepat karena ..." gives the verdict's reason); "tidak tepat bahwa" occurs 0 times.
+_SECOND_DENIALS = (r"menolak\s+(?:anggapan|tuduhan|tudingan|klaim)(?!\s+(?:ini|itu|tersebut)\b)"
+                   r"|tidak\s+(?:tepat|betul)(?=\s+(?:bahwa|jika|apabila|kalau)\b)"
+                   r"|(?:menyatakan|menyebut|mengatakan)(?:nya)?\s+(?:(?:sama\s+sekali|sepenuhnya)\s+)?"
+                   r"tidak\s+(?:tepat|betul)(?=\s+[^\W\d_])(?!\s+(?:sasaran|waktu|guna)\b)(?!\s+" + CAUSAL.pattern + ")")
 _DENIAL = re.compile(r"\b(?:tidak\s+benar|(?:mem|di)bantah|menepis|ditepis|menampik|ditampik|menyangkal|disangkal|"
-                     r"sangkal(?:an)?|penyangkalan|hoa(?:ks|x)|keliru)\b", re.IGNORECASE)
+                     r"sangkal(?:an)?|penyangkalan|hoa(?:ks|x)|keliru|"
+                     + _SECOND_DENIALS + r")\b", re.IGNORECASE)
 # SYS-192 (#393): a hedge anywhere in the link makes it a suspicion or a question (4.6% of the causal sentences).
 # Send-back (#402): the verbs of estimate, belief and rumour, with their active forms. Not the nouns "perkiraan" /
 # "proyeksi": "Peningkatan proyeksi defisit tersebut disebabkan ..." states a fact about a projection.
 _HEDGE = re.compile(r"\b(?:diduga|dugaan|menduga|kemungkinan|mungkin|apakah|ditengarai|disinyalir|indikasi|"
-                    r"diindikasikan|diperkirakan|memperkirakan|dikira|mengira|diyakini|meyakini|disebut-sebut)\b",
+                    r"diindikasikan|diperkirakan|memperkirakan|dikira|mengira|"
+                    # second send-back (#414): prediction, suspicion, rumour, appearance, estimate
+                    r"diprediksi|memprediksi|dicurigai|mencurigai|dikabarkan|tampaknya|nampaknya|barangkali|ditaksir|"
+                    r"menaksir|"
+                    r"diyakini|meyakini|disebut-sebut)\b",
                     re.IGNORECASE)
 # The words of a denial or a hedge are checked by those rules, never as facts: a claim may write "diduga" for its
 # source's "kemungkinan" (owner, 2026-10-18: "Any hedge word"), or "menepis" for "membantah".
@@ -155,6 +169,9 @@ _FRAME_WORDS = frozenset("benar anggapan bantah membantah dibantah tepis menepis
                          "hoax keliru sangkal menyangkal disangkal sangkalan penyangkalan diduga dugaan menduga "
                          "kemungkinan mungkin apakah ditengarai disinyalir indikasi diindikasikan diperkirakan "
                          "memperkirakan dikira mengira diyakini meyakini disebut-sebut".split())
+# Second send-back (#414, #415). Not "menolak" or "tepat": they are facts elsewhere ("DPR menolak RUU", "tepat waktu").
+_FRAME_WORDS |= frozenset("diprediksi memprediksi dicurigai mencurigai dikabarkan tampaknya nampaknya barangkali "
+                          "ditaksir menaksir tuduhan tudingan betul".split())
 # "yang menurut analis X", ", kata Menteri Keuangan Suahasil Nazara" name who says it; that is no fact of either half
 # (the link is checked all the same). The trailing form matters since SYS-187 reads a cause to its last comma item.
 _ATTRIBUTION = re.compile(r"\b(?:yang\s+)?menurut\s+[^,;]*|,\s*(?:kata|ujar|ucap|tutur|ungkap|imbuh)\s+[^,;.]*",

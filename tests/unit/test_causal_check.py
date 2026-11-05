@@ -863,3 +863,49 @@ class TestMatchCounts:
         counts = cc.match_counts([(0, AVTUR), (0, AVTUR.upper()), (0, "Harga tiket ... karena harga avtur"),
                                   (0, "Harga tiket turun."), (5, AVTUR)], {0: AVTUR})
         assert counts == {"verbatim": 2, "normalised": 1, "absent": 2}
+
+
+class TestSecondSendBackWords:
+    """QA 2026-10-20 (#414, #415): the added hedges and denials, and the uses that are neither."""
+
+    FLAT = "Kebakaran gudang itu dipicu korsleting listrik."
+
+    def test_a_hedged_claim_may_use_another_new_hedge(self):
+        source = "Kebakaran gudang itu dicurigai dipicu korsleting listrik."
+        assert kept("Kebakaran gudang itu diduga dipicu korsleting listrik.", source)
+        assert kept("Kebakaran gudang itu tampaknya dipicu korsleting listrik.", source)
+
+    @pytest.mark.parametrize("hedge", ["dicurigai", "diyakini", "disebut-sebut"])
+    def test_a_hedge_word_of_the_claim_is_no_fact(self, hedge):
+        """The new hedges and the first send-back's (whose frame entry no test pinned) are frame words."""
+        assert kept(f"Kebakaran gudang itu {hedge} dipicu korsleting listrik.", self.FLAT)
+
+    @pytest.mark.parametrize("source", ["Ia mengatakan tidak tepat karena aturannya belum berlaku.",
+                                        "Bupati menyebut tidak tepat sasaran penyaluran bansos yang dipicu data lama."])
+    def test_a_saying_verb_verdict_with_its_reason_or_target_is_no_denial(self, source):
+        [span] = cc.causal_spans(source)
+        assert not span.negated
+
+    # The false readings of a first draft, from a corpus sample (EXPERIMENTS.md 2026-11-05 SYS-185/192 entry).
+    @pytest.mark.parametrize("source", [
+        "Kelangkaan BBM dipicu penyaluran subsidi yang dinilai tidak tepat sasaran.",
+        "Kerusakan obat dipicu penyimpanan yang tidak tepat.",
+        "DPR menolak usulan itu karena anggarannya terbatas.",
+        "Juri menolak klaim ini karena tidak tepat waktu.",
+        "Kebijakan ini dinilai tidak tepat karena diberlakukan saat ekonomi lesu.",
+        "Ia menilai pasal tersebut tidak tepat diterapkan karena tidak ada tuduhan.",
+        "Perkara itu tidak tepat lagi dimasukkan dalam sengketa pilpres lantaran Gibran telah dilantik.",
+    ])
+    def test_a_judgement_of_a_thing_is_no_denial(self, source):
+        [span] = cc.causal_spans(source)
+        assert not span.negated
+
+    @pytest.mark.parametrize("source", [
+        "Tidak tepat jika harga BBM disebut naik karena kurs.",
+        "Kemenkeu menyebut sama sekali tidak betul harga BBM naik karena kurs.",
+        "Maskapai menolak tudingan harga tiket naik karena avtur.",
+        "Houthi menolak klaim bahwa pasukannya menimbulkan ancaman.",
+    ])
+    def test_a_verdict_before_the_statement_denies_the_link(self, source):
+        [span] = cc.causal_spans(source)
+        assert span.negated
