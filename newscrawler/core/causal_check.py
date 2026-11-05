@@ -28,8 +28,10 @@ words before it ("Y sehingga X"). Where nothing stands before the word in its se
 
 A negation must agree (SYS-185): "tidak naik karena" is not backed by "naik karena", nor "bukan karena" by
 "karena", nor a link a denial anywhere in its sentence rejects ("... dibantah maskapai") by the flat claim.
-"berdampak", "terdampak", "terimbas" and "terpicu" are no causal words here: in the corpus they mean
-"affected" ("498 jiwa terdampak"), not a link between two stated facts (SYS-184).
+"berdampak", "terdampak" and "terpicu" are no causal words here: in the corpus they mean "affected" ("498 jiwa
+terdampak"), not a link between two stated facts (SYS-184). "terimbas", "terpengaruh" and the market-copy "tertekan /
+ditekan / terseret / terbebani / terangkat / terkerek" are, but only when a cause follows them: "Sektor pariwisata
+terimbas pandemi" states one, "sektor yang terimbas" does not (owner, 2026-10-20, #401 / #413).
 """
 import re
 from typing import Dict, List, NamedTuple, Optional, Sequence, Tuple
@@ -57,6 +59,10 @@ _KINDS = {
     "menekan": FORWARD,
     # SYS-189 send-back (#401): "Rupiah melemah, dipacu / terdorong / buntut data tenaga kerja AS".
     "dipacu": BACKWARD, "terpacu": BACKWARD, "terdorong": BACKWARD, "buntut": BACKWARD,
+    # SYS-189 second send-back (#401, #413; owner 2026-10-20, option a): "affected / pressed / lifted by", a link
+    # only when its cause follows (`_NEEDS_CAUSE`).
+    "terimbas": BACKWARD, "terpengaruh": BACKWARD, "tertekan": BACKWARD, "ditekan": BACKWARD, "terseret": BACKWARD,
+    "terbebani": BACKWARD, "terangkat": BACKWARD, "terkerek": BACKWARD,
 }
 CAUSAL_WORDS = tuple(_KINDS)
 CAUSAL = re.compile(r"\b(?:" + "|".join(re.escape(w).replace(r"\ ", r"\s+")
@@ -65,17 +71,37 @@ CAUSAL = re.compile(r"\b(?:" + "|".join(re.escape(w).replace(r"\ ", r"\s+")
 # no link: all 5 "mendorong" of the replays are "untuk/termasuk mendorong <program>" (owner: "Gate, exempt purpose").
 _PURPOSE_VERBS = frozenset({"membuat", "mendorong", "menekan"})
 _PURPOSE = re.compile(r"\b(?:untuk|guna|demi|agar|supaya|termasuk|ingin|berupaya)\s+(?:[^\W\d_]+\s+)?$", re.IGNORECASE)
+# SYS-189 (#401, #413, owner 2026-10-20): these words also state a condition with no cause ("sektor yang terimbas",
+# "rupiah masih tertekan.", "harga emas tertekan pada perdagangan Kamis", "inflasi berhasil ditekan menjadi 2%"). They
+# are a link only when the next word, after an optional "oleh", is a content word that is no causal word itself:
+# "terimbas pandemi", "tertekan aksi jual asing", "terpengaruh oleh data AS". "Pasokan tertekan akibat perang" is
+# the link of "akibat".
+_NEEDS_CAUSE = frozenset({"terimbas", "terpengaruh", "tertekan", "ditekan", "terseret", "terbebani", "terangkat",
+                          "terkerek"})
+_NEXT_WORD = re.compile(r"\s+(?:oleh\s+)?([^\W\d_][\w-]*)", re.IGNORECASE)
 
 
 def _kind(word: str) -> str:
     return _KINDS[" ".join(word.lower().split())]
 
 
+def _cause_follows(sentence: str, end: int) -> bool:
+    m = _NEXT_WORD.match(sentence, end)
+    if not m:
+        return False
+    word = m.group(1).lower()
+    # A verb after it is the clause's predicate ("wilayah yang terimbas meliputi tiga kecamatan"); a verb made a noun
+    # by -nya is a cause ("tertekan menguatnya dolar AS").
+    verb = story_words.is_verb(word) and not word.endswith("nya")
+    return not (word in story_words.STOPWORDS or word in _TIME_WORDS or word in _GENERIC or word in _KINDS or verb)
+
+
 def _causal_matches(sentence: str) -> list:
     """The causal words of `sentence`: `CAUSAL`'s matches, less a purpose verb after a purpose word (at most one word
-    between: "untuk terus mendorong")."""
+    between: "untuk terus mendorong"), and less a `_NEEDS_CAUSE` word with no cause after it."""
     return [m for m in CAUSAL.finditer(sentence)
-            if not (m.group(0).lower() in _PURPOSE_VERBS and _PURPOSE.search(sentence[:m.start()]))]
+            if not (m.group(0).lower() in _PURPOSE_VERBS and _PURPOSE.search(sentence[:m.start()]))
+            and not (m.group(0).lower() in _NEEDS_CAUSE and not _cause_follows(sentence, m.end()))]
 _REFERS_BACK = frozenset({"penyebabnya", "pemicunya"})     # "Harga naik. Penyebabnya, ...": the effect is before
 _NOUNS = frozenset({"penyebab", "pemicu"})                 # "Penyebab banjir adalah hujan deras"
 _THEREFORE = re.compile(r"\s*itu\b", re.IGNORECASE)        # "karena itu", "oleh sebab itu": forward

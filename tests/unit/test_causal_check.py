@@ -454,7 +454,9 @@ FORMS = ["karena", "dikarenakan", "lantaran", "sebab", "gara-gara", "akibat", "d
          "didorong", "dipengaruhi", "ditopang", "berkat", "seiring", "dilatarbelakangi", "bermula dari",
          "memengaruhi", "mempengaruhi", "menimbulkan", "membuat", "mendorong", "menekan",
          # SYS-189 send-back (#401)
-         "dipacu", "terpacu", "terdorong", "buntut"]
+         "dipacu", "terpacu", "terdorong", "buntut",
+         # SYS-189 second send-back (#401, #413): a link only when a cause follows
+         "terimbas", "terpengaruh", "tertekan", "ditekan", "terseret", "terbebani", "terangkat", "terkerek"]
 
 
 class TestCausalWords:
@@ -474,10 +476,31 @@ class TestCausalWords:
     def test_the_table_is_the_list(self):
         assert sorted(cc.CAUSAL_WORDS) == sorted(FORMS)
 
+    # Owner 2026-10-20 (#401, option a): "Sektor pariwisata terimbas pandemi." names its cause, so it moved out of
+    # this list into test_affected_by_a_named_cause_is_a_link.
     @pytest.mark.parametrize("prose", ["Sebanyak 498 jiwa terdampak banjir.", "Banjir berdampak pada 120 rumah.",
-                                       "Sektor pariwisata terimbas pandemi.", "Warga terpicu emosinya."])
+                                       "Warga terpicu emosinya."])
     def test_affected_is_no_link(self, prose):
         assert cc.causal_spans(prose) == []
+
+    @pytest.mark.parametrize("prose", ["Sektor pariwisata terimbas pandemi.", "Rupiah terpengaruh oleh data AS.",
+                                       "IHSG tertekan aksi jual asing.", "Rupiah tertekan menguatnya dolar AS."])
+    def test_affected_by_a_named_cause_is_a_link(self, prose):
+        [span] = cc.causal_spans(prose)
+        assert span.cause and span.effect
+
+    @pytest.mark.parametrize("prose", ["Sektor yang terimbas kini pulih.", "Rupiah masih tertekan.",
+                                       "Wilayah yang terimbas meliputi tiga kecamatan.",
+                                       "Harga emas Antam tertekan pada perdagangan Kamis (1/10/2026).",
+                                       "Inflasi berhasil ditekan menjadi 2 persen.",
+                                       "Rupiah sempat tertekan hingga Rp17.935 per dolar AS.",
+                                       "Partai itu terseret dalam kubangan citra buruk."])
+    def test_affected_with_no_cause_after_it_is_no_link(self, prose):
+        assert cc.causal_spans(prose) == []
+
+    def test_a_causal_word_after_it_is_the_link(self):
+        [span] = cc.causal_spans("Pasokan juga tertekan akibat perang di Timur Tengah.")
+        assert span.word.lower() == "akibat"
 
     def test_the_prompt_lists_every_form(self):
         assert [w for w in FORMS if f'"{w}"' not in sa.PROMPT] == []
