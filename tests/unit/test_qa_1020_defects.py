@@ -88,3 +88,15 @@ def test_415_a_denied_link_backs_no_flat_claim(src):
 
 def test_415_control_a_listed_denial_is_read():
     assert not kept(CLAIM, "Maskapai menyangkal harga tiket pesawat domestik naik karena harga avtur melonjak.")
+
+
+# ---- #416 (SYS-181): two names joined by "dan" in one clause ----
+SRC_416 = "Saham BBRI dan BMRI turun pada Senin. Penurunan saham BMRI tersebut dipicu aksi jual asing."
+
+
+def test_416_the_other_name_is_not_backed_through_the_anaphor():
+    assert not kept("Saham BBRI turun karena aksi jual asing.", SRC_416)
+
+
+def test_416_control_the_anaphors_own_name_stays_kept():
+    assert kept("Saham BMRI turun karena aksi jual asing.", SRC_416)

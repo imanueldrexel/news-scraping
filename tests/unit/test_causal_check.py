@@ -909,3 +909,16 @@ class TestSecondSendBackWords:
     def test_a_verdict_before_the_statement_denies_the_link(self, source):
         [span] = cc.causal_spans(source)
         assert span.negated
+
+
+class TestAnaphorNamesPickTheParts:
+    """QA 2026-10-20 (#416): a name in the anaphor's subject picks the part of the previous sentence it borrows."""
+
+    def test_either_order_of_the_names(self):
+        src = "Saham BMRI dan BBRI turun pada Senin. Penurunan saham BMRI tersebut dipicu aksi jual asing."
+        assert kept("Saham BMRI turun karena aksi jual asing.", src)
+        assert not kept("Saham BBRI turun karena aksi jual asing.", src)
+
+    def test_a_subject_without_a_name_still_borrows_by_its_words(self):
+        assert cc._lent("Penurunan saham tersebut", "IHSG naik 1 persen dan saham bank turun 3 persen.") == \
+            "saham bank turun 3 persen."

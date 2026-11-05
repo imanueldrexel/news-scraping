@@ -2357,6 +2357,8 @@ M = [
  ('sys181c_whole_sentence_lent', 'newscrawler/core/causal_check.py',
   '        before_core = before = f"{_lent(before, previous)} {before}"',
   '        before_core = before = f"{previous} {before}"'),
+ # QA 2026-10-20 (#416): a name in the anaphor's subject picks the parts.
+ ('sys181d_names_do_not_pick', 'newscrawler/core/causal_check.py', '    wanted = names or wanted\n', ''),
  ('sys181c_no_suffix_naming', 'newscrawler/core/causal_check.py',
   ' or any(len(r) >= story_words._MIN_ROOT and o.startswith(r) for o in said)', ''),
  ('sys185c_denial_before_only', 'newscrawler/core/causal_check.py',

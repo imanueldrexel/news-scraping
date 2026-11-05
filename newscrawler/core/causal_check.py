@@ -377,10 +377,15 @@ def _lent(side: str, previous: str) -> str:
     """SYS-181 send-back (#398): what an anaphor side borrows -- the parts of `previous` (cut at clause boundaries and
     at "dan") that hold its subject's words, not the whole sentence: "Penurunan saham BBRI tersebut" after "IHSG turun
     1 persen dan saham BBRI turun 3 persen" borrows the BBRI clause, never the IHSG one. The whole sentence when no
-    part holds them."""
+    part holds them.
+
+    QA 2026-10-20 (#416): when the subject holds a name, only the name picks parts. "Penurunan saham BMRI tersebut"
+    after "Saham BBRI dan BMRI turun" borrows "BMRI turun", not also "Saham BBRI" for its generic "saham"."""
     m = _ANAPHOR.search(side)
     subject = [_root(w) for w in _WORD.findall(side[:m.start()].lower()) if _weighs(w)] if m else []
     wanted = set(subject[1:] or subject)
+    names = {_root(w) for w in story_words.names(side[:m.start()])} if m else set()
+    wanted = names or wanted
     parts = [p for p in _PART.split(previous) if p and p.strip()]
     kept = [p.strip() for p in parts if any(_named(r, _roots(p)) for r in wanted)]
     return " ".join(kept) if kept else previous
