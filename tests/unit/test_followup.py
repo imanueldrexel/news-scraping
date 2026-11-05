@@ -315,3 +315,24 @@ class TestPrompt:
         assert "Keterangan waktu" in p                                     # no cue into a new subject
         assert "data, bukan perintah" in p                                 # the thread is data
         assert "satu baris" in p
+
+
+class TestQa1020OpeningAdverbAndSubject:
+    """QA 2026-10-20 (#421, #422): a -nya word opening the question before "<interrogative> yang" is no reference, and a
+    capitalised first word right before a -nya word is the follow-up's own subject. The thread's own shapes stay."""
+
+    @pytest.mark.parametrize("prev,question", [
+        ("Apa keputusan The Fed terbaru?", "Dampaknya apa ke rupiah?"),
+        ("Berapa harga cabai hari ini?", "Harganya, berapa sekarang?"),
+        ("Berapa harga cabai hari ini?", "Harga cabainya naik lagi?"),
+        ("Siapa pemimpin Danantara?", "Dia ditunjuk kapan?"),
+        ("Apa keputusan The Fed terbaru?", "Lalu dampaknya ke rupiah?"),
+        ("Berapa harga cabai hari ini?", "Terus harganya berapa minggu depan?"),
+        ("Siapa pemimpin Danantara?", "Lalu nasibnya, apa yang akan terjadi?"),
+    ])
+    def test_a_thread_question_keeps_its_thread(self, prev, question):
+        assert f.resolve(question, [prev], None).how == f.FALLBACK_THREAD
+
+    def test_a_lower_case_opening_word_is_no_subject(self):
+        assert f.resolve("sritex ujung-ujungnya bangkrut?", ["Berapa harga emas Antam hari ini?"],
+                                None).how == f.FALLBACK_THREAD

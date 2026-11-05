@@ -46,11 +46,16 @@ _REFERENCE = re.compile(r"\b(?:dia|ia|mereka|beliau|tersebut)\b|\b[\w-]+nya\b", 
 _OBJECT_PHRASE = re.compile(r"\b(?:ke|kepada|terhadap|bagi|untuk|pada|di|atas)\s+"
                             r"((?:(?!\s(?:dan|atau|serta|lalu)\s+(?:apa|apakah|siapa|bagaimana|kapan|berapa|"
                             r"mengapa|kenapa|mana|dimana)\b)[^,;:?!.])+)", re.IGNORECASE)
-# ADR-022 (SYS-144/145 send-back, #408/#409): a -nya word right after "yang" stands where an adverb
-# does -- "Apa yang harusnya / aslinya / mestinya terjadi pada Garuda?": the clause's subject is
-# "apa" -- so it points at nothing, listed or not. A verb with its object clitic does point back
-# ("Siapa yang memimpinnya?").
-_AFTER_YANG = re.compile(r"\byang\s+$", re.IGNORECASE)
+# ADR-022 / #421: a -nya word in an adverb's place points at nothing (`nya_words.in_adverb_place`).
+# QA 2026-10-20 (#421, #422): "Sritex ujung-ujungnya bangkrut?" -- a capitalised first word right before a -nya
+# word is that word's antecedent or the adverb's subject, the follow-up's own either way. `story_words.names`
+# never reads a sentence-opening word as a name ("Pemerintah ...").
+_OPENING_SUBJECT = re.compile(r"^\W*([^\W\d_][\w-]*)\s+[\w-]+nya\b")
+# Interrogatives and the connectives a follow-up opens with ("Lalu dampaknya ke rupiah?", "Terus harganya berapa?"):
+# no subject. STOPWORDS holds the rest (soal, tentang, jadi, namun, ...).
+_NOT_A_SUBJECT = frozenset("apa apakah siapa bagaimana gimana kapan berapa mengapa kenapa mana dimana "
+                           "lalu lantas terus trus kemudian kalau kalo jika bila nah sekarang tapi tetapi sementara "
+                           "selain terakhir apalagi bahkan padahal oh oke ok baik".split())
 _LABEL = re.compile(r"^(?:pertanyaan(?:\s+(?:hasil|baru|lengkap))?|hasil)\s*:\s*", re.IGNORECASE)
 _QUOTES = "\"'“”‘’`"
 # SYS-143 (#326): a refusal or a list item is one short line too, and must not be searched
@@ -79,17 +84,24 @@ def _references(question: str) -> list:
     at something (no adverb, no "hanya", nothing in an adverb's place after "yang")."""
     q = question or ""
 
-    def adverb_place(m) -> bool:
-        return bool(_AFTER_YANG.search(q[:m.start()])) and not story_words.is_verb(m.group(0)[:-3])
-
     return [m for m in _REFERENCE.finditer(q)
-            if not m.group(0).lower().endswith("nya") or (nya_words.is_reference(m.group(0)) and not adverb_place(m))]
+            if not m.group(0).lower().endswith("nya")
+            or (nya_words.is_reference(m.group(0)) and not nya_words.in_adverb_place(q, m.start(), m.group(0)))]
 
 
 def refers_back(question: str) -> bool:
     """The follow-up holds a word that points back. Whether it points into the THREAD is
     `refers_to_thread`: the follow-up may hold its own antecedent."""
     return bool(_references(question))
+
+
+def _opening_subject(question: str, thread: set) -> bool:
+    """#421/#422: the question opens on a capitalised word the thread does not hold, right before a -nya word."""
+    m = _OPENING_SUBJECT.match(question or "")
+    if not m or not m.group(1)[0].isupper():
+        return False
+    low = m.group(1).lower()
+    return not (low.endswith("nya") or low in story_words.STOPWORDS or low in _NOT_A_SUBJECT or low in thread)
 
 
 def refers_to_thread(question: str, previous: Sequence[str]) -> bool:
@@ -108,6 +120,8 @@ def refers_to_thread(question: str, previous: Sequence[str]) -> bool:
     if not refs:
         return False
     thread = story_words.vocabulary(" ".join(previous))
+    if _opening_subject(question, thread):
+        return False
     if not story_words.names(question) - thread:
         return True
     outside = list(question)

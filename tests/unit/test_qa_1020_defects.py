@@ -183,3 +183,58 @@ def test_424_an_invented_year_is_refused(prose, source):
 
 def test_424_control_the_right_year_passes():
     assert sc.unsupported_number("Pada 24 September 2026 rapat digelar.", "Rapat digelar Rabu (24/9/2026).") is None
+
+
+# ---- #421 (SYS-144), #422 (SYS-145), #423 (SYS-146): -nya adverbs outside the "yang" position ----
+from newscrawler.web import followup as fu  # noqa: E402
+from newscrawler.web import keywords as kw  # noqa: E402
+
+ANTAM = ["Berapa harga emas Antam hari ini?"]
+FED = ["Apa keputusan The Fed terbaru?"]
+
+
+@pytest.mark.parametrize("question", [
+    "Ujung-ujungnya apa yang terjadi pada Sritex?",
+    "Anehnya, apa yang terjadi pada Garuda Indonesia?",
+    "Parahnya, apa yang terjadi pada Waskita Karya?",
+    "Sritex ujung-ujungnya bangkrut?",
+])
+def test_421_a_switch_stays_alone_on_the_fallback(question):
+    assert fu.resolve(question, ANTAM, None).how == fu.FALLBACK_OWN
+
+
+def test_421_control_a_listed_adverb_stays_alone():
+    assert fu.resolve("Sebenarnya, apa yang terjadi pada Garuda Indonesia?", ANTAM, None).how == fu.FALLBACK_OWN
+
+
+@pytest.mark.parametrize("question", [
+    "Ujung-ujungnya apa yang terjadi pada Sritex?",
+    "Anehnya, apa yang terjadi pada Garuda Indonesia?",
+    "Sritex ujung-ujungnya bangkrut?",
+])
+def test_422_a_kept_switch_stays_kept(question):
+    assert fu.resolve(question, ANTAM, question).how == fu.KEPT
+
+
+def test_422_control_a_kept_effect_question_uses_the_thread():
+    q = "Bagaimana dampaknya ke rupiah?"
+    assert fu.resolve(q, FED, q).how == fu.KEPT_THREAD
+
+
+@pytest.mark.parametrize("question,plain", [
+    ("Apa yang ujung-ujungnya terjadi pada Sritex?", "Apa yang terjadi pada Sritex?"),
+    ("Apa yang anehnya terjadi pada Sritex?", "Apa yang terjadi pada Sritex?"),
+    ("Apa yang sepantasnya dilakukan Garuda?", "Apa yang dilakukan Garuda?"),
+])
+def test_423_an_adverb_adds_no_keyword(question, plain):
+    assert [t.word for t in kw.terms(question)] == [t.word for t in kw.terms(plain)]
+
+
+def test_423_penanya_is_kept_whole():
+    words = [t.word for t in kw.terms("Siapa penanya dalam debat capres?")]
+    assert "penanya" in words and "pena" not in words
+
+
+def test_423_control_a_listed_adverb_adds_no_keyword():
+    assert [t.word for t in kw.terms("Apa yang mestinya terjadi pada Sritex?")] == \
+        [t.word for t in kw.terms("Apa yang terjadi pada Sritex?")]

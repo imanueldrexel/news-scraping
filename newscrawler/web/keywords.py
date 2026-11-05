@@ -75,7 +75,9 @@ def terms(question: str, *more: str) -> List[Term]:
 
     SYS-146 (#331, ADR-021): a possessive -nya word is its root ("pemimpinnya" -> "pemimpin"): the
     `simple` configuration indexes the two apart, and the rare clitic form became the question's
-    heaviest required anchor (fts=0). An adverb in -nya ("sebenarnya") is no keyword at all."""
+    heaviest required anchor (fts=0). An adverb in -nya ("sebenarnya") is no keyword at all, nor is
+    any -nya word in an adverb's place (`nya_words.in_adverb_place`, #423: "Apa yang ujung-ujungnya
+    terjadi ...")."""
     out: List[Term] = []
     seen = set()
     for one in (question,) + more:
@@ -83,6 +85,9 @@ def terms(question: str, *more: str) -> List[Term]:
             word = m.group(0).strip(".,-")
             low = word.lower()
             if low in nya_words.ADVERBS:
+                continue
+            # #423: an unlisted -nya word in an adverb's place is no keyword, as it is no reference (ADR-022)
+            if nya_words.is_reference(low) and nya_words.in_adverb_place(one, m.start(), word):
                 continue
             low = nya_words.possessive_root(low) or low
             if len(low) < 2 or low in STOPWORDS or low in QUESTION_WORDS or low in seen or "_" in low:

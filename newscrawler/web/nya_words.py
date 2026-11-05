@@ -13,12 +13,16 @@ Kept as references on purpose, because a question uses them to point back: akiba
 karenanya, artinya, hasilnya, intinya, rencananya, alasannya, dampaknya, menurutnya, sesudahnya,
 setelahnya, utamanya ("tujuan utamanya"), rasanya ("bagaimana rasanya").
 """
+import re
 from typing import Optional
+
+from newscrawler.core import story_words
 
 # SYS-146 send-back (#412): every affixed form of "tanya" ("ditanya" was cut to "dita"). Not a suffix
 # test: "datanya", "kotanya", "lampunya" are possessives that end in -tanya / -punya.
 NOT_CLITIC = frozenset({"hanya", "punya", "tanya", "bertanya", "ditanya", "menanya", "tertanya",
-                        "tanya-tanya", "bertanya-tanya"})
+                        "tanya-tanya", "bertanya-tanya",
+                        "penanya"})       # QA 2026-10-20 (#423): the questioner, cut to "pena" (pen)
 
 ADVERBS = frozenset({
     # SYS-144 (2026-10-12)
@@ -40,6 +44,29 @@ ADVERBS = frozenset({
 })
 
 _MIN_ROOT = 3       # "gajinya" -> "gaji"; a shorter remainder is no word of its own
+
+
+# ADR-022 (SYS-144/145 send-back, #408/#409): a -nya word right after "yang" stands where an adverb does --
+# "Apa yang harusnya / aslinya / mestinya terjadi pada Garuda?": the clause's subject is "apa" -- so it points at
+# nothing, listed or not. A verb with its object clitic does point back ("Siapa yang memimpinnya?").
+_AFTER_YANG = re.compile(r"\byang\s+$", re.IGNORECASE)
+# QA 2026-10-20 (#421, #423): so does a -nya word that opens the question before a clause with its own
+# interrogative subject -- "Ujung-ujungnya apa yang terjadi pada Sritex?", "Anehnya, apa yang terjadi ...?" --
+# "<interrogative> yang" next, a comma or not. "Dampaknya apa?" and "Harganya, berapa?" are no such clause: the
+# interrogative is their predicate.
+_INTERROGATIVE = r"(?:apa|apakah|siapa|bagaimana|gimana|kapan|berapa|mengapa|kenapa|mana|dimana)"
+_CLAUSE_AFTER = re.compile(rf"\s*,?\s+{_INTERROGATIVE}\s+yang\b", re.IGNORECASE)
+_NOTHING_BEFORE = re.compile(r"^\W*$")
+
+
+def in_adverb_place(text: str, start: int, word: str) -> bool:
+    """The -nya `word` at `start` of `text` stands where an adverb does, whatever word it is: right after "yang"
+    and no verb (ADR-022), or opening the question before a clause with its own interrogative subject (#421).
+    The search page's two halves read it alike: `followup` (no reference) and `keywords` (no keyword)."""
+    before = text[:start]
+    if _AFTER_YANG.search(before) and not story_words.is_verb(word[:-3]):
+        return True
+    return bool(_NOTHING_BEFORE.match(before) and _CLAUSE_AFTER.match(text, start + len(word)))
 
 
 def is_reference(word: str) -> bool:
