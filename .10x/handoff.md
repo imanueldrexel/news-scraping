@@ -1,5 +1,14 @@
 # Current Handoff
 
+## From: QA + owner (2026-11-06) -> To: SDE
+**Read first:** ADR-031; `.10x/decisions/qa/qa-pass-2026-11-06.md`; `.10x/reviews/2026-11-06-qa-report.md`.
+- Fix the regressions first: #440 (`_cause_follows`), #446 (`_from_place`), #448/#449 (`_opening_subject`). Each issue carries a runnable failing test. For each fix, add an inverse probe: true sentences that contain the new word or shape.
+- #445 is narrowed to "diselesaikan pada <time>". Do not widen arc gate lists for anything else (ADR-031).
+- Web: #421, #422 and #423 ("Anehnya, ...") are still open.
+- After #440: re-run SYS-150's replay (`replay_story_arcs.py`, dates 10-08..10-12, about $0.5-0.8) and post built/fallback and refusals on #425.
+
+---
+
 ## From: QA + owner (2026-11-05) -> To: SDE (SYS-197/198 defects), then SYS-200
 **Read first:** ADR-030; `.10x/decisions/qa/qa-pass-2026-11-05-nli.md`.
 - Fix #436 and #437 first: they corrupt `nli_shadow`, the source SYS-200 exports from. Rows written before #437's fix need an offline re-score.

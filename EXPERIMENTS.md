@@ -183,6 +183,7 @@ One line each; read this before starting on a scraper or pipeline problem.
 - **RAG probes before SYS-194 (2026-10-19) carry +-1-card noise per question:** the keyword half's ORDER BY had no unique key, so tied paragraphs were cut differently on each run. Compare before/after only on runs from the same code base after it, or the same day with the rule patched in. -> 2026-10-19 SYS-194 entry
 - **An NLI checker scored only on the LLM-written targeted pairs can look perfect while it flags verbatim copies (2026-11-04, SYS-199 arm B):** the generator drops verbatim copies and every near-copy is a one-edit corruption, so a fine-tune learns "near-identical = unfaithful" (98% of exact copies below 0.5). Always run `scripts/experiments/compare_nli_arms.py` (identity + wrong-premise controls), never the held-out table alone. Fixed by faithful near-copies in training (ADR-029). -> 2026-11-04 arm B entry, 2026-11-05 arm B retry
 - **A hypothesis-only artefact check on contrastive pairs must keep each seed in one fold (2026-11-05, SYS-197 #431):** a seed's corruptions, restatement and hard positive are near-copies with opposite labels, so shuffled folds score at chance (0.43-0.54) while seed-grouped folds give 0.62-0.80. `eval_nli.hypothesis_only_accuracy` uses GroupKFold; ADR-030 gates a model's numbers on its wrong-premise AUC instead of discarding the families. -> 2026-11-05 SYS-197 entry
+- **A word-list or place-rule fix needs an inverse probe as well as held-out synonyms (2026-11-06 QA):** run true sentences that now contain the new word or shape. That found 3 of the 4 regressions of the 11-05/06 fixes ("tertekan tajam" read as a cause, "Kemarin harganya berapa?" read as a new subject, "dari <name> hingga Lebaran" read as a place). -> 2026-11-06 QA audit entry
 
 ## Log
 
@@ -3555,3 +3556,30 @@ QA's grouped numbers on the 2,974-pair set were cause 0.607, denial 0.801, end 0
 - Two draft rules lost thread questions and were narrowed before shipping. (1) A comma alone ("<x>nya, <interrogative>") read "Harganya, berapa sekarang?" as an adverb, so "yang" is required. (2) Rule B read a capitalised connective as a subject: "Lalu dampaknya ke rupiah?" and "Terus harganya berapa ...?" went alone. Connectives (lalu, lantas, terus, kemudian, kalau, nah, sekarang, tapi, ...) are excluded. Both shapes are pinned in `tests/unit/test_followup.py::TestQa1020OpeningAdverbAndSubject`.
 **Conclusion / do not repeat:** a sentence adverb is decided by the slot it fills, never by a list: after "yang", or opening the question before "<interrogative> yang". Do not read a comma or a capitalised first word alone as the signal. Residual: a sentence-initial unlisted adverb before any other clause ("Anehnya, kenapa Garuda merugi?") is still read by the list. The question's own name usually decides it anyway (ADR-021).
 **Links:** SYS-144 #327 (#421), SYS-145 #328 (#422), SYS-146 #331 (#423); ADR-021, ADR-022; `newscrawler/web/nya_words.py`, `followup.py`, `keywords.py`
+
+### 2026-11-06 — QA audit of the 11-05/06 defect fixes: held-out synonyms and regression probes (14 parents, 22 defects)
+- **Question / hypothesis:** do the fixes for #401, #413-#425 and #431-#439 hold beyond the listed cases? Do the widened word lists and the new place rules refuse true sentences or route thread questions wrongly?
+- **Method:** two tree copies, never the live tree (`git -c core.autocrlf=false archive e7b69db|9d9ad16 newscrawler scripts tests __main__.py pytest.ini | tar -x`). Probe scripts were run on both: causal gate (`unbacked_causes`), end points / years (`unbacked_end_times`, `unsupported_number`), schedule cues (`story_arc.unbacked_times`), follow-ups (`followup.resolve` on the fallback and kept paths), keywords (`keywords.terms`). Read-only corpus counts were taken on `articles` since 2026-09-20 (135,738 rows; case-sensitive `~`). 16 + 5 mutants ran in the HEAD copy. The failing tests are in `tests/qa/defects_1106/` (uncommitted).
+- **Result:**
+  - All listed defect tests FAIL on e7b69db and PASS at 9d9ad16. Unit: 4,197 passed / 5 skipped. Integration: 229 / 1.
+  - **Regressions introduced (pass on e7b69db, fail at HEAD):**
+    - `_cause_follows` takes adverbs, prepositions and predicates as causes: "tertekan tajam / sepanjang / lagi", "terkerek naik", "terangkat tipis", "terseret turun" are refused. In a 1,500-article sample, about 1 in 5 of 749 gated uses is not a cause.
+    - `_from_place` lets an invented named end through after "dari <name>": "hingga Lebaran 2027" (0 corpus hits of the exact shape).
+    - `_opening_subject` sends thread follow-ups that open on Kemarin / Besok / Tadi / Benarkah / Mungkinkah / Kira-kira / Kok / Masa to fallback-own, and to kept on the kept path.
+  - **Held-out cases still fail:**
+    - disokong 195, terdongkrak 46, dipantik;
+    - hedges terindikasi 1,020, sepertinya 377, kabarnya 159, konon 120, diisukan 69;
+    - anaphor through "serta"/"maupun" (106 vs 1,022 for "dan") and through multi-word names that share a word ("Bank ...");
+    - end points "diselesaikan pada" 210, "rampung <month>" 64, "dituntaskan pada" 22;
+    - plan cues berpeluang 2,097, bersiap 1,294, diramalkan 42;
+    - "Anehnya, kenapa saham di Garuda ..." still goes to the thread, and "Anehnya, kenapa ..." adds the keyword "aneh".
+  - **Measured and not filed:**
+    - "(dicanangkan|disiapkan) pada <part> <month>" = 0;
+    - "tidak membenarkan" 80, polysemous;
+    - 27% of article openings name no year (#424's residual).
+  - **Mutants:** all 16 arc/web mutants are killed by `tests/unit`, but 6 only by `test_qa_1020_defects.py`. The NLI filter's mislabelled drop survives every test, because it is guarded by the committed fixture only.
+- **Conclusion / do not repeat:**
+  - A list-widening fix needs two probes. The inverse probe (true sentences that now contain the new word) found 3 of the 4 regressions; the held-out synonym probe found the rest.
+  - Place rules keyed on a capitalised word need a sweep of sentence-opening time words and particles: a capital letter at the start of a question is no name.
+  - Measure corpus frequency before ranking severity.
+- **Links:** #440-#449 filed. #421/#422/#423/#425 kept open. 18 defects closed. Report: `.10x/reviews/2026-11-06-qa-report.md`.

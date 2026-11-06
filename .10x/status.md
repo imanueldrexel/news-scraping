@@ -1,5 +1,13 @@
 # Project Status
 
+## 2026-11-06: QA of the 11-05/06 defect fixes + owner decisions (ADR-031)
+- [x] QA audited 14 parents at 9d9ad16. 18 defects closed; #440-#449 filed (4 regressions: #440, #446, #448, #449). Report: `.10x/reviews/2026-11-06-qa-report.md`.
+- [x] Owner: arc gate word lists frozen (ADR-031). #441, #442, #443, #444 and #447 were closed as accepted gaps, and #445 was narrowed to "diselesaikan pada" (seen in arc output). #393, #381 and #376 are now qa-passed.
+- [x] Owner: #425 closes on a re-run of SYS-150's replay after #440 is fixed (about $0.5-0.8).
+- [ ] Dev: #440 (cause-follows reads adverbs), #446 (dari-place), #448/#449 (opening word is no subject), #445 narrowed, #421/#422/#423.
+- [ ] Dev/QA: after #440, run `replay_story_arcs.py` on 10-08..10-12; >= 90% closes #425, else file live acceptance (length trim first).
+- [ ] Still held on owner reads: SYS-40 (#126), SYS-82 (#239), SYS-83 (#240), OPS-42 (#242).
+
 ## 2026-11-05: QA of SYS-197/198 + owner decisions (ADR-030)
 - [x] QA: SYS-197 (#427) and SYS-198 (#428) qa-failed. Filed #431-#439 (qa-defect).
 - [x] Owner decisions (ADR-030): (1) the whole sentence is the hypothesis, #435 closed not-a-defect; (2) the natural set lives in SYS-200, no export before #436/#437; (3) families kept, leak gated by wrong-premise AUC <= 0.65 (measured: A 0.52-0.59, B v2 0.51-0.62, holds).

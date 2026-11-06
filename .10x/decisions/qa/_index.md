@@ -13,7 +13,10 @@
 - [newsletter-5min-edition](newsletter-5min-edition.md) - tracker #244: 4 closed (SYS-81/84/85, OPS-41), SYS-80 sent back, 4 held (owner / scheduled runs), 8 filed (SYS-86..89, OPS-44, DBT-56..58); QA's own test set + 57 mutants (49 killed) in `scripts/experiments/qa_newsletter_244/` (2026-10-05)
 - [qa-pass-2026-10-06-night](qa-pass-2026-10-06-night.md) - P3 burn-down + #244 fixes: 12 closed, SRC-58 held for the 07:00 crawl, 4 filed (SRC-59 P2, SYS-91, DBT-60, OPS-46); 84/84 mutants killed
 
+- [qa-pass-2026-11-06](qa-pass-2026-11-06.md) - 11-05/06 defect fixes: 18 closed, #440-#449 filed; owner froze the arc word lists (ADR-031) and chose a replay re-run for #425 after #440
+
 ## Cross-cutting lessons
+- Arc gate defects need a regression or an unlisted form seen in arc output (ADR-031); a frequency in source articles alone is not a defect.
 - A heuristic validated only on the days it was tuned on is unvalidated: measure it on every pair and on untuned days (SYS-86).
 - An LLM-dependent Done-when ("the re-render shows no X") can pass on one replay and fail on the next (SYS-80 v4 vs v5): re-check it on the latest output, and prefer a scripted, repeatable measure.
 - Mutation runs: print the unmutated baseline and each kill's failing test; a worktree reaching the venv through a junction in the scratchpad "kills" everything at collection (MAX_PATH).
