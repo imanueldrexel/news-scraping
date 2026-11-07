@@ -1,5 +1,13 @@
 # Current Handoff
 
+## From: QA (2026-11-08) -> To: owner, then SDE
+**Read first:** `.10x/reviews/2026-11-08-qa-report.md`; `.10x/decisions/qa/qa-pass-2026-11-08.md`.
+- **Owner:** ADR-032 is Proposed. #450 shows that its "common word" class also holds nouns: "Gula harganya naik?" and "Timah labanya berapa?" after a gold question go to the old thread. Accept that cost, or have the class narrowed to time words, particles and hedges.
+- **SDE:** fix in this order: #450 and #451 (major), then #452 (movement class admits -nya nouns and quantifiers), #453 (place without "pada"), #454 ("diselesaikan pada" with a restated time). Each issue carries a runnable failing test in `tests/qa/defects_1108/`. Add a probe over each word-class file for members that should not be in it.
+- #331 is qa-passed. #327, #328, #390, #387 and #392 are qa-failed.
+
+---
+
 ## From: SDE (2026-11-08) -> To: QA, owner
 **Read first:** ADR-032; `.10x/decisions/sde/qa-1106-defects.md`; the dev comment on each defect.
 - **QA:** re-verify parents #327, #328, #331, #390, #387 and #392 (`status: ready-for-qa`).

@@ -3606,3 +3606,16 @@ QA's grouped numbers on the 2,974-pair set were cause 0.607, denial 0.801, end 0
   - A word's kind is in the archive's casing and neighbours. Build it there, commit the snapshot, and default an unknown word to the old reading (name; cause).
   - Do not use naik/turun or karena/lantaran as anchors for word classes: each has a second use that pollutes the counts.
 - **Links:** ADR-032; #440, #445, #446, #448, #449, #421, #422, #423; `scripts/build_word_classes.py`, `newscrawler/web/common_words.txt`, `newscrawler/core/movement_words.txt`
+
+## 2026-11-08 -- QA of ADR-032 (4175812): what else do the two corpus word classes admit?
+- **Question:** the 11-08 fixes read two archive-built classes (`common_words.txt`, `movement_words.txt`). Do the classes hold members that break the rules they feed?
+- **Method:** a sweep of inverse probes, `tests/qa/probe_1108/probe.py`, run at 4175812 and in a `git archive 84c3567` copy, with outputs diffed. The defect tests are in `tests/qa/defects_1108/`. A read-only DB check of the IEU-CEPA arc sentence's source is `tests/qa/probe_1108/ieu.py`.
+- **Result:**
+  - `common_words` holds nouns: gula, beras, nikel, emas, saham, rupiah, timah, mandiri, semen, jasa, bumi. So "Gula harganya naik?" and "Timah labanya berapa?" go to the old thread at HEAD; they went alone on 84c3567. (#450, #451)
+  - `movement_words` holds 9 -nya nouns (eskalasinya, ekspornya, nilainya ...) and nouns/quantifiers (mayoritas, total, payung, kisaran, rata-rata). Invented causes after them pass. (#452)
+  - It also holds the causal links (akibat, didorong, dipicu, seiring ...). Those are harmless: each is still its own link, and all 10 probes stay refused.
+  - `_THEN_PADA` refuses "hingga Riau akhir Oktober" (no "pada"). (#453)
+  - "diselesaikan pada <time>" is refused when the source states the same time in other words, and the IEU-CEPA arc sentence is refused against sitemap 230887. (#454)
+  - QA mutants: 4/4 killed.
+- **Conclusion / do not repeat:** probe a corpus-derived class for what it should NOT contain, not only for the words it was built to catch. "Lower case mid-sentence" does not mean "not a subject". "Follows a movement verb" does not mean "not a cause".
+- **Links:** #450, #451, #452, #453, #454; `.10x/reviews/2026-11-08-qa-report.md`; ADR-032

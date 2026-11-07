@@ -14,6 +14,7 @@
 - [qa-pass-2026-10-06-night](qa-pass-2026-10-06-night.md) - P3 burn-down + #244 fixes: 12 closed, SRC-58 held for the 07:00 crawl, 4 filed (SRC-59 P2, SYS-91, DBT-60, OPS-46); 84/84 mutants killed
 
 - [qa-pass-2026-11-06](qa-pass-2026-11-06.md) - 11-05/06 defect fixes: 18 closed, #440-#449 filed; owner froze the arc word lists (ADR-031) and chose a replay re-run for #425 after #440
+- [qa-pass-2026-11-08](qa-pass-2026-11-08.md) - ADR-032 word-class fixes: 8 closed, #450-#454 filed (4 regressions: common nouns as subjects, -nya nouns in movement words, place without pada, restated completion date); #331 qa-passed
 
 ## Cross-cutting lessons
 - Arc gate defects need a regression or an unlisted form seen in arc output (ADR-031); a frequency in source articles alone is not a defect.

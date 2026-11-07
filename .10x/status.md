@@ -1,5 +1,12 @@
 # Project Status
 
+## 2026-11-08: QA of the ADR-032 fixes (4175812)
+- [x] QA audited 6 parents at 02cad04 (baseline 84c3567). 8 defects closed (#448 #449 #440 #446 #445 #421 #422 #423); #450-#454 filed (4 regressions). Report: `.10x/reviews/2026-11-08-qa-report.md`.
+- [x] #331 qa-passed; #327 #328 #390 #387 #392 qa-failed. Unit 4,274 / 5 skipped; integration 229 / 1 skipped; 4/4 QA mutants killed.
+- [ ] Owner: rule on ADR-032's trade-off (#450: common nouns and lower-case company names as subjects).
+- [ ] Dev: #450/#451 (major; the fallback is live while the SumoPod key is capped), then #452, #453, #454.
+- [ ] Still blocked: #425 replay (SumoPod key budget). Still held on owner reads: #126, #239, #240, #242.
+
 ## 2026-11-08: SDE of QA's 11-06 qa-defects
 - [x] Fixed #448/#449 (opening common word), #440 (movement words), #446 (named time vs place), #445 (diselesaikan pada), and the held-out #421/#422/#423 shape. ADR-032: two word classes built from the archive (`scripts/build_word_classes.py`). Commit 4175812, not pushed.
 - [x] Parents #327 #328 #331 #390 #387 #392 moved to `status: ready-for-qa`. Unit 4,271 / 5 skipped; integration 229 / 1 skipped; 32/32 mutants killed.
