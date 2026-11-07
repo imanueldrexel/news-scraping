@@ -184,6 +184,7 @@ One line each; read this before starting on a scraper or pipeline problem.
 - **An NLI checker scored only on the LLM-written targeted pairs can look perfect while it flags verbatim copies (2026-11-04, SYS-199 arm B):** the generator drops verbatim copies and every near-copy is a one-edit corruption, so a fine-tune learns "near-identical = unfaithful" (98% of exact copies below 0.5). Always run `scripts/experiments/compare_nli_arms.py` (identity + wrong-premise controls), never the held-out table alone. Fixed by faithful near-copies in training (ADR-029). -> 2026-11-04 arm B entry, 2026-11-05 arm B retry
 - **A hypothesis-only artefact check on contrastive pairs must keep each seed in one fold (2026-11-05, SYS-197 #431):** a seed's corruptions, restatement and hard positive are near-copies with opposite labels, so shuffled folds score at chance (0.43-0.54) while seed-grouped folds give 0.62-0.80. `eval_nli.hypothesis_only_accuracy` uses GroupKFold; ADR-030 gates a model's numbers on its wrong-premise AUC instead of discarding the families. -> 2026-11-05 SYS-197 entry
 - **A word-list or place-rule fix needs an inverse probe as well as held-out synonyms (2026-11-06 QA):** run true sentences that now contain the new word or shape. That found 3 of the 4 regressions of the 11-05/06 fixes ("tertekan tajam" read as a cause, "Kemarin harganya berapa?" read as a new subject, "dari <name> hingga Lebaran" read as a place). -> 2026-11-06 QA audit entry
+- **"Is this word a name / a word of the movement?" is answered by the archive, not a list (2026-11-07, ADR-032):** mid-sentence casing separates names from common words (kemarin 1469 lower / 7 capitalised, Sritex 0/10), and the words after a movement verb vs after a cause marker separate "tajam / sepanjang" from "aksi / sentimen". Rebuild with `scripts/build_word_classes.py`; do not hand-edit the two files. Count acronyms as capitalised or lowercase noise makes "ihsg" common. -> 2026-11-07 entry
 
 ## Log
 
@@ -3583,3 +3584,25 @@ QA's grouped numbers on the 2,974-pair set were cause 0.607, denial 0.801, end 0
   - Place rules keyed on a capitalised word need a sweep of sentence-opening time words and particles: a capital letter at the start of a question is no name.
   - Measure corpus frequency before ranking severity.
 - **Links:** #440-#449 filed. #421/#422/#423/#425 kept open. 18 defects closed. Report: `.10x/reviews/2026-11-06-qa-report.md`.
+
+### 2026-11-07 -- QA 11-06 defects (#440 #445 #446 #448 #449, held-out #421-#423): two word classes from the archive
+- **Question:** can "is this opening word a name?" (#448/#449) and "is the word after *tertekan* a cause?" (#440) be answered from how the archive writes its words, instead of from another hand list?
+- **Method:**
+  - Read-only, 30k then 60k articles, throwaway counters in the session scratchpad. Then the whole archive (202,635 articles) through `scripts/build_word_classes.py`.
+  - Casing: count each word's uses where no sentence starts, lower case vs capitalised.
+  - Movement: count the word after an unambiguous movement verb (melemah, menguat, anjlok, merosot, ...) and after a noun-taking cause marker (akibat, imbas, dipicu, disebabkan, terdampak, dampak).
+  - Checks, pure: (1) routing (`resolve(...).how`, kept and fallback) of the 65 pairs of `sys144/measure_object_adjacency.py` + `measure_name_gate.py`, HEAD (git archive copy) vs now; (2) `causal_spans` of every sentence in `digests/*-ringkas.md` and `digests/preview/**` that holds a `_NEEDS_CAUSE` verb, HEAD vs now; (3) QA's whole `tests/qa/` set, HEAD vs now.
+- **Result:**
+  - Casing separates cleanly. Lower/capitalised: kemarin 1469/7, tadi 1923/6, kok 321/12, kira-kira 216/0, masa 6964/202; Sritex 0/10, Antam 22/1768, Garuda 11/407, Danantara 5/1695. "Mungkinkah" has 0 lower-case uses, so the -kah rule reads its stem.
+  - Movement, after movement / after cause per 60k: tajam 481/0, tipis 291/0, sepanjang 45/2, signifikan 222/72, drastis 142/0; aksi 30/225, kenaikan 4/288, sentimen 0/140, harga 42/47.
+  - Two traps on the way:
+    - "naik / turun" as movement verbs brought in nouns, because they also mean get on / off (penumpang, kereta, status, tersangka).
+    - Skipping all-caps words in the casing count made acronyms with lower-case noise "common" (ihsg, us). Counted as capitalised, they drop out.
+  - Full build: 39,404 common words, 176 movement words.
+  - Draft probe "Penyebabnya, apa kata OJK?" goes alone. That is ADR-021's own-name rule, unchanged at HEAD; the probe was wrong.
+  - Checks: (1) 0 of 65 routing decisions changed; (2) 1 distinct arc sentence holds such a verb ("... terangkat kinerja Wall Street"), read the same; (3) only FAILED -> PASSED. The 3 flips outside the defects are environment artifacts of the HEAD copy (no `logs/`, no git history).
+  - The live `measure_object_adjacency.py` run reads qa_1019 13/20 "now", against 17/19 on 10-20. With no decision changed, that is index/corpus drift. A HEAD copy cannot rerun it: git archive has no `NEWS_L*`.
+- **Conclusion / do not repeat:**
+  - A word's kind is in the archive's casing and neighbours. Build it there, commit the snapshot, and default an unknown word to the old reading (name; cause).
+  - Do not use naik/turun or karena/lantaran as anchors for word classes: each has a second use that pollutes the counts.
+- **Links:** ADR-032; #440, #445, #446, #448, #449, #421, #422, #423; `scripts/build_word_classes.py`, `newscrawler/web/common_words.txt`, `newscrawler/core/movement_words.txt`

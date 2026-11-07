@@ -922,3 +922,36 @@ class TestAnaphorNamesPickTheParts:
     def test_a_subject_without_a_name_still_borrows_by_its_words(self):
         assert cc._lent("Penurunan saham tersebut", "IHSG naik 1 persen dan saham bank turun 3 persen.") == \
             "saham bank turun 3 persen."
+
+
+class TestQa1106MovementIsNoCause:
+    """QA 2026-11-06 (#440, ADR-032): after "tertekan / terkerek ..." a movement word says how or when, not why. A
+    cause still needs a quote: a content word, a name, or a cause named by "oleh" after the movement."""
+
+    IHSG_DOWN = "IHSG ditutup turun 1,2 persen ke level 7.100 pada Senin."
+
+    @pytest.mark.parametrize("prose", ["IHSG tertekan drastis pada perdagangan Senin.",
+                                       "IHSG terkerek tinggi pada perdagangan Senin.",
+                                       "IHSG tertekan hampir 2 persen pada Senin.",
+                                       "IHSG tertekan ketika bursa Asia dibuka."])
+    def test_a_plain_movement_is_kept(self, prose):
+        assert kept(prose, self.IHSG_DOWN)
+
+    @pytest.mark.parametrize("prose", ["IHSG tertekan aksi jual investor asing.",
+                                       "IHSG tertekan tajam oleh aksi jual investor asing.",
+                                       "IHSG tertekan cukup dalam oleh sentimen global.",
+                                       "Saham bank terseret IHSG yang anjlok.",
+                                       "Rupiah terimbas pandemi.",
+                                       "Saham energi terkerek harga minyak.",
+                                       "Emiten properti terbebani utang jatuh tempo."])
+    def test_a_named_cause_still_needs_a_quote(self, prose):
+        assert not kept(prose, self.IHSG_DOWN)
+
+    def test_a_causal_word_after_it_is_the_link(self):
+        """"gara-gara" is no movement word, stopword or verb: it is the link itself, and "tertekan" is none."""
+        [claim] = cc.causal_spans("Harga saham tertekan gara-gara aksi jual investor asing.")
+        assert claim.word == "gara-gara"
+
+    def test_the_word_class_is_read(self):
+        assert {"tajam", "tipis", "sepanjang", "signifikan"} <= cc._MOVEMENT_WORDS
+        assert not {"aksi", "sentimen", "pandemi", "harga", "utang", "kenaikan"} & cc._MOVEMENT_WORDS

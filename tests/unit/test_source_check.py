@@ -737,3 +737,25 @@ def test_a_known_date_with_an_invented_year_names_the_date():
         "24 September 2025"
     assert sc.unsupported_number("Pada 24 September 2025 rapat digelar.", "Rapat digelar.", [(24, 9)]) is None
     assert sc.unsupported_number("Pada 24 September rapat digelar.", "Rapat 2026 digelar.", [(24, 9)]) is None
+
+
+class TestQa1106EndPoints:
+    """QA 2026-11-06: "diselesaikan pada <time>" ends a period (#445, owner-narrowed); a name the time follows at once
+    is a named time, not a place (#446)."""
+
+    def test_a_stated_diselesaikan_end_backs_the_prose(self):
+        assert sc.unbacked_end_times("Pembahasan RUU itu diselesaikan pada November 2026.",
+                                     "Pembahasan RUU itu diselesaikan pada November 2026.") == []
+
+    def test_an_end_stated_otherwise_backs_diselesaikan(self):
+        assert sc.unbacked_end_times("Pembahasan RUU itu diselesaikan pada November 2026.",
+                                     "Pembahasan RUU itu ditargetkan selesai pada November 2026.") == []
+
+    def test_a_named_time_after_dari_name_without_a_verb_is_an_end(self):
+        assert sc.unbacked_end_times("Diskon dari Garuda Indonesia hingga Lebaran 2027.",
+                                     "Maskapai memberi diskon tiket untuk penerbangan domestik.") != []
+
+    @pytest.mark.parametrize("prose", ["Bantuan disalurkan dari Aceh hingga Papua pada akhir Oktober.",
+                                       "Asap meluas hingga Riau pada akhir Oktober."])
+    def test_a_place_joined_by_pada_is_still_no_end(self, prose):
+        assert sc.unbacked_end_times(prose, "Asap meluas sejak Kamis (22/10).") == []

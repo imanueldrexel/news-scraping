@@ -141,6 +141,13 @@ def is_verb(word: str) -> bool:
     return bool(_VERB.fullmatch(w)) and w not in _PREFIXED_NOUNS
 
 
+def read_words(path: str) -> frozenset:
+    """A word-class file built by scripts/build_word_classes.py (ADR-032): one lower-case word per line, `#` lines
+    are its header."""
+    with open(path, encoding="utf-8") as f:
+        return frozenset(line.strip() for line in f if line.strip() and not line.startswith("#"))
+
+
 def meets(root: str, others: set) -> bool:
     """`root` is in `others`, or one ends the other (a nasal prefix eats a letter: "unda" in "tunda")."""
     return root in others or any(min(len(root), len(o)) >= _MIN_ROOT and (root.endswith(o) or o.endswith(root))

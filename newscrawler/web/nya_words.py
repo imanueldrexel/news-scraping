@@ -56,17 +56,28 @@ _AFTER_YANG = re.compile(r"\byang\s+$", re.IGNORECASE)
 # interrogative is their predicate.
 _INTERROGATIVE = r"(?:apa|apakah|siapa|bagaimana|gimana|kapan|berapa|mengapa|kenapa|mana|dimana)"
 _CLAUSE_AFTER = re.compile(rf"\s*,?\s+{_INTERROGATIVE}\s+yang\b", re.IGNORECASE)
+# QA 2026-11-06 (held out on #421-#423): or, after a comma, before an interrogative whose clause has a subject of its
+# own and names what it is about -- "Anehnya, kenapa saham di Garuda Indonesia anjlok?", "Parahnya, bagaimana nasib
+# Waskita?". Not "Harganya, berapa sekarang?" (no name) nor "Dampaknya, bagaimana ke IHSG?" (a preposition follows the
+# interrogative: the name is what the thread's event affects, ADR-021).
+_OWN_CLAUSE_AFTER = re.compile(rf"\s*,\s*({_INTERROGATIVE}\s+([^\W\d_][\w-]*)[^,;:?!.]*)", re.IGNORECASE)
 _NOTHING_BEFORE = re.compile(r"^\W*$")
 
 
 def in_adverb_place(text: str, start: int, word: str) -> bool:
     """The -nya `word` at `start` of `text` stands where an adverb does, whatever word it is: right after "yang"
-    and no verb (ADR-022), or opening the question before a clause with its own interrogative subject (#421).
+    and no verb (ADR-022), or opening the question before a clause with its own interrogative subject (#421) or
+    with its own subject and name (#421-#423 held out).
     The search page's two halves read it alike: `followup` (no reference) and `keywords` (no keyword)."""
     before = text[:start]
     if _AFTER_YANG.search(before) and not story_words.is_verb(word[:-3]):
         return True
-    return bool(_NOTHING_BEFORE.match(before) and _CLAUSE_AFTER.match(text, start + len(word)))
+    if not _NOTHING_BEFORE.match(before):
+        return False
+    if _CLAUSE_AFTER.match(text, start + len(word)):
+        return True
+    own = _OWN_CLAUSE_AFTER.match(text, start + len(word))
+    return bool(own and own.group(2).lower() not in story_words.STOPWORDS and story_words.names(own.group(1)))
 
 
 def is_reference(word: str) -> bool:

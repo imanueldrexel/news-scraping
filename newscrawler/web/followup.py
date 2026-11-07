@@ -20,6 +20,7 @@ Sritex?" after OJK does not, whichever adverb it holds.
 Everything here is pure except `rewrite`, which makes the call and never raises.
 """
 import logging
+import os
 import re
 import time
 from typing import Callable, NamedTuple, Optional, Sequence, Tuple
@@ -56,6 +57,10 @@ _OPENING_SUBJECT = re.compile(r"^\W*([^\W\d_][\w-]*)\s+[\w-]+nya\b")
 _NOT_A_SUBJECT = frozenset("apa apakah siapa bagaimana gimana kapan berapa mengapa kenapa mana dimana "
                            "lalu lantas terus trus kemudian kalau kalo jika bila nah sekarang tapi tetapi sementara "
                            "selain terakhir apalagi bahkan padahal oh oke ok baik".split())
+# QA 2026-11-06 (#448, #449), ADR-032: nor is a word the archive writes in lower case where no sentence starts
+# ("Kemarin / Besok / Kok / Masa / Kira-kira harganya ...?"), nor such a word with the question particle -kah
+# ("Benarkah", "Mungkinkah"). A name is written capitalised (Sritex, Antam), and a new one is in no snapshot.
+_COMMON_WORDS = story_words.read_words(os.path.join(os.path.dirname(os.path.abspath(__file__)), "common_words.txt"))
 _LABEL = re.compile(r"^(?:pertanyaan(?:\s+(?:hasil|baru|lengkap))?|hasil)\s*:\s*", re.IGNORECASE)
 _QUOTES = "\"'“”‘’`"
 # SYS-143 (#326): a refusal or a list item is one short line too, and must not be searched
@@ -96,12 +101,15 @@ def refers_back(question: str) -> bool:
 
 
 def _opening_subject(question: str, thread: set) -> bool:
-    """#421/#422: the question opens on a capitalised word the thread does not hold, right before a -nya word."""
+    """#421/#422: the question opens on a capitalised word the thread does not hold, right before a -nya word, and
+    the word is no common word (#448/#449)."""
     m = _OPENING_SUBJECT.match(question or "")
     if not m or not m.group(1)[0].isupper():
         return False
     low = m.group(1).lower()
-    return not (low.endswith("nya") or low in story_words.STOPWORDS or low in _NOT_A_SUBJECT or low in thread)
+    common = low in _COMMON_WORDS or (low.endswith("kah") and low[:-3] in _COMMON_WORDS)
+    return not (low.endswith("nya") or low in story_words.STOPWORDS or low in _NOT_A_SUBJECT or low in thread
+                or common)
 
 
 def refers_to_thread(question: str, previous: Sequence[str]) -> bool:

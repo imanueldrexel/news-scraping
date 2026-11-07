@@ -33,6 +33,7 @@ terdampak"), not a link between two stated facts (SYS-184). "terimbas", "terpeng
 ditekan / terseret / terbebani / terangkat / terkerek" are, but only when a cause follows them: "Sektor pariwisata
 terimbas pandemi" states one, "sektor yang terimbas" does not (owner, 2026-10-20, #401 / #413).
 """
+import os
 import re
 from typing import Dict, List, NamedTuple, Optional, Sequence, Tuple
 
@@ -78,7 +79,11 @@ _PURPOSE = re.compile(r"\b(?:untuk|guna|demi|agar|supaya|termasuk|ingin|berupaya
 # the link of "akibat".
 _NEEDS_CAUSE = frozenset({"terimbas", "terpengaruh", "tertekan", "ditekan", "terseret", "terbebani", "terangkat",
                           "terkerek"})
-_NEXT_WORD = re.compile(r"\s+(?:oleh\s+)?([^\W\d_][\w-]*)", re.IGNORECASE)
+_NEXT_WORD = re.compile(r"\s+(oleh\s+)?([^\W\d_][\w-]*)", re.IGNORECASE)
+# QA 2026-11-06 (#440), ADR-032: a word the archive writes after a market-movement verb far more often than after a
+# cause marker says how or when something moved ("tertekan tajam / sepanjang perdagangan", "terkerek naik"), not why.
+_MOVEMENT_WORDS = story_words.read_words(
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "movement_words.txt"))
 
 
 def _kind(word: str) -> str:
@@ -87,9 +92,14 @@ def _kind(word: str) -> str:
 
 def _cause_follows(sentence: str, end: int) -> bool:
     m = _NEXT_WORD.match(sentence, end)
-    if not m:
+    # #440: past the words of the movement itself, a cause is named only by "oleh" ("tertekan tajam oleh aksi jual").
+    moved = False
+    while m and not m.group(1) and m.group(2).lower() in _MOVEMENT_WORDS:
+        moved = True
+        m = _NEXT_WORD.match(sentence, m.end())
+    if not m or (moved and not m.group(1)):
         return False
-    word = m.group(1).lower()
+    word = m.group(2).lower()
     # A verb after it is the clause's predicate ("wilayah yang terimbas meliputi tiga kecamatan"); a verb made a noun
     # by -nya is a cause ("tertekan menguatnya dolar AS").
     verb = story_words.is_verb(word) and not word.endswith("nya")

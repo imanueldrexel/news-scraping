@@ -621,7 +621,9 @@ _DEADLINE = r"paling\s+lambat|selambat-lambatnya"
 # QA 2026-10-20 (#417): "rampung / tuntas / habis / ditutup pada <time>" ends a period too ("Pembekuan rampung pada
 # November 2026"; corpus: "rampung pada" 401, "ditutup pada" 349). The time must follow "pada" at once: "IHSG ditutup
 # melemah pada 12 Oktober" is a close of trading, not an end point.
-_END_CLOSE = r"(?:rampung|tuntas|habis|ditutup)\s+pada"
+# QA 2026-11-06 (#445, owner-narrowed under ADR-031): "diselesaikan pada" too, seen in arc prose ("... segera
+# diselesaikan pada akhir September", arcs-v2 2026-10-11).
+_END_CLOSE = r"(?:rampung|tuntas|habis|ditutup|diselesaikan)\s+pada"
 _END_POINT = re.compile(rf"(?<![\w.])(?:(?:(?P<deadline>{_DEADLINE})|{_END_OPEN}){_END_GAP}|{_END_CLOSE})\s+{_END_TIME}",
                         re.IGNORECASE)
 _STATED_END = re.compile(rf"(?:(?<![\w.])(?:(?:(?P<deadline>{_DEADLINE})|(?P<open>{_END_OPEN}|per)){_END_GAP}"
@@ -636,6 +638,7 @@ _SPREAD = re.compile(r"\b(?:meluas|menyebar|tersebar|merambat|menjalar|merembet|
                      r"mengular|memanjang|membentang|merendam|terendam|menggenangi|tergenang)\b[^,;:]*$", re.IGNORECASE)
 # ... and a range of places: "dari Sabang hingga Merauke" (#418). A month after "dari" is no name.
 _FROM_PLACE = re.compile(r"\bdari\s+([^\W\d_][\w-]*(?:\s+[^\W\d_][\w-]*){0,2})\s*$", re.IGNORECASE)
+_THEN_PADA = re.compile(r"\s+pada\b", re.IGNORECASE)
 # SYS-186 send-back: "berlaku per November 2026" is a START ("from November"); "Defisit APBN per 30 September" ends.
 _STARTS_PER = re.compile(r"\b(?:berlaku|mulai|efektif)\s*$", re.IGNORECASE)
 
@@ -663,11 +666,12 @@ def _from_place(before: str) -> bool:
 
 def _ends(pattern, text: str) -> list:
     """`pattern`'s matches in `text`, less a place after a verb of spread (`_SPREAD`, #406) or after "dari <place>"
-    (#418)."""
+    (#418). A place is joined to its time by "pada" ("hingga Merauke pada akhir Oktober"); a name the time follows at
+    once is a named time, an end point (#446: "dari Garuda Indonesia berlaku hingga Lebaran 2027")."""
     out = []
     for m in pattern.finditer(text):
         gap = (m.group("gap") or "").split()
-        place = gap and story_words.names(f"x {gap[0]}")
+        place = gap and story_words.names(f"x {gap[0]}") and _THEN_PADA.match(text, m.end("gap"))
         if not (place and (_SPREAD.search(text[:m.start()]) or _from_place(text[:m.start()]))):
             out.append(m)
     return out

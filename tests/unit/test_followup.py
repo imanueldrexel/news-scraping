@@ -336,3 +336,40 @@ class TestQa1020OpeningAdverbAndSubject:
     def test_a_lower_case_opening_word_is_no_subject(self):
         assert f.resolve("sritex ujung-ujungnya bangkrut?", ["Berapa harga emas Antam hari ini?"],
                                 None).how == f.FALLBACK_THREAD
+
+
+class TestQa1106OpeningWords:
+    """QA 2026-11-06 (#448, #449, ADR-032): a capitalised opening word is the follow-up's own subject only when the
+    archive does not write it in lower case; and (#421-#423 held out) "<x>nya, <interrogative> <subject> ... <Name>"
+    opens on a sentence adverb. The thread's own shapes stay."""
+
+    ANTAM = ["Berapa harga emas Antam hari ini?"]
+    FED = ["Apa keputusan The Fed terbaru?"]
+
+    @pytest.mark.parametrize("question", ["Garuda harganya berapa?", "Pertamina dampaknya apa?",
+                                          "Zyxtrakorp ujung-ujungnya bangkrut?"])
+    def test_a_name_or_an_unknown_word_is_the_own_subject(self, question):
+        """A name is written capitalised (garuda 11 lower / 407 capitalised), and a new one is in no snapshot."""
+        assert f.resolve(question, self.ANTAM, None).how == f.FALLBACK_OWN
+        assert f.resolve(question, self.ANTAM, question).how == f.KEPT
+
+    def test_a_name_the_thread_holds_keeps_the_thread(self):
+        assert f.resolve("Sritex ujung-ujungnya bagaimana?", ["Apa kabar terbaru Sritex?"], None).how == \
+            f.FALLBACK_THREAD
+
+    @pytest.mark.parametrize("question", ["Lusa harganya berapa?", "Semalam harganya turun?",
+                                          "Sungguhkah harganya turun?", "Konon harganya naik?"])
+    def test_other_common_openers_keep_the_thread(self, question):
+        assert f.resolve(question, self.ANTAM, None).how == f.FALLBACK_THREAD
+        assert f.resolve(question, self.ANTAM, question).how == f.KEPT_THREAD
+
+    @pytest.mark.parametrize("question,previous", [
+        ("Harganya, berapa sekarang?", ANTAM),
+        ("Harganya, kenapa naik?", ANTAM),
+        ("Harganya, berapa di Pegadaian?", ANTAM),
+        ("Dampaknya, bagaimana ke IHSG?", FED),
+        ("Dampaknya, apa bagi BBRI?", FED),
+    ])
+    def test_a_topicalised_reference_keeps_the_thread(self, question, previous):
+        """No name in the clause, or a preposition / function word after the interrogative."""
+        assert f.resolve(question, previous, None).how == f.FALLBACK_THREAD

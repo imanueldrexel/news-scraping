@@ -477,3 +477,18 @@ class TestRecencyCue:
         qp.client.get_session.side_effect = RuntimeError("db down")
         assert _search(qp, BI) == []
         assert "FTS search failed" in caplog.text
+
+
+class TestQa1106OpeningAdverb:
+    """#423 held out (2026-11-06): the sentence adverb of "<x>nya, <interrogative> ... <Name>" is no keyword; a
+    topicalised reference keeps its root."""
+
+    def test_an_opening_sentence_adverb_adds_no_keyword(self):
+        assert [t.word for t in terms("Lucunya, kenapa saham Sritex anjlok?")] == ["saham", "sritex", "anjlok"]
+
+    @pytest.mark.parametrize("question,root", [("Harganya, berapa sekarang?", "harga"),
+                                               ("Dampaknya, bagaimana ke IHSG?", "dampak"),
+                                               # no comma: a topicalised noun, not a sentence adverb
+                                               ("Dampaknya bagaimana nasib saham BBRI?", "dampak")])
+    def test_a_topicalised_reference_keeps_its_root(self, question, root):
+        assert root in [t.word for t in terms(question)]
