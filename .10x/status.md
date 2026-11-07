@@ -1,5 +1,11 @@
 # Project Status
 
+## 2026-11-08: SDE of QA's 11-06 qa-defects
+- [x] Fixed #448/#449 (opening common word), #440 (movement words), #446 (named time vs place), #445 (diselesaikan pada), and the held-out #421/#422/#423 shape. ADR-032: two word classes built from the archive (`scripts/build_word_classes.py`). Commit 4175812, not pushed.
+- [x] Parents #327 #328 #331 #390 #387 #392 moved to `status: ready-for-qa`. Unit 4,271 / 5 skipped; integration 229 / 1 skipped; 32/32 mutants killed.
+- [ ] #425: the replay was BLOCKED by the SumoPod key budget (Spend 61.50 = Budget 61.5). Owner: raise the cap; then re-run `replay_story_arcs.py --out-dir digests/preview/arcs-v7-425 --seed 425`. #338 stays qa-failed.
+- [ ] Owner: the same cap will stop the 12:00 edition, the 21:00 extraction and Tanya Berita answers.
+
 ## 2026-11-06: QA of the 11-05/06 defect fixes + owner decisions (ADR-031)
 - [x] QA audited 14 parents at 9d9ad16. 18 defects closed; #440-#449 filed (4 regressions: #440, #446, #448, #449). Report: `.10x/reviews/2026-11-06-qa-report.md`.
 - [x] Owner: arc gate word lists frozen (ADR-031). #441, #442, #443, #444 and #447 were closed as accepted gaps, and #445 was narrowed to "diselesaikan pada" (seen in arc output). #393, #381 and #376 are now qa-passed.

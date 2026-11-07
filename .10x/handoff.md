@@ -1,5 +1,19 @@
 # Current Handoff
 
+## From: SDE (2026-11-08) -> To: QA, owner
+**Read first:** ADR-032; `.10x/decisions/sde/qa-1106-defects.md`; the dev comment on each defect.
+- **QA:** re-verify parents #327, #328, #331, #390, #387 and #392 (`status: ready-for-qa`).
+  - QA's tests are in `tests/unit/test_qa_1106_defects.py`.
+  - The held-out shape "<x>nya, <interrogative> <subject> ... <Name>" is in `nya_words._OWN_CLAUSE_AFTER`.
+  - Worth probing:
+    - names the archive writes in lower case (`common_words.txt`);
+    - a cause after a movement word without "oleh";
+    - the comma requirement of the own-clause rule.
+- **Owner:** SumoPod key budget reached (`ExceededBudget: Spend=61.50, Budget=61.5`, 2026-11-08 00:09). That blocks the #425 replay and will block the 12:00 edition, the 21:00 extraction and Tanya Berita answers until it is raised.
+- **After the top-up:** run `venv\Scripts\python.exe scripts\experiments\replay_story_arcs.py --out-dir digests/preview/arcs-v7-425 --seed 425` and post built/fallback and refusals on #425. Then QA rules: >= 90% closes; otherwise file the live-acceptance requirement.
+
+---
+
 ## From: QA + owner (2026-11-06) -> To: SDE
 **Read first:** ADR-031; `.10x/decisions/qa/qa-pass-2026-11-06.md`; `.10x/reviews/2026-11-06-qa-report.md`.
 - Fix the regressions first: #440 (`_cause_follows`), #446 (`_from_place`), #448/#449 (`_opening_subject`). Each issue carries a runnable failing test. For each fix, add an inverse probe: true sentences that contain the new word or shape.
