@@ -185,6 +185,7 @@ One line each; read this before starting on a scraper or pipeline problem.
 - **A hypothesis-only artefact check on contrastive pairs must keep each seed in one fold (2026-11-05, SYS-197 #431):** a seed's corruptions, restatement and hard positive are near-copies with opposite labels, so shuffled folds score at chance (0.43-0.54) while seed-grouped folds give 0.62-0.80. `eval_nli.hypothesis_only_accuracy` uses GroupKFold; ADR-030 gates a model's numbers on its wrong-premise AUC instead of discarding the families. -> 2026-11-05 SYS-197 entry
 - **A word-list or place-rule fix needs an inverse probe as well as held-out synonyms (2026-11-06 QA):** run true sentences that now contain the new word or shape. That found 3 of the 4 regressions of the 11-05/06 fixes ("tertekan tajam" read as a cause, "Kemarin harganya berapa?" read as a new subject, "dari <name> hingga Lebaran" read as a place). -> 2026-11-06 QA audit entry
 - **"Is this word a name / a word of the movement?" is answered by the archive, not a list (2026-11-07, ADR-032):** mid-sentence casing separates names from common words (kemarin 1469 lower / 7 capitalised, Sritex 0/10), and the words after a movement verb vs after a cause marker separate "tajam / sepanjang" from "aksi / sentimen". Rebuild with `scripts/build_word_classes.py`; do not hand-edit the two files. Count acronyms as capitalised or lowercase noise makes "ihsg" common. -> 2026-11-07 entry. **Amended 2026-11-10:** casing does NOT tell a common noun ("gula", "timah") from a time word or particle. The follow-up openers are a closed class (`followup._SHARED_OPENERS`); `common_words.txt` decides only the -kah form. The movement builder must skip headings with no stop, "terjun", and possessed -nya nouns. -> 2026-11-10 entry
+- **SumoPod's deepseek-v4-flash ignores `thinking: disabled` since 2026-11; send `reasoning_effort="none"` (2026-11-10, SYS-202):** without it every call spends `max_tokens` on reasoning and answers `''` (HTTP 200, `finish_reason=length`). "minimal" still reasons fully; "low", `enable_thinking`, `chat_template_kwargs` and `reasoning.enabled` still reason 35-39 tokens. -> 2026-11-10 SYS-202 entry
 
 ## Log
 
@@ -3654,3 +3655,17 @@ QA's grouped numbers on the 2,974-pair set were cause 0.607, denial 0.801, end 0
   - When a word class looks wrong, read the archive contexts first. Here the bad members were artefacts of the count (headings, a second verb meaning, inverted subjects), not the threshold.
   - A capitalised or -nya filter must keep title-case headings and the words that only end in -nya.
 - **Links:** #450, #451, #452, #453, #454, #455 (SYS-201); ADR-032 amendment 2026-11-10
+
+## 2026-11-10 -- SYS-202: after the SumoPod top-up every call answers empty
+- **Question:** after the owner's top-up, the #425 replay got HTTP 200 on every call but "Story grouping failed ...: empty answer", and no edition was built. Why, and which request switch still turns reasoning off?
+- **Method:** one throwaway probe per variant (inlined, not kept), `max_tokens=50`, prompt "Balas satu kata: OK", model `deepseek-v4-flash` at `OPENAI_BASE_URL`. Each call reports `finish_reason`, content and `completion_tokens_details.reasoning_tokens`. Then `reasoning_effort="none"` was tried together with the old switch, in JSON mode, and on a two-sentence answer, and a real call went through `OpenAICompatSummarizer` after the fix.
+- **Result:**
+  - The current `extra_body={"thinking": {"type": "disabled"}}`, no switch at all, and `reasoning_effort="minimal"` each give finish=length, content '' and reasoning 50/50.
+  - "low", `enable_thinking: false`, `chat_template_kwargs.thinking: false` and `reasoning.enabled: false` answer "OK", but still spend 35-39 tokens reasoning.
+  - Only `reasoning_effort="none"` gives finish=stop and reasoning 0. It also does so with the old switch kept, in JSON mode, and on a longer answer.
+  - `/v1/models` also lists deepseek-flash, deepseek-v4-pro, deepseek-v4.1-flash-1017, deepseek-v4.1-flash:fast and deepseek-v4.1-flash:netra (not tried).
+- **Conclusion / do not repeat:**
+  - The provider can silently stop honouring a request flag. An empty answer with finish=length and reasoning_tokens == completion_tokens is this failure, not a budget or network problem.
+  - Both production call sites (`summarizer.py`, `extraction_provider.py`) now send `reasoning_effort="none"` and keep the old switch.
+  - `scripts/label_filter_gold.py` has the same flag and was left alone (offline).
+- **Links:** SYS-202 (#456); OPS-20 (#136); #425

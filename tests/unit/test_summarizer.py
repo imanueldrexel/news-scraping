@@ -44,6 +44,9 @@ class TestOpenAICompatSummarizer:
         s.summarize("p")
         kw = client.chat.completions.create.call_args.kwargs
         assert kw["extra_body"] == {"thinking": {"type": "disabled"}}
+        # SYS-202 (#456): SumoPod's deepseek-v4-flash ignores the switch above since 2026-11; only this one stops it
+        # spending max_tokens on reasoning and answering ''.
+        assert kw["reasoning_effort"] == "none"
         assert kw["max_tokens"] == sm.NEWSLETTER_SUMMARY_MAX_TOKENS
         assert kw["model"] == "deepseek-test"
 
