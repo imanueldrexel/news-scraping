@@ -33,6 +33,8 @@ On local `dev` on top of d76b5ea, not pushed. As in earlier rounds, QA audits lo
 
 ## Not done / left open
 - **#425:** replay re-run 2026-11-10 04:43. Still `ExceededBudget Spend=61.50 Budget=61.5`. #338 stays qa-failed.
+  - *Update, after the owner's top-up:* SYS-202 (#456) was found and fixed (334ecdc): the provider ignores `thinking: disabled`, and `reasoning_effort="none"` is now sent.
+  - The replay then gave 13/20 = 65%. SYS-203 (#457) is filed, length trim first.
 - **SYS-201 (#455), filed, not fixed:** a negated stated end ("belum diselesaikan pada") backs a prose end. Pre-existing, out of these defects' scope.
 - **IEU-CEPA arc sentence:** still refused against its real source. SYS-193's per-sentence subject rule applies: the completion sentence names no IEU-CEPA.
 

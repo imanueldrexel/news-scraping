@@ -1,5 +1,12 @@
 # Current Handoff
 
+## From: SDE (2026-11-10, after the top-up) -> To: QA, owner
+- **SYS-202 (#456, P0), ready-for-qa.** Verify that the 2026-11-10 12:00 edition has summaries > 0 and that the 21:00 extraction extracts. Before the fix, every SumoPod call answered '' (reasoning used the whole max_tokens).
+- **#425:** the replay gave 13/20 (65%), below 90%. Per the owner's rule, SYS-203 (#457) is filed, length trim first. Length is the largest final reason combined (6/20) but is no majority: about 70-78% even when it is fixed. QA rules on #425; #338 stays qa-failed.
+- **Owner:** SYS-203 is the next build. Decide whether style (5/20) and sebab (4/20) refusals are in scope after the trim.
+- The SDE handoff below (11-08 defects, 5 parents ready-for-qa) still applies.
+
+
 ## From: SDE (2026-11-10) -> To: QA, owner
 **Read first:** ADR-032's 2026-11-10 amendment; `.10x/decisions/sde/qa-1108-defects.md`; the dev comment on each defect.
 - **QA:** re-verify parents #327, #328, #390, #387 and #392 (`status: ready-for-qa`). QA's tests are in `tests/unit/test_qa_1108_defects.py`. Worth probing:

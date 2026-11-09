@@ -1,5 +1,10 @@
 # Project Status
 
+## 2026-11-10 (after the owner's SumoPod top-up)
+- [x] SYS-202 (#456, P0) found and fixed in 334ecdc. deepseek-v4-flash ignores `thinking: disabled` and answers empty; both call sites now send `reasoning_effort="none"`. Status: ready-for-qa; QA checks the 11-10 12:00 newsletter and the 21:00 extraction.
+- [x] #425 replay measured on 334ecdc: 13/20 = 65% after the retry ($0.61). Final refusals: style 2, date 2, sebab 1, length 1, json 1.
+- [x] Per the owner's rule (< 90%), filed SYS-203 (#457): live acceptance, deterministic length trim first. #338 stays qa-failed.
+
 ## 2026-11-10: SDE of QA's 11-08 qa-defects
 - [x] Fixed #450/#451 (closed opener class), #452 (movement builder admission; class rebuilt), #453 (place before a month), #454 (restated completions). ADR-032 amended. Not pushed.
 - [x] Parents #327 #328 #390 #387 #392 moved to `status: ready-for-qa`. Unit 4,331 / 5 skipped; integration 229 / 1 skipped; 26/26 mutants killed.
