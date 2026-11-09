@@ -1,13 +1,11 @@
-# built 2026-11-07 by scripts/build_word_classes.py from 202635 articles (ADR-032)
+# built 2026-11-10 by scripts/build_word_classes.py from 209479 articles (ADR-032)
 # after a movement verb >= 5 times and >= 3x the per-use rate after a cause marker; common words only
 akibat
 alias
 apabila
-artinya
 atau
 bahkan
 bahwa
-bebas
 begitu
 belakangan
 beriringan
@@ -29,7 +27,6 @@ dari
 demi
 dengan
 di
-dia
 diatas
 dibanding
 dibandingkan
@@ -44,16 +41,12 @@ direntang
 disertai
 ditopang
 drastis
-ekspornya
-eskalasinya
 gitu
 hampir
 hanya
-harganya
 hari
 hingga
 imbas
-intensitasnya
 jadi
 jauh
 jelang
@@ -69,20 +62,15 @@ kencang
 ketika
 ketimbang
 kisaran
-kita
-kualitasnya
 lagi
 lantaran
 lebih
 maka
 masing-masing
-mayoritas
 melampaui
 melebihi
 melewati
-memadamkan
 memasuki
-membantu
 memberi
 memberikan
 membuat
@@ -90,7 +78,6 @@ mendekati
 mendjadi
 mendorong
 menembus
-mengawasi
 mengenai
 mengikuti
 mengingat
@@ -100,7 +87,6 @@ menjadi
 menjelang
 menuju
 menurun
-menurut
 menyebabkan
 menyentuh
 menyusul
@@ -110,14 +96,11 @@ meskipun
 mulai
 naik
 namun
-nilainya
 nyaris
 pada
 pagi
 pasca
-payung
 pekan
-pembeliannya
 pesat
 pimpin
 pula
@@ -128,7 +111,6 @@ sangat
 sebab
 sebanyak
 sebelum
-sebelumnya
 sebesar
 secara
 sedikit
@@ -149,7 +131,6 @@ sepanjang
 sepekan
 sesaat
 setelah
-setelahnya
 setiap
 setidaknya
 seusai
@@ -161,7 +142,6 @@ tahun
 tajam
 tanpa
 tapi
-tatakelolanya
 terbatas
 tercermin
 terlalu
@@ -173,6 +153,5 @@ tipis
 total
 turun
 usai
-volumenya
 ya
 yaitu

@@ -1,5 +1,11 @@
 # Project Status
 
+## 2026-11-10: SDE of QA's 11-08 qa-defects
+- [x] Fixed #450/#451 (closed opener class), #452 (movement builder admission; class rebuilt), #453 (place before a month), #454 (restated completions). ADR-032 amended. Not pushed.
+- [x] Parents #327 #328 #390 #387 #392 moved to `status: ready-for-qa`. Unit 4,331 / 5 skipped; integration 229 / 1 skipped; 26/26 mutants killed.
+- [ ] #425: replay still BLOCKED by the SumoPod key budget (re-tried 2026-11-10 04:43). #338 stays qa-failed. The cap also stopped the 11-07..11-09 editions and the 11-09 extraction.
+- [ ] SYS-201 (#455, P3): a negated stated end backs a prose end. Filed, not fixed.
+
 ## 2026-11-08: QA of the ADR-032 fixes (4175812)
 - [x] QA audited 6 parents at 02cad04 (baseline 84c3567). 8 defects closed (#448 #449 #440 #446 #445 #421 #422 #423); #450-#454 filed (4 regressions). Report: `.10x/reviews/2026-11-08-qa-report.md`.
 - [x] #331 qa-passed; #327 #328 #390 #387 #392 qa-failed. Unit 4,274 / 5 skipped; integration 229 / 1 skipped; 4/4 QA mutants killed.

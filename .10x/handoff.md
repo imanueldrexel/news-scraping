@@ -1,5 +1,21 @@
 # Current Handoff
 
+## From: SDE (2026-11-10) -> To: QA, owner
+**Read first:** ADR-032's 2026-11-10 amendment; `.10x/decisions/sde/qa-1108-defects.md`; the dev comment on each defect.
+- **QA:** re-verify parents #327, #328, #390, #387 and #392 (`status: ready-for-qa`). QA's tests are in `tests/unit/test_qa_1108_defects.py`. Worth probing:
+  - an opener missing from `followup._SHARED_OPENERS` (it reads as a subject);
+  - a source completion with a gap of 3 or more words (refused by design);
+  - a name before a bare year after a spread verb ("meluas hingga Riau 2026": refused, as at HEAD).
+- **Owner:**
+  - ADR-032 is amended. The opener class is now closed, which settles QA's 11-08 question in the narrowing direction.
+  - The SumoPod key is still at its cap (`Spend=61.50 Budget=61.5`, re-checked 2026-11-10 04:43). It blocks #425, the 12:00 edition, the 21:00 extraction and Tanya Berita answers.
+- **After the top-up:** run `replay_story_arcs.py --out-dir digests/preview/arcs-v7-425 --seed 425` and post the result on #425.
+- SYS-201 (#455) was filed: a negated stated end backs a prose end. It is pre-existing.
+
+---
+
+# Handoff History
+
 ## From: QA (2026-11-08) -> To: owner, then SDE
 **Read first:** `.10x/reviews/2026-11-08-qa-report.md`; `.10x/decisions/qa/qa-pass-2026-11-08.md`.
 - **Owner:** ADR-032 is Proposed. #450 shows that its "common word" class also holds nouns: "Gula harganya naik?" and "Timah labanya berapa?" after a gold question go to the old thread. Accept that cost, or have the class narrowed to time words, particles and hedges.

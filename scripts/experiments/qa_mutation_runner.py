@@ -2191,9 +2191,9 @@ M = [
  ('sys186_setelah_backs', 'newscrawler/core/source_check.py',
   '(?P<open>{_END_OPEN}|per)){_END_GAP}', '(?P<open>{_END_OPEN}|per|setelah)){_END_GAP}'),
  ('sys186_any_shared_part_backs', 'newscrawler/core/source_check.py',
-  'if not any(key <= s and (', 'if not any(key & s and ('),
+  'if any(key <= s and (deadline', 'if any(key & s and (deadline'),
  ('sys186_precise_prose_backed', 'newscrawler/core/source_check.py',
-  'if not any(key <= s and (', 'if not any(s <= key and ('),
+  'if any(key <= s and (deadline', 'if any(s <= key and (deadline'),
  # sys186_gap_allows_pada retired 2026-10-18: the send-back allows "pada" as the gap's last word, so blocking it in
  # the middle of a gap changes no reading a test can tell (QA: it survived the five arc suites).
  ('sys186_no_range_end', 'newscrawler/core/source_check.py',
@@ -2228,9 +2228,9 @@ M = [
  ('sys191_sd_ends_a_sentence', 'newscrawler/core/source_check.py', r'(?<=[.!?])(?<!\bs\.d\.)\s+', r'(?<=[.!?])\s+'),
  # SYS-193 (#394): a stated end backs only an end of the same subject.
  ('sys193_no_subject', 'newscrawler/core/source_check.py',
-  ' and (not subject or any(story_words.meets(r, roots) for r in subject))', ''),
+  '    return not subject or any(story_words.meets(r, roots) for r in subject)', '    return True'),
  ('sys193_subject_always_needed', 'newscrawler/core/source_check.py',
-  ' and (not subject or any(', ' and (False or any('),
+  '    return not subject or any(', '    return False or any('),
  # SYS-190 (#391): whole months, semesters/quarters and year parts must be stated today, judged by field.
  ('sys190_not_wired', 'newscrawler/core/story_arc.py',
   '                                                                                        stated_today, key)]',
@@ -2419,8 +2419,10 @@ M = [
  ('sys186d_no_from_place', 'newscrawler/core/source_check.py', ' or _from_place(text[:m.start()])', ''),
  ('sys186d_any_word_after_dari', 'newscrawler/core/source_check.py',
   '    return bool(m and story_words.names(f"x {m.group(1)}"))', '    return bool(m)'),
- ('sys191d_no_rampung', 'newscrawler/core/source_check.py', '_END_CLOSE = r"(?:rampung|tuntas|', '_END_CLOSE = r"(?:tuntas|'),
- ('sys191d_no_ditutup', 'newscrawler/core/source_check.py', '|habis|ditutup|diselesaikan)\\s+pada"', '|habis|diselesaikan)\\s+pada"'),
+ ('sys191d_no_rampung', 'newscrawler/core/source_check.py', '_END_CLOSE = r"(?P<close>(?:rampung|tuntas|',
+  '_END_CLOSE = r"(?P<close>(?:tuntas|'),
+ ('sys191d_no_ditutup', 'newscrawler/core/source_check.py', '|habis|ditutup|diselesaikan)\\s+pada)"',
+  '|habis|diselesaikan)\\s+pada)"'),
  ('sys191d_close_takes_a_gap', 'newscrawler/core/source_check.py',
   '{_END_OPEN}){_END_GAP}|{_END_CLOSE})\\s+{_END_TIME}",', '{_END_OPEN}|{_END_CLOSE}){_END_GAP}\\s+{_END_TIME}",'),
  ('sys191d_source_close_unread', 'newscrawler/core/source_check.py', '                         rf"|{_END_CLOSE})\\s+|',
@@ -2468,8 +2470,8 @@ M = [
  ('sys189e_cause_after_movement_without_oleh', 'newscrawler/core/causal_check.py',
   'if not m or (moved and not m.group(1)):', 'if not m:'),
  # QA 2026-11-06 (#446, #445).
- ('sys186e_place_without_pada', 'newscrawler/core/source_check.py', ' and _THEN_PADA.match(text, m.end("gap"))', ''),
- ('sys191e_no_diselesaikan', 'newscrawler/core/source_check.py', '|ditutup|diselesaikan)\\s+pada"', '|ditutup)\\s+pada"'),
+ ('sys186e_place_without_pada', 'newscrawler/core/source_check.py', ' and (_THEN_PADA.match(text, m.end("gap"))', ' and (True'),
+ ('sys191e_no_diselesaikan', 'newscrawler/core/source_check.py', '|ditutup|diselesaikan)\\s+pada)"', '|ditutup)\\s+pada)"'),
  ('sys144d_lowercase_opens_own', 'newscrawler/web/followup.py', '    if not m or not m.group(1)[0].isupper():', '    if not m:'),
  ('sys146d_keywords_ignore_the_place', 'newscrawler/web/keywords.py',
   '            if nya_words.is_reference(low) and nya_words.in_adverb_place(one, m.start(), word):\n                continue\n', ''),
@@ -2480,7 +2482,22 @@ M = [
   '[^,;:?!.]){1,25})", re.IGNORECASE)'),
  ('sys146c_no_ditanya', 'newscrawler/web/nya_words.py', ' "ditanya", "menanya",', ''),
  ('sys146c_no_spoken_adverbs', 'newscrawler/web/nya_words.py', '    "harusnya", "mestinya", ', '    '),
-]
+ # QA 2026-11-08 (#450 #451): shared openers are a closed class, not every lower-case word.
+ ('sys144f_common_nouns_shared', 'newscrawler/web/followup.py', '    common = low in _SHARED_OPENERS or',
+  '    common = low in _COMMON_WORDS or'),
+ ('sys144f_no_shared_openers', 'newscrawler/web/followup.py', '    common = low in _SHARED_OPENERS or',
+  '    common = False or'),
+ # QA 2026-11-08 (#452): the rebuilt movement class; a noun or a -nya word put back.
+ ('sys189f_mayoritas_moves', 'newscrawler/core/movement_words.txt', '\nmasing-masing\n', '\nmasing-masing\nmayoritas\n'),
+ ('sys189f_nya_moves', 'newscrawler/core/movement_words.txt', '\nnamun\n', '\nnamun\nnilainya\n'),
+ # QA 2026-11-08 (#453 #454): a place before a month; a completion restated in a source.
+ ('sys186f_place_needs_pada', 'newscrawler/core/source_check.py', '\n                                                                or not m.group("year"))', ')'),
+ ('sys186f_named_time_is_a_place', 'newscrawler/core/source_check.py', 'or not m.group("year"))', 'or True)'),
+ ('sys191f_no_completions', 'newscrawler/core/source_check.py', '            if m.group("close"):\n', '            if False:\n'),
+ ('sys191f_completion_backs_any_end', 'newscrawler/core/source_check.py', '            if m.group("close"):\n', '            if True:\n'),
+ ('sys191f_negated_completion', 'newscrawler/core/source_check.py',
+  ' if not _NOT_DONE.search(sentence[:m.start()])]', ']'),
+ ('sys191f_gap_allows_setelah', 'newscrawler/core/source_check.py', '(?!(?:pada|sejak|setelah|sebelum|', '(?!(?:pada|sejak|sebelum|'),]
 only = sys.argv[1:]
 # The tests each mutant runs (default: all of tests/unit). QA_MUTANT_TESTS narrows it to the files that
 # guard the mutated code, e.g. the newsletter's -- a mutant those kill is killed by the whole suite too,

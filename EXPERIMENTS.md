@@ -184,7 +184,7 @@ One line each; read this before starting on a scraper or pipeline problem.
 - **An NLI checker scored only on the LLM-written targeted pairs can look perfect while it flags verbatim copies (2026-11-04, SYS-199 arm B):** the generator drops verbatim copies and every near-copy is a one-edit corruption, so a fine-tune learns "near-identical = unfaithful" (98% of exact copies below 0.5). Always run `scripts/experiments/compare_nli_arms.py` (identity + wrong-premise controls), never the held-out table alone. Fixed by faithful near-copies in training (ADR-029). -> 2026-11-04 arm B entry, 2026-11-05 arm B retry
 - **A hypothesis-only artefact check on contrastive pairs must keep each seed in one fold (2026-11-05, SYS-197 #431):** a seed's corruptions, restatement and hard positive are near-copies with opposite labels, so shuffled folds score at chance (0.43-0.54) while seed-grouped folds give 0.62-0.80. `eval_nli.hypothesis_only_accuracy` uses GroupKFold; ADR-030 gates a model's numbers on its wrong-premise AUC instead of discarding the families. -> 2026-11-05 SYS-197 entry
 - **A word-list or place-rule fix needs an inverse probe as well as held-out synonyms (2026-11-06 QA):** run true sentences that now contain the new word or shape. That found 3 of the 4 regressions of the 11-05/06 fixes ("tertekan tajam" read as a cause, "Kemarin harganya berapa?" read as a new subject, "dari <name> hingga Lebaran" read as a place). -> 2026-11-06 QA audit entry
-- **"Is this word a name / a word of the movement?" is answered by the archive, not a list (2026-11-07, ADR-032):** mid-sentence casing separates names from common words (kemarin 1469 lower / 7 capitalised, Sritex 0/10), and the words after a movement verb vs after a cause marker separate "tajam / sepanjang" from "aksi / sentimen". Rebuild with `scripts/build_word_classes.py`; do not hand-edit the two files. Count acronyms as capitalised or lowercase noise makes "ihsg" common. -> 2026-11-07 entry
+- **"Is this word a name / a word of the movement?" is answered by the archive, not a list (2026-11-07, ADR-032):** mid-sentence casing separates names from common words (kemarin 1469 lower / 7 capitalised, Sritex 0/10), and the words after a movement verb vs after a cause marker separate "tajam / sepanjang" from "aksi / sentimen". Rebuild with `scripts/build_word_classes.py`; do not hand-edit the two files. Count acronyms as capitalised or lowercase noise makes "ihsg" common. -> 2026-11-07 entry. **Amended 2026-11-10:** casing does NOT tell a common noun ("gula", "timah") from a time word or particle. The follow-up openers are a closed class (`followup._SHARED_OPENERS`); `common_words.txt` decides only the -kah form. The movement builder must skip headings with no stop, "terjun", and possessed -nya nouns. -> 2026-11-10 entry
 
 ## Log
 
@@ -3619,3 +3619,38 @@ QA's grouped numbers on the 2,974-pair set were cause 0.607, denial 0.801, end 0
   - QA mutants: 4/4 killed.
 - **Conclusion / do not repeat:** probe a corpus-derived class for what it should NOT contain, not only for the words it was built to catch. "Lower case mid-sentence" does not mean "not a subject". "Follows a movement verb" does not mean "not a cause".
 - **Links:** #450, #451, #452, #453, #454; `.10x/reviews/2026-11-08-qa-report.md`; ADR-032
+
+## 2026-11-10 -- Fixing QA's 11-08 defects: can the archive tell nouns from openers, and where did the movement nouns come from?
+- **Question:**
+  1. (#450/#451) Can an archive signal separate the time words and particles a follow-up shares with its thread ("Kemarin / Kok harganya ...?") from common nouns that are a new subject ("Gula / Timah harganya ...?")? QA suggested governance: "harga gula" is common, "harga kemarin" is rare.
+  2. (#452) How did nouns get into `movement_words.txt`?
+- **Method:**
+  - `scripts/experiments/probe_opening_word_classes.py --limit 60000`.
+  - `scripts/experiments/probe_movement_word_next.py --limit 60000` (what follows each class word after a movement verb).
+  - Archive contexts of the suspect words, and full-archive counts under the old and new admission rules (throwaway scratch scripts).
+  - Routing diff of 207 follow-ups, and an end-point diff of QA's probes, my inverse probes and all 328 arc sentences in `digests/`. Both compare 84c3567, HEAD (d76b5ea) and the working tree, in `git archive` copies.
+- **Result:**
+  - Governance does not separate them. Share of uses right after a lower-case content word:
+    - nouns: gula 0.72, beras 0.80, cabai 0.53, bawang 0.45;
+    - time words, particles and adverbs: kemarin 0.36, tadi 0.52, kok 0.60, masa 0.69, mendadak 0.69, pasti 0.63. "malam tadi", "kenapa kok" and "secara mendadak" govern as often as "harga gula".
+    - Fix: a closed opener class, `followup._SHARED_OPENERS`. Every member but "anda" is in `common_words.txt`. Routing diff: every time word and particle routes as at HEAD, every common noun as on 84c3567, and 0 other decisions changed.
+  - "What follows the word" does not separate movement words either. Prepositions ("dalam" 0.83, "selama" 0.87) are followed by a content word as often as nouns are ("mayoritas" 1.00). "payung" 0.00 and "total" 0.00 are followed by the end of a clause, because in the archive they are "terjun payung" and "anjlok total".
+  - Where the nouns came from:
+    - "mayoritas" (11 uses after a movement verb, all capitalised): headings with no stop, "... menguat Mayoritas mata uang di Asia ...";
+    - "payung" (15) and "bebas" (151): "terjun payung" / "terjun bebas";
+    - the 9 -nya nouns: inverted subjects, "meningkat volumenya".
+  - Fix in `scripts/build_word_classes.py`:
+    - no possessed -nya noun (`nya_words.is_reference`);
+    - no capitalised word after a lower-case verb (a title-case heading still counts);
+    - no "terjun".
+  - The rebuild (209,479 articles) only removes words. A first draft that dropped every -nya word and every capitalised word lost "hanya" (29 uses), "setidaknya", "sepekan" and "berjamaah" (half of their uses are title-case headings), so "IHSG terkerek hanya 0,2 persen" would be refused again.
+  - End points (#453): a name in the gap is a named time only when a bare year follows ("Lebaran 2027"); before a month or a date it is a place.
+  - #454: a source completion restated (gap of up to 2 words, or the time before the verb) backs a prose completion. In the arc diff, 0 of 328 arc sentences change their end-point reading against HEAD.
+  - The real IEU-CEPA source (sitemap 230887) is still refused. Its completion sentence names no shared subject ("mudah-mudahan akhir September selesai"), which is SYS-193's rule, not this one.
+  - Found: a negated stated end backs a prose end ("belum diselesaikan / tidak selesai pada <time>"), pre-existing. Filed as SYS-201 (#455).
+  - Mutants 26/26 killed (13 new or retargeted, plus the ADR-032 set). `tests/qa`: 0 new failures. Unit 4,331 passed / 5 skipped; integration 229 / 1 skipped.
+- **Conclusion / do not repeat:**
+  - Neither neighbour signal (the word before or the word after) separates nouns from grammatical words. For a closed grammatical class, write the class and check it against the archive, rather than deriving it.
+  - When a word class looks wrong, read the archive contexts first. Here the bad members were artefacts of the count (headings, a second verb meaning, inverted subjects), not the threshold.
+  - A capitalised or -nya filter must keep title-case headings and the words that only end in -nya.
+- **Links:** #450, #451, #452, #453, #454, #455 (SYS-201); ADR-032 amendment 2026-11-10

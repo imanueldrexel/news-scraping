@@ -623,7 +623,7 @@ _DEADLINE = r"paling\s+lambat|selambat-lambatnya"
 # melemah pada 12 Oktober" is a close of trading, not an end point.
 # QA 2026-11-06 (#445, owner-narrowed under ADR-031): "diselesaikan pada" too, seen in arc prose ("... segera
 # diselesaikan pada akhir September", arcs-v2 2026-10-11).
-_END_CLOSE = r"(?:rampung|tuntas|habis|ditutup|diselesaikan)\s+pada"
+_END_CLOSE = r"(?P<close>(?:rampung|tuntas|habis|ditutup|diselesaikan)\s+pada)"
 _END_POINT = re.compile(rf"(?<![\w.])(?:(?:(?P<deadline>{_DEADLINE})|{_END_OPEN}){_END_GAP}|{_END_CLOSE})\s+{_END_TIME}",
                         re.IGNORECASE)
 _STATED_END = re.compile(rf"(?:(?<![\w.])(?:(?:(?P<deadline>{_DEADLINE})|(?P<open>{_END_OPEN}|per)){_END_GAP}"
@@ -639,6 +639,18 @@ _SPREAD = re.compile(r"\b(?:meluas|menyebar|tersebar|merambat|menjalar|merembet|
 # ... and a range of places: "dari Sabang hingga Merauke" (#418). A month after "dari" is no name.
 _FROM_PLACE = re.compile(r"\bdari\s+([^\W\d_][\w-]*(?:\s+[^\W\d_][\w-]*){0,2})\s*$", re.IGNORECASE)
 _THEN_PADA = re.compile(r"\s+pada\b", re.IGNORECASE)
+# QA 2026-11-08 (#454): a source states a completion's time in other words too -- "diselesaikan secara damai pada
+# Oktober 2026", "diselesaikan Senin (12/10)", "mudah-mudahan akhir September selesai". Up to two words may stand
+# between the verb and its time, on either side; never a negation, nor a word that puts the time before or after
+# the act ("diselesaikan setelah Oktober", "belum selesai"). Such a completion backs only a prose completion
+# (`_END_CLOSE`): it says when an act was done, not until when something lasts.
+_COMPLETED = r"(?:di)?selesai(?:kan)?|rampung|tuntas|dituntaskan"
+_COMPLETION_GAP = (r"(?:\s+(?!(?:pada|sejak|setelah|sebelum|usai|pasca|paling|hingga|sampai|yang|dan|atau|tidak|tak|"
+                   r"belum|bukan|batal|gagal)\b)[^\W\d_]+){0,2}?")
+_COMPLETED_THEN_TIME = re.compile(rf"(?<!\w)(?:{_COMPLETED})\b{_COMPLETION_GAP}(?:\s+pada)?\s+\(?{_END_TIME}",
+                                  re.IGNORECASE)
+_TIME_THEN_COMPLETED = re.compile(rf"(?<![\w/]){_END_TIME}{_COMPLETION_GAP}\s+(?:{_COMPLETED})\b", re.IGNORECASE)
+_NOT_DONE = re.compile(r"\b(?:tidak|tak|belum|bukan|batal|gagal)\s*$", re.IGNORECASE)
 # SYS-186 send-back: "berlaku per November 2026" is a START ("from November"); "Defisit APBN per 30 September" ends.
 _STARTS_PER = re.compile(r"\b(?:berlaku|mulai|efektif)\s*$", re.IGNORECASE)
 
@@ -666,12 +678,13 @@ def _from_place(before: str) -> bool:
 
 def _ends(pattern, text: str) -> list:
     """`pattern`'s matches in `text`, less a place after a verb of spread (`_SPREAD`, #406) or after "dari <place>"
-    (#418). A place is joined to its time by "pada" ("hingga Merauke pada akhir Oktober"); a name the time follows at
-    once is a named time, an end point (#446: "dari Garuda Indonesia berlaku hingga Lebaran 2027")."""
+    (#418). A name a bare year follows at once is a named time, an end point (#446: "dari Garuda Indonesia berlaku
+    hingga Lebaran 2027"); before "pada" or a month it is a place (#453: "hingga Merauke (pada) akhir Oktober")."""
     out = []
     for m in pattern.finditer(text):
         gap = (m.group("gap") or "").split()
-        place = gap and story_words.names(f"x {gap[0]}") and _THEN_PADA.match(text, m.end("gap"))
+        place = gap and story_words.names(f"x {gap[0]}") and (_THEN_PADA.match(text, m.end("gap"))
+                                                                or not m.group("year"))
         if not (place and (_SPREAD.search(text[:m.start()]) or _from_place(text[:m.start()]))):
             out.append(m)
     return out
@@ -698,6 +711,20 @@ def _stated_ends(source: str) -> List[Tuple[frozenset, Set[str], bool]]:
     return out
 
 
+def _shares(subject: Set[str], roots: Set[str]) -> bool:
+    return not subject or any(story_words.meets(r, roots) for r in subject)
+
+
+def _stated_completions(source: str) -> List[Tuple[frozenset, Set[str]]]:
+    """(key, the roots of its sentence) of every completion time `source` states (#454), never a negated one."""
+    out = []
+    for sentence in _sentences(source or ""):
+        roots = _subject_roots(sentence)
+        out += [(_end_key(m), roots) for pattern in (_COMPLETED_THEN_TIME, _TIME_THEN_COMPLETED)
+                for m in pattern.finditer(sentence) if not _NOT_DONE.search(sentence[:m.start()])]
+    return out
+
+
 def unbacked_end_times(text: str, source: str) -> List[str]:
     """SYS-186: the end points of `text` that no source states as an end: every part of the prose time (day, month,
     year, part with its unit, semester or quarter) must be in one end time of `source`. A less precise prose time is
@@ -707,8 +734,12 @@ def unbacked_end_times(text: str, source: str) -> List[str]:
     SYS-193 (#394): and by one whose sentence shares a content word with the prose clause: "Pembekuan saham berlanjut
     hingga 2026" is not backed by "Defisit APBN hingga September 2026". The clause is the one before the end point,
     or, for a fronted end (send-back #404: "Hingga 2026, pembekuan saham berlanjut."), the one after it; a clause with
-    no content word on either side is matched by its time alone."""
+    no content word on either side is matched by its time alone.
+
+    #454: a prose completion ("diselesaikan pada <time>") is backed by a source completion as well
+    (`_stated_completions`)."""
     stated = _stated_ends(source)
+    completed = None
     out = []
     for sentence in _sentences(text or ""):
         for m in _ends(_END_POINT, sentence):
@@ -716,10 +747,13 @@ def unbacked_end_times(text: str, source: str) -> List[str]:
             subject = _subject_roots(re.split(r"[,;:]", sentence[:m.start()])[-1])
             if not subject:
                 subject = _subject_roots(re.split(r"[,;:]", sentence[m.end():].lstrip(" ,;:"))[0])
-            if not any(key <= s and (deadline or not due)
-                       and (not subject or any(story_words.meets(r, roots) for r in subject))
-                       for s, roots, due in stated):
-                out.append(m.group(0))
+            if any(key <= s and (deadline or not due) and _shares(subject, roots) for s, roots, due in stated):
+                continue
+            if m.group("close"):
+                completed = _stated_completions(source) if completed is None else completed
+                if any(key <= s and _shares(subject, roots) for s, roots in completed):
+                    continue
+            out.append(m.group(0))
     return out
 
 
