@@ -127,3 +127,49 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+#Data Result
+/newscrawler/*.csv
+/news_result/*
+/news-package/
+/.serverless/
+
+
+package/*
+# IDE / OS
+.idea/
+.vs/
+.DS_Store
+
+# Claude Code local state
+.claude/worktrees/
+.claude/settings.local.json
+
+# Generated data: FAISS indexes, health reports, newsletter digests
+/NEWS_L1/
+/NEWS_L2/
+# SYS-53: each index's save lock (index_generation.save_lock)
+/NEWS_L1.lock
+/NEWS_L2.lock
+# SYS-56: a save stages its pair in .tmp and commits it by renaming that to .commit
+/NEWS_L1.tmp/
+/NEWS_L2.tmp/
+/NEWS_L1.commit/
+/NEWS_L2.commit/
+/crawler_health/*.json
+/digests/*.md
+/digests/*.pdf
+/backups/*.json
+# OPS-23: full-database dumps (scripts/backup_db.py) -- never commit data
+/backups/pg_dump/
+/backups/faiss_*/
+# every other backup directory too (SRC-54's src54_<stamp>/ holds article rows)
+/backups/*/
+# OPS-27: scheduled-crawl run logs; OPS-26: the scheduled crawl's run lock
+/logs/
+/.scheduled_crawl.lock
+
+# SYS-199 arm B (ADR-028): GPU training venv and fine-tuned weights stay local
+/venv-train/
+/models/
+/data/indonli/

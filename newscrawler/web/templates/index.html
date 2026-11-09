@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{ copy.PAGE_TITLE }}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&amp;family=Source+Serif+4:opsz,wght@8..60,500;8..60,600&amp;display=swap">
+<link rel="stylesheet" href="/static/style.css">
+<script src="/static/htmx.min.js" defer></script>
+<script src="/static/page.js" defer></script>
+</head>
+<body>
+<main class="page">
+  <header class="masthead">
+    <h1>{{ copy.TITLE }}</h1>
+    <span class="dateline">{{ dateline }}</span>
+  </header>
+
+  <section class="hero" aria-labelledby="hero-heading">
+    <h2 id="hero-heading">{{ copy.HERO_HEADING }}</h2>
+    <p class="corpus">{{ hero_line }}</p>
+  </section>
+
+  <div class="search-area">
+    <form class="search" id="search-form"
+          hx-post="/api/query/form" hx-target="#thread" hx-swap="innerHTML"
+          hx-indicator="#search-status" hx-disabled-elt="#ask-button">
+      <div class="search-row">
+        <label class="visually-hidden" for="query-input">{{ copy.QUESTION_LABEL }}</label>
+        <input type="text" name="query" id="query-input" placeholder="{{ copy.PLACEHOLDER }}"
+               maxlength="{{ max_chars }}" required autocomplete="off">
+        <button type="submit" class="btn" id="ask-button">{{ copy.ASK }}</button>
+      </div>
+
+      <ul class="examples" aria-label="{{ copy.EXAMPLES_LABEL }}">
+        {% for example in copy.EXAMPLES %}
+        <li><button type="button" class="example" data-question="{{ example }}">{{ example }}</button></li>
+        {% endfor %}
+      </ul>
+
+      <details class="filters" id="filters">
+        <summary>{{ copy.FILTER_TOGGLE }}</summary>
+        <div class="filter-grid">
+          <div class="field">
+            <label for="filter-topic">{{ copy.TOPIC_LABEL }}</label>
+            <select id="filter-topic" name="topic" data-filter="topic">
+              <option value="">{{ copy.TOPIC_ALL }}</option>
+              {% for value, name in topics %}
+              <option value="{{ value }}">{{ name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="field">
+            <label for="filter-source">{{ copy.PORTAL_LABEL }}</label>
+            <select id="filter-source" name="source" data-filter="source">
+              <option value="">{{ copy.PORTAL_ALL }}</option>
+              {% for value, name in portals %}
+              <option value="{{ value }}">{{ name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <fieldset class="field" data-filter="rentang">
+            <legend>{{ copy.DATE_LABEL }}</legend>
+            <div class="chips">
+              <label class="chip-radio"><input type="radio" name="rentang" value="" checked><span>{{ copy.DATE_ALL }}</span></label>
+              <label class="chip-radio"><input type="radio" name="rentang" value="7"><span>{{ copy.DATE_7 }}</span></label>
+              <label class="chip-radio"><input type="radio" name="rentang" value="30"><span>{{ copy.DATE_30 }}</span></label>
+              <label class="chip-radio"><input type="radio" name="rentang" value="custom"><span>{{ copy.DATE_CUSTOM }}</span></label>
+            </div>
+          </fieldset>
+          <div class="custom-dates">
+            <div class="field">
+              <label for="filter-from">{{ copy.DATE_FROM }}</label>
+              <input type="date" id="filter-from" name="date_from">
+            </div>
+            <div class="field">
+              <label for="filter-to">{{ copy.DATE_TO }}</label>
+              <input type="date" id="filter-to" name="date_to">
+            </div>
+          </div>
+        </div>
+      </details>
+      <ul class="active-filters" id="active-filters" aria-label="{{ copy.ACTIVE_FILTERS_LABEL }}"></ul>
+    </form>
+    <div class="status-line search-status" id="search-status" role="status">
+      <p class="pending">{{ copy.LOADING_SEARCH }}</p>
+    </div>
+    <div class="thread-tools">
+      <button type="button" class="btn btn-quiet" id="new-question">{{ copy.NEW_QUESTION }}</button>
+    </div>
+  </div>
+
+  <div id="thread"></div>
+  <div id="followup"></div>
+</main>
+</body>
+</html>

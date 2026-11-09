@@ -1,0 +1,2236 @@
+{
+ "_about": "SYS-42 (#137): every live (source, category) in `sitemaps` that the category gate did NOT deny on 2026-09-21, after SYS-34's title sampling. tests/unit/test_importance_filter.py asserts is_offtopic_category() is still False for all of them, so a new deny stem that collides with a real desk (`celeb` -> INEWS `celebes`, `sport` -> `transportasi`) fails a test instead of permanently rejecting the desk. To deny one of these on purpose, remove it here in the same commit, with the 3-title sample on the ticket (SRC-39 rule). `gate` is informational (allow / null = scored). SYS-49 (2026-09-23) removed the six opinion/editorial pairs below on purpose: they are denied from that date (4-title sample per bucket on the ticket).",
+ "generated": "2026-09-21",
+ "pairs": [
+  {
+   "source": "ANTARANEWS",
+   "category": "Bisnis",
+   "gate": "allow"
+  },
+  {
+   "source": "ANTARANEWS",
+   "category": "Bursa",
+   "gate": "allow"
+  },
+  {
+   "source": "ANTARANEWS",
+   "category": "Ekonomi",
+   "gate": "allow"
+  },
+  {
+   "source": "ANTARANEWS",
+   "category": "Finansial",
+   "gate": "allow"
+  },
+  {
+   "source": "BISNIS",
+   "category": "news",
+   "gate": null
+  },
+  {
+   "source": "CNBC",
+   "category": "cuap-cuap-cuan",
+   "gate": null
+  },
+  {
+   "source": "CNBC",
+   "category": "entrepreneur",
+   "gate": null
+  },
+  {
+   "source": "CNBC",
+   "category": "market",
+   "gate": "allow"
+  },
+  {
+   "source": "CNBC",
+   "category": "mymoney",
+   "gate": null
+  },
+  {
+   "source": "CNBC",
+   "category": "news",
+   "gate": null
+  },
+  {
+   "source": "CNBC",
+   "category": "research",
+   "gate": null
+  },
+  {
+   "source": "CNBC",
+   "category": "syariah",
+   "gate": null
+  },
+  {
+   "source": "CNBC",
+   "category": "tech",
+   "gate": null
+  },
+  {
+   "source": "CNN",
+   "category": "edukasi",
+   "gate": null
+  },
+  {
+   "source": "CNN",
+   "category": "ekonomi",
+   "gate": "allow"
+  },
+  {
+   "source": "CNN",
+   "category": "internasional",
+   "gate": "allow"
+  },
+  {
+   "source": "CNN",
+   "category": "nasional",
+   "gate": "allow"
+  },
+  {
+   "source": "CNN",
+   "category": "otomotif",
+   "gate": null
+  },
+  {
+   "source": "CNN",
+   "category": "teknologi",
+   "gate": null
+  },
+  {
+   "source": "IDNTIMES",
+   "category": "automotive",
+   "gate": null
+  },
+  {
+   "source": "IDNTIMES",
+   "category": "business",
+   "gate": "allow"
+  },
+  {
+   "source": "IDNTIMES",
+   "category": "health",
+   "gate": null
+  },
+  {
+   "source": "IDNTIMES",
+   "category": "news",
+   "gate": null
+  },
+  {
+   "source": "IDNTIMES",
+   "category": "science",
+   "gate": null
+  },
+  {
+   "source": "IDNTIMES",
+   "category": "tech",
+   "gate": null
+  },
+  {
+   "source": "IDXCHANNEL",
+   "category": "banking",
+   "gate": "allow"
+  },
+  {
+   "source": "IDXCHANNEL",
+   "category": "economia",
+   "gate": "allow"
+  },
+  {
+   "source": "IDXCHANNEL",
+   "category": "economics",
+   "gate": "allow"
+  },
+  {
+   "source": "IDXCHANNEL",
+   "category": "foto",
+   "gate": null
+  },
+  {
+   "source": "IDXCHANNEL",
+   "category": "infografis",
+   "gate": null
+  },
+  {
+   "source": "IDXCHANNEL",
+   "category": "inspirator",
+   "gate": null
+  },
+  {
+   "source": "IDXCHANNEL",
+   "category": "market-news",
+   "gate": "allow"
+  },
+  {
+   "source": "IDXCHANNEL",
+   "category": "milenomic",
+   "gate": null
+  },
+  {
+   "source": "IDXCHANNEL",
+   "category": "news",
+   "gate": null
+  },
+  {
+   "source": "IDXCHANNEL",
+   "category": "syariah",
+   "gate": null
+  },
+  {
+   "source": "IDXCHANNEL",
+   "category": "technology",
+   "gate": null
+  },
+  {
+   "source": "IDXCHANNEL",
+   "category": "the-founder",
+   "gate": "allow"
+  },
+  {
+   "source": "IDXCHANNEL",
+   "category": "video",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "acehutara",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "alor",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "ambon",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "asahanraya",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "badung",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "balikpapan",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "bandungraya",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "banjarnegara",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "banten",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "barito",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "baritoinfo",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "batam",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "batu",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "bekasi",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "belu",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "bengkuluutara",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "bima",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "blitar",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "bogor",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "bojonegoro",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "bondowoso",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "boyolali",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "brebes",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "celebes",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "ciamisraya",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "cianjur",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "cilacap",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "cilegon",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "cimahi",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "cirebon",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "deliraya",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "demak",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "depok",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "dumai",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "finance",
+   "gate": "allow"
+  },
+  {
+   "source": "INEWS",
+   "category": "flores",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "garut",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "gowa",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "gresik",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "https://www.inews.id/inews-tv/eksklusif/sitemap.xml",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "https://www.inews.id/inews-tv/sitemap.xml",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "https://www.inews.id/inews-tv/talkshow/sitemap.xml",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "indramayu",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "jambi",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "jatenginfo",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "jayapura",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "jember",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "joglosemar",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "karanganyar",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "karawang",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "kediri",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "kendari",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "kobar",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "kuningan",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "kutai",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "kutaraja",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "lamongan",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "lamsel",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "lebak",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "lhokseumawe",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "lintasbabel",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "lombok",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "lumajang",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "lutra",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "luwuraya",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "madina",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "madiun",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "malang",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "mamuju",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "manado",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "mataram",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "medan",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "mojokerto",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "multimedia",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "muria",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "news",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "nganjuk",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "ngawi",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "otomotif",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "palembang",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "palopo",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "palu",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "pandeglang",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "pangandaran",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "pantura",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "parepare",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "pasuruan",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "pekanbaru",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "pemalang",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "polman",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "ponorogo",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "portalaceh",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "pringsewu",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "probolinggo",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "purwakarta",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "regional",
+   "gate": "allow"
+  },
+  {
+   "source": "INEWS",
+   "category": "salatiga",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "samarinda",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "semarang",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "serpong",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "siantar",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "sidoarjo",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "sleman",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "soloraya",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "sorongraya",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "sragen",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "subang",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "sukabumi",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "sumba",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "surabaya",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "tangsel",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "tasikmalaya",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "techno",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "tegal",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "temanggung",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "ternate",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "toraja",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "ttu",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "tuban",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "tulungagung",
+   "gate": null
+  },
+  {
+   "source": "INEWS",
+   "category": "waykanan",
+   "gate": null
+  },
+  {
+   "source": "JPNN",
+   "category": "abc-indonesia",
+   "gate": "allow"
+  },
+  {
+   "source": "JPNN",
+   "category": "artikel",
+   "gate": null
+  },
+  {
+   "source": "JPNN",
+   "category": "bali/bali-terkini",
+   "gate": null
+  },
+  {
+   "source": "JPNN",
+   "category": "bali/hukum",
+   "gate": "allow"
+  },
+  {
+   "source": "JPNN",
+   "category": "bali/kriminal",
+   "gate": "allow"
+  },
+  {
+   "source": "JPNN",
+   "category": "bali/ntb-terkini",
+   "gate": null
+  },
+  {
+   "source": "JPNN",
+   "category": "bali/politik",
+   "gate": "allow"
+  },
+  {
+   "source": "JPNN",
+   "category": "banten/banten-terkini",
+   "gate": null
+  },
+  {
+   "source": "JPNN",
+   "category": "banten/kriminal",
+   "gate": "allow"
+  },
+  {
+   "source": "JPNN",
+   "category": "banten/politik",
+   "gate": "allow"
+  },
+  {
+   "source": "JPNN",
+   "category": "cak-abror",
+   "gate": null
+  },
+  {
+   "source": "JPNN",
+   "category": "crypto",
+   "gate": "allow"
+  },
+  {
+   "source": "JPNN",
+   "category": "daerah",
+   "gate": "allow"
+  },
+  {
+   "source": "JPNN",
+   "category": "dahlan-iskan",
+   "gate": null
+  },
+  {
+   "source": "JPNN",
+   "category": "ekonomi",
+   "gate": "allow"
+  },
+  {
+   "source": "JPNN",
+   "category": "features",
+   "gate": null
+  },
+  {
+   "source": "JPNN",
+   "category": "internasional",
+   "gate": "allow"
+  },
+  {
+   "source": "JPNN",
+   "category": "jabar/jabar-terkini",
+   "gate": null
+  },
+  {
+   "source": "JPNN",
+   "category": "jabar/kriminal",
+   "gate": "allow"
+  },
+  {
+   "source": "JPNN",
+   "category": "jabar/politik",
+   "gate": "allow"
+  },
+  {
+   "source": "JPNN",
+   "category": "jakarta/jakarta-terkini",
+   "gate": null
+  },
+  {
+   "source": "JPNN",
+   "category": "jakarta/kriminal",
+   "gate": "allow"
+  },
+  {
+   "source": "JPNN",
+   "category": "jakarta/politik",
+   "gate": "allow"
+  },
+  {
+   "source": "JPNN",
+   "category": "jateng/jateng-terkini",
+   "gate": null
+  },
+  {
+   "source": "JPNN",
+   "category": "jateng/kriminal",
+   "gate": "allow"
+  },
+  {
+   "source": "JPNN",
+   "category": "jateng/politik",
+   "gate": "allow"
+  },
+  {
+   "source": "JPNN",
+   "category": "jatim/jatim-terkini",
+   "gate": null
+  },
+  {
+   "source": "JPNN",
+   "category": "jatim/kriminal",
+   "gate": "allow"
+  },
+  {
+   "source": "JPNN",
+   "category": "jatim/politik",
+   "gate": "allow"
+  },
+  {
+   "source": "JPNN",
+   "category": "jogja/jogja-terkini",
+   "gate": null
+  },
+  {
+   "source": "JPNN",
+   "category": "jogja/kriminal",
+   "gate": "allow"
+  },
+  {
+   "source": "JPNN",
+   "category": "jogja/politik",
+   "gate": "allow"
+  },
+  {
+   "source": "JPNN",
+   "category": "kalsel/kalsel-terkini",
+   "gate": null
+  },
+  {
+   "source": "JPNN",
+   "category": "kalsel/kriminal",
+   "gate": "allow"
+  },
+  {
+   "source": "JPNN",
+   "category": "kalsel/politik",
+   "gate": "allow"
+  },
+  {
+   "source": "JPNN",
+   "category": "kaltim/kaltim-terkini",
+   "gate": null
+  },
+  {
+   "source": "JPNN",
+   "category": "kaltim/kriminal",
+   "gate": "allow"
+  },
+  {
+   "source": "JPNN",
+   "category": "kaltim/politik",
+   "gate": "allow"
+  },
+  {
+   "source": "JPNN",
+   "category": "kriminal",
+   "gate": "allow"
+  },
+  {
+   "source": "JPNN",
+   "category": "lampung/kriminal",
+   "gate": "allow"
+  },
+  {
+   "source": "JPNN",
+   "category": "lampung/lampung-terkini",
+   "gate": null
+  },
+  {
+   "source": "JPNN",
+   "category": "lampung/politik",
+   "gate": "allow"
+  },
+  {
+   "source": "JPNN",
+   "category": "nasional",
+   "gate": "allow"
+  },
+  {
+   "source": "JPNN",
+   "category": "ntb/kriminal",
+   "gate": "allow"
+  },
+  {
+   "source": "JPNN",
+   "category": "ntb/ntb-terkini",
+   "gate": null
+  },
+  {
+   "source": "JPNN",
+   "category": "ntb/politik",
+   "gate": "allow"
+  },
+  {
+   "source": "JPNN",
+   "category": "otomotif",
+   "gate": null
+  },
+  {
+   "source": "JPNN",
+   "category": "papua/kriminal",
+   "gate": "allow"
+  },
+  {
+   "source": "JPNN",
+   "category": "papua/papua-terkini",
+   "gate": null
+  },
+  {
+   "source": "JPNN",
+   "category": "papua/politik",
+   "gate": "allow"
+  },
+  {
+   "source": "JPNN",
+   "category": "pemilu",
+   "gate": "allow"
+  },
+  {
+   "source": "JPNN",
+   "category": "pendidikan",
+   "gate": null
+  },
+  {
+   "source": "JPNN",
+   "category": "politik",
+   "gate": "allow"
+  },
+  {
+   "source": "JPNN",
+   "category": "sultra/kriminal",
+   "gate": "allow"
+  },
+  {
+   "source": "JPNN",
+   "category": "sultra/politik",
+   "gate": "allow"
+  },
+  {
+   "source": "JPNN",
+   "category": "sultra/sultra-terkini",
+   "gate": null
+  },
+  {
+   "source": "JPNN",
+   "category": "sumbar/kriminal",
+   "gate": "allow"
+  },
+  {
+   "source": "JPNN",
+   "category": "sumbar/politik",
+   "gate": "allow"
+  },
+  {
+   "source": "JPNN",
+   "category": "sumbar/sumbar-terkini",
+   "gate": null
+  },
+  {
+   "source": "JPNN",
+   "category": "sumut/kriminal",
+   "gate": "allow"
+  },
+  {
+   "source": "JPNN",
+   "category": "sumut/politik",
+   "gate": "allow"
+  },
+  {
+   "source": "JPNN",
+   "category": "sumut/sumut-terkini",
+   "gate": null
+  },
+  {
+   "source": "JPNN",
+   "category": "teknologi",
+   "gate": null
+  },
+  {
+   "source": "KOMPAS",
+   "category": "bandung",
+   "gate": null
+  },
+  {
+   "source": "KOMPAS",
+   "category": "denpasar",
+   "gate": null
+  },
+  {
+   "source": "KOMPAS",
+   "category": "internasional",
+   "gate": "allow"
+  },
+  {
+   "source": "KOMPAS",
+   "category": "makassar",
+   "gate": null
+  },
+  {
+   "source": "KOMPAS",
+   "category": "medan",
+   "gate": null
+  },
+  {
+   "source": "KOMPAS",
+   "category": "megapolitan",
+   "gate": "allow"
+  },
+  {
+   "source": "KOMPAS",
+   "category": "nasional",
+   "gate": "allow"
+  },
+  {
+   "source": "KOMPAS",
+   "category": "regional",
+   "gate": "allow"
+  },
+  {
+   "source": "KOMPAS",
+   "category": "surabaya",
+   "gate": null
+  },
+  {
+   "source": "KOMPAS",
+   "category": "yogyakarta",
+   "gate": null
+  },
+  {
+   "source": "KUMPARAN",
+   "category": "bisnis",
+   "gate": "allow"
+  },
+  {
+   "source": "KUMPARAN",
+   "category": "news",
+   "gate": null
+  },
+  {
+   "source": "KUMPARAN",
+   "category": "otomotif",
+   "gate": null
+  },
+  {
+   "source": "KUMPARAN",
+   "category": "tekno-sains",
+   "gate": null
+  },
+  {
+   "source": "LIPUTAN6",
+   "category": "bisnis",
+   "gate": "allow"
+  },
+  {
+   "source": "MEDIAINDONESIA",
+   "category": "ekonomi",
+   "gate": "allow"
+  },
+  {
+   "source": "MEDIAINDONESIA",
+   "category": "humaniora",
+   "gate": null
+  },
+  {
+   "source": "MEDIAINDONESIA",
+   "category": "hut-ri",
+   "gate": null
+  },
+  {
+   "source": "MEDIAINDONESIA",
+   "category": "infografis",
+   "gate": null
+  },
+  {
+   "source": "MEDIAINDONESIA",
+   "category": "internasional",
+   "gate": "allow"
+  },
+  {
+   "source": "MEDIAINDONESIA",
+   "category": "jabar",
+   "gate": null
+  },
+  {
+   "source": "MEDIAINDONESIA",
+   "category": "jurnal-kopi",
+   "gate": null
+  },
+  {
+   "source": "MEDIAINDONESIA",
+   "category": "kesehatan",
+   "gate": null
+  },
+  {
+   "source": "MEDIAINDONESIA",
+   "category": "media-guru",
+   "gate": null
+  },
+  {
+   "source": "MEDIAINDONESIA",
+   "category": "media-karhutla",
+   "gate": null
+  },
+  {
+   "source": "MEDIAINDONESIA",
+   "category": "media-lhk",
+   "gate": null
+  },
+  {
+   "source": "MEDIAINDONESIA",
+   "category": "megapolitan",
+   "gate": "allow"
+  },
+  {
+   "source": "MEDIAINDONESIA",
+   "category": "nusantara",
+   "gate": "allow"
+  },
+  {
+   "source": "MEDIAINDONESIA",
+   "category": "obituarium",
+   "gate": null
+  },
+  {
+   "source": "MEDIAINDONESIA",
+   "category": "pendidikan",
+   "gate": null
+  },
+  {
+   "source": "MEDIAINDONESIA",
+   "category": "pilkada",
+   "gate": "allow"
+  },
+  {
+   "source": "MEDIAINDONESIA",
+   "category": "podiums",
+   "gate": null
+  },
+  {
+   "source": "MEDIAINDONESIA",
+   "category": "politik-dan-hukum",
+   "gate": "allow"
+  },
+  {
+   "source": "MEDIAINDONESIA",
+   "category": "teknologi",
+   "gate": null
+  },
+  {
+   "source": "MEDIAINDONESIA",
+   "category": "umkm-bisa",
+   "gate": "allow"
+  },
+  {
+   "source": "MERDEKA",
+   "category": "uang",
+   "gate": "allow"
+  },
+  {
+   "source": "OKEZONE",
+   "category": "economy",
+   "gate": "allow"
+  },
+  {
+   "source": "OKEZONE",
+   "category": "edukasi",
+   "gate": null
+  },
+  {
+   "source": "OKEZONE",
+   "category": "muslim",
+   "gate": null
+  },
+  {
+   "source": "OKEZONE",
+   "category": "news",
+   "gate": null
+  },
+  {
+   "source": "OKEZONE",
+   "category": "ototekno",
+   "gate": null
+  },
+  {
+   "source": "PIKIRANRAKYAT",
+   "category": "AksaraJabar",
+   "gate": null
+  },
+  {
+   "source": "PIKIRANRAKYAT",
+   "category": "ArahKata",
+   "gate": null
+  },
+  {
+   "source": "PIKIRANRAKYAT",
+   "category": "BagikanBerita",
+   "gate": null
+  },
+  {
+   "source": "PIKIRANRAKYAT",
+   "category": "BandurRayaPR",
+   "gate": null
+  },
+  {
+   "source": "PIKIRANRAKYAT",
+   "category": "BanjarPR",
+   "gate": null
+  },
+  {
+   "source": "PIKIRANRAKYAT",
+   "category": "BekasiPR",
+   "gate": null
+  },
+  {
+   "source": "PIKIRANRAKYAT",
+   "category": "BeritaDIY",
+   "gate": null
+  },
+  {
+   "source": "PIKIRANRAKYAT",
+   "category": "BeritaKBB",
+   "gate": null
+  },
+  {
+   "source": "PIKIRANRAKYAT",
+   "category": "BeritaSubang",
+   "gate": null
+  },
+  {
+   "source": "PIKIRANRAKYAT",
+   "category": "BogorPR",
+   "gate": null
+  },
+  {
+   "source": "PIKIRANRAKYAT",
+   "category": "CerdikIndonesia",
+   "gate": null
+  },
+  {
+   "source": "PIKIRANRAKYAT",
+   "category": "CiamisPR",
+   "gate": null
+  },
+  {
+   "source": "PIKIRANRAKYAT",
+   "category": "CianjurPR",
+   "gate": null
+  },
+  {
+   "source": "PIKIRANRAKYAT",
+   "category": "CianjurPedia",
+   "gate": null
+  },
+  {
+   "source": "PIKIRANRAKYAT",
+   "category": "CimahiPR",
+   "gate": null
+  },
+  {
+   "source": "PIKIRANRAKYAT",
+   "category": "CirebonPR",
+   "gate": null
+  },
+  {
+   "source": "PIKIRANRAKYAT",
+   "category": "DenpasarUpdate",
+   "gate": null
+  },
+  {
+   "source": "PIKIRANRAKYAT",
+   "category": "DepokPR",
+   "gate": null
+  },
+  {
+   "source": "PIKIRANRAKYAT",
+   "category": "DeskJabar",
+   "gate": null
+  },
+  {
+   "source": "PIKIRANRAKYAT",
+   "category": "EditorNews",
+   "gate": null
+  },
+  {
+   "source": "PIKIRANRAKYAT",
+   "category": "GalaJabar",
+   "gate": null
+  },
+  {
+   "source": "PIKIRANRAKYAT",
+   "category": "GalaMedia",
+   "gate": null
+  },
+  {
+   "source": "PIKIRANRAKYAT",
+   "category": "GarutPR",
+   "gate": null
+  },
+  {
+   "source": "PIKIRANRAKYAT",
+   "category": "HaloYouth",
+   "gate": null
+  },
+  {
+   "source": "PIKIRANRAKYAT",
+   "category": "IndoBaliNews",
+   "gate": null
+  },
+  {
+   "source": "PIKIRANRAKYAT",
+   "category": "IndramayuPR",
+   "gate": null
+  },
+  {
+   "source": "PIKIRANRAKYAT",
+   "category": "IsuBogor",
+   "gate": null
+  },
+  {
+   "source": "PIKIRANRAKYAT",
+   "category": "JakbarNews",
+   "gate": null
+  },
+  {
+   "source": "PIKIRANRAKYAT",
+   "category": "JurnalGarut",
+   "gate": null
+  },
+  {
+   "source": "PIKIRANRAKYAT",
+   "category": "JurnalGaya",
+   "gate": null
+  },
+  {
+   "source": "PIKIRANRAKYAT",
+   "category": "JurnalPalopo",
+   "gate": null
+  },
+  {
+   "source": "PIKIRANRAKYAT",
+   "category": "JurnalSoreang",
+   "gate": null
+  },
+  {
+   "source": "PIKIRANRAKYAT",
+   "category": "JurnalSumsel",
+   "gate": null
+  },
+  {
+   "source": "PIKIRANRAKYAT",
+   "category": "KabarBanteng",
+   "gate": null
+  },
+  {
+   "source": "PIKIRANRAKYAT",
+   "category": "KabarLumajang",
+   "gate": null
+  },
+  {
+   "source": "PIKIRANRAKYAT",
+   "category": "KabarTegal",
+   "gate": null
+  },
+  {
+   "source": "PIKIRANRAKYAT",
+   "category": "Kebumentalk",
+   "gate": null
+  },
+  {
+   "source": "PIKIRANRAKYAT",
+   "category": "Kendalku",
+   "gate": null
+  },
+  {
+   "source": "PIKIRANRAKYAT",
+   "category": "KuninganPR",
+   "gate": null
+  },
+  {
+   "source": "PIKIRANRAKYAT",
+   "category": "LamonganToday",
+   "gate": null
+  },
+  {
+   "source": "PIKIRANRAKYAT",
+   "category": "LensaPurbalingga",
+   "gate": null
+  },
+  {
+   "source": "PIKIRANRAKYAT",
+   "category": "LingkarKediri",
+   "gate": null
+  },
+  {
+   "source": "PIKIRANRAKYAT",
+   "category": "LingkarMadiun",
+   "gate": null
+  },
+  {
+   "source": "PIKIRANRAKYAT",
+   "category": "Majalengka",
+   "gate": null
+  },
+  {
+   "source": "PIKIRANRAKYAT",
+   "category": "MantraSukabumi",
+   "gate": null
+  },
+  {
+   "source": "PIKIRANRAKYAT",
+   "category": "MediaBlitar",
+   "gate": null
+  },
+  {
+   "source": "PIKIRANRAKYAT",
+   "category": "MediaPakuan",
+   "gate": null
+  },
+  {
+   "source": "PIKIRANRAKYAT",
+   "category": "Mudanesia",
+   "gate": null
+  },
+  {
+   "source": "PIKIRANRAKYAT",
+   "category": "PRFMNews",
+   "gate": null
+  },
+  {
+   "source": "PIKIRANRAKYAT",
+   "category": "Pangandaran",
+   "gate": null
+  },
+  {
+   "source": "PIKIRANRAKYAT",
+   "category": "PortalBandungTimur",
+   "gate": null
+  },
+  {
+   "source": "PIKIRANRAKYAT",
+   "category": "PortalBangkaBelitung",
+   "gate": null
+  },
+  {
+   "source": "PIKIRANRAKYAT",
+   "category": "PortalBrebes",
+   "gate": null
+  },
+  {
+   "source": "PIKIRANRAKYAT",
+   "category": "PortalJember",
+   "gate": null
+  },
+  {
+   "source": "PIKIRANRAKYAT",
+   "category": "PortalJogja",
+   "gate": null
+  },
+  {
+   "source": "PIKIRANRAKYAT",
+   "category": "PortalKudus",
+   "gate": null
+  },
+  {
+   "source": "PIKIRANRAKYAT",
+   "category": "PortalLebak",
+   "gate": null
+  },
+  {
+   "source": "PIKIRANRAKYAT",
+   "category": "PortalMajalengka",
+   "gate": null
+  },
+  {
+   "source": "PIKIRANRAKYAT",
+   "category": "PortalMaluku",
+   "gate": null
+  },
+  {
+   "source": "PIKIRANRAKYAT",
+   "category": "PortalPapua",
+   "gate": null
+  },
+  {
+   "source": "PIKIRANRAKYAT",
+   "category": "PortalPurwokerto",
+   "gate": null
+  },
+  {
+   "source": "PIKIRANRAKYAT",
+   "category": "PortalSulut",
+   "gate": null
+  },
+  {
+   "source": "PIKIRANRAKYAT",
+   "category": "PotensiBisnis",
+   "gate": null
+  },
+  {
+   "source": "PIKIRANRAKYAT",
+   "category": "PrianganTimurNews",
+   "gate": null
+  },
+  {
+   "source": "PIKIRANRAKYAT",
+   "category": "PurwakartaNews",
+   "gate": null
+  },
+  {
+   "source": "PIKIRANRAKYAT",
+   "category": "PurwakartaPR",
+   "gate": null
+  },
+  {
+   "source": "PIKIRANRAKYAT",
+   "category": "Semarangku",
+   "gate": null
+  },
+  {
+   "source": "PIKIRANRAKYAT",
+   "category": "SeputarLampung",
+   "gate": null
+  },
+  {
+   "source": "PIKIRANRAKYAT",
+   "category": "SerangNews",
+   "gate": null
+  },
+  {
+   "source": "PIKIRANRAKYAT",
+   "category": "SinarJateng",
+   "gate": null
+  },
+  {
+   "source": "PIKIRANRAKYAT",
+   "category": "SumedangPR",
+   "gate": null
+  },
+  {
+   "source": "PIKIRANRAKYAT",
+   "category": "TasikmalayaPR",
+   "gate": null
+  },
+  {
+   "source": "PIKIRANRAKYAT",
+   "category": "UtaraTimes",
+   "gate": null
+  },
+  {
+   "source": "PIKIRANRAKYAT",
+   "category": "WartaLombok",
+   "gate": null
+  },
+  {
+   "source": "PIKIRANRAKYAT",
+   "category": "WartaPontianak",
+   "gate": null
+  },
+  {
+   "source": "PIKIRANRAKYAT",
+   "category": "ZonaBanten",
+   "gate": null
+  },
+  {
+   "source": "PIKIRANRAKYAT",
+   "category": "ZonaJakarta",
+   "gate": null
+  },
+  {
+   "source": "PIKIRANRAKYAT",
+   "category": "ZonaPriangan",
+   "gate": null
+  },
+  {
+   "source": "SINDONEWS",
+   "category": "daerah",
+   "gate": "allow"
+  },
+  {
+   "source": "SINDONEWS",
+   "category": "edukasi",
+   "gate": null
+  },
+  {
+   "source": "SINDONEWS",
+   "category": "ekbis",
+   "gate": "allow"
+  },
+  {
+   "source": "SINDONEWS",
+   "category": "international",
+   "gate": "allow"
+  },
+  {
+   "source": "SINDONEWS",
+   "category": "media",
+   "gate": null
+  },
+  {
+   "source": "SINDONEWS",
+   "category": "nasional",
+   "gate": "allow"
+  },
+  {
+   "source": "SINDONEWS",
+   "category": "otomotif",
+   "gate": null
+  },
+  {
+   "source": "SINDONEWS",
+   "category": "tekno",
+   "gate": null
+  },
+  {
+   "source": "SUARA",
+   "category": "bisnis",
+   "gate": "allow"
+  },
+  {
+   "source": "TEMPO",
+   "category": "ekonomi",
+   "gate": "allow"
+  },
+  {
+   "source": "TIRTO",
+   "category": "bisnis",
+   "gate": "allow"
+  },
+  {
+   "source": "TIRTO",
+   "category": "ekonomi",
+   "gate": "allow"
+  },
+  {
+   "source": "TRIBUN",
+   "category": "bisnis",
+   "gate": "allow"
+  },
+  {
+   "source": "TRIBUN",
+   "category": "internasional",
+   "gate": "allow"
+  },
+  {
+   "source": "TRIBUN",
+   "category": "kesehatan",
+   "gate": null
+  },
+  {
+   "source": "TRIBUN",
+   "category": "metropolitan",
+   "gate": "allow"
+  },
+  {
+   "source": "TRIBUN",
+   "category": "nasional",
+   "gate": "allow"
+  },
+  {
+   "source": "TRIBUN",
+   "category": "new-economy",
+   "gate": "allow"
+  },
+  {
+   "source": "TRIBUN",
+   "category": "otomotif",
+   "gate": null
+  },
+  {
+   "source": "TRIBUN",
+   "category": "pendidikan",
+   "gate": null
+  },
+  {
+   "source": "TRIBUN",
+   "category": "pertamina",
+   "gate": null
+  },
+  {
+   "source": "TRIBUN",
+   "category": "regional",
+   "gate": "allow"
+  },
+  {
+   "source": "TRIBUN",
+   "category": "techno",
+   "gate": null
+  },
+  {
+   "source": "TRIBUN",
+   "category": "tribunners",
+   "gate": null
+  },
+  {
+   "source": "TVONENEWS",
+   "category": "daerah",
+   "gate": "allow"
+  },
+  {
+   "source": "TVONENEWS",
+   "category": "ekonomi",
+   "gate": "allow"
+  },
+  {
+   "source": "TVONENEWS",
+   "category": "news",
+   "gate": null
+  },
+  {
+   "source": "VIVA",
+   "category": "berita",
+   "gate": null
+  },
+  {
+   "source": "VIVA",
+   "category": "bisnis",
+   "gate": "allow"
+  },
+  {
+   "source": "VIVA",
+   "category": "breaking-news",
+   "gate": "allow"
+  },
+  {
+   "source": "VIVA",
+   "category": "digital",
+   "gate": null
+  },
+  {
+   "source": "VIVA",
+   "category": "edukasi",
+   "gate": null
+  },
+  {
+   "source": "VIVA",
+   "category": "https://bandung.viva.co.id/sitemap/news/news-sitemap.xml",
+   "gate": null
+  },
+  {
+   "source": "VIVA",
+   "category": "https://banten.viva.co.id/sitemap/news/news-sitemap.xml",
+   "gate": null
+  },
+  {
+   "source": "VIVA",
+   "category": "https://banyumas.viva.co.id/sitemap/news/news-sitemap.xml",
+   "gate": null
+  },
+  {
+   "source": "VIVA",
+   "category": "https://banyuwangi.viva.co.id/sitemap/news/news-sitemap.xml",
+   "gate": null
+  },
+  {
+   "source": "VIVA",
+   "category": "https://ceritakita.viva.co.id/sitemap/news/news-sitemap.xml",
+   "gate": null
+  },
+  {
+   "source": "VIVA",
+   "category": "https://cianjur.viva.co.id/sitemap/news/news-sitemap.xml",
+   "gate": null
+  },
+  {
+   "source": "VIVA",
+   "category": "https://gadget.viva.co.id/sitemap/news/news-sitemap.xml",
+   "gate": null
+  },
+  {
+   "source": "VIVA",
+   "category": "https://gorontalo.viva.co.id/sitemap/news/news-sitemap.xml",
+   "gate": null
+  },
+  {
+   "source": "VIVA",
+   "category": "https://jabar.viva.co.id/sitemap/news/news-sitemap.xml",
+   "gate": null
+  },
+  {
+   "source": "VIVA",
+   "category": "https://jateng.viva.co.id/sitemap/news/news-sitemap.xml",
+   "gate": null
+  },
+  {
+   "source": "VIVA",
+   "category": "https://jogja.viva.co.id/sitemap/news/news-sitemap.xml",
+   "gate": null
+  },
+  {
+   "source": "VIVA",
+   "category": "https://kaltim.viva.co.id/sitemap/news/news-sitemap.xml",
+   "gate": null
+  },
+  {
+   "source": "VIVA",
+   "category": "https://lampung.viva.co.id/sitemap/news/news-sitemap.xml",
+   "gate": null
+  },
+  {
+   "source": "VIVA",
+   "category": "https://madura.viva.co.id/sitemap/news/news-sitemap.xml",
+   "gate": null
+  },
+  {
+   "source": "VIVA",
+   "category": "https://malang.viva.co.id/sitemap/news/news-sitemap.xml",
+   "gate": null
+  },
+  {
+   "source": "VIVA",
+   "category": "https://medan.viva.co.id/sitemap/news/news-sitemap.xml",
+   "gate": null
+  },
+  {
+   "source": "VIVA",
+   "category": "https://mindset.viva.co.id/sitemap/news/news-sitemap.xml",
+   "gate": null
+  },
+  {
+   "source": "VIVA",
+   "category": "https://ntt.viva.co.id/sitemap/news/news-sitemap.xml",
+   "gate": null
+  },
+  {
+   "source": "VIVA",
+   "category": "https://olret.viva.co.id/sitemap/news/news-sitemap.xml",
+   "gate": null
+  },
+  {
+   "source": "VIVA",
+   "category": "https://padang.viva.co.id/sitemap/news/news-sitemap.xml",
+   "gate": null
+  },
+  {
+   "source": "VIVA",
+   "category": "https://purwasuka.viva.co.id/sitemap/news/news-sitemap.xml",
+   "gate": null
+  },
+  {
+   "source": "VIVA",
+   "category": "https://semarang.viva.co.id/sitemap/news/news-sitemap.xml",
+   "gate": null
+  },
+  {
+   "source": "VIVA",
+   "category": "https://siap.viva.co.id/sitemap/news/news-sitemap.xml",
+   "gate": null
+  },
+  {
+   "source": "VIVA",
+   "category": "https://sulawesi.viva.co.id/sitemap/news/news-sitemap.xml",
+   "gate": null
+  },
+  {
+   "source": "VIVA",
+   "category": "https://tangerang.viva.co.id/sitemap/news/news-sitemap.xml",
+   "gate": null
+  },
+  {
+   "source": "VIVA",
+   "category": "https://techno.viva.co.id/sitemap/news/news-sitemap.xml",
+   "gate": null
+  },
+  {
+   "source": "VIVA",
+   "category": "https://teknodaily.viva.co.id/sitemap/news/news-sitemap.xml",
+   "gate": null
+  },
+  {
+   "source": "VIVA",
+   "category": "indepth",
+   "gate": null
+  },
+  {
+   "source": "VIVA",
+   "category": "militer",
+   "gate": "allow"
+  },
+  {
+   "source": "VIVA",
+   "category": "news-sitemap",
+   "gate": null
+  },
+  {
+   "source": "VIVA",
+   "category": "other",
+   "gate": null
+  },
+  {
+   "source": "VIVA",
+   "category": "otomotif",
+   "gate": null
+  },
+  {
+   "source": "VIVA",
+   "category": "pilkada",
+   "gate": "allow"
+  },
+  {
+   "source": "VIVA",
+   "category": "ragam",
+   "gate": null
+  },
+  {
+   "source": "VIVA",
+   "category": "surat",
+   "gate": null
+  },
+  {
+   "source": "VIVA",
+   "category": "trending",
+   "gate": null
+  },
+  {
+   "source": "VIVA",
+   "category": "vbuzz",
+   "gate": null
+  },
+  {
+   "source": "VIVA",
+   "category": "viva-visual",
+   "gate": null
+  },
+  {
+   "source": "WARTAEKONOMI",
+   "category": "agribisnis",
+   "gate": "allow"
+  },
+  {
+   "source": "WARTAEKONOMI",
+   "category": "asean",
+   "gate": null
+  },
+  {
+   "source": "WARTAEKONOMI",
+   "category": "asia_pasifik",
+   "gate": null
+  },
+  {
+   "source": "WARTAEKONOMI",
+   "category": "asuransi",
+   "gate": "allow"
+  },
+  {
+   "source": "WARTAEKONOMI",
+   "category": "bisnis",
+   "gate": "allow"
+  },
+  {
+   "source": "WARTAEKONOMI",
+   "category": "bursa",
+   "gate": "allow"
+  },
+  {
+   "source": "WARTAEKONOMI",
+   "category": "ceo_interview",
+   "gate": null
+  },
+  {
+   "source": "WARTAEKONOMI",
+   "category": "csr",
+   "gate": null
+  },
+  {
+   "source": "WARTAEKONOMI",
+   "category": "daerah",
+   "gate": "allow"
+  },
+  {
+   "source": "WARTAEKONOMI",
+   "category": "dana_pensiun",
+   "gate": "allow"
+  },
+  {
+   "source": "WARTAEKONOMI",
+   "category": "digital_economy",
+   "gate": "allow"
+  },
+  {
+   "source": "WARTAEKONOMI",
+   "category": "energi",
+   "gate": "allow"
+  },
+  {
+   "source": "WARTAEKONOMI",
+   "category": "entrepreneur",
+   "gate": null
+  },
+  {
+   "source": "WARTAEKONOMI",
+   "category": "finansial",
+   "gate": "allow"
+  },
+  {
+   "source": "WARTAEKONOMI",
+   "category": "green_economy",
+   "gate": "allow"
+  },
+  {
+   "source": "WARTAEKONOMI",
+   "category": "hukum",
+   "gate": "allow"
+  },
+  {
+   "source": "WARTAEKONOMI",
+   "category": "industri",
+   "gate": "allow"
+  },
+  {
+   "source": "WARTAEKONOMI",
+   "category": "infrastruktur",
+   "gate": "allow"
+  },
+  {
+   "source": "WARTAEKONOMI",
+   "category": "internasional",
+   "gate": "allow"
+  },
+  {
+   "source": "WARTAEKONOMI",
+   "category": "jasa",
+   "gate": null
+  },
+  {
+   "source": "WARTAEKONOMI",
+   "category": "kesehatan",
+   "gate": null
+  },
+  {
+   "source": "WARTAEKONOMI",
+   "category": "makro",
+   "gate": "allow"
+  },
+  {
+   "source": "WARTAEKONOMI",
+   "category": "megapolitan",
+   "gate": "allow"
+  },
+  {
+   "source": "WARTAEKONOMI",
+   "category": "multifinance",
+   "gate": "allow"
+  },
+  {
+   "source": "WARTAEKONOMI",
+   "category": "nasional",
+   "gate": "allow"
+  },
+  {
+   "source": "WARTAEKONOMI",
+   "category": "otomotif",
+   "gate": null
+  },
+  {
+   "source": "WARTAEKONOMI",
+   "category": "pajak",
+   "gate": "allow"
+  },
+  {
+   "source": "WARTAEKONOMI",
+   "category": "perbankan",
+   "gate": "allow"
+  },
+  {
+   "source": "WARTAEKONOMI",
+   "category": "perencanaan_keuangan",
+   "gate": "allow"
+  },
+  {
+   "source": "WARTAEKONOMI",
+   "category": "perikanan",
+   "gate": null
+  },
+  {
+   "source": "WARTAEKONOMI",
+   "category": "politik",
+   "gate": "allow"
+  },
+  {
+   "source": "WARTAEKONOMI",
+   "category": "properti",
+   "gate": "allow"
+  },
+  {
+   "source": "WARTAEKONOMI",
+   "category": "riil",
+   "gate": "allow"
+  },
+  {
+   "source": "WARTAEKONOMI",
+   "category": "sitemap",
+   "gate": null
+  },
+  {
+   "source": "WARTAEKONOMI",
+   "category": "transportasi",
+   "gate": null
+  }
+ ]
+}

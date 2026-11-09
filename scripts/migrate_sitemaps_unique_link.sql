@@ -1,0 +1,21 @@
+-- SYS-29: enforce one `sitemaps` row per link.
+--
+-- save_sitemaps used to dedup on (link, posted_at) in a Python-side map with no
+-- index behind it. A URL identifies an article; the date was never part of its
+-- identity, and any change in how posted_at is derived (SYS-11's WIB fix moved
+-- every 00:00-06:59 article forward one day) or a site re-stamping
+-- news:publication_date (OKEZONE) re-inserted a stored URL as a second row ->
+-- second articles row -> duplicate chunks and FAISS vectors. On 2026-09-18 the
+-- next crawl would have inserted 4,024 such rows across the 21 HEALTHY sources.
+--
+-- Run scripts/dedupe_sitemap_links.py FIRST (dry-run, then for real) to remove
+-- the existing multi-row links together with their dependent articles/chunks
+-- rows and FAISS vectors; this migration only adds the index and will fail with
+-- "could not create unique index" if any duplicate link remains.
+--
+-- sitemaps.link is NOT NULL on both databases, so every row is covered (a unique
+-- index alone would let NULLs through, since Postgres treats them as distinct).
+CREATE UNIQUE INDEX IF NOT EXISTS sitemaps_link_uq ON sitemaps (link);
+
+-- Verify: should return 0.
+-- SELECT COUNT(*) FROM (SELECT 1 FROM sitemaps GROUP BY link HAVING COUNT(*) > 1) t;

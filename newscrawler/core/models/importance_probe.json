@@ -1,0 +1,228 @@
+{
+ "trained_at": "2026-09-29T15:33:03+00:00",
+ "embedding_model": "intfloat/multilingual-e5-large",
+ "embedding_revision": "3d7cfbdacd47fdda877c5cd8a79fbcc4f2a574f3",
+ "embedding_dim": 1024,
+ "classes": [
+  "markets",
+  "macro_policy",
+  "corporate",
+  "commodities_energy",
+  "consumer",
+  "politics_government",
+  "law_crime",
+  "disaster_accident",
+  "international",
+  "tech_science",
+  "health_education",
+  "other_news",
+  "soft"
+ ],
+ "soft_threshold": 0.39,
+ "gold_path": "tests/fixtures/filter_gold.jsonl",
+ "gold_sha256": "d821b970a09e414fb31f9615fee74da88e56c72b047fdae6e6d9cf8b44a28541",
+ "n_train": 3081,
+ "n_test": 763,
+ "sklearn_version": "1.6.1",
+ "numpy_version": "2.0.2",
+ "estimator": {
+  "gate": "LogisticRegression(binary soft-vs-news, C=1.0)",
+  "topic": "LogisticRegression(13-class, class_weight=balanced, C=16.0)",
+  "selection": "5-fold CV on train; tau over the tau-dependent gates; topic C by CV accuracy"
+ },
+ "seed": 20260921,
+ "gates": {
+  "recall_finance": 0.95,
+  "recall_general": 0.9,
+  "precision_mixed": 0.9,
+  "precision_allow": 0.9,
+  "topic_accuracy": 0.8
+ },
+ "gate_tolerance": 0.02,
+ "gates_met_exactly": false,
+ "metrics_test": {
+  "recall_finance": 0.9405405405405406,
+  "recall_general": 0.8975903614457831,
+  "precision_mixed": 0.92,
+  "precision_allow": 0.944078947368421,
+  "topic_accuracy": 0.822,
+  "recall_all": 0.876,
+  "precision_all": 0.9399141630901288,
+  "uncertain_band_share": 0.20445609436435125,
+  "n": 763,
+  "topic_macro_f1": 0.8075726871251446
+ },
+ "metrics_test_per_stratum": {
+  "econ_politics_boundary": {
+   "n": 64,
+   "recall": 0.9107142857142857,
+   "precision": 1.0,
+   "kept": 51,
+   "news": 56
+  },
+  "finance_pending": {
+   "n": 30,
+   "recall": 0.8695652173913043,
+   "precision": 0.8695652173913043,
+   "kept": 23,
+   "news": 23
+  },
+  "finance_reject": {
+   "n": 119,
+   "recall": 0.9560439560439561,
+   "precision": 0.9560439560439561,
+   "kept": 91,
+   "news": 91
+  },
+  "finance_saved": {
+   "n": 80,
+   "recall": 0.9436619718309859,
+   "precision": 0.9710144927536232,
+   "kept": 69,
+   "news": 71
+  },
+  "hard_news": {
+   "n": 106,
+   "recall": 0.9347826086956522,
+   "precision": 0.9247311827956989,
+   "kept": 93,
+   "news": 92
+  },
+  "mixed_bucket": {
+   "n": 171,
+   "recall": 0.8617021276595744,
+   "precision": 0.9310344827586207,
+   "kept": 87,
+   "news": 94
+  },
+  "religion_boundary": {
+   "n": 32,
+   "recall": 0.6666666666666666,
+   "precision": 0.8571428571428571,
+   "kept": 14,
+   "news": 18
+  },
+  "soft_category": {
+   "n": 42,
+   "recall": 0.0,
+   "precision": null,
+   "kept": 0,
+   "news": 5
+  },
+  "soft_save": {
+   "n": 19,
+   "recall": 0.0,
+   "precision": null,
+   "kept": 0,
+   "news": 3
+  },
+  "viva_general": {
+   "n": 100,
+   "recall": 0.723404255319149,
+   "precision": 0.8947368421052632,
+   "kept": 38,
+   "news": 47
+  }
+ },
+ "metrics_train_cv": {
+  "recall_finance": 0.9407894736842105,
+  "recall_general": 0.9071117561683599,
+  "precision_mixed": 0.8926014319809069,
+  "precision_allow": 0.9543269230769231,
+  "topic_accuracy": 0.7942073170731707,
+  "recall_all": 0.8709349593495935,
+  "precision_all": 0.9361004915346806,
+  "uncertain_band_share": 0.24862057773450177,
+  "n": 3081
+ },
+ "confusion_test": {
+  "markets": {
+   "markets": 30,
+   "macro_policy": 3
+  },
+  "macro_policy": {
+   "markets": 3,
+   "macro_policy": 47,
+   "international": 1,
+   "law_crime": 1,
+   "commodities_energy": 2,
+   "consumer": 2,
+   "politics_government": 3
+  },
+  "corporate": {
+   "macro_policy": 4,
+   "commodities_energy": 2,
+   "corporate": 48,
+   "consumer": 7,
+   "tech_science": 1,
+   "markets": 1,
+   "disaster_accident": 1
+  },
+  "commodities_energy": {
+   "commodities_energy": 29,
+   "macro_policy": 2,
+   "markets": 1,
+   "corporate": 3,
+   "consumer": 1
+  },
+  "consumer": {
+   "consumer": 20,
+   "corporate": 3,
+   "politics_government": 1,
+   "macro_policy": 3,
+   "disaster_accident": 1,
+   "commodities_energy": 1
+  },
+  "politics_government": {
+   "disaster_accident": 2,
+   "macro_policy": 4,
+   "politics_government": 69,
+   "law_crime": 2,
+   "commodities_energy": 1,
+   "consumer": 4,
+   "international": 1,
+   "other_news": 2,
+   "health_education": 1,
+   "corporate": 1
+  },
+  "law_crime": {
+   "law_crime": 66,
+   "corporate": 1,
+   "commodities_energy": 1,
+   "politics_government": 1
+  },
+  "disaster_accident": {
+   "disaster_accident": 37,
+   "politics_government": 1,
+   "law_crime": 1
+  },
+  "international": {
+   "international": 27,
+   "corporate": 1,
+   "law_crime": 1,
+   "other_news": 1,
+   "politics_government": 1,
+   "commodities_energy": 1,
+   "tech_science": 1,
+   "macro_policy": 1
+  },
+  "tech_science": {
+   "markets": 1,
+   "tech_science": 7,
+   "health_education": 1,
+   "international": 2,
+   "commodities_energy": 1
+  },
+  "health_education": {
+   "health_education": 16,
+   "macro_policy": 1
+  },
+  "other_news": {
+   "other_news": 15,
+   "politics_government": 4,
+   "international": 1,
+   "disaster_accident": 1
+  }
+ },
+ "noise_floor": 0.05
+}

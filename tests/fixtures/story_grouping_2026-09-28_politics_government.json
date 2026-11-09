@@ -1,0 +1,182 @@
+{
+ "date": "2026-09-28",
+ "topic": "politics_government",
+ "expect": {
+  "together": [],
+  "apart": []
+ },
+ "clusters": [
+  {
+   "headlines": [
+    "Jokowi \"Akhirnya\" PSI...",
+    "Jokowi Akhirnya Terang-terangan Jadi Kader PSI, Ini Nomor KTA-nya",
+    "Jokowi Resmi Jadi Kader PSI, Pengamat: Sulit Dongkrak Elektoral Partai",
+    "Grace Natalie Beri Sinyal Jokowi Bakal Dapat Posisi di Struktur PSI",
+    "Jokowi Pamer KTA PSI, PDIP: Tunjukin Ijazahnya Juga Dong",
+    "Sindiran Jubir PDIP ke Jokowi usai Pamer KTA PSI: Harusnya Ijazah"
+   ],
+   "portals": 9
+  },
+  {
+   "headlines": [
+    "Kemenkop jelaskan alasan manajer KDKMP tak ditempatkan sesuai domisili",
+    "Soal Penempatan Manajer Kopdes, Kemenkop: Bukan Pendekatan Wilayah",
+    "Kemenkop: 85 Persen Manajer Kopdes Sudah Siap Penempatan di Oktober",
+    "Kemenkop Bongkar Alasan Manajer Kopdes Ditempatkan Jauh dari Domisili",
+    "Kemenkop Klaim 85 Persen Calon Manajer Kopdes Siap Ditempatkan",
+    "Manajer Kopdes Mengeluh Penempatan Jauh dari Domisili, Ini Kata Kemenkop"
+   ],
+   "portals": 13
+  },
+  {
+   "headlines": [
+    "Prabowo Minta Ada Audit Tata Kelola Keuangan Haji",
+    "Minta Tata Kelola Haji Dibersihkan, Prabowo Perintahkan Audit Forensik Keuangan",
+    "Prabowo Perintahkan Segera Audit Tata Kelola Keuangan Haji",
+    "Prabowo Minta Tata Kelola Haji Dibersihkan, Dorong Audit Forensik Keuangan BPKH",
+    "Wamenhaj Ungkap Arahan Prabowo: Antrean Jadi 14 Tahun-Audit Tata Kelola Keuangan",
+    "Prabowo Instruksikan Pembenahan Tata Kelola Haji: Sapu Bersih Mafia hingga Audit Forensik Keuangan"
+   ],
+   "portals": 10
+  },
+  {
+   "headlines": [
+    "Pramono Anung Panggil Dishub Jakarta Bahas CFD dan Sistem Ganjil Genap",
+    "Pramono Soroti Efektivitas CFD dan Ganjil Genap Jakarta",
+    "Kebijakan Ganjil Genap hingga CFD Dievaluasi, Begini Penjelasan Pramono",
+    "Pramono Bakal Evaluasi Ganjil Genap dan CFD Jakarta: Harus Berdampak bagi Masyarakat",
+    "Pramono Bakal Kaji Ulang Aturan Ganjil Genap dan CFD, Pastikan tak Sekadar Seremonial",
+    "Kaji Kebijakan CFD hingga Ganjil-Genap, Pramono: Harus Berdampak Nyata"
+   ],
+   "portals": 7
+  },
+  {
+   "headlines": [
+    "MK Jadwalkan Sidang Pembuktian Gugatan Syarat Pencalonan Gibran Rabu Lusa",
+    "Analisis Eks Ketua MK Soal Sidang Sengketa Ijazah Gibran di MK Berlanjut ke Pembuktian",
+    "MK Lanjutkan Sidang PHPU Ijazah Gibran Rabu Lusa, Masuk Agenda Pembuktian",
+    "Sengketa Syarat Pendidikan Gibran di MK: Dugaan \"Pasal Penyelundupan\" hingga Pengakuan KPU",
+    "Sengketa Syarat Ijazah Gibran Dilanjut Rabu 30 September dengan Agenda Pembuktian",
+    "Sidang PHPU Ijazah Gibran Lanjut ke Pembuktian, Refly Harun: Ini Perkara yang Ngeri-Ngeri Sedap"
+   ],
+   "portals": 5
+  },
+  {
+   "headlines": [
+    "Gubernur Pramono Klaim Transportasi Jakarta Lebih Baik dari New York",
+    "Pramono: Penanganan Transportasi di Jakarta Jauh Lebih Baik Dibanding New York",
+    "Pramono Klaim Transportasi Jakarta Lebih Baik dari New York",
+    "Pembicaraan dengan Wali Kota New York, Pramono: Mamdani Tanya Pengelolaan Transportasi Jakarta",
+    "Pramono Sebut Transportasi Jakarta Lebih Baik Dibanding New York",
+    "Pramono: Penanganan Transportasi Jakarta Jauh Lebih Baik dari New York"
+   ],
+   "portals": 7
+  },
+  {
+   "headlines": [
+    "Soal Ambang Batas Parlemen, Legislator PKB: 5 Persen Baik, Tetapi Angka 6 Ideal &amp; Moderat",
+    "PKB Nilai Usulan Ambang Batas Parlemen 6 Persen Jauh Lebih Baik Daripada 5 Persen",
+    "Menghapus Threshold, Mengusir \"Singa dan Rubah\" Parlemen",
+    "CSIS Usul PT 3,5% di 2029: PT 5% Bisa Buat 20 Juta Suara Tak Terwakili",
+    "PKB Nilai Usulan Ambang Batas Parlemen 6% Ideal, Alasannya karena Jaga Keseimbangan Politik",
+    "CSIS Usul Ambang Batas Parlemen Diturunkan Bertahap, 3,5 Persen Pada 2029"
+   ],
+   "portals": 5
+  },
+  {
+   "headlines": [
+    "Presiden Prabowo Berhentikan Sementara Wagub Babel Hellyana, Berlaku hingga Perkara Inkracht",
+    "Wakil Gubernur Bangka Belitung Hellyana Dihentikan Sementara dari Jabatannya, Kepres Telah Keluar",
+    "Gubernur Bangka Belitung Ambil Alih Tugas Wagub yang Diberhentikan oleh Presiden Prabowo",
+    "Presiden Berhentikan Sementara Wagub Babel Helyana terkait Kasus Hukum",
+    "Presiden Prabowo Terbitkan Keppres Pemberhentian Sementara Wagub Babel Hellyana",
+    "Prabowo Berhentikan Sementara Wagub Babel, Apa Alasannya?"
+   ],
+   "portals": 5
+  },
+  {
+   "headlines": [
+    "Penyebab Penempatan Manajer Kopdes Tak Sesuai Domisili",
+    "Kemenkop sebut manajer Kopdes Merah Putih aktif awal Oktober",
+    "Alasan Pemerintah Tempatkan Manajer Kopdes Tak Sesuai Domisili",
+    "Sebanyak Ini Manajer Kopdes yang Penempatannya Jauh dari Domisili",
+    "Kemenkop Ungkap Manajer Koperasi Desa Merah Putih Mulai Aktif Awal Oktober 2026",
+    "Manajer Kopdes Protes Usai Ditempatkan Jauh dari Domisili, Pemerintah Buka Alasan"
+   ],
+   "portals": 6
+  },
+  {
+   "headlines": [
+    "Pramono Tata Anak Kali Krukut yang 60 Tahun Tak Dikeruk",
+    "Pramono Janji Tata Anak Kali Krukut Tanpa Gusur, Target Rampung 2028",
+    "Penataan Kali Kebon Melati Jakpus Dimulai 2027, Pramono Targetkan Berubah Total pada 2028",
+    "Pramono Janji Tata Kali Kebon Melati Jakpus Tanpa Gusur Rumah Warga, Ini Alasannya",
+    "Pramono Janji Tata Kali Kebon Melati Jakpus Tanpa Gusur Warga, Pengerjaan Dimulai 2027",
+    "Pemprov DKI Tata Anak Kali Krukut Kebon Melati, Fokus Benahi Fasilitas Warga"
+   ],
+   "portals": 5
+  },
+  {
+   "headlines": [
+    "RI Maju sebagai Calon Anggota Tidak Tetap DK PBB",
+    "Resmi! RI Calonkan Diri Jadi Anggota Tidak Tetap DK PBB 2029-2030",
+    "RI Resmi Calonkan Diri Jadi Anggota Tidak Tetap DK PBB 2029-2030",
+    "Indonesia, DK PBB, dan Ilusi Perdamaian",
+    "Indonesia, DK PBB, dan Ilusi Perdamaian",
+    "Video: Indonesia Calonkan Diri Jadi Anggota Tidak Tetap DK PBB"
+   ],
+   "portals": 5
+  },
+  {
+   "headlines": [
+    "Luhut: Pemimpin Harus Mau Mendengar, Jangan Merasa Paling Benar",
+    "Luhut: Pemimpin Harus Mau Mendengar, Jangan Merasa Paling Benar!",
+    "Luhut: Pemimpin Harus Mau Mendengar, Jangan Merasa Paling Benar",
+    "Pesan Luhut untuk Pemimpin: Harus Mau Mendengar, Jangan Merasa Paling Benar",
+    "Luhut Pandjaitan: Pemimpin Harus Mau Mendengar, Jangan Merasa Paling Benar"
+   ],
+   "portals": 5
+  },
+  {
+   "headlines": [
+    "2 Tahun Kepemimpinan Prabowo, Ketum Logis 08 Beberkan Capaian Bidang Ekonomi dan Penegakan Hukum",
+    "2 Tahun Kepemimpinan Prabowo, Anshar Ilo Beberkan Fakta Capaian Ekonomi dan Penegakan Hukum",
+    "Mahfud MD Ramal IKN dan Kopdes Berisiko Mangkrak Jika Prabowo Tak Lagi Berkuasa",
+    "2 Tahun Prabowo-Gibran, Ekonom UGM Soroti Ruang Fiskal",
+    "Dua Tahun Prabowo, Ekonom UGM: Belum Banyak Perbaikan"
+   ],
+   "portals": 5
+  },
+  {
+   "headlines": [
+    "Ditjen Otda: Perlindungan Penyandang Disabilitas Harus Sinergi Lintas Sektor",
+    "Kementerian Dalam Negeri: Penanganan Penyandang Disabilitas Membutuhkan Kerja Sama Lintas Sektor",
+    "Ditjen Otda Dorong Kerja Sama Lintas Sektor dalam Penanganan Penyandang Disabilitas",
+    "Penuhi Hak Disabilitas, Kemendagri Dorong Kerja Sama Lintas Sektor",
+    "Ditjen Otda Kemendagri Sebut Penanganan Disabilitas Butuh Kerja Sama Lintas Sektor"
+   ],
+   "portals": 5
+  },
+  {
+   "headlines": [
+    "PSI Tak Masalah Ambang Batas Parlemen Naik 5 Persen, Grace Natalie: Berapa Pun Kami Siap",
+    "PSI Tak Anggap Wacana Naiknya Ambang Batas Parlemen sebagai Upaya Penjegalan",
+    "Tak Ada dalam DPR, PSI Pasrah soal Ambang Batas Parlemen",
+    "Jokowi Minta Anggota PSI Harus Kerja Keras, Faldo Maldini: Senior sedang Semangati Kader",
+    "Ketuhar PSI: Pak Jokowi Tidak Takut dengan angka 8..."
+   ],
+   "portals": 4
+  },
+  {
+   "headlines": [
+    "C Suhadi Pertanyakan Dasar Diskualifikasi Gibran dalam Gugatan Denny ke MK",
+    "Diserang soal Ijazah, Gibran Disarankan Teladani Jejak Eks Menterinya Jokowi",
+    "Gibran Diminta Ambil Paket C daripada Dihantui Denny Indrayana: Nanti Dapat Ijazah SMA",
+    "Guru Besar Unair: Posisi Wapres Gibran Secara Hukum Masih Kuat, tapi...",
+    "Partai Koalisi Tak Turun Langsung Bela Gibran: Biar Relawan yang ke MK",
+    "Pantas Parpol Koalisi Ogah Pasang Badan, Terungkap Alasan Gibran Tak Dibela di Sidang MK!"
+   ],
+   "portals": 2
+  }
+ ]
+}

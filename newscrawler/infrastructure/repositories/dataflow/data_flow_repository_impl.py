@@ -1,0 +1,359 @@
+from contextlib import contextmanager
+from dataclasses import replace
+from datetime import date
+from typing import Dict, List, Optional, Set, Tuple, Union
+
+from newscrawler.core.constants import KNOWLEDGE_BATCH_SIZE
+from newscrawler.core.knowledge_extractor import KnowledgeExtractor
+from newscrawler.domain.dtos.dataflow.details.chunk_dto import ChunkDTO
+from newscrawler.domain.dtos.dataflow.details.news_details_dto import NewsDetailsDTO
+from newscrawler.domain.dtos.dataflow.details.site_map_dto import SitemapDTO, posted_at_datetime
+from newscrawler.domain.repositories.data_flow_repository.data_flow_repository import (
+    DataFlowRepository,
+)
+from newscrawler.infrastructure.datasource.dataflow.model.chunk_model import ChunkModel
+from newscrawler.infrastructure.datasource.dataflow.model.news_data_model import (
+    NewsSitemapModel,
+    SitemapSaveResult,
+)
+from newscrawler.infrastructure.datasource.dataflow.model.news_details_model import (
+    NewsDetailsModel,
+)
+from newscrawler.infrastructure.datasource.dataflow.write.faiss.chunk_faiss_data_source import ChunkFAISSDatasource
+from newscrawler.infrastructure.datasource.dataflow.write.faiss.l1_search import l1_search
+from newscrawler.infrastructure.datasource.dataflow.write.news_data_source import (
+    NewsDataSource,
+)
+from newscrawler.infrastructure.datasource.dataflow.write.sqlalchemy.sql_alchemy_chunk_data_source import SQLAlchemyChunkDataSource
+from newscrawler.infrastructure.datasource.dataflow.write.sqlalchemy.sql_alchemy_knowledge_data_source import SQLAlchemyKnowledgeDataSource
+from newscrawler.infrastructure.datasource.dataflow.write.sqlalchemy.sql_alchemy_newsletter_data_source import SQLAlchemyNewsletterDataSource
+from newscrawler.core.newsletter_generator import NewsletterGenerator
+
+
+class DataFlowRepositoryImpl(DataFlowRepository):
+    def __init__(self, sql_alchemy_client):
+        self.news_data_source             = NewsDataSource(sql_alchemy_client)
+        self.chunk_faiss_datasource       = ChunkFAISSDatasource()
+        self.sql_alchemy_chunk_datasource = SQLAlchemyChunkDataSource(sql_alchemy_client)
+        self.knowledge_datasource         = SQLAlchemyKnowledgeDataSource(sql_alchemy_client)
+        self.knowledge_extractor          = KnowledgeExtractor(self.knowledge_datasource)
+        self.newsletter_datasource        = SQLAlchemyNewsletterDataSource(sql_alchemy_client)
+        # DBT-02 (#21): one MiniLM per process -- the newsletter embeds with the
+        # model the FAISS store already loaded (same model, normalized, batch 64).
+        # SYS-68 / ADR-001: the summarizer's calls are counted in api_usage_log
+        # through the same datasource knowledge extraction uses.
+        self.newsletter_generator         = NewsletterGenerator(
+            self.newsletter_datasource, embed_documents=self.chunk_faiss_datasource.embedding_model.embed_documents,
+            usage=self.knowledge_datasource, search_l1=l1_search(self.chunk_faiss_datasource.vs_l1))
+
+    def load_sitemap_data(self, website: str, n_limit: int) -> List[NewsDetailsDTO]:
+        news_sitemap_model =  self.news_data_source.load_sitemap(website=website, n_limit=n_limit)
+        news_sitemap_dto = [self._to_sitemap_dto(news) for news in news_sitemap_model]
+        return news_sitemap_dto
+
+    def save_sitemap_data(self, sitemaps: List[NewsDetailsDTO]) -> List[SitemapDTO]:
+        news_sitemap_model = self.to_news_information_model(sitemaps)
+        saved_models = self.news_data_source.save_sitemap(news_sitemap_model)
+        dtos = [self._to_sitemap_dto(m) for m in saved_models] if saved_models else []
+        # SYS-07: carry the new-vs-existing count across the DTO conversion (a plain
+        # list comprehension would otherwise drop it) so crawl_log.article_count can
+        # reflect real new-row counts.
+        return SitemapSaveResult(dtos, new_count=getattr(saved_models, "new_count", len(dtos)))
+
+    def save_newsdetails_data(self, newsdetails: List[NewsDetailsDTO]) -> List[int]:
+        newsdetail_model = self.to_news_information_model(newsdetails)
+        return self.news_data_source.save_newsdetails(newsdetail_model)
+
+    def save_chunk_data(self, chunks: List[ChunkDTO]) -> List[int]:
+        if not chunks:
+            return []
+        all_sitemap_ids = {c.sitemap_id for c in chunks}
+        # SYS-17: dedup against SQL (the source of truth for "do chunks rows exist"),
+        # not FAISS membership. FAISS is written to disk before the SQL commit; if
+        # that commit then fails (or is skipped for any reason), FAISS keeps the
+        # vectors and the chunks table has nothing -- treating FAISS membership as
+        # "already saved" made that permanent, since every later attempt saw the
+        # vectors and skipped the SQL insert again.
+        #
+        # SYS-25: the dedup key is (sitemap_id, chunk_level), not sitemap_id alone.
+        # A sitemap can hold chunks at one level and be missing the other (a partial
+        # prior write); keying on sitemap_id alone treated it as fully saved and
+        # permanently dropped the missing level from `to_process` on every retry.
+        # Everything not already represented goes through chunk_faiss_datasource
+        # .save(), which still checks FAISS on its own (keyed on
+        # sitemap_id+level+index) to avoid adding duplicate vectors and to recover
+        # the *real* embedding_id for anything already embedded there.
+        already_saved_pairs = self.sql_alchemy_chunk_datasource.get_existing_sitemap_level_pairs(all_sitemap_ids)
+        to_process = [c for c in chunks if (c.sitemap_id, c.chunk_level) not in already_saved_pairs]
+
+        if to_process:
+            chunks_with_ids = self.chunk_faiss_datasource.save(to_process)
+            if self.chunk_faiss_datasource.is_deferred:
+                # DBT-10: the vectors are in memory only until the block's flush.
+                # Write the rows as NOT embedded, and give them their ids after
+                # the flush, so a kill in between leaves them repairable (NULL)
+                # rather than pointing at vectors that never reached disk.
+                pending = self.__dict__.setdefault("_pending_embedding_ids", {})
+                for c in chunks_with_ids:
+                    pending[(c.sitemap_id, c.chunk_level, c.chunk_index)] = c.embedding_id
+                chunks_with_ids = [replace(c, embedding_id=None, chunk_status="pending_embedding")
+                                   for c in chunks_with_ids]
+            new_models = [self._to_chunk_model(c) for c in chunks_with_ids]
+            self.sql_alchemy_chunk_datasource.save_chunks(new_models)
+
+        return list(all_sitemap_ids)
+
+    @contextmanager
+    def deferred_embeddings(self, website: Optional[str] = None):
+        """DBT-10 (#45): one FAISS save per block instead of one per batch.
+
+        On entry, this source's chunk rows that are still unembedded (a previous
+        block killed before its flush; OPS-22 kills on timeout) are re-embedded
+        first. Their sitemaps already have an `articles` row, so they will never
+        re-enter the crawl queue and nothing else would repair them. On exit,
+        even after an exception, FAISS is flushed FIRST and only then are the
+        rows given their ids. A kill between the two leaves NULL rows whose
+        vectors are on disk; the next block finds those vectors by key and
+        reuses their ids."""
+        faiss = self.chunk_faiss_datasource
+        outermost = faiss.begin_deferred()
+        try:
+            if outermost:
+                self._reembed_unembedded(website)
+            yield self
+        finally:
+            try:
+                if outermost:
+                    self._redo_unsaved_discards()
+                flushed = faiss.end_deferred()
+            except BaseException:
+                # The save failed (disk full) or was refused (SYS-53: another
+                # process saved the index since this one loaded it). No id is
+                # assigned: the rows stay NULL, which is the repairable state.
+                # Forget these ids too. The worker keeps this repository across
+                # sources, and the next source's flush would otherwise write
+                # them onto rows whose vectors never reached disk.
+                self.__dict__.pop("_pending_embedding_ids", None)
+                # SYS-58 (#192): the discards are the opposite case: nothing
+                # re-finds them within this run, and their deletions are either
+                # unsaved (a failed save leaves the level dirty) or undone (a
+                # refused level is reloaded with the vectors back, while the
+                # other level may already be saved without them). Keep them;
+                # the next block deletes the vectors again before its flush and
+                # the rows after it. None of their rows is deleted here.
+                self.__dict__.setdefault("_unsaved_discards", set()).update(
+                    self.__dict__.pop("_discarded_sitemaps", set()))
+                raise
+            if flushed:
+                # Only now, with the vectors on disk, may SQL point at them...
+                self._assign_pending_embedding_ids()
+                # ...and, the discarded vectors being gone from disk, may the
+                # chunk rows that pointed at them go (SYS-54).
+                self._delete_discarded_chunk_rows()
+
+    def discard_terminal_embeddings(self, website: str) -> int:
+        """SYS-54 (#185): remove the vectors and chunk rows of every sitemap of
+        this source that is terminal (no article, and rejected_filter or at the
+        fetch cap) and still has chunk rows. The crawl settles such sitemaps
+        itself, and one that already had vectors (the June article-gap VIVA
+        rows) would otherwise become an orphan that the store check reports as
+        STORE DIVERGENT. SYS-57 (#191): the sitemaps come from the store, so one
+        a killed run settled is found by the next run.
+
+        The repair's order: vectors first, then rows. In a deferred block the
+        vectors leave the in-memory stores now, and the rows are deleted only
+        after the flush has put that on disk. A kill in between leaves vectors
+        and rows together, which is still the repair's state, never rows gone
+        with their vectors still on disk. Returns the number of vectors deleted.
+
+        Vectors of a terminal sitemap that has no chunk rows are not found
+        here; the store check reports them (l1/l2_no_chunks) and
+        repair_store_consistency removes them."""
+        terminal = self.news_data_source.terminal_with_chunks(website)
+        if not terminal:
+            return 0
+        deleted = self.chunk_faiss_datasource.discard(terminal)
+        if self.chunk_faiss_datasource.is_deferred:
+            self.__dict__.setdefault("_discarded_sitemaps", set()).update(terminal)
+        else:
+            self.sql_alchemy_chunk_datasource.delete_for_sitemaps(terminal)
+        return deleted
+
+    def _redo_unsaved_discards(self) -> None:
+        """SYS-58: remove again, before this block's flush, the vectors of the
+        sitemaps whose deletion an earlier flush failed to save. Idempotent: a
+        vector already gone from memory is not found twice. Their rows are then
+        deleted with this block's own discards, after its flush succeeded."""
+        unsaved = self.__dict__.get("_unsaved_discards")
+        if not unsaved:
+            return
+        self.chunk_faiss_datasource.discard(unsaved)
+        self.__dict__.setdefault("_discarded_sitemaps", set()).update(unsaved)
+        del self.__dict__["_unsaved_discards"]
+
+    def _delete_discarded_chunk_rows(self) -> int:
+        discarded = self.__dict__.pop("_discarded_sitemaps", set())
+        return self.sql_alchemy_chunk_datasource.delete_for_sitemaps(discarded) if discarded else 0
+
+    def _reembed_unembedded(self, website: Optional[str]) -> int:
+        rows = self.sql_alchemy_chunk_datasource.load_unembedded_chunks(website)
+        if not rows:
+            return 0
+        chunks_with_ids = self.chunk_faiss_datasource.save(rows)
+        pending = self.__dict__.setdefault("_pending_embedding_ids", {})
+        for c in chunks_with_ids:
+            pending[(c.sitemap_id, c.chunk_level, c.chunk_index)] = c.embedding_id
+        return len(chunks_with_ids)
+
+    def _assign_pending_embedding_ids(self) -> int:
+        pending = self.__dict__.pop("_pending_embedding_ids", {})
+        return self.sql_alchemy_chunk_datasource.set_embedding_ids(
+            {k: v for k, v in pending.items() if v})
+
+    def mark_sitemaps_attempted(self, sitemap_ids: List[int]) -> None:
+        self.news_data_source.mark_sitemaps_attempted(sitemap_ids)
+
+    def mark_sitemaps_status(self, sitemap_ids: List[int], status: str) -> None:
+        self.news_data_source.mark_sitemaps_status(sitemap_ids, status)
+
+    def increment_fetch_failures(self, sitemap_ids: List[int], error_msg: str = None) -> None:
+        self.news_data_source.increment_fetch_failures(sitemap_ids, error_msg)
+
+    def record_fetch_error(self, sitemap_ids: List[int], error_msg: str) -> None:
+        self.news_data_source.record_fetch_error(sitemap_ids, error_msg)
+
+    def get_last_fetch_errors(self, sitemap_ids: List[int]) -> Dict[int, Optional[str]]:
+        return self.news_data_source.get_last_fetch_errors(sitemap_ids)
+
+    def get_saved_category_pairs(self, website: str) -> Set[Tuple[str, str]]:
+        return self.news_data_source.get_saved_category_pairs(website)
+
+    def update_sitemap_headlines(self, headlines_by_id: Dict[int, str]) -> int:
+        return self.news_data_source.update_sitemap_headlines(headlines_by_id)
+
+    @staticmethod
+    def _to_chunk_model(chunk: ChunkDTO) -> ChunkModel:
+        return ChunkModel(
+            sitemap_id=chunk.sitemap_id,
+            chunk_level=chunk.chunk_level,
+            chunk_index=chunk.chunk_index,
+            chunk_total=chunk.chunk_total,
+            is_first_chunk=chunk.is_first_chunk,
+            is_last_chunk=chunk.is_last_chunk,
+            text_content=chunk.text_content,
+            token_count=chunk.token_count,
+            embedding_id=chunk.embedding_id,
+            chunk_status=chunk.chunk_status,
+        )
+
+    def to_news_information_model(
+        self, news_information: List[Union[NewsDetailsDTO, SitemapDTO]]
+    ) -> List[Union[NewsSitemapModel, NewsDetailsModel]]:
+        if isinstance(news_information[0], SitemapDTO):
+            sitemap_model = [
+                self._to_sitemap_data_model(news) for news in news_information
+            ]
+            return sitemap_model
+        elif isinstance(news_information[0], NewsDetailsDTO):
+            newsdetail_model = [
+                self._to_newsdetail_data_model(news) for news in news_information
+            ]
+            return newsdetail_model
+
+    @staticmethod
+    def _to_sitemap_data_model(
+        sitemap_detail: SitemapDTO,
+    ) -> NewsSitemapModel:
+        return NewsSitemapModel(
+            headline=sitemap_detail.headline,
+            link=sitemap_detail.link,
+            sources=sitemap_detail.sources,
+            category=sitemap_detail.category,
+            posted_at=sitemap_detail.timestamp,
+            keywords=sitemap_detail.keywords,
+            sitemap_id=getattr(sitemap_detail, "sitemap_id", None),  # Pass id if present
+        )
+
+    @staticmethod
+    def _to_sitemap_dto(
+        sitemap_model: NewsSitemapModel,
+    ) -> SitemapDTO:
+        return SitemapDTO(
+            headline=sitemap_model.headline,
+            link=sitemap_model.link,
+            sources=sitemap_model.sources,
+            category=sitemap_model.category,
+            timestamp=posted_at_datetime(sitemap_model.posted_at),   # SYS-90: int yyyymmdd, not Unix seconds
+            keywords=sitemap_model.keywords,
+            sitemap_id=getattr(sitemap_model, "sitemap_id", None),  # Pass id if present
+        )
+
+    @staticmethod
+    def _to_newsdetail_data_model(
+        news_details: NewsDetailsDTO,
+    ) -> NewsDetailsModel:
+        meta_data = dict(news_details.meta_data) if news_details.meta_data else {}
+        posted_at = meta_data.get('posted_at')
+
+        if posted_at is not None and not isinstance(posted_at, int):
+            try:
+                # Convert to int in yyyyMMdd format if not already int
+                meta_data['posted_at'] = int(posted_at.strftime('%Y%m%d'))
+            except Exception:
+                meta_data.pop('posted_at', None)
+
+        return NewsDetailsModel(
+            sitemap_id=news_details.sitemap_id,
+            topic=getattr(news_details, "topic", None),
+            topic_confidence=getattr(news_details, "topic_confidence", None),
+            extracted_text=news_details.extracted_text,
+            reporter=news_details.reporter,
+            meta_data=meta_data,
+            # DBT-11 (#46): not a hard-coded lie -- CrawlerServiceImpl only hands
+            # save_newsdetails_data the articles whose chunks save_chunk_data
+            # just embedded (`to_save` is filtered by embedded_sitemap_ids), so
+            # every row that reaches this mapper IS embedded. The column stays
+            # for the schema; nothing reads it as a work queue.
+            is_embedded=True,
+        )
+
+    # ── Knowledge extraction (Phase 2) ───────────────────────────────────────
+
+    def extract_knowledge(self, batch_size: Optional[int] = None) -> int:
+        return self.knowledge_extractor.extract_all()
+
+    def load_entities_for_query(
+        self,
+        entity_name: Optional[str] = None,
+        ticker: Optional[str] = None,
+        days: Optional[int] = None,
+        from_date: Optional[date] = None,
+        to_date: Optional[date] = None,
+        event_type: Optional[str] = None,
+    ) -> dict:
+        return self.knowledge_datasource.query_entity_mentions(
+            entity_name=entity_name,
+            ticker=ticker,
+            days=days,
+            from_date=from_date,
+            to_date=to_date,
+            event_type=event_type,
+        )
+
+    def seed_entity_aliases(self, seed_data: list) -> None:
+        self.knowledge_datasource.seed_aliases(seed_data)
+
+    def generate_newsletter(self, target_date=None):
+        return self.newsletter_generator.generate(target_date)
+
+    def get_stats(self) -> dict:
+        return self.newsletter_datasource.get_stats()
+
+    def log_crawl_start(self, website: str, task: str) -> Optional[int]:
+        return self.news_data_source.sql_alchemy_article.log_crawl_start(website, task)
+
+    def log_crawl_complete(self, log_id: Optional[int], article_count: int = 0, note: Optional[str] = None) -> None:
+        self.news_data_source.sql_alchemy_article.log_crawl_complete(log_id, article_count, note=note)
+
+    def log_crawl_failed(self, log_id: Optional[int], error_msg: str) -> None:
+        self.news_data_source.sql_alchemy_article.log_crawl_failed(log_id, error_msg)

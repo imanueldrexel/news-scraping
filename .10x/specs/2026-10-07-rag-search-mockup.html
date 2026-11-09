@@ -1,0 +1,421 @@
+<title>Tanya Berita Mockup</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,500;8..60,600&display=swap">
+<style>
+/* Layout: one reading column; after the first question the search docks at the top and each turn is
+   answer (wide) + numbered source cards (narrow) on desktop, stacked on phones. Identity = the
+   newsletter edition: navy accent, light-blue band, Indonesian dateline, "Baca di … →". */
+:root {
+  --bg: #f3f5f8;
+  --surface: #ffffff;
+  --surface-2: #eaf0f7;
+  --ink: #142030;
+  --ink-2: #48566a;
+  --line: #d3dce7;
+  --accent: #0b3d7a;
+  --accent-ink: #ffffff;
+  --accent-soft: #e2ebf7;
+  --link: #1a56b0;
+  --warn-bg: #fdf3d3;
+  --warn-ink: #5e4300;
+  --focus: #1a56b0;
+  --font-display: "Source Serif 4", Georgia, "Times New Roman", serif;
+  --font-ui: "IBM Plex Sans", "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+  --radius: 10px;
+  --radius-sm: 6px;
+  --step--1: 0.8125rem;
+  --step-0: 1rem;
+  --step-1: 1.1875rem;
+  --step-2: 1.5rem;
+  --step-3: 2.25rem;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e1520; --surface: #152031; --surface-2: #1b2a3f; --ink: #e5ebf2; --ink-2: #a7b4c5;
+    --line: #2a3a51; --accent: #8fb9f0; --accent-ink: #0a1a2f; --accent-soft: #1d3150; --link: #9cc4ff;
+    --warn-bg: #3a2f12; --warn-ink: #f1d68f; --focus: #9cc4ff; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e1520; --surface: #152031; --surface-2: #1b2a3f; --ink: #e5ebf2; --ink-2: #a7b4c5;
+  --line: #2a3a51; --accent: #8fb9f0; --accent-ink: #0a1a2f; --accent-soft: #1d3150; --link: #9cc4ff;
+  --warn-bg: #3a2f12; --warn-ink: #f1d68f; --focus: #9cc4ff; color-scheme: dark;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font-ui); font-size: var(--step-0);
+       line-height: 1.6; -webkit-text-size-adjust: 100%; }
+a { color: var(--link); }
+:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; border-radius: 4px; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* ── Mockup chrome (not part of the design) ── */
+.mock-bar { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; padding: .6rem 16px;
+            background: var(--surface-2); border-bottom: 1px solid var(--line); font-size: var(--step--1); }
+.mock-bar strong { margin-right: .25rem; }
+.mock-bar button { font: inherit; padding: .3rem .7rem; border: 1px solid var(--line); border-radius: 999px;
+                   background: var(--surface); color: var(--ink); cursor: pointer; }
+.mock-bar button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.mock-bar .note { color: var(--ink-2); margin-left: auto; }
+
+/* ── Page ── */
+.page { max-width: 1120px; margin: 0 auto; padding-inline: 16px; padding-block: 0 4rem; }
+
+.masthead { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: .25rem 1rem;
+            padding-block: 1.25rem .75rem; border-bottom: 2px solid var(--accent); }
+.masthead h1 { margin: 0; font-family: var(--font-display); font-weight: 600; font-size: var(--step-2); letter-spacing: -.01em; }
+.masthead .dateline { color: var(--ink-2); font-size: var(--step--1); letter-spacing: .02em; }
+
+/* Hero (before the first question) */
+.hero { max-width: 720px; padding-block: 3rem 1rem; }
+.hero h2 { margin: 0 0 .5rem; font-family: var(--font-display); font-weight: 600; font-size: var(--step-3);
+           line-height: 1.15; text-wrap: balance; }
+.hero p { margin: 0 0 1.5rem; color: var(--ink-2); max-width: 60ch; }
+.corpus { font-variant-numeric: tabular-nums; }
+
+/* Search */
+.search { max-width: 720px; }
+.search-row { display: flex; gap: .5rem; }
+.search-row input { flex: 1; min-width: 0; font: inherit; font-size: var(--step-1); padding: .8rem 1rem; min-height: 52px;
+                    color: var(--ink); background: var(--surface); border: 1.5px solid var(--line); border-radius: var(--radius); }
+.search-row input::placeholder { color: var(--ink-2); }
+.btn { font: inherit; font-weight: 600; min-height: 44px; padding: .6rem 1.25rem; border-radius: var(--radius);
+       border: 1.5px solid var(--accent); background: var(--accent); color: var(--accent-ink); cursor: pointer; }
+.btn:disabled { opacity: .6; cursor: progress; }
+.btn-quiet { background: transparent; color: var(--accent); border-color: var(--line); font-weight: 500; }
+.search-row .btn { min-height: 52px; }
+
+.examples { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: 1rem; padding: 0; list-style: none; }
+.examples button { font: inherit; font-size: var(--step--1); text-align: left; padding: .45rem .8rem; min-height: 36px;
+                   border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); cursor: pointer; }
+.examples button:hover { border-color: var(--accent); }
+
+/* Filters */
+.filters { margin-top: .75rem; }
+.filters > summary { display: inline-flex; align-items: center; gap: .4rem; min-height: 44px; cursor: pointer;
+                     color: var(--accent); font-weight: 500; list-style: none; }
+.filters > summary::-webkit-details-marker { display: none; }
+.filters > summary::before { content: "▸"; font-size: .8em; }
+.filters[open] > summary::before { content: "▾"; }
+.filter-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: .75rem 1rem;
+               padding: 1rem; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
+.field { display: flex; flex-direction: column; gap: .3rem; min-width: 0; }
+.field label, .field legend { font-size: var(--step--1); font-weight: 600; color: var(--ink); padding: 0; }
+.field select, .field input[type="date"] { font: inherit; min-height: 44px; padding: .5rem .7rem; color: var(--ink);
+                                            background: var(--surface); border: 1.5px solid var(--line); border-radius: var(--radius-sm); }
+fieldset.field { border: 0; margin: 0; padding: 0; }
+.chips { display: flex; flex-wrap: wrap; gap: .4rem; }
+.chip-radio { position: relative; }
+.chip-radio input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+.chip-radio span { display: inline-flex; align-items: center; min-height: 44px; padding: 0 .9rem; border-radius: 999px;
+                   border: 1.5px solid var(--line); background: var(--surface); color: var(--ink); font-size: var(--step--1); }
+.chip-radio input:checked + span { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.chip-radio input:focus-visible + span { outline: 3px solid var(--focus); outline-offset: 2px; }
+.custom-dates { display: none; gap: .75rem; grid-column: 1 / -1; grid-template-columns: repeat(auto-fit, minmax(160px, 220px)); }
+.filter-grid:has(input[value="custom"]:checked) .custom-dates { display: grid; }
+
+.active-filters { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .6rem; padding: 0; list-style: none; }
+.active-filters button { font: inherit; font-size: var(--step--1); display: inline-flex; gap: .4rem; align-items: center;
+                         min-height: 32px; padding: 0 .7rem; border-radius: 999px; border: 0; cursor: pointer;
+                         background: var(--accent-soft); color: var(--accent); }
+
+/* Docked search (after the first question) */
+.docked { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 2; background: var(--bg);
+          padding-block: .75rem; border-bottom: 1px solid var(--line); }
+.docked .search { max-width: none; }
+.docked .search-row input { font-size: var(--step-0); min-height: 44px; padding: .55rem .9rem; }
+.docked .search-row .btn { min-height: 44px; }
+.thread-tools { display: flex; justify-content: flex-end; margin-top: .5rem; }
+
+/* Turn */
+.turn { padding-block: 2rem; border-bottom: 1px solid var(--line); }
+.turn:last-child { border-bottom: 0; }
+.turn-q { margin: 0 0 1rem; font-family: var(--font-display); font-weight: 600; font-size: var(--step-2);
+          line-height: 1.25; text-wrap: balance; max-width: 40ch; }
+.turn-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.5rem; }
+@media (min-width: 960px) { .turn-grid { grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr); gap: 2.5rem; } }
+
+.answer { min-width: 0; }
+.answer-body { max-width: 65ch; }
+.answer-body p { margin: 0 0 .75rem; }
+.answer-body ul { margin: 0 0 .75rem; padding-left: 1.2rem; }
+.answer-body li { margin-bottom: .35rem; }
+.cite { display: inline-block; font-size: .78em; font-weight: 600; line-height: 1.3; padding: 0 .3em; margin-left: .1em;
+        border-radius: 4px; text-decoration: none; background: var(--accent-soft); color: var(--accent);
+        font-variant-numeric: tabular-nums; vertical-align: .1em; }
+.cite:hover { text-decoration: underline; }
+.disclosure { margin: 1rem 0 0; font-size: var(--step--1); color: var(--ink-2); max-width: 65ch; }
+.notice { margin: 0 0 1rem; padding: .75rem 1rem; border-radius: var(--radius-sm); background: var(--warn-bg);
+          color: var(--warn-ink); max-width: 65ch; }
+.notice .btn { margin-top: .6rem; }
+.pending { display: flex; align-items: center; gap: .6rem; color: var(--ink-2); }
+.pending::before { content: ""; width: .9rem; height: .9rem; border-radius: 50%; border: 2px solid var(--line);
+                   border-top-color: var(--accent); animation: spin 0.9s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .pending::before { animation: none; border-top-color: var(--line); } }
+
+/* Sources */
+.sources { min-width: 0; }
+.sources h3 { margin: 0 0 .75rem; font-size: var(--step--1); text-transform: uppercase; letter-spacing: .06em;
+              color: var(--ink-2); font-weight: 600; }
+.cards { display: flex; flex-direction: column; gap: .75rem; margin: 0; padding: 0; list-style: none; }
+.card { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: .1rem .75rem; padding: .9rem 1rem;
+        background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); scroll-margin-top: 7rem; }
+.card:target { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
+.card-n { grid-row: 1 / span 4; font-weight: 600; color: var(--accent); font-variant-numeric: tabular-nums; }
+.card-meta { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem .5rem; font-size: var(--step--1); color: var(--ink-2); }
+.outlet { font-weight: 600; color: var(--ink); }
+.topic { display: inline-block; padding: 0 .5rem; border-radius: 999px; background: var(--surface-2); color: var(--ink);
+         font-size: .75rem; line-height: 1.6; }
+.card-title { margin: .2rem 0 .1rem; font-family: var(--font-display); font-weight: 600; font-size: var(--step-1); line-height: 1.3; }
+.card-snippet { margin: 0; font-size: var(--step--1); color: var(--ink-2); display: -webkit-box; -webkit-line-clamp: 3;
+                -webkit-box-orient: vertical; overflow: hidden; }
+.card-link { justify-self: start; margin-top: .35rem; font-size: var(--step--1); font-weight: 600; text-decoration: none; }
+.card-link:hover { text-decoration: underline; }
+
+/* Follow-up */
+.followup { margin-top: 1.5rem; padding: 1rem; border-radius: var(--radius); background: var(--surface-2); }
+.followup label { display: block; font-size: var(--step--1); font-weight: 600; margin-bottom: .4rem; }
+
+/* Empty state */
+.empty { padding: 1.25rem; border: 1px dashed var(--line); border-radius: var(--radius); background: var(--surface); max-width: 65ch; }
+.empty p { margin: 0 0 .75rem; }
+
+body[data-show="awal"] [data-state]:not([data-state~="awal"]),
+body[data-show="jawaban"] [data-state]:not([data-state~="jawaban"]),
+body[data-show="menyusun"] [data-state]:not([data-state~="menyusun"]),
+body[data-show="ai-mati"] [data-state]:not([data-state~="ai-mati"]),
+body[data-show="kosong"] [data-state]:not([data-state~="kosong"]) { display: none; }
+</style>
+
+<div class="mock-bar" role="toolbar" aria-label="Pilihan mockup">
+  <strong>Mockup SYS-102</strong>
+  <button type="button" data-go="awal" aria-pressed="true">Awal</button>
+  <button type="button" data-go="jawaban" aria-pressed="false">Jawaban + lanjutan</button>
+  <button type="button" data-go="menyusun" aria-pressed="false">Menyusun jawaban</button>
+  <button type="button" data-go="ai-mati" aria-pressed="false">AI tidak tersedia</button>
+  <button type="button" data-go="kosong" aria-pressed="false">Filter terlalu sempit</button>
+  <button type="button" id="theme" aria-pressed="false">Tema gelap</button>
+  <span class="note">Contoh isi, bukan berita sungguhan</span>
+</div>
+
+<div class="page">
+  <header class="masthead">
+    <h1>Tanya Berita</h1>
+    <span class="dateline">Rabu, 7 Oktober 2026</span>
+  </header>
+
+  <!-- ───────────── Before the first question ───────────── -->
+  <section data-state="awal" aria-labelledby="hero-h">
+    <div class="hero">
+      <h2 id="hero-h">Tanyakan apa saja tentang berita Indonesia hari ini.</h2>
+      <p class="corpus">Jawaban disusun dari 95.736 artikel di 29 portal berita, lengkap dengan sumbernya. Diperbarui pukul 20.16 WIB.</p>
+    </div>
+    <form class="search" onsubmit="event.preventDefault(); go('menyusun')">
+      <div class="search-row">
+        <label class="visually-hidden" for="q1">Pertanyaan</label>
+        <input id="q1" name="query" type="text" maxlength="500" autocomplete="off" placeholder="Contoh: Kenapa rupiah melemah pekan ini?">
+        <button class="btn" type="submit">Tanya</button>
+      </div>
+      <ul class="examples" aria-label="Contoh pertanyaan">
+        <li><button type="button">Apa isi RUU Ketenagakerjaan yang baru disahkan?</button></li>
+        <li><button type="button">Bagaimana kinerja IHSG pekan ini?</button></li>
+        <li><button type="button">Apa kata OJK soal kredit perbankan?</button></li>
+      </ul>
+      <details class="filters">
+        <summary>Filter</summary>
+        <div class="filter-grid">
+          <div class="field">
+            <label for="f-topik">Topik</label>
+            <select id="f-topik" name="topic">
+              <option value="">Semua topik</option>
+              <option value="markets">Pasar</option>
+              <option value="macro_policy">Kebijakan &amp; Makroekonomi</option>
+              <option value="corporate">Korporasi</option>
+              <option value="commodities_energy">Komoditas &amp; Energi</option>
+              <option value="consumer">Konsumen &amp; Bisnis</option>
+              <option value="politics_government">Politik &amp; Pemerintahan</option>
+              <option value="law_crime">Hukum &amp; Kriminal</option>
+              <option value="disaster_accident">Bencana &amp; Kecelakaan</option>
+              <option value="international">Internasional</option>
+              <option value="tech_science">Teknologi &amp; Sains</option>
+              <option value="health_education">Kesehatan &amp; Pendidikan</option>
+              <option value="other_news">Berita Lainnya</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="f-portal">Portal</label>
+            <select id="f-portal" name="source">
+              <option value="">Semua portal</option>
+              <option value="ANTARANEWS">Antara</option><option value="CNBC">CNBC Indonesia</option>
+              <option value="DETIK">detikcom</option><option value="KOMPAS">Kompas.com</option>
+              <option value="KONTAN">Kontan</option><option value="TEMPO">Tempo</option>
+            </select>
+          </div>
+          <fieldset class="field">
+            <legend>Tanggal</legend>
+            <div class="chips">
+              <label class="chip-radio"><input type="radio" name="rentang" value="" checked><span>Semua</span></label>
+              <label class="chip-radio"><input type="radio" name="rentang" value="7"><span>7 hari</span></label>
+              <label class="chip-radio"><input type="radio" name="rentang" value="30"><span>30 hari</span></label>
+              <label class="chip-radio"><input type="radio" name="rentang" value="custom"><span>Pilih tanggal</span></label>
+            </div>
+          </fieldset>
+          <div class="custom-dates">
+            <div class="field"><label for="f-dari">Dari</label><input id="f-dari" type="date" name="date_from"></div>
+            <div class="field"><label for="f-sampai">Sampai</label><input id="f-sampai" type="date" name="date_to"></div>
+          </div>
+        </div>
+      </details>
+    </form>
+  </section>
+
+  <!-- ───────────── After a question: docked search + thread ───────────── -->
+  <div data-state="jawaban menyusun ai-mati kosong">
+    <div class="docked">
+      <form class="search" onsubmit="event.preventDefault()">
+        <div class="search-row">
+          <label class="visually-hidden" for="q2">Pertanyaan</label>
+          <input id="q2" type="text" maxlength="500" placeholder="Contoh: Kenapa rupiah melemah pekan ini?">
+          <button class="btn" type="submit">Tanya</button>
+        </div>
+        <ul class="active-filters" aria-label="Filter aktif" data-state="kosong">
+          <li><button type="button" aria-label="Hapus filter Topik: Komoditas &amp; Energi">Komoditas &amp; Energi <span aria-hidden="true">×</span></button></li>
+          <li><button type="button" aria-label="Hapus filter Portal: Tempo">Tempo <span aria-hidden="true">×</span></button></li>
+          <li><button type="button" aria-label="Hapus filter Tanggal: 7 hari terakhir">7 hari terakhir <span aria-hidden="true">×</span></button></li>
+        </ul>
+      </form>
+      <div class="thread-tools"><button type="button" class="btn btn-quiet" onclick="go('awal')">Pertanyaan baru</button></div>
+    </div>
+
+    <!-- Turn 1 -->
+    <article class="turn" data-state="jawaban menyusun ai-mati" aria-labelledby="t1-q">
+      <h2 class="turn-q" id="t1-q" tabindex="-1">Kenapa rupiah melemah pekan ini?</h2>
+      <div class="turn-grid">
+        <div class="answer">
+          <div data-state="jawaban">
+            <div class="answer-body">
+              <p>Rupiah melemah karena dolar AS menguat setelah data tenaga kerja AS lebih kuat dari perkiraan, sehingga pasar menunda harapan penurunan suku bunga The Fed <a class="cite" href="#src-t1-1" aria-label="Sumber 1">[1]</a><a class="cite" href="#src-t1-3" aria-label="Sumber 3">[3]</a>.</p>
+              <ul>
+                <li>Rupiah ditutup di Rp16.420 per dolar AS pada Senin, 5 Oktober, terlemah dalam tiga pekan <a class="cite" href="#src-t1-1" aria-label="Sumber 1">[1]</a>.</li>
+                <li>Investor asing mencatat jual bersih Rp1,2 triliun di pasar saham sepanjang pekan <a class="cite" href="#src-t1-2" aria-label="Sumber 2">[2]</a>.</li>
+                <li>Bank Indonesia menyatakan berada di pasar untuk menjaga stabilitas nilai tukar <a class="cite" href="#src-t1-4" aria-label="Sumber 4">[4]</a>.</li>
+              </ul>
+            </div>
+            <p class="disclosure">Disusun AI dari artikel sumber dan bisa keliru. Cek sumbernya untuk detail.</p>
+          </div>
+          <div data-state="menyusun">
+            <p class="pending" role="status">Menyusun jawaban dari 4 artikel…</p>
+          </div>
+          <div data-state="ai-mati">
+            <div class="notice" role="status">Ringkasan AI sedang tidak tersedia. Berikut artikel yang paling relevan dengan pertanyaan Anda.</div>
+          </div>
+        </div>
+
+        <section class="sources" aria-labelledby="t1-src">
+          <h3 id="t1-src">Berdasarkan 4 artikel</h3>
+          <ol class="cards">
+            <li class="card" id="src-t1-1">
+              <span class="card-n">[1]</span>
+              <div class="card-meta"><span class="outlet">Kontan</span><span>Senin, 5 Okt 2026</span><span class="topic">Pasar</span></div>
+              <p class="card-title">Rupiah Ditutup Melemah ke Rp16.420, Terlemah dalam Tiga Pekan</p>
+              <p class="card-snippet">Rupiah spot ditutup melemah 0,4% ke Rp16.420 per dolar AS pada perdagangan Senin, tertekan penguatan indeks dolar usai rilis data tenaga kerja AS.</p>
+              <a class="card-link" href="#" rel="noopener">Baca di Kontan →</a>
+            </li>
+            <li class="card" id="src-t1-2">
+              <span class="card-n">[2]</span>
+              <div class="card-meta"><span class="outlet">CNBC Indonesia</span><span>Jumat, 2 Okt 2026</span><span class="topic">Pasar</span></div>
+              <p class="card-title">Asing Lepas Saham Rp1,2 Triliun Sepekan, IHSG Tertahan</p>
+              <p class="card-snippet">Investor asing membukukan jual bersih Rp1,2 triliun di seluruh pasar sepanjang pekan ini, terbesar di saham perbankan.</p>
+              <a class="card-link" href="#" rel="noopener">Baca di CNBC Indonesia →</a>
+            </li>
+            <li class="card" id="src-t1-3">
+              <span class="card-n">[3]</span>
+              <div class="card-meta"><span class="outlet">Kompas.com</span><span>Sabtu, 3 Okt 2026</span><span class="topic">Internasional</span></div>
+              <p class="card-title">Data Tenaga Kerja AS Kuat, Pasar Tunda Harapan Pemangkasan Bunga The Fed</p>
+              <p class="card-snippet">Penambahan lapangan kerja di AS melampaui perkiraan analis, mendorong imbal hasil obligasi pemerintah AS naik.</p>
+              <a class="card-link" href="#" rel="noopener">Baca di Kompas.com →</a>
+            </li>
+            <li class="card" id="src-t1-4">
+              <span class="card-n">[4]</span>
+              <div class="card-meta"><span class="outlet">Antara</span><span>Selasa, 6 Okt 2026</span><span class="topic">Kebijakan &amp; Makroekonomi</span></div>
+              <p class="card-title">BI Pastikan Hadir di Pasar Jaga Stabilitas Rupiah</p>
+              <p class="card-snippet">Bank Indonesia menyatakan terus melakukan intervensi di pasar valas, DNDF, dan SBN untuk menjaga stabilitas nilai tukar.</p>
+              <a class="card-link" href="#" rel="noopener">Baca di Antara →</a>
+            </li>
+          </ol>
+        </section>
+      </div>
+    </article>
+
+    <!-- Turn 2 (follow-up) -->
+    <article class="turn" data-state="jawaban" aria-labelledby="t2-q">
+      <h2 class="turn-q" id="t2-q" tabindex="-1">Apa langkah BI selanjutnya?</h2>
+      <div class="turn-grid">
+        <div class="answer">
+          <div class="answer-body">
+            <p>Artikel yang ada belum cukup untuk menjawab ini dengan pasti. Yang disebut artikel: BI akan melanjutkan intervensi di pasar valas, DNDF, dan SBN <a class="cite" href="#src-t2-1" aria-label="Sumber 1">[1]</a>, dan Rapat Dewan Gubernur berikutnya digelar Rabu, 21 Oktober <a class="cite" href="#src-t2-2" aria-label="Sumber 2">[2]</a>.</p>
+          </div>
+          <p class="notice" role="note">Sebagian angka belum terverifikasi; cek sumbernya.</p>
+          <p class="disclosure">Disusun AI dari artikel sumber dan bisa keliru. Cek sumbernya untuk detail.</p>
+        </div>
+        <section class="sources" aria-labelledby="t2-src">
+          <h3 id="t2-src">Berdasarkan 2 artikel</h3>
+          <ol class="cards">
+            <li class="card" id="src-t2-1">
+              <span class="card-n">[1]</span>
+              <div class="card-meta"><span class="outlet">Antara</span><span>Selasa, 6 Okt 2026</span><span class="topic">Kebijakan &amp; Makroekonomi</span></div>
+              <p class="card-title">BI Pastikan Hadir di Pasar Jaga Stabilitas Rupiah</p>
+              <a class="card-link" href="#" rel="noopener">Baca di Antara →</a>
+            </li>
+            <li class="card" id="src-t2-2">
+              <span class="card-n">[2]</span>
+              <div class="card-meta"><span class="outlet">Bisnis.com</span><span>Senin, 5 Okt 2026</span><span class="topic">Kebijakan &amp; Makroekonomi</span></div>
+              <p class="card-title">Jadwal RDG BI Oktober dan Proyeksi Suku Bunga Acuan</p>
+              <a class="card-link" href="#" rel="noopener">Baca di Bisnis.com →</a>
+            </li>
+          </ol>
+        </section>
+      </div>
+    </article>
+
+    <!-- Narrow filters: no hits -->
+    <article class="turn" data-state="kosong" aria-labelledby="t3-q">
+      <h2 class="turn-q" id="t3-q" tabindex="-1">Bagaimana harga batu bara pekan ini?</h2>
+      <div class="empty" role="status">
+        <p>Tidak ada artikel Komoditas &amp; Energi dari Tempo pada 7 hari terakhir.</p>
+        <button type="button" class="btn btn-quiet">Hapus filter</button>
+      </div>
+    </article>
+
+    <form class="followup" data-state="jawaban ai-mati" onsubmit="event.preventDefault()">
+      <label for="fu">Tanya lanjutan tentang topik ini…</label>
+      <div class="search-row">
+        <input id="fu" type="text" maxlength="500" autocomplete="off">
+        <button class="btn" type="submit">Tanya</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+  function go(state) {
+    document.body.dataset.show = state;
+    document.querySelectorAll('[data-go]').forEach(function (b) {
+      b.setAttribute('aria-pressed', String(b.dataset.go === state));
+    });
+  }
+  document.querySelectorAll('[data-go]').forEach(function (b) {
+    b.addEventListener('click', function () { go(b.dataset.go); });
+  });
+  document.querySelectorAll('.examples button').forEach(function (b) {
+    b.addEventListener('click', function () { document.getElementById('q1').value = b.textContent; go('menyusun'); });
+  });
+  var theme = document.getElementById('theme');
+  theme.addEventListener('click', function () {
+    var dark = document.documentElement.getAttribute('data-theme') !== 'dark';
+    document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+    theme.setAttribute('aria-pressed', String(dark));
+  });
+  go('awal');
+</script>

@@ -1,0 +1,1021 @@
+"""SYS-148 (#338): a top story told as an arc, and the checks that hold its
+prose to today's articles and the timeline items the model chose (`alur`)."""
+import json
+from datetime import date
+
+import pytest
+
+import newscrawler.core.story_arc as sa
+from newscrawler.core import arc_style, story_words
+from newscrawler.core.llm_json import Rejected
+from newscrawler.core.summarizer import QuotaExhausted
+from newscrawler.core.thread_finder import TimelineItem
+
+DAY = date(2026, 10, 12)
+SHOWN = [
+    {"source": "CNBC", "headline": "Prabowo Pimpin Rapat Karhutla di Istana",
+     "l1_text": "Presiden Prabowo Subianto memimpin rapat terbatas kebakaran hutan dan lahan di Istana Negara, "
+                "Senin (12/10/2026). Menko Polkam Dudung Abdurachman menyebut asap sampai ke negara tetangga. "
+                "Rapat lanjutan dijadwalkan Kamis (15/10)."},
+    {"source": "KONTAN", "headline": "Asap Karhutla Ganggu 1.673 Penerbangan",
+     "l1_text": "Asap kebakaran hutan dan lahan mengganggu 1.673 penerbangan domestik, kata Kemenhub."},
+    {"source": "DETIK", "headline": "Harga Cabai Naik di Pasar Induk", "l1_text": "Harga cabai rawit naik 37 persen."},
+]
+TIMELINE = [
+    TimelineItem(101, date(2026, 9, 23), "CNBC", "Prabowo Dapat Laporan 209 Ha Lahan Masih Terbakar",
+                 "Seskab melaporkan 209 hektare lahan masih terbakar.", 0.83, 10),
+    TimelineItem(102, date(2026, 9, 24), "CNBC", "Prabowo Pimpin Ratas Pencegahan Karhutla, Bakal Panggil Ahli",
+                 "Presiden menggelar rapat terbatas soal karhutla dan akan memanggil para ahli.", 0.89, 28),
+    TimelineItem(103, date(2026, 10, 2), "TVONENEWS", "Prabowo Lantik Wantimpres",
+                 "Presiden Prabowo melantik anggota Wantimpres di Istana.", 0.82, 98),
+]
+TEXTS = [sa.guard_text(a) for a in SHOWN]
+N = len(SHOWN)
+FRAME = "Karhutla sudah lama di meja Presiden. "     # a frame sentence, so a latar under test is not a chronicle
+
+
+def _answer(**override):
+    data = {"judul": "Prabowo rapat karhutla lagi, asap sampai negara tetangga",
+            "hari_ini": "Presiden Prabowo Subianto memimpin rapat terbatas karhutla di Istana Negara, Senin (12/10). "
+                        "Kebakaran mengganggu 1.673 penerbangan domestik.",
+            "latar": "Persoalan karhutla sudah di meja Presiden sejak September. Pada 23/9 Seskab melaporkan 209 "
+                     "hektare lahan masih terbakar, dan pada 24 September Prabowo menggelar rapat pertama.",
+            "agenda": "Rapat lanjutan dijadwalkan Kamis (15/10).",
+            "sekilas": "Prabowo kembali rapat soal karhutla di Istana.",
+            "terkait": [0, 1], "tidak_terkait": [2], "alur": [N, N + 1]}
+    data.update(override)
+    return json.dumps(data)
+
+
+def _parse(answer, lenient=False, timeline=TIMELINE):
+    return sa.parse(answer, TEXTS, timeline, DAY, lenient=lenient)
+
+
+def _reason(answer, **kw):
+    with pytest.raises(Rejected) as e:
+        _parse(answer, **kw)
+    return e.value.reason, e.value.detail
+
+
+def _reason_on(answer, texts, lenient=False):
+    with pytest.raises(Rejected) as e:
+        sa.parse(answer, texts, TIMELINE, DAY, lenient=lenient)
+    return e.value.reason, e.value.detail
+
+
+class TestAccepted:
+    def test_a_good_arc(self):
+        arc = _parse(_answer())
+        assert arc.alur == [0, 1] and [t.sitemap_id for t in arc.alur_items] == [101, 102]
+        assert arc.terkait == [0, 1] and arc.tidak_terkait == [2] and not arc.agenda_dropped
+
+    def test_the_prose_is_today_then_the_back_story_closed_by_the_agenda(self):
+        arc = _parse(_answer())
+        today, back = arc.prose.split("\n\n")
+        assert today.startswith("Presiden Prabowo") and back.endswith("Rapat lanjutan dijadwalkan Kamis (15/10).")
+
+    def test_a_new_story_has_no_alur_and_a_dateless_latar(self):
+        arc = _parse(_answer(alur=[], latar="Asap disebut sampai ke negara tetangga, menurut Menko Polkam."))
+        assert arc.alur == [] and arc.alur_items == []
+
+    def test_judul_of_12_words_is_accepted(self):
+        assert _parse(_answer(judul="Prabowo kembali pimpin rapat karhutla lagi saat asap sampai ke negara tetangga"))
+
+
+class TestNumbersAndDates:
+    def test_a_number_in_no_source(self):
+        reason, detail = _reason(_answer(hari_ini="Kebakaran mengganggu 2.000 penerbangan, Senin (12/10)."))
+        assert reason == "number" and detail.count("2.000") == 1          # named once, not twice
+
+    def test_a_number_only_a_tidak_terkait_article_states_is_refused(self):
+        """37 is in today's cabai article, which the answer marks tidak_terkait."""
+        assert _reason(_answer(hari_ini="Asap karhutla naik 37 persen, Senin (12/10)."))[0] == "number"
+
+    def test_a_number_only_an_unchosen_item_states_is_refused(self):
+        assert _reason(_answer(alur=[N + 1]))[0] == "number"          # 209 is only in item [N]
+
+    def test_an_items_date_does_not_license_its_digits_as_numbers(self):
+        """24/9 is item [N+1]'s date: '24' as a number is still not stated anywhere."""
+        reason, detail = _reason(_answer(latar=FRAME + "Pada 24/9 Prabowo menggelar rapat; 24 ahli dipanggil."))
+        assert reason == "number" and '"24"' in detail
+
+    def test_a_chosen_items_own_date_passes_in_either_form(self):
+        assert _parse(_answer(latar=FRAME + "Pada 24/9 Prabowo menggelar rapat pertama soal karhutla."))
+        assert _parse(_answer(latar=FRAME + "Pada 24 September Prabowo menggelar rapat pertama soal karhutla."))
+
+    def test_an_unchosen_items_date_is_refused_as_a_date(self):
+        reason, detail = _reason(_answer(latar=FRAME + "Pada 2/10 Prabowo menggelar rapat soal karhutla."))
+        assert reason == "date" and "2/10" in detail
+
+    def test_without_alur_latar_holds_no_past_date(self):
+        reason, _ = _reason(_answer(alur=[], latar="Rapat soal karhutla sudah digelar Senin (12/10) dan 15/10."))
+        assert reason == "date"
+        assert _parse(_answer(alur=[], latar="Rapat soal karhutla digelar Senin (12/10) di Istana Negara."))
+
+    def test_number_problems_are_named_before_date_problems(self):
+        reason, detail = _reason(_answer(latar=FRAME + "Pada 2/10 sebanyak 999 hektare terbakar."))
+        assert reason == "number" and "2/10" in detail and "999" in detail
+
+
+class TestSubjectAndThread:
+    def test_an_off_thread_item_is_refused_first(self):
+        reason, detail = _reason(_answer(alur=[N, N + 1, N + 2]))
+        assert reason == "alur" and "Wantimpres" in detail
+
+    def test_on_the_retry_it_is_moved_out(self):
+        arc = _parse(_answer(alur=[N, N + 1, N + 2]), lenient=True)
+        assert arc.alur == [0, 1] and arc.demoted_alur == 1
+
+    def test_a_fact_from_the_moved_out_item_still_fails(self):
+        latar = FRAME + "Pada 2/10 Prabowo melantik Wantimpres di Istana, setelah rapat karhutla 24/9."
+        assert _reason(_answer(alur=[N + 1, N + 2], latar=latar), lenient=True)[0] == "date"
+
+    def test_an_article_off_the_subject_is_refused_then_moved_out(self):
+        answer = _answer(terkait=[0, 1, 2], tidak_terkait=[])
+        assert _reason(answer)[0] == "subject"
+        arc = _parse(answer, lenient=True)
+        assert arc.terkait == [0, 1] and arc.tidak_terkait == [2] and arc.demoted == 1
+
+
+class TestAgenda:
+    def test_an_agenda_without_a_date_number_or_schedule_is_dropped(self):
+        arc = _parse(_answer(agenda="Pemerintah terus memantau perkembangan karhutla."))
+        assert arc.agenda == "" and arc.agenda_dropped and "memantau" not in arc.prose
+
+    def test_a_scheduled_step_is_kept(self):
+        texts = _texts("Rapat berikutnya digelar pekan depan, kata Menko Polkam.")
+        assert sa.parse(_answer(agenda="Rapat lanjutan dijadwalkan pekan depan, menurut Menko Polkam."), texts,
+                        TIMELINE, DAY).agenda
+
+    def test_an_agenda_number_is_still_checked(self):
+        assert _reason(_answer(agenda="Rapat lanjutan dijadwalkan Jumat (16/10)."))[0] == "date"
+
+    @pytest.mark.parametrize("agenda", ["Presiden berangkat ke Kairo minggu depan.",
+                                        "Hasil seleksi diumumkan pekan ini.",
+                                        "Presiden berangkat ke Kairo akhir pekan ini.",
+                                        "Presiden berangkat ke Kairo besok."])
+    def test_a_future_time_makes_a_scheduled_step(self, agenda):
+        """SYS-166 (#363): "minggu depan" is "pekan depan"; a near time is a step, not a guess."""
+        assert sa._agenda_kept(agenda)
+        assert not sa._agenda_kept("Presiden berangkat ke Kairo.")
+
+    @pytest.mark.parametrize("agenda", ["Presiden berangkat ke Kairo lusa.",
+                                        "Presiden berangkat ke Kairo bulan depan.",
+                                        "Aturan itu terbit tahun depan.",
+                                        "Presiden berangkat ke Kairo awal pekan depan."])
+    def test_the_times_moved_out_of_scheduled_still_keep_an_agenda(self, agenda):
+        """DBT-79 (#368): SYS-166 moved "lusa" and "bulan/tahun depan" from _SCHEDULED to the future-time
+        table; no agenda timed by one may be dropped now."""
+        assert sa._agenda_kept(agenda)
+
+    @pytest.mark.parametrize("agenda", ["Presiden berangkat ke Kairo pekan mendatang.",
+                                        "Presiden berangkat ke Kairo esok.",
+                                        "Aturan turunan ditargetkan terbit akhir tahun ini.",
+                                        "Aturan turunan ditargetkan terbit bulan mendatang.",
+                                        "Aturan turunan ditargetkan terbit akhir bulan ini."])
+    def test_the_future_times_news_writes_most_keep_an_agenda(self, agenda):
+        """SYS-168 (#365): "akhir tahun ini" 487 articles, "bulan mendatang" 265, "esok" 191, "akhir bulan
+        ini" 118, "pekan mendatang" 99 -- as often as "minggu depan" (348)."""
+        assert sa._agenda_kept(agenda)
+
+    @pytest.mark.parametrize("agenda", ["Aturan turunan ditargetkan terbit tahun ini.",
+                                        "Aturan turunan ditargetkan terbit bulan ini.",
+                                        "Esok harinya Presiden berangkat ke Kairo."])
+    def test_a_whole_month_or_year_or_the_next_day_of_a_story_is_no_time(self, agenda):
+        """SYS-168, owner 2026-10-16: bare "bulan/tahun ini" is mostly past tense and spans a whole month or
+        year. "Esok harinya" is past narration."""
+        assert not sa._agenda_kept(agenda)
+
+
+# SYS-163 (#358): the v5 replay's agendas (digests/preview/arcs-v5), as the model wrote them.
+EL_SISI = {"hari_ini": "Presiden Mesir Abdel Fattah El-Sisi tiba di Lanud Halim Perdanakusuma, Jakarta, Sabtu (10/10) "
+                       "sekitar pukul 17.25 WIB untuk kunjungan kenegaraan hingga Minggu (11/10). Kedatangannya "
+                       "disambut "
+                       "pengawalan jet tempur TNI AU dan sambutan pelajar.",
+           "latar": "Kunjungan ini menyusul lawatan El-Sisi ke Korea Selatan dan Malaysia, dan dijadwalkan bertemu "
+                    "Presiden Prabowo Subianto di Istana Kepresidenan, Jakarta, Minggu (11/10) pukul 10.30 WIB. "
+                    "Menurut "
+                    "Menteri Luar Negeri Arrmanatha Nasir, pertemuan akan diawali pertemuan tete a tete, dilanjutkan "
+                    "pertemuan bilateral, dan penandatanganan sejumlah nota kesepahaman.",
+           "agenda": "Minggu (11/10) pukul 10.30 WIB, Prabowo menerima El-Sisi di Istana, menurut Menlu Arrmanatha "
+                     "Nasir."}
+OJOL = {"hari_ini": "Pemerintah resmi menerbitkan Perpres Nomor 27 Tahun 2026 tentang Perlindungan Ekosistem "
+                    "Transportasi Berbasis Digital pada Kamis (8/10). Aturan ini mengatur tarif, kemitraan, pengiriman "
+                    "makanan dan barang, jaminan sosial, serta bagi hasil aplikator maksimal 8 persen.",
+        "latar": "Perpres ini terbit setelah proses sinkronisasi dan harmonisasi yang mempertimbangkan aspirasi pelaku "
+                 "ekosistem ojol. Sebelumnya, Menteri UMKM Maman Abdurrahman menyebut penyusunan regulasi cukup lama "
+                 "karena harus diselaraskan dengan aturan ketenagakerjaan serta lalu lintas dan angkutan jalan, dan "
+                 "pada pertengahan September ia mengungkapkan salah satu alasannya adalah mensinergikan dengan "
+                 "undang-undang lain. Status pengemudi tetap sebagai mitra perusahaan aplikasi dengan hak dan "
+                 "kewajiban yang jelas.",
+        "agenda": "Aturan pelaksana Perpres Ojol harus tuntas paling lambat 31 Desember 2026, menurut Wamensesneg "
+                  "Bambang Eko Suhariyanto."}
+
+
+# SYS-165 (#361): v5 2026-10-12 (digests/preview/arcs-v5/2026-10-12-Y.md), as the model wrote it.
+BPGMN = {"hari_ini": "Presiden Prabowo Subianto memimpin rapat terbatas soal kebakaran hutan dan lahan di Istana "
+                     "Kepresidenan Jakarta, Senin (12/10). Menko Polkam Dudung Abdurachman menyebut pelantikan "
+                     "pimpinan Badan Pengelola Gambut dan Mangrove Nasional diharapkan minggu depan.",
+         "latar": "Kini Dudung menyebut Satyawan Puryatmoko, Dirjen KSDAE Kementerian Kehutanan, sebagai calon Ketua "
+                  "BPGMN.",
+         "agenda": "Pelantikan pimpinan BPGMN diharapkan dilakukan minggu depan menurut Dudung."}
+
+
+class TestAgendaRepeats:
+    def test_the_el_sisi_agenda_repeats_the_latar(self):
+        assert sa.agenda_repeats(EL_SISI["agenda"], EL_SISI["latar"], EL_SISI["hari_ini"])
+
+    def test_the_ojol_agenda_is_new(self):
+        assert not sa.agenda_repeats(OJOL["agenda"], OJOL["latar"], OJOL["hari_ini"])
+
+    def test_the_same_date_with_new_words_is_kept(self):
+        """Half the words are not enough: the agenda must mostly repeat what was told."""
+        assert not sa.agenda_repeats("Kamis (15/10) DPR memanggil Kapolri soal anggaran pemadaman dan evakuasi.",
+                                     "Prabowo menggelar rapat karhutla lanjutan Kamis (15/10).", "")
+
+    def test_the_same_words_without_its_date_is_kept(self):
+        assert not sa.agenda_repeats("Prabowo menerima El-Sisi di Istana Merdeka.", EL_SISI["latar"],
+                                     EL_SISI["hari_ini"])
+
+    def test_repeating_hari_ini_rather_than_the_latar_is_dropped(self):
+        """DBT-78 (#362): what was told is the latar and hari_ini both."""
+        hari_ini = "Prabowo memimpin rapat karhutla, Senin (12/10). Rapat lanjutan dijadwalkan Kamis (15/10) di Istana."
+        assert sa.agenda_repeats("Rapat lanjutan dijadwalkan Kamis (15/10) di Istana.", "Karhutla meluas.", hari_ini)
+
+    def test_exactly_the_share_is_a_repeat(self):
+        """DBT-78 (#362): AGENDA_REPEAT_SHARE is "at least": 2 of 4 content words (rapat, karhutla)."""
+        agenda = "Kapolri memanggil rapat karhutla, Kamis (15/10)."
+        latar = "Prabowo menggelar rapat karhutla lanjutan Kamis (15/10)."
+        words = story_words.content_words(agenda)
+        assert sum(w in story_words.content_words(latar) for w in words) == sa.AGENDA_REPEAT_SHARE * len(words)
+        assert sa.agenda_repeats(agenda, latar, "")
+
+    def test_the_bpgmn_agenda_repeats_hari_ini_in_relative_time(self):
+        """SYS-165 (#361): digests/preview/arcs-v5/2026-10-12-Y.md -- no date, the shared time is
+        "minggu depan" (6 of 7 content words told)."""
+        assert sa.agenda_repeats(BPGMN["agenda"], BPGMN["latar"], BPGMN["hari_ini"])
+
+    def test_a_future_time_is_shared_under_its_synonym(self):
+        agenda = BPGMN["agenda"].replace("minggu depan", "pekan depan")
+        assert sa.agenda_repeats(agenda, BPGMN["latar"], BPGMN["hari_ini"])
+        assert sa.future_times("Minggu depan, lalu akhir pekan ini.") == {"pekan depan", "akhir pekan ini"}
+
+    @pytest.mark.parametrize("time", ["bulan depan", "besok", ""])
+    def test_another_future_time_or_none_is_kept(self, time):
+        """Same words, but not the time hari_ini gave: a different step (or a guess), not a repeat."""
+        agenda = BPGMN["agenda"].replace("minggu depan", time)
+        assert not sa.agenda_repeats(agenda, BPGMN["latar"], BPGMN["hari_ini"])
+
+    def test_a_new_step_at_the_same_future_time_is_kept(self):
+        agenda = "DPR memanggil Kepala BNPB soal anggaran pemadaman minggu depan."
+        assert not sa.agenda_repeats(agenda, BPGMN["latar"], BPGMN["hari_ini"])
+
+    def test_dropped_in_parse_not_refused(self):
+        latar = FRAME + "Rapat lanjutan Prabowo soal karhutla dijadwalkan Kamis (15/10)."
+        arc = _parse(_answer(latar=latar, agenda="Rapat lanjutan karhutla dijadwalkan Kamis (15/10)."))
+        assert arc.agenda == "" and arc.agenda_dropped and arc.back_story == latar
+
+    def test_a_future_time_told_in_the_latar_is_shared(self):
+        """DBT-79 (#368): the dev's call on #361 -- the latar is told today, so its future time counts."""
+        latar = ("Pekan lalu Dudung menyebut pelantikan pimpinan Badan Pengelola Gambut dan Mangrove Nasional "
+                 "minggu depan.")
+        assert sa.agenda_repeats(BPGMN["agenda"], latar, "Prabowo memimpin rapat karhutla, Senin (12/10).")
+
+    @pytest.mark.parametrize("agenda_time,told_time", [("Minggu Depan", "pekan depan"),
+                                                       ("minggu  depan", "pekan depan"),
+                                                       ("minggu\ndepan", "pekan depan"),
+                                                       ("akhir minggu ini", "akhir pekan ini")])
+    def test_case_and_spacing_meet(self, agenda_time, told_time):
+        """DBT-79 (#368): the key joins whitespace and lowers case."""
+        hari_ini = BPGMN["hari_ini"].replace("minggu depan", told_time)
+        assert sa.agenda_repeats(BPGMN["agenda"].replace("minggu depan", agenda_time), BPGMN["latar"], hari_ini)
+
+    @pytest.mark.parametrize("agenda_time,told_time", [("pekan mendatang", "minggu depan"), ("esok", "besok"),
+                                                       ("minggu mendatang", "pekan depan"),
+                                                       ("tahun mendatang", "tahun depan")])
+    def test_the_synonyms_news_writes_meet(self, agenda_time, told_time):
+        """SYS-168 (#365): "mendatang" is "depan", "esok" is "besok"."""
+        hari_ini = BPGMN["hari_ini"].replace("minggu depan", told_time)
+        assert sa.agenda_repeats(BPGMN["agenda"].replace("minggu depan", agenda_time), BPGMN["latar"], hari_ini)
+
+
+class TestFutureTimeStated:
+    """SYS-169 (#366): a future time in the prose is one today's articles state, compared by key. Refused
+    as `date` otherwise (owner, 2026-10-16), like an unstated calendar date. The articles say only
+    "Rapat lanjutan dijadwalkan Kamis (15/10)"; DAY is Monday 12/10."""
+
+    @pytest.mark.parametrize("agenda", ["Rapat lanjutan karhutla dijadwalkan minggu depan.",
+                                        "Rapat lanjutan karhutla dijadwalkan besok.",
+                                        "Rapat lanjutan karhutla dijadwalkan pekan ini.",
+                                        "Aturan turunan karhutla ditargetkan terbit akhir tahun ini."])
+    def test_an_unstated_future_time_is_refused_as_a_date(self, agenda):
+        reason, detail = _reason(_answer(agenda=agenda))
+        phrase = sa.future_phrases(agenda)[0][1]
+        assert reason == "date" and f'"{phrase}" di agenda tidak tertulis di artikel hari ini' in detail
+
+    def test_a_stated_date_does_not_back_a_relative_time_inside_its_span(self):
+        """The ticket's optional span rule is not taken: 15/10 is this week, but "pekan ini" is not what the
+        article wrote, and any date this week would back it."""
+        assert _reason(_answer(agenda="Rapat lanjutan karhutla dijadwalkan pekan ini."))[0] == "date"
+
+    def test_a_stated_future_time_backs_its_synonym(self):
+        texts = _texts("Pelantikan pimpinan BPGMN diharapkan minggu depan.")
+        arc = sa.parse(_answer(agenda="Pelantikan pimpinan BPGMN dijadwalkan pekan mendatang."), texts, TIMELINE, DAY)
+        assert arc.agenda == "Pelantikan pimpinan BPGMN dijadwalkan pekan mendatang."
+
+    def test_every_prose_field_is_checked(self):
+        hari_ini = ("Presiden Prabowo Subianto memimpin rapat terbatas karhutla di Istana Negara, Senin (12/10). "
+                    "Rapat lanjutan digelar besok.")
+        reason, detail = _reason(_answer(hari_ini=hari_ini))
+        assert reason == "date" and '"besok" di hari_ini' in detail
+
+    def test_a_timeline_items_future_time_does_not_back_it(self):
+        """SYS-162's reasoning: the 24/9 item's "pekan depan" was the week of 28/9."""
+        timeline = [TIMELINE[0], TIMELINE[1]._replace(opening="Presiden akan memanggil para ahli pekan depan.")] \
+            + TIMELINE[2:]
+        reason, detail = _reason(_answer(agenda="Presiden memanggil para ahli karhutla pekan depan."),
+                                 timeline=timeline)
+        assert reason == "date" and '"pekan depan"' in detail
+
+    def test_a_tidak_terkait_articles_future_time_does_not_back_it(self):
+        reason, _ = _reason_on(_answer(agenda="Rapat lanjutan karhutla dijadwalkan besok."),
+                               _texts("Besok harga cabai diperkirakan turun.", i=2))
+        assert reason == "date"
+
+    @pytest.mark.parametrize("day", [DAY, date(2026, 10, 26)])
+    def test_a_relative_future_phrase_is_judged_by_key_and_named_once(self, day):
+        """SYS-169 rework (QA, 2026-10-16 evening): "akhir bulan ini" is a relative phrase too, but its span
+        (21-31/10) holds today from the 21st on, so the span would back an invented one 11 days a month. The
+        key decides; a source date inside the span (26/10) does not back it either."""
+        answer = _answer(agenda="Rapat lanjutan karhutla dijadwalkan akhir bulan ini.")
+        for texts in (TEXTS, _texts("Evaluasi digelar Senin (26/10).")):
+            with pytest.raises(Rejected) as e:
+                sa.parse(answer, texts, TIMELINE, day)
+            assert e.value.reason == "date" and e.value.detail.count('"akhir bulan ini"') == 1
+        assert sa.parse(answer, _texts("Evaluasi digelar akhir bulan ini."), TIMELINE, day).agenda
+
+    @pytest.mark.parametrize("field,value", [
+        ("latar", FRAME + "Pada 23/9 Seskab melaporkan 209 hektare lahan masih terbakar. Rapat lagi pekan depan."),
+        ("sekilas", "Prabowo rapat karhutla lagi besok."),
+        ("judul", "Prabowo rapat karhutla lagi bulan depan"),
+    ])
+    def test_the_latar_sekilas_and_judul_are_checked(self, field, value):
+        """QA's surviving mutant `qa16e_future_latar_unchecked` checked only agenda and hari_ini."""
+        reason, detail = _reason(_answer(**{field: value}))
+        assert reason == "date" and f"di {field} tidak tertulis di artikel hari ini" in detail
+
+    @pytest.mark.parametrize("agenda", ["Rapat lanjutan karhutla dijadwalkan Kamis depan.",
+                                        "Rapat lanjutan karhutla dijadwalkan pada hari Senin mendatang.",
+                                        "Keputusan karhutla akan diumumkan sepekan ke depan."])
+    def test_a_weekday_or_a_window_ahead_is_refused_unless_stated(self, agenda):
+        """SYS-171 (#370): the article says "Kamis (15/10)", this week's Thursday; "Kamis depan" is the 22nd.
+        A window ahead counts too (owner, 2026-10-16)."""
+        phrase = sa.future_phrases(agenda)[0][1]
+        reason, detail = _reason(_answer(agenda=agenda))
+        assert reason == "date" and f'"{phrase}" di agenda' in detail
+        assert sa.parse(_answer(agenda=agenda), _texts(f"Rapat lanjutan {phrase}."), TIMELINE, DAY).agenda == agenda
+
+    def test_a_weekday_ahead_makes_a_scheduled_step(self):
+        """SYS-166 reads the same table: a stated "Senin mendatang" keeps an agenda that names nothing else."""
+        agenda = "Para ahli dipanggil Senin mendatang."
+        assert sa.parse(_answer(agenda=agenda), _texts("Ahli dipanggil Senin depan."), TIMELINE, DAY).agenda == agenda
+
+    @pytest.mark.parametrize("written,stated", [("Kamis pekan depan", "digelar pekan depan"),
+                                                ("hari Senin minggu depan", "digelar Kamis pekan depan"),
+                                                ("Rabu pekan ini", "digelar pekan ini")])
+    def test_a_weekday_of_a_week_is_checked_as_that_weekday(self, written, stated):
+        """SYS-171 rework (QA, 2026-10-16 night): "Kamis pekan depan" was read as "pekan depan" alone, so an
+        invented Thursday passed on an article's "pekan depan"."""
+        agenda = f"Rapat lanjutan karhutla dijadwalkan {written}."
+        reason, detail = _reason_on(_answer(agenda=agenda), _texts(f"Rapat lanjutan {stated}."))
+        assert reason == "date" and f'"{written}" di agenda' in detail
+
+    def test_a_stated_weekday_of_a_week_backs_it_and_its_week(self):
+        texts = _texts("Rapat lanjutan digelar KAMIS Minggu Mendatang.")
+        for agenda in ("Rapat lanjutan karhutla dijadwalkan hari Kamis pekan depan.",
+                       "Rapat lanjutan karhutla dijadwalkan pekan depan."):
+            assert sa.parse(_answer(agenda=agenda), texts, TIMELINE, DAY).agenda == agenda
+
+    @pytest.mark.parametrize("field,value,day", [
+        ("agenda", "Rapat lanjutan karhutla dijadwalkan akhir bulan.", date(2026, 10, 21)),
+        ("agenda", "Rapat lanjutan karhutla dijadwalkan akhir Oktober.", date(2026, 10, 30)),
+        ("agenda", "Rapat lanjutan karhutla dijadwalkan pertengahan bulan ini.", DAY),
+        ("latar", FRAME + "Pada 23/9 Seskab melaporkan 209 hektare lahan masih terbakar. Aturannya menyusul akhir "
+                          "bulan.", date(2026, 10, 26)),
+    ])
+    def test_an_invented_month_part_schedule_is_refused(self, field, value, day):
+        """SYS-174 (#373): today, and the articles' 12/10, sit inside "akhir bulan" / "pertengahan bulan ini"
+        while they run, and backed an invented schedule (the SYS-169 hole outside the future table)."""
+        texts = [TEXTS[0].replace("Rapat lanjutan dijadwalkan Kamis (15/10).", ""), *TEXTS[1:]]
+        with pytest.raises(Rejected) as e:
+            sa.parse(_answer(**{field: value}), texts, TIMELINE, day)
+        assert e.value.reason == "date"
+
+    def test_a_past_day_inside_the_span_backs_the_latar_not_the_agenda(self):
+        """SYS-174: on 15/10 the article's 12/10 sits inside "pertengahan Oktober". It backs the past reading in
+        the latar; the agenda is the scheduled step, which cannot have one."""
+        texts = [TEXTS[0].replace("Rapat lanjutan dijadwalkan Kamis (15/10).", "Rapat pertama digelar Senin (12/10)."),
+                 *TEXTS[1:]]
+        day = date(2026, 10, 15)
+        with pytest.raises(Rejected) as e:
+            sa.parse(_answer(agenda="Rapat lanjutan karhutla dijadwalkan pertengahan Oktober."), texts, TIMELINE, day)
+        assert e.value.reason == "date" and '"pertengahan Oktober" di agenda' in e.value.detail
+        latar = ("Persoalan karhutla sudah di meja Presiden sejak September. Pada 23/9 Seskab melaporkan 209 hektare "
+                 "lahan masih terbakar, dan pertengahan Oktober Prabowo menggelar rapat lagi.")
+        assert sa.parse(_answer(latar=latar, agenda=""), texts, TIMELINE, day)
+
+    def test_a_stated_day_ahead_inside_the_month_part_backs_it(self):
+        texts = [TEXTS[0].replace("Rapat lanjutan dijadwalkan Kamis (15/10).", "Rapat lanjutan Rabu (28/10)."),
+                 *TEXTS[1:]]
+        agenda = "Rapat lanjutan karhutla dijadwalkan akhir bulan."
+        assert sa.parse(_answer(agenda=agenda), texts, TIMELINE, date(2026, 10, 21)).agenda == agenda
+
+    def test_the_prompt_says_so(self):
+        assert "jangan mengubah tanggal menjadi \"besok\"" in " ".join(sa.PROMPT.split())
+
+
+class TestShape:
+    @pytest.mark.parametrize("override,detail", [
+        ({"alur": [1]}, "bukan cuplikan LINI MASA"),
+        ({"terkait": [0, N]}, "bukan artikel HARI INI"),
+        ({"terkait": []}, "tidak boleh kosong"),
+        ({"terkait": [0], "tidak_terkait": [2]}, "tepat sekali"),
+        ({"alur": [N, N]}, "dua kali"),
+        ({"hari_ini": ""}, "tidak kosong"),
+    ])
+    def test_refused_as_json(self, override, detail):
+        reason, text = _reason(_answer(**override))
+        assert reason == "json" and detail in text
+
+    def test_an_empty_timeline_takes_no_alur(self):
+        reason, detail = _reason(_answer(alur=[N]), timeline=[])
+        assert reason == "json" and "harus kosong" in detail
+
+    def test_latar_and_agenda_may_be_left_out(self):
+        data = json.loads(_answer(alur=[]))
+        del data["latar"], data["agenda"], data["alur"]
+        arc = _parse(json.dumps(data))
+        assert (arc.latar, arc.agenda, arc.alur) == ("", "", [])
+
+    def test_the_retry_says_how_much_to_cut_down_to_what_is_asked(self):
+        latar = "Karhutla sudah lama di meja Presiden. " + " ".join(["kata"] * 70) + "."
+        detail = _reason(_answer(latar=latar))[1]
+        assert "latar 76 kata, maks 70 -- buang paling sedikit 16 kata (mis. satu kalimat)" in detail
+
+    def test_the_prompt_asks_what_asked_says(self):
+        assert f"judul: maks {sa.ASKED['judul']} kata" in sa.PROMPT
+        assert f"latar: 2-3 kalimat, maks {sa.ASKED['latar']} kata" in sa.PROMPT
+        assert all(sa.ASKED[k] <= sa.LIMITS[k] for k in sa.LIMITS)
+
+    def test_every_broken_limit_is_named(self):
+        reason, detail = _reason(_answer(judul=" ".join(["kata"] * 13), sekilas=" ".join(["kata"] * 16)))
+        assert reason == "length" and "judul 13 kata" in detail and "sekilas 16 kata" in detail
+
+
+def _texts(extra, i=0):
+    """TEXTS with `extra` added to today's article [i] (what that article states)."""
+    return [t + (" " + extra if k == i else "") for k, t in enumerate(TEXTS)]
+
+
+class TestStyle:
+    """SYS-156 (#351): a chronicle latar is refused as `style` and asked again."""
+
+    @pytest.mark.parametrize("latar,detail", [
+        (FRAME + "Seskab melaporkan 209 hektare terbakar pada 23/9, rapat digelar 24/9, dan 12/10 lagi.",
+         "3 tanggal kalender"),
+        (FRAME + "Pada 23/9 Seskab melaporkan 209 hektare terbakar. Pada 24/9 Prabowo menggelar rapat.",
+         "2 kalimat latar dibuka dengan tanggal"),
+        ("Karhutla sudah lama di meja Presiden. Karhutla meluas sejak September.", 'dibuka dengan kata "karhutla"'),
+    ])
+    def test_each_rule_refuses(self, latar, detail):
+        reason, text = _reason(_answer(latar=latar))
+        assert reason == "style" and detail in text and sa.STYLE_ASK in text
+
+    def test_the_date_led_sentences_are_quoted(self):
+        latar = FRAME + "Pada 23/9 Seskab melaporkan 209 hektare terbakar. Pada 24/9 Prabowo menggelar rapat."
+        detail = _reason(_answer(latar=latar))[1]
+        assert '"Pada 23/9 Seskab melaporkan 209 hektare terbakar. ..."' in detail
+        assert '"Pada 24/9 Prabowo menggelar rapat. ..."' in detail
+
+    def test_a_length_refusal_also_names_the_style_problems(self):
+        """The retry that shortens the latar hears the style rules too."""
+        latar = ("Pada 23/9 Seskab melaporkan 209 hektare lahan masih terbakar. Pada 24/9 Prabowo menggelar rapat "
+                 + " ".join(["karhutla"] * 60) + ".")
+        reason, detail = _reason(_answer(latar=latar))
+        assert reason == "length" and "kalimat latar dibuka dengan tanggal" in detail and sa.STYLE_ASK in detail
+
+    def test_a_date_inside_two_sentences_is_held_only_by_the_date_count(self):
+        """Re-run 2026-10-12: '... menembus batas bawah pada 25 September' and '..., ditutup menguat
+        pada Jumat (9/10)' were refused as date-led; neither sentence opens on its date."""
+        latar = ("Karhutla sudah lama di meja Presiden, dan Seskab melaporkan 209 hektare terbakar pada 23/9. "
+                 "Prabowo menggelar rapat pertama soal karhutla pada 24 September.")
+        assert _parse(_answer(latar=latar))
+
+    def test_a_latar_at_the_limits_passes(self):
+        """Two dates, one date-led sentence, distinct openings, tied to today."""
+        assert _parse(_answer())
+
+    def test_still_refused_on_the_retry(self):
+        latar = FRAME + "Pada 23/9 Seskab melaporkan 209 hektare terbakar. Pada 24/9 Prabowo menggelar rapat."
+        assert _reason(_answer(latar=latar), lenient=True)[0] == "style"
+
+    def test_style_is_named_before_numbers_and_both_are_told(self):
+        latar = "Pada 23/9 Seskab melaporkan 999 hektare terbakar. Pada 24/9 Prabowo menggelar rapat."
+        reason, detail = _reason(_answer(latar=latar))
+        assert reason == "style" and '"999"' in detail
+
+    def test_counted_and_the_retry_carries_the_detail(self):
+        chronicle = _answer(latar=FRAME + "Pada 23/9 Seskab melapor. Pada 24/9 Prabowo menggelar rapat.")
+        s, rejections = _Script(chronicle, _answer()), []
+        assert sa.write_arc(s, SHOWN, TIMELINE, DAY, rejections) and rejections == ["style"]
+        assert "kalimat latar dibuka dengan tanggal" in s.prompts[1] and sa.STYLE_ASK in s.prompts[1]
+
+
+class TestContinuity:
+    """SYS-159 (#354): with `alur`, the latar's first sentence ties the past to today's event."""
+
+    def test_a_tied_first_sentence_passes(self):
+        assert _parse(_answer(latar="Ini rapat karhutla kedua Prabowo. Rapat pertama digelar akhir September."))
+
+    def test_a_free_standing_recap_is_refused(self):
+        reason, detail = _reason(_answer(latar="Pada 23/9 Seskab melaporkan 209 hektare lahan masih terbakar."))
+        assert reason == "style" and "tidak mengaitkan alur dengan peristiwa hari ini" in detail
+
+    def test_a_first_sentence_sharing_no_word_with_today_is_refused(self):
+        reason, _ = _reason(_answer(latar="Persoalan ini sudah lama berjalan. Seskab melaporkan 209 hektare."))
+        assert reason == "style"
+
+    def test_a_latar_without_alur_is_exempt(self):
+        """Without alur the latar says why it matters; it need not share a word with today."""
+        latar = "Dampaknya dirasakan warga Sumatera, menurut Menko Polkam."
+        answer = json.loads(_answer())
+        assert not arc_style.tied_to_today(latar, answer["judul"], answer["hari_ini"])
+        assert _parse(_answer(alur=[], latar=latar))
+
+
+class TestSys190PeriodsByField:
+    """SYS-190 (#391): a whole month or period an article does not state is refused in the agenda always, in the
+    present fields when it is not over, in the latar when it is not over and stands under a cue."""
+
+    TODAY = date(2026, 10, 12)
+    STATED = "Aturan karhutla dibahas pada rapat terbatas, Senin (12/10/2026)."
+
+    def test_the_agenda_judges_every_period(self):
+        assert sa.unstated_periods("Aturan dijadwalkan terbit Desember.", self.TODAY, self.STATED, "agenda") == [
+            "Desember"]
+        assert sa.unstated_periods("Rapat lanjutan September.", self.TODAY, self.STATED, "agenda") == ["September"]
+
+    def test_a_present_field_judges_what_is_not_over(self):
+        assert sa.unstated_periods("Aturan terbit semester II 2026.", self.TODAY, self.STATED, "hari_ini") == [
+            "semester II 2026"]
+        assert sa.unstated_periods("Data September menunjukkan kenaikan.", self.TODAY, self.STATED, "hari_ini") == []
+
+    def test_the_latar_judges_only_under_a_cue(self):
+        undated = "Aturan karhutla dibahas pada rapat terbatas."
+        assert sa.unstated_periods("Aturan akan terbit Desember.", self.TODAY, undated, "latar") == ["Desember"]
+        assert sa.unstated_periods("Karhutla meluas sepanjang Oktober.", self.TODAY, undated, "latar") == []
+        assert sa.unstated_periods("Karhutla meluas sepanjang Oktober.", self.TODAY, undated, "hari_ini") == [
+            "Oktober"]
+
+    def test_a_stated_part_or_date_backs_the_whole(self):
+        stated = self.STATED + " Aturannya ditargetkan terbit akhir Desember."
+        assert sa.unstated_periods("Aturan dijadwalkan terbit Desember.", self.TODAY, stated, "agenda") == []
+        assert sa.unstated_periods("Aturan dijadwalkan terbit akhir Desember.", self.TODAY, self.STATED + " Terbit "
+                                   "Desember.", "agenda") == []          # a month part: its span's, not this check's
+
+    def test_a_next_year_month_needs_its_year(self):
+        stated = self.STATED + " Peluncuran dijadwalkan Februari 2027."
+        assert sa.unstated_periods("Peluncuran Februari mendatang.", self.TODAY, stated, "agenda") == []
+        assert sa.unstated_periods("Peluncuran Februari mendatang.", self.TODAY,
+                                   self.STATED + " Peluncuran Februari 2026 batal.", "agenda") == ["Februari mendatang"]
+
+    def test_parse_refuses_it_as_date(self):
+        answer = _answer(agenda="Aturan karhutla dijadwalkan terbit Desember.")
+        with pytest.raises(Rejected) as e:
+            sa.parse(answer, TEXTS, TIMELINE, DAY)
+        assert e.value.reason == "date" and '"Desember"' in str(e.value)
+
+
+class TestRelativeTime:
+    """SYS-157 (#352): a relative time spans today, a chosen item's date or a stated date, or is stated."""
+
+    def test_backed_by_a_chosen_item(self):
+        assert _parse(_answer(latar="Karhutla sudah di meja Presiden sejak akhir September, saat Seskab melaporkan "
+                                    "209 hektare lahan masih terbakar."))
+
+    def test_unbacked_is_refused_as_a_date(self):
+        reason, detail = _reason(_answer(latar="Karhutla sudah di meja Presiden sejak awal September, saat Seskab "
+                                               "melaporkan 209 hektare lahan masih terbakar."))
+        assert reason == "date" and '"awal September"' in detail
+
+    def test_only_a_chosen_items_date_backs_it(self):
+        """'awal Oktober' spans 2/10, the date of the unchosen Wantimpres item."""
+        assert _reason(_answer(latar="Karhutla sudah dibahas awal Oktober di Istana."))[0] == "date"
+
+    def test_stated_verbatim_in_an_article_passes(self):
+        latar = "Karhutla sudah di meja Presiden sejak awal September, saat Seskab melaporkan 209 hektare terbakar."
+        texts = _texts("Kebakaran meluas sejak awal September.")
+        assert sa.parse(_answer(latar=latar), texts, TIMELINE, DAY)
+
+    def test_backed_by_a_date_an_article_states(self):
+        hari_ini = "Presiden Prabowo memimpin rapat karhutla, Senin (12/10), setelah titik api bertambah kemarin."
+        assert _reason(_answer(hari_ini=hari_ini))[0] == "date"
+        assert sa.parse(_answer(hari_ini=hari_ini), _texts("Titik api bertambah pada Minggu (11/10)."), TIMELINE, DAY)
+
+    def test_the_edition_date_backs_a_span_that_has_ended(self):
+        """A span ending today is backed by today: 'pertengahan Oktober' (11-20/10) on 20/10."""
+        assert sa.unbacked_times("pertengahan Oktober", date(2026, 10, 20), {date(2026, 10, 20)}, "") == []
+        assert sa.unbacked_times("pertengahan Oktober", DAY, set(), "") == ["pertengahan Oktober"]
+
+    def test_the_edition_date_does_not_back_a_span_still_running(self):
+        """SYS-174 (#373): 'pertengahan Oktober' (11-20/10) on 12/10 holds today, but its days still run, so it
+        may be a schedule and today does not show one. It used to pass, and an invented 'akhir bulan' with it
+        from the 21st on."""
+        texts = [TEXTS[0].replace(" Rapat lanjutan dijadwalkan Kamis (15/10).", "")] + TEXTS[1:]
+        answer = _answer(hari_ini="Presiden Prabowo memimpin rapat karhutla pertengahan Oktober.", agenda="")
+        assert _reason_on(answer, texts)[0] == "date"
+        assert sa.unbacked_times("pertengahan Oktober", DAY, {DAY}, "") == ["pertengahan Oktober"]
+
+
+    RUNNING = [("akhir bulan", date(2026, 10, 26), date(2026, 10, 22), date(2026, 10, 28)),
+               ("akhir Oktober", date(2026, 10, 25), date(2026, 10, 21), date(2026, 10, 30)),
+               ("pertengahan bulan ini", DAY, date(2026, 10, 11), date(2026, 10, 18)),
+               ("awal Oktober", date(2026, 10, 8), date(2026, 10, 6), date(2026, 10, 9))]
+
+    @pytest.mark.parametrize("phrase,today,past,ahead", RUNNING)
+    def test_today_does_not_back_a_span_still_running(self, phrase, today, past, ahead):
+        """SYS-174 (#373): from the 21st "akhir bulan" holds today, whether it tells a past event or an invented
+        schedule, so today proves neither. A past day backs the past reading, outside the agenda (the 10-08
+        arcs' "awal Oktober" for a 6/10 item)."""
+        text = f"Rapat digelar {phrase}."
+        assert sa.unbacked_times(text, today, {today}, "") == [phrase]
+        assert sa.unbacked_times(text, today, {today, past}, "") == []
+
+    @pytest.mark.parametrize("phrase,today,past,ahead", RUNNING)
+    def test_in_the_agenda_only_a_day_ahead_backs_it(self, phrase, today, past, ahead):
+        """SYS-174: the agenda is the scheduled step, so a past day inside a running span backs nothing there
+        (QA: "pertengahan Oktober" on 15/10 was backed by the article's own 12/10)."""
+        text = f"Rapat lanjutan dijadwalkan {phrase}."
+        assert sa.unbacked_times(text, today, {today, past}, "", schedule=True) == [phrase]
+        assert sa.unbacked_times(text, today, {today, past, ahead}, "", schedule=True) == []
+
+    def test_a_span_ending_today_runs_in_the_agenda_only(self):
+        """SYS-174 send-back: in the agenda a span ending today is still a schedule, so today does not back it (an
+        invented "dijadwalkan akhir bulan" on the 31st). Elsewhere today backs it; a past span keeps its days."""
+        day = date(2026, 10, 20)
+        assert sa.unbacked_times("pertengahan Oktober", day, {day}, "", schedule=True) == ["pertengahan Oktober"]
+        assert sa.unbacked_times("pertengahan Oktober", day, {day}, "", present=True) == []
+        assert sa.unbacked_times("pertengahan Oktober", day, {day}, "") == []
+        assert sa.unbacked_times("akhir September", DAY, {date(2026, 9, 24)}, "", schedule=True) == []
+
+    def test_a_start_is_never_a_schedule(self):
+        """"sejak Oktober" spans the month up to today; in the agenda today still backs it."""
+        assert sa.unbacked_times("Asap bertahan sejak Oktober.", DAY, {DAY}, "", schedule=True) == []
+
+    @pytest.mark.parametrize("field", ["judul", "hari_ini", "sekilas"])
+    def test_todays_news_is_judged_like_the_agenda(self, field):
+        """SYS-177: in a present field a past known day no longer backs a running span; a day ahead does."""
+        day, past, ahead = date(2026, 10, 26), date(2026, 10, 25), date(2026, 10, 29)
+        assert field in sa.PRESENT_FIELDS
+        assert sa.unbacked_times("Aturan terbit akhir bulan.", day, {day, past}, "", present=True) != []
+        assert sa.unbacked_times("Aturan terbit akhir bulan.", day, {day, past, ahead}, "", present=True) == []
+
+    @pytest.mark.parametrize("cue", ["akan terbit", "bakal terbit", "dijadwalkan terbit", "ditargetkan rampung",
+                                     "direncanakan terbit", "rencananya terbit", "menyusul"])
+    def test_in_the_latar_a_future_verb_before_the_phrase_makes_it_a_schedule(self, cue):
+        day, past = date(2026, 10, 26), date(2026, 10, 22)
+        assert sa.unbacked_times(f"Aturan barunya {cue} akhir Oktober.", day, {day, past}, "") != []
+
+    def test_in_the_latar_a_future_verb_elsewhere_does_not(self):
+        """The replay's shape: "akan" after the phrase, about something else; a verb in the sentence before; a verb
+        after the phrase with another verb between."""
+        day, item = date(2026, 10, 8), date(2026, 10, 2)
+        for latar in ["Sebelumnya, pada awal Oktober, Presiden menggelar rapat yang akan memanggil para ahli.",
+                      "Aturan akan dibahas. Pada awal Oktober Presiden menggelar rapat.",
+                      "Aturan akan dibahas, dan pada awal Oktober Presiden menggelar rapat.",
+                      "Pada awal Oktober Presiden menyatakan aturan akan terbit.",
+                      "Presiden menggelar rapat awal Oktober yang akan memanggil para ahli."]:
+            assert sa.unbacked_times(latar, day, {day, item}, "") == [], latar
+
+    @pytest.mark.parametrize("latar", ["Aturan akan dibahas lagi oleh para menteri kabinet pada awal Oktober.",
+                                       "Pemerintah berencana menerbitkan aturan barunya awal Oktober.",
+                                       "Aturan barunya mulai berlaku awal Oktober.",
+                                       "Menurut Menteri, awal Oktober aturan barunya akan terbit."])
+    def test_in_the_latar_a_cue_in_the_clause_makes_a_schedule(self, latar):
+        """SYS-177 send-back (#376): a plan verb anywhere before the phrase in its clause, or after it with no verb
+        and no "yang" between. 2/10 is a past day inside "awal Oktober"; it backs the past reading only."""
+        day, item = date(2026, 10, 8), date(2026, 10, 2)
+        assert sa.unbacked_times(latar, day, {day, item}, "") == ["awal Oktober"]
+
+    @pytest.mark.parametrize("verb", ["ditarget", "menargetkan", "berjanji", "menjanjikan", "dipastikan", "berharap",
+                                      "terjadwal", "diprediksi", "diagendakan", "diupayakan"])
+    def test_each_plan_root_cues_with_its_affixes(self, verb):
+        """SYS-177 second send-back (#407): a plan root with its affixes, not one form of it."""
+        day, item = date(2026, 10, 8), date(2026, 10, 2)
+        latar = f"Aturan barunya {verb} terbit awal Oktober."
+        assert sa.unbacked_times(latar, day, {day, item}, "") == ["awal Oktober"]
+
+    def test_a_bare_mulai_is_no_cue(self):
+        day, item = date(2026, 10, 8), date(2026, 10, 2)
+        assert sa.unbacked_times("Asap mulai meluas awal Oktober.", day, {day, item}, "") == []
+
+    def test_sejak_this_month_ends_today(self):
+        """SYS-174: "sejak Oktober" is a start, never ahead, so its span ends today and today still backs it."""
+        assert sa.unbacked_times("Karhutla dibahas sejak Oktober.", DAY, {DAY}, "") == []
+
+    def test_end_to_end_the_edition_date_backs_a_span_ending_today(self):
+        """"sejak Oktober" on 12/10 spans 1-12/10. The chosen items are 23-24/9, and the articles' dates are 15/10
+        or unread, so only today is inside it."""
+        latar = ("Persoalan karhutla sudah di meja Presiden sejak Oktober. Pada 23/9 Seskab melaporkan 209 hektare "
+                 "lahan masih terbakar, dan pada 24 September Prabowo menggelar rapat pertama.")
+        assert _parse(_answer(latar=latar))
+
+    def test_end_to_end_a_chosen_item_backs_a_running_span_in_the_latar(self):
+        """As the 10-08 replays' "awal Oktober" for a 6/10 item: here "pertengahan Oktober" (11-20/10) for the
+        chosen 11/10 item. Without it only today and the article's own 12/10 (today) sit inside: refused."""
+        item = TimelineItem(104, date(2026, 10, 11), "CNBC", "Prabowo Rapat Karhutla Lagi", "Presiden rapat karhutla.",
+                            0.85, 12)
+        latar = ("Persoalan karhutla sudah di meja Presiden sejak September. Pada 23/9 Seskab melaporkan 209 hektare "
+                 "lahan masih terbakar, dan pertengahan Oktober Prabowo menggelar rapat lagi.")
+        texts = [TEXTS[0].replace("Rapat lanjutan dijadwalkan Kamis (15/10).", ""), *TEXTS[1:]]
+        timeline = [*TIMELINE, item]
+        assert sa.parse(_answer(latar=latar, alur=[N, N + 3], agenda=""), texts, timeline, DAY)
+        with pytest.raises(Rejected) as e:
+            sa.parse(_answer(latar=latar, alur=[N], agenda=""), texts, timeline, DAY)
+        assert e.value.reason == "date" and '"pertengahan Oktober" di latar' in e.value.detail
+
+    def test_a_count_of_weeks_is_read_with_its_own_span(self):
+        """SYS-157 rework: 'tiga pekan lalu' (18-24/9) holds the chosen 23/9 item; read as 'pekan lalu'
+        (5-11/10) it was refused. 'dua bulan lalu' (August) holds none."""
+        latar = FRAME + "Tiga pekan lalu Seskab melaporkan 209 hektare lahan masih terbakar."
+        assert _parse(_answer(latar=latar))
+        reason, detail = _reason(_answer(latar=latar.replace("Tiga pekan lalu", "Dua bulan lalu")))
+        assert reason == "date" and '"Dua bulan lalu"' in detail
+
+    def test_a_phrase_in_an_old_timeline_item_does_not_license_it(self):
+        """SYS-162 (#357): the 23/9 item's 'Kemarin' meant 22/9; it cannot back today's 'Kemarin' (11/10)."""
+        timeline = [TIMELINE[0]._replace(opening="Kemarin Seskab melaporkan 209 hektare lahan masih terbakar.")] \
+            + TIMELINE[1:]
+        latar = FRAME + "Kemarin Seskab melaporkan 209 hektare lahan masih terbakar."
+        reason, detail = _reason(_answer(latar=latar), timeline=timeline)
+        assert reason == "date" and '"Kemarin"' in detail
+        assert sa.parse(_answer(latar=latar), _texts("Kemarin Seskab melaporkan karhutla."), timeline, DAY)
+
+    def test_a_phrase_only_a_tidak_terkait_article_states_does_not_license_it(self):
+        """DBT-78 (#362): article [2] (cabai) was not chosen as today's story, so its 'Kemarin' is not."""
+        latar = FRAME + "Kemarin Seskab melaporkan 209 hektare lahan masih terbakar."
+        reason, detail = _reason_on(_answer(latar=latar), _texts("Kemarin harga cabai naik.", i=2))
+        assert reason == "date" and '"Kemarin"' in detail
+        assert sa.parse(_answer(latar=latar), _texts("Kemarin asap makin tebal.", i=1), TIMELINE, DAY)
+
+    def test_a_phrase_in_an_article_moved_out_on_the_retry_does_not_license_it(self):
+        """DBT-78 (#362): the retry moves the off-subject article [2] out of terkait; its text goes with it."""
+        latar = FRAME + "Kemarin Seskab melaporkan 209 hektare lahan masih terbakar."
+        answer = _answer(latar=latar, terkait=[0, 1, 2], tidak_terkait=[])
+        reason, detail = _reason_on(answer, _texts("Kemarin harga cabai naik.", i=2), lenient=True)
+        assert reason == "date" and '"Kemarin"' in detail
+
+
+class TestOrdinals:
+    """SYS-158 (#353): a count no larger than the chosen timeline, a record only when stated."""
+
+    def test_a_record_is_held_to_its_whole_time(self):
+        """QA 2026-10-14: 'terendah sejak awal Maret' in a source licensed 'terendah sejak awal tahun'."""
+        latar = FRAME + "Luas karhutla kali ini tertinggi sejak awal tahun."
+        with pytest.raises(Rejected) as e:
+            sa.parse(_answer(latar=latar), _texts("Luas karhutla tertinggi sejak awal Agustus."), TIMELINE, DAY)
+        assert e.value.reason == "number" and '"tertinggi sejak awal tahun"' in e.value.detail
+        assert sa.parse(_answer(latar=latar), _texts("Luas karhutla tertinggi sejak awal tahun ini."), TIMELINE, DAY)
+
+    def test_a_record_may_drop_its_year_but_not_change_it(self):
+        latar = FRAME + "Luas karhutla kali ini tertinggi sejak Maret."
+        texts = _texts("Luas karhutla tertinggi sejak Maret 2025.")
+        assert sa.parse(_answer(latar=latar), texts, TIMELINE, DAY)
+        with pytest.raises(Rejected) as e:
+            sa.parse(_answer(latar=latar.replace("Maret.", "Maret 2026.")), _texts("Luas karhutla tertinggi sejak "
+                                                                                   "Maret 2025, pada 2026."),
+                     TIMELINE, DAY)
+        assert e.value.reason == "number" and '"tertinggi sejak Maret 2026"' in e.value.detail
+
+    def test_n_times_in_a_row_is_held_to_the_items(self):
+        """'tiga kali berturut-turut' is a series no digit check sees: one item does not back it."""
+        latar = FRAME + "Prabowo menggelar rapat karhutla tiga kali berturut-turut."
+        reason, detail = _reason(_answer(alur=[N + 1], latar=latar))
+        assert reason == "number" and '"tiga kali berturut-turut"' in detail
+        assert _parse(_answer(latar=latar))
+
+    def test_a_collective_after_a_verb_costs_no_retry(self):
+        """No alur, a crime-desk hari_ini: 'menahan kedua tersangka' = held both suspects."""
+        hari_ini = "Polisi menahan kedua tersangka karhutla di Istana Negara, Senin (12/10)."
+        assert _parse(_answer(alur=[], latar="", hari_ini=hari_ini, judul="Polisi tahan dua tersangka karhutla",
+                              terkait=[0], tidak_terkait=[1, 2]))
+
+    def test_backed_by_enough_items(self):
+        assert _parse(_answer(latar="Ini rapat karhutla ketiga sejak September. Seskab melaporkan 209 hektare."))
+
+    def test_more_than_the_items_is_refused(self):
+        reason, detail = _reason(_answer(alur=[N + 1], latar="Ini rapat karhutla ketiga sejak September."))
+        assert reason == "number" and '"karhutla ketiga"' in detail
+
+    def test_a_series_count_is_held_to_the_items(self):
+        """Two chosen items back three days in a row, not four."""
+        assert _parse(_answer(sekilas="Prabowo rapat karhutla tiga hari berturut-turut."))
+        reason, detail = _reason(_answer(sekilas="Prabowo rapat karhutla empat hari berturut-turut."))
+        assert reason == "number" and '"empat hari berturut-turut"' in detail
+
+    def test_a_record_needs_a_source(self):
+        latar = "Karhutla kali ini terluas pertama kali sejak Agustus. Seskab melaporkan 209 hektare."
+        reason, detail = _reason(_answer(latar=latar))
+        assert reason == "number" and '"pertama kali sejak Agustus"' in detail
+        assert sa.parse(_answer(latar=latar), _texts("Karhutla meluas pertama kali sejak Agustus."), TIMELINE, DAY)
+
+    def test_an_ordinal_copied_from_an_article_passes(self):
+        hari_ini = "Presiden Prabowo memimpin rapat terbatas ketiga soal karhutla, Senin (12/10)."
+        assert _reason(_answer(alur=[], hari_ini=hari_ini, latar=""))[0] == "number"
+        assert sa.parse(_answer(alur=[], hari_ini=hari_ini, latar=""), _texts("Ini rapat terbatas ketiga."),
+                        TIMELINE, DAY)
+
+
+class TestChangeClaims:
+    """SYS-161 (#356): "bertambah/naik/turun menjadi N" needs a source that states N as a total or a change."""
+
+    def test_a_figure_the_source_does_not_call_a_total_is_refused(self):
+        """KONTAN states 1.673 disrupted flights as today's event; nothing says it grew to that."""
+        hari_ini = "Presiden Prabowo memimpin rapat karhutla, Senin (12/10). Penerbangan terganggu kini bertambah " \
+                   "menjadi 1.673."
+        reason, detail = _reason(_answer(hari_ini=hari_ini))
+        assert reason == "number" and '"bertambah menjadi 1.673"' in detail and "peristiwa hari ini" in detail
+
+    def test_a_running_total_the_source_states_passes(self):
+        hari_ini = "Presiden Prabowo memimpin rapat karhutla, Senin (12/10). Penerbangan terganggu kini bertambah " \
+                   "menjadi 1.673."
+        assert sa.parse(_answer(hari_ini=hari_ini), _texts("Total 1.673 penerbangan terganggu sejak awal Oktober.",
+                                                            i=1), TIMELINE, DAY)
+
+    def test_the_prompt_says_so(self):
+        assert "bertambah/naik/turun menjadi N" in sa.PROMPT and "peristiwa terpisah" in sa.PROMPT
+
+
+class TestEndPoints:
+    """SYS-186 (#387): the live 10-16 MSCI arc printed "berlanjut hingga review November 2026"; the source said the
+    freeze runs on AFTER the November review, until semester II-2027."""
+
+    SOURCE = ("Kebijakan pembekuan diperkirakan masih berlanjut setelah evaluasi indeks pada November 2026. Freeze "
+              "berpotensi berlanjut hingga semester II-2027.")
+
+    def _latar(self, sentence):
+        return _answer(latar="Persoalan karhutla sudah di meja Presiden sejak September. " + sentence)
+
+    def test_an_end_point_the_source_does_not_state_is_refused_as_date(self):
+        reason, detail = _reason_on(self._latar("Analis memperkirakan pembekuan berlanjut hingga review November 2026."),
+                                    _texts(self.SOURCE, i=1))
+        assert reason == "date" and '"hingga review November 2026" di latar menyebut batas akhir' in detail
+
+    def test_the_stated_end_point_is_kept(self):
+        assert sa.parse(self._latar("Analis memperkirakan pembekuan berlanjut hingga semester II-2027."),
+                        _texts(self.SOURCE, i=1), TIMELINE, DAY)
+
+    def test_on_the_retry_too(self):
+        reason, _ = _reason_on(self._latar("Analis memperkirakan pembekuan berlanjut hingga review November 2026."),
+                               _texts(self.SOURCE, i=1), lenient=True)
+        assert reason == "date"
+
+
+class TestScheduleByField:
+    """SYS-174 send-back, SYS-177, SYS-178, end to end: TEXTS with its only next step replaced, so nothing states a
+    schedule; on 26/10 a source states the past day 25/10, inside "akhir bulan"."""
+
+    NEXT = "Rapat lanjutan dijadwalkan Kamis (15/10)."
+
+    def _reason(self, day, extra="", **fields):
+        texts = [TEXTS[0].replace(self.NEXT, "Rapat lanjutan belum dijadwalkan. " + extra), *TEXTS[1:]]
+        try:
+            sa.parse(_answer(**{"agenda": "", **fields}), texts, TIMELINE, day)
+        except Rejected as e:
+            return e.reason
+        return "kept"
+
+    @pytest.mark.parametrize("field", ["hari_ini", "sekilas"])
+    def test_a_past_source_day_does_not_back_todays_invented_schedule(self, field):
+        value = ("Presiden Prabowo Subianto memimpin rapat terbatas karhutla di Istana Negara. Aturan barunya terbit "
+                 "akhir bulan." if field == "hari_ini" else "Aturan karhutla terbit akhir bulan.")
+        assert self._reason(date(2026, 10, 26), "Asap meluas sejak Minggu (25/10).", **{field: value}) == "date"
+
+    def test_the_latar_reads_the_future_verb(self):
+        latar = FRAME + "Pada 23/9 Seskab melaporkan 209 hektare lahan masih terbakar. Aturan barunya akan terbit " \
+                        "akhir Oktober."
+        assert self._reason(date(2026, 10, 26), "Asap meluas sejak Kamis (22/10).", latar=latar) == "date"
+
+    def test_an_agenda_schedule_on_the_spans_last_day_is_refused(self):
+        assert self._reason(date(2026, 10, 31), agenda="Rapat lanjutan karhutla dijadwalkan akhir bulan.") == "date"
+
+    def test_an_invented_bare_year_end_is_refused_and_a_stated_one_kept(self):
+        agenda = "Aturan karhutla akan rampung akhir tahun."
+        assert self._reason(DAY, agenda=agenda) == "date"
+        assert self._reason(DAY, "Aturan akan rampung akhir tahun ini.", agenda=agenda) == "kept"
+
+
+class TestTimeAnchors:
+    """SYS-164 (#359): relative time counts as a time anchor in the latar's caps."""
+
+    def test_more_than_three_anchors_is_refused(self):
+        latar = (FRAME + "Akhir September Seskab melaporkan 209 hektare terbakar, Prabowo menggelar rapat 23/9 dan "
+                 "24/9, lalu kemarin karhutla meluas.")
+        reason, detail = _reason(_answer(latar=latar))
+        assert reason == "style" and "4 penanda waktu" in detail and '"Akhir September"' in detail
+
+    def test_three_anchors_and_a_since_frame_pass(self):
+        latar = ("Karhutla sudah di meja Presiden sejak akhir September. Seskab melaporkan 209 hektare terbakar "
+                 "pada 23/9, dan Prabowo menggelar rapat 24/9 serta akhir September.")
+        assert _parse(_answer(latar=latar))
+
+    def test_two_sentences_opening_on_relative_time_are_refused(self):
+        latar = (FRAME + "Akhir September Seskab melaporkan 209 hektare terbakar. Tiga pekan lalu Prabowo menggelar "
+                 "rapat.")
+        reason, detail = _reason(_answer(latar=latar))
+        assert reason == "style" and "2 kalimat latar dibuka dengan tanggal atau waktu" in detail
+
+    def test_a_first_sentence_opening_on_relative_time_is_not_a_frame(self):
+        reason, detail = _reason(_answer(latar="Akhir September Seskab melaporkan 209 hektare lahan masih terbakar."))
+        assert reason == "style" and "tidak mengaitkan alur" in detail
+
+    def test_the_prompt_caps_the_anchors(self):
+        assert "paling banyak tiga penanda waktu" in sa.PROMPT
+
+
+def _example() -> dict:
+    """The worked example's JSON, as the model reads it (doubled braces undone, its display wrapping joined)."""
+    block = sa.PROMPT.split("CONTOH JAWABAN")[1].split("HARI INI\n")[0]
+    block = " ".join(block[block.index("{{"):block.rindex("}}") + 2].split())
+    return json.loads(block.replace("{{", "{").replace("}}", "}"))
+
+
+class TestPrompt:
+    def test_no_dated_fact_per_timeline_item_is_asked(self):
+        """SYS-154: the rules that made the chronicle are gone."""
+        assert "setiap fakta bertanggal" not in sa.PROMPT and "ditulis dengan tanggalnya" not in sa.PROMPT
+        assert "urut waktu" not in sa.PROMPT
+        assert "Setiap fakta dari LINI MASA harus berasal dari cuplikannya." in sa.PROMPT
+
+    @pytest.mark.parametrize("rule", ["Kalimat pertama adalah bingkai", "paling banyak dua titik balik",
+                                      "Kaitkan setiap fakta lampau dengan hari ini",
+                                      "waktu relatif yang tertera dalam kurung di LINI MASA",
+                                      "Jangan membuka dua kalimat dengan kata yang sama",
+                                      "HANYA jika artikel menyebutnya"])
+    def test_the_six_story_rules(self, rule):
+        assert rule in sa.PROMPT.replace("\n    ", " ").replace("\n       ", " ")
+
+    def test_the_example_latar_reads_as_a_story(self):
+        """SYS-155: the example is what the model copies; it passes the style check it will be held to."""
+        ex = _example()
+        assert ex["alur"] and sa.chronicle(ex["latar"], ex["judul"], ex["hari_ini"], has_alur=True) == []
+        assert not arc_style.date_led(arc_style.sentences(ex["latar"])[0])
+
+    def test_indexes_continue_from_today_into_the_timeline(self):
+        prompt = sa.build_prompt(SHOWN, TIMELINE, DAY)
+        assert "[0] CNBC Indonesia — Prabowo Pimpin Rapat Karhutla" in prompt
+        assert f"[{N}] Rabu, 23 Sep (akhir September) · CNBC Indonesia — Prabowo Dapat Laporan 209 Ha" in prompt
+        assert f"[{N + 2}] Jumat, 2 Okt (awal Oktober) · tvOnenews — Prabowo Lantik Wantimpres" in prompt
+        assert "3 artikel Senin, 12 Oktober 2026" in prompt and "3 cuplikan" in prompt
+
+    def test_an_empty_timeline_says_so(self):
+        assert "LINI MASA\n(kosong)" in sa.build_prompt(SHOWN, [], DAY)
+
+    def test_the_example_is_from_outside_the_replay_week(self):
+        assert "Jumat (2/10)" in sa.PROMPT and "12/10" not in sa.PROMPT.split("CONTOH JAWABAN")[1]
+
+
+class _Script:
+    def __init__(self, *items):
+        self.items, self.prompts = list(items), []
+
+    def summarize(self, prompt):
+        self.prompts.append(prompt)
+        item = self.items.pop(0)
+        if isinstance(item, Exception):
+            raise item
+        return item
+
+
+class TestWriteArc:
+    def test_accepted(self):
+        rejections = []
+        assert sa.write_arc(_Script(_answer()), SHOWN, TIMELINE, DAY, rejections).alur == [0, 1]
+        assert rejections == []
+
+    def test_refused_then_repaired_leniently(self):
+        s, rejections = _Script(_answer(alur=[N, N + 1, N + 2]), _answer(alur=[N, N + 1, N + 2])), []
+        arc = sa.write_arc(s, SHOWN, TIMELINE, DAY, rejections)
+        assert arc.demoted_alur == 1 and rejections == ["alur"]
+        assert "Jawaban sebelumnya ditolak: cuplikan [5] bukan bagian dari alur" in s.prompts[1]
+
+    def test_two_refusals_are_none(self):
+        rejections = []
+        assert sa.write_arc(_Script("x", "y"), SHOWN, TIMELINE, DAY, rejections) is None
+        assert rejections == ["json", "json"]
+
+    def test_a_quota_keeps_the_first_refusal_counted(self):
+        rejections = []
+        with pytest.raises(QuotaExhausted):
+            sa.write_arc(_Script("x", QuotaExhausted("429")), SHOWN, TIMELINE, DAY, rejections)
+        assert rejections == ["json"]

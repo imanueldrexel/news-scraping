@@ -1,0 +1,264 @@
+services:
+  # ============ Infrastructure Services ============
+  redis:
+    image: redis:7-alpine
+    container_name: news-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - news-network
+
+  neo4j:
+    image: neo4j:5-community
+    container_name: news-neo4j
+    ports:
+      - "7474:7474"  # Browser UI
+      - "7687:7687"  # Bolt protocol
+    environment:
+      NEO4J_AUTH: ${NEO4J_USER:-neo4j}/${NEO4J_PASSWORD:-password123}
+      NEO4J_PLUGINS: '["apoc"]'
+      NEO4J_dbms_security_procedures_unrestricted: apoc.*
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+      - ./scripts:/var/lib/neo4j/import
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:7474"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - news-network
+
+  chromadb:
+    image: chromadb/chroma:latest
+    container_name: news-chromadb
+    ports:
+      - "8000:8000"
+    volumes:
+      - chroma_data:/chroma/chroma
+    environment:
+      ANONYMIZED_TELEMETRY: "false"
+      IS_PERSISTENT: "TRUE"
+    networks:
+      - news-network
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: news-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    networks:
+      - news-network
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: news-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-news}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-news123}
+      POSTGRES_DB: ${POSTGRES_DB:-newsdb}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-news}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - news-network
+
+  # ============ Application Services ============
+  ingestion:
+    build:
+      context: .
+      dockerfile: services/ingestion/Dockerfile
+    container_name: news-ingestion
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    environment:
+      REDIS_URL: redis://redis:6379
+      DATABASE_URL: postgresql://${POSTGRES_USER:-news}:${POSTGRES_PASSWORD:-news123}@postgres:5432/${POSTGRES_DB:-newsdb}
+      POLLING_INTERVAL: ${POLLING_INTERVAL:-300}
+      MAX_ARTICLE_AGE_HOURS: ${MAX_ARTICLE_AGE_HOURS:-48}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+    volumes:
+      - ./shared:/app/shared
+    restart: unless-stopped
+    networks:
+      - news-network
+
+  preprocessor:
+    build:
+      context: .
+      dockerfile: services/preprocessor/Dockerfile
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      REDIS_URL: redis://redis:6379
+      INPUT_STREAM: stream:ingested
+      OUTPUT_STREAM: stream:preprocessed
+      RELEVANCE_THRESHOLD: ${RELEVANCE_THRESHOLD:-0.35}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      - ./shared:/app/shared
+    restart: unless-stopped
+    networks:
+      - news-network
+
+  vectorizer:
+    build:
+      context: .
+      dockerfile: services/vectorizer/Dockerfile
+    container_name: news-vectorizer
+    depends_on:
+      redis:
+        condition: service_healthy
+      chromadb:
+        condition: service_started
+      ollama:
+        condition: service_started
+    environment:
+      REDIS_URL: redis://redis:6379
+      CHROMADB_HOST: chromadb
+      CHROMADB_PORT: 8000
+      OLLAMA_URL: http://ollama:11434
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-nomic-embed-text}
+      INPUT_STREAM: stream:preprocessed
+      OUTPUT_STREAM: stream:vectorized
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      - ./shared:/app/shared
+    restart: unless-stopped
+    networks:
+      - news-network
+
+  extraction:
+    build:
+      context: .
+      dockerfile: services/extraction/Dockerfile
+    container_name: news-extraction
+    depends_on:
+      redis:
+        condition: service_healthy
+      ollama:
+        condition: service_started
+    environment:
+      REDIS_URL: redis://redis:6379
+      OLLAMA_URL: http://ollama:11434
+      LLM_MODEL: ${LLM_MODEL:-qwen2.5:7b-instruct}
+      INPUT_STREAM: stream:preprocessed
+      OUTPUT_STREAM: stream:triplets
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      - ./shared:/app/shared
+    restart: unless-stopped
+    networks:
+      - news-network
+
+  entity-resolver:
+    build:
+      context: .
+      dockerfile: services/entity_resolver/Dockerfile
+    container_name: news-entity-resolver
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      REDIS_URL: redis://redis:6379
+      INPUT_STREAM: stream:triplets
+      OUTPUT_STREAM: stream:entities
+      FUZZY_THRESHOLD: ${FUZZY_THRESHOLD:-0.85}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      - ./shared:/app/shared
+    restart: unless-stopped
+    networks:
+      - news-network
+
+  graph-store:
+    build:
+      context: .
+      dockerfile: services/graph_store/Dockerfile
+    container_name: news-graph-store
+    depends_on:
+      redis:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+    environment:
+      REDIS_URL: redis://redis:6379
+      NEO4J_URI: bolt://neo4j:7687
+      NEO4J_USER: ${NEO4J_USER:-neo4j}
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD:-password123}
+      INPUT_STREAM: stream:entities
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      - ./shared:/app/shared
+    restart: unless-stopped
+    networks:
+      - news-network
+
+  analyst:
+    build:
+      context: .
+      dockerfile: services/analyst/Dockerfile
+    container_name: news-analyst
+    depends_on:
+      redis:
+        condition: service_healthy
+      chromadb:
+        condition: service_started
+      ollama:
+        condition: service_started
+    environment:
+      REDIS_URL: redis://redis:6379
+      CHROMADB_HOST: chromadb
+      CHROMADB_PORT: 8000
+      OLLAMA_URL: http://ollama:11434
+      LLM_MODEL: ${LLM_MODEL:-qwen2.5:7b-instruct}
+      INPUT_STREAM: stream:vectorized
+      SIMILARITY_THRESHOLD: ${SIMILARITY_THRESHOLD:-0.85}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      - ./shared:/app/shared
+    restart: unless-stopped
+    networks:
+      - news-network
+
+networks:
+  news-network:
+    driver: bridge
+
+volumes:
+  redis_data:
+  neo4j_data:
+  neo4j_logs:
+  chroma_data:
+  ollama_data:
+  postgres_data:

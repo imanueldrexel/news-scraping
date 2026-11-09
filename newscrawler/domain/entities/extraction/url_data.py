@@ -1,0 +1,47 @@
+import enum
+
+
+class URL(enum.Enum):
+    KOMPAS = "https://news.kompas.com/news/sitemap.xml"
+    TRIBUN = "https://www.tribunnews.com/sitemap.xml"
+    TEMPO = "https://www.tempo.co/sitemap.xml"
+    CNBC = "https://www.cnbcindonesia.com/sitemap.xml"
+    CNN = "https://www.cnnindonesia.com/sitemap.xml"
+    JPNN = "https://www.jpnn.com/sitemap.xml"
+    REQNEWS = "https://www.reqnews.com/sitemap/latest.xml"
+    PIKIRANRAKYAT = "https://www.pikiran-rakyat.com/sitemap-news.xml"
+    SINDONEWS = "https://www.sindonews.com/sitemap.xml"
+    # SRC-13 (#91): a liveness probe only -- get_news_in_bulk() fetches this to
+    # check the source is up before scraping; the real branch list is the fixed
+    # ekonomi* feed set AntaraNewsCrawler._get_branches returns, independent of
+    # this URL's content. The old en.antaranews.com/rss/spo.xml (English sports
+    # RSS on a subdomain with no sitemap) 404s permanently and hid 60 live
+    # Indonesian feeds behind an unrelated liveness check.
+    ANTARANEWS = "https://www.antaranews.com/rss/ekonomi.xml"
+    KONTAN = "https://www.kontan.co.id/sitemap.xml"
+    VIVA = "https://www.viva.co.id/sitemap.xml"
+    BISNIS = "https://www.bisnis.com/sitemap-news.xml"
+    LIPUTAN6 = "https://www.liputan6.com/sitemap.xml"
+    IDXCHANNEL = "https://www.idxchannel.com/sitemap.xml"
+    MEDIAINDONESIA = "https://mediaindonesia.com/sitemap.xml"
+    # SRC-16 (#95): the old /s/sitemap-content.xml path 404s; the live index
+    # is a two-level structure -- this lists per-section monthly sub-indexes
+    # (insider/ekonomi.xml, insider/bisnis.xml, ...), see TirtoCrawler._get_branches.
+    TIRTO = "https://tirto.id/sitemap/news.xml"
+    # SRC-59 (#260): sitemap_news.xml answers 404 since 2026-10-06; the index lists the live
+    # sitemap_post.xml (lastmod only), see InvestorIDCrawler._get_branches.
+    INVESTORID = "https://investor.id/sitemap.xml"
+    BERITASATU = "https://www.beritasatu.com/sitemap.xml"
+    SUARA = "https://www.suara.com/sitemap.xml"
+    KUMPARAN = "https://kumparan.com/sitemap.xml"
+    MERDEKA = "https://www.merdeka.com/sitemap.xml"
+    DETIK = "https://www.detik.com/sitemap.xml"
+    ERAID = "https://era.id/sitemap_news.xml"
+    OKEZONE = "https://www.okezone.com/sitemap.xml"
+    INEWS = "https://www.inews.id/sitemap.xml"
+    WARTAEKONOMI = "https://wartaekonomi.co.id/sitemap.xml"
+    TVONENEWS = "https://www.tvonenews.com/sitemap.xml"
+    # SRC-14 (#92): the old /sitemap-news.xml path 403s (retired server-side);
+    # the live index is /sitemap.xml -> <section>/sitemap-news.xml.
+    IDNTIMES = "https://www.idntimes.com/sitemap.xml"
+    EMITENNEWS = "https://www.emitennews.com/sitemap.xml"

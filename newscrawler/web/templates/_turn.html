@@ -1,0 +1,65 @@
+{#- One question and its sources (POST /api/query/form). The answer arrives in a second
+    request (hx-trigger="load"), so the sources are readable while it is written (ADR-005). -#}
+<article class="turn" id="turn-{{ turn_id }}" aria-labelledby="q-{{ turn_id }}">
+  <h2 class="turn-q" id="q-{{ turn_id }}" tabindex="-1">{{ question }}</h2>
+  {% if notice %}
+  <p class="form-notice" role="alert">{{ notice }}</p>
+  {% elif cards %}
+  <div class="turn-grid">
+    <div class="answer" id="answer-{{ turn_id }}" aria-live="polite">
+      {% if result %}
+      {% include "_answer.html" %}
+      {% else %}
+      <div hx-post="/api/answer/{{ turn_id }}" hx-trigger="load" hx-target="#answer-{{ turn_id }}" hx-swap="innerHTML">
+        <p class="pending" role="status">{{ copy.LOADING_ANSWER.format(n=cards | length) }}</p>
+      </div>
+      {% endif %}
+    </div>
+    <section class="sources" aria-labelledby="src-h-{{ turn_id }}">
+      <h3 id="src-h-{{ turn_id }}">{{ copy.SOURCES_HEADER.format(n=cards | length) }}</h3>
+      <ol class="cards">
+        {% for c in cards %}
+        <li class="card" id="src-{{ turn_id }}-{{ c.n }}">
+          <span class="card-n">[{{ c.n }}]</span>
+          <div class="card-meta">
+            <span class="outlet">{{ c.outlet }}</span>
+            {% if c.date %}<span>{{ c.date }}</span>{% endif %}
+            {% if c.topic_name %}<span class="topic">{{ c.topic_name }}</span>{% endif %}
+          </div>
+          <p class="card-title">{{ c.title }}</p>
+          {% if c.snippet %}<p class="card-snippet">{{ c.snippet }}</p>{% endif %}
+          {% if c.link %}<a class="card-link" href="{{ c.link }}" target="_blank" rel="noopener noreferrer">{{ copy.READ_AT.format(outlet=c.outlet) }}</a>{% endif %}
+        </li>
+        {% endfor %}
+      </ol>
+    </section>
+  </div>
+  {% else %}
+  <div class="empty" role="status">
+    {% if filters.active %}
+    <p>{{ filters.narrow_text() }}</p>
+    <button type="button" class="btn btn-quiet" data-clear-filters data-question="{{ question }}">{{ copy.CLEAR_FILTERS }}</button>
+    {% else %}
+    <p>{{ copy.NO_HITS }}</p>
+    {% endif %}
+  </div>
+  {% endif %}
+</article>
+{% if session_id %}
+<form id="followup" class="followup" hx-swap-oob="true"
+      hx-post="/api/query/form" hx-target="#thread" hx-swap="beforeend"
+      hx-include="#filter-topic, #filter-source, [name='rentang'], #filter-from, #filter-to"
+      hx-indicator="#search-status" hx-disabled-elt="#followup-button">
+  <label for="followup-input">{{ copy.FOLLOWUP_LABEL }}</label>
+  <input type="hidden" name="session_id" value="{{ session_id }}">
+  <div class="search-row">
+    <input type="text" id="followup-input" name="query" maxlength="{{ max_chars }}" required autocomplete="off">
+    <button type="submit" class="btn" id="followup-button">{{ copy.ASK }}</button>
+  </div>
+</form>
+{% endif %}
+<ul class="active-filters" id="active-filters" hx-swap-oob="true" aria-label="{{ copy.ACTIVE_FILTERS_LABEL }}">
+  {%- for field, label in filters.chips() %}
+  <li><button type="button" data-remove-filter="{{ field }}" aria-label="{{ copy.REMOVE_FILTER.format(label=label) }}">{{ label }} <span aria-hidden="true">×</span></button></li>
+  {%- endfor %}
+</ul>

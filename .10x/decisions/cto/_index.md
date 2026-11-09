@@ -1,0 +1,8 @@
+
+- [sys-63-sys-67-decisions](sys-63-sys-67-decisions.md) — SYS-67 accepted as scoped; SYS-63 stored-row repair approved after SYS-72 (SYS-73)
+- [night-2026-10-04-p1-p2](night-2026-10-04-p1-p2.md) — no bot-protection circumvention; extraction live on DeepSeek, 4 workers, nightly 21:00 (ADR-004)
+- [newsletter-5min-edition](newsletter-5min-edition.md) — 2026-10-05: general briefing finance-first (no quota); judul ask 10 accept 12; top-6 stories guaranteed; word-overlap duplicate guard; first-try target retired, cost cap $0.05/day
+- [llm-budget](llm-budget.md) — 2026-10-12: project LLM budget ~$100 (SumoPod prepaid); extract every article; cap 8 until the backlog clears, 1.5 from 2026-10-15; monetization deferred
+- [qa-senior-fixes-2026-10-12](qa-senior-fixes-2026-10-12.md) — 2026-10-12 QA + senior list: SYS-111/139/104/140/141/137/138/112/142, DBT-65/66/67; owner decisions; ADR-010/011/012
+
+- [nli-faithfulness](nli-faithfulness.md) -- build in shadow, 2026-10-25

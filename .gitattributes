@@ -1,0 +1,8 @@
+# DBT-41 (#171): the probe's gold set is identified by the sha256 of its bytes
+# (importance_probe.json gold_sha256, and the key of tests/fixtures/probe_test_embeddings.npz).
+# A checkout with core.autocrlf=true (this repo's setting) wrote CRLF and changed that hash,
+# which failed two unit tests on any fresh clone, worktree or git archive. Always LF.
+# DBT-63 (#285): `**/` so the subdirectories (extraction_bakeoff_runs/) are covered too.
+tests/fixtures/**/*.jsonl text eol=lf
+*.npz binary
+data/nli_train/*.jsonl text eol=lf
