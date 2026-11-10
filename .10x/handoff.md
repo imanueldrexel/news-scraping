@@ -1,5 +1,10 @@
 # Current Handoff
 
+## From: SDE (2026-11-11) -> To: owner
+- **SYS-200 pilot done** (EXPERIMENTS 2026-11-11, the #430 comment). The owner rules on 6 labeller disagreements, then the natural set is written and topped up.
+- Pilot finding: about 8% of live arc sentences are unsupported, and none are in a gate family. Per-type recall must come from SYS-197's targeted set.
+
+
 ## From: PM (2026-11-11) -> To: SDE
 **Read first:** `.10x/decisions/product-manager/nli-faithfulness.md` (2026-11-11 section) and the 11-11 comment on SYS-200 (#430).
 - **Task:** pilot the natural set on the 69 `nli_shadow` rows.

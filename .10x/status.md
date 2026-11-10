@@ -2,7 +2,8 @@
 
 ## 2026-11-11: NLI natural set pilot (SYS-200 #430)
 - [x] Owner chose to pilot on the 69 stored `nli_shadow` rows now, instead of waiting for about 200 (PM nli-faithfulness).
-- [ ] SDE: export, label blind (Claude + Gemini), re-score arm A / v2 offline, report.
+- [x] SDE: pilot done (6b79540). Agreement 63/69; 5/63 unsupported, all residual; v2 catches 2/5 with 2% false flags, arm A 1/5 with 7%.
+- [ ] Owner: rule on the 6 labeller disagreements (n2/n5, n32/n60, n45, n47); then write natural.jsonl and top it up to ~200.
 
 ## 2026-11-10 (after the owner's SumoPod top-up)
 - [x] SYS-202 (#456, P0) found and fixed in 334ecdc. deepseek-v4-flash ignores `thinking: disabled` and answers empty; both call sites now send `reasoning_effort="none"`. Status: ready-for-qa; QA checks the 11-10 12:00 newsletter and the 21:00 extraction.
