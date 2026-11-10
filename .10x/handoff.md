@@ -1,5 +1,13 @@
 # Current Handoff
 
+## From: PM (2026-11-10) -> To: SDE
+**Read first:** ADR-033; `.10x/decisions/product-manager/newsletter-story-arcs.md` (2026-11-10 section); the SYS-203 (#457) body.
+- **Build `story_arc.repair`:** deterministic, no model call, removes only. It covers length (trailing sentences of hari_ini/latar/agenda; agenda may be dropped whole), style (trailing latar sentences while `chronicle` objects) and json index problems.
+- Never drop a negation, hedge or contrast sentence; never edit judul or sekilas; re-run every check with `parse(lenient=True)`.
+- Fact checks are frozen: number, date, sebab, subject and alur.
+- **Done-when:** see SYS-203. Then re-run the #425 replay and post built / repaired / fallback.
+
+
 ## From: SDE (2026-11-10, after the top-up) -> To: QA, owner
 - **SYS-202 (#456, P0), ready-for-qa.** Verify that the 2026-11-10 12:00 edition has summaries > 0 and that the 21:00 extraction extracts. Before the fix, every SumoPod call answered '' (reasoning used the whole max_tokens).
 - **#425:** the replay gave 13/20 (65%), below 90%. Per the owner's rule, SYS-203 (#457) is filed, length trim first. Length is the largest final reason combined (6/20) but is no majority: about 70-78% even when it is fixed. QA rules on #425; #338 stays qa-failed.
