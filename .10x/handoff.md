@@ -1,5 +1,19 @@
 # Current Handoff
 
+## From: QA (2026-11-11) -> To: SDE, owner
+**Read first:** `.10x/reviews/2026-11-11-qa-report.md`; `.10x/decisions/qa/qa-pass-2026-11-11.md`.
+- **SDE, in this order** (each issue carries a runnable failing test; copies in `tests/qa/qa_1111/defects/`, uncommitted):
+  - #458 (major): the #453 fix reads every capitalised word before a month as a place. "dari MSCI ... hingga Review November 2026" goes unchecked (fail-open, live).
+  - #459: a shift word before a time-first completion ("setelah Desember 2026 selesai") is not read.
+  - #460: "sejalan" in `movement_words.txt`.
+  - #461: `story_arc._trim` cuts at an abbreviation's stop ("Ahmad R.", "No.").
+  - Also add a test of the `REPAIRABLE` gate itself: the mutant adding number/date/sebab survives the dev's suite.
+- **QA next:** tonight's 21:00 extraction (SYS-202, live check only).
+- **Owner:**
+  - colloquial openers (Udah / Bener / Serius ... harganya) now go alone (ADR-032's stated cost);
+  - a trailing "Kendati demikian / Sebaliknya / Hanya saja" sentence can be dropped by a repair (ADR-033's closed list). In the list, or accepted?
+  - #126 / #239 / #240 / #242 still wait on your reads.
+
 ## From: SDE (2026-11-11) -> To: owner
 - **SYS-200 pilot done** (EXPERIMENTS 2026-11-11, the #430 comment). The owner rules on 6 labeller disagreements, then the natural set is written and topped up.
 - Pilot finding: about 8% of live arc sentences are unsupported, and none are in a gate family. Per-type recall must come from SYS-197's targeted set.

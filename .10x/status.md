@@ -1,5 +1,12 @@
 # Project Status
 
+## 2026-11-11: QA of the ready-for-qa queue (fde6580, SYS-202, SYS-203)
+- [x] QA audited 8 parents at 5e1ea30. Closed #450 #451 #452 #453 #454 #425. Filed #458 (major), #459, #460, #461 (minor); 3 are regressions from the fixes. Report: `.10x/reviews/2026-11-11-qa-report.md`.
+- [x] qa-passed: #327, #328, #338, #456. qa-failed: #387 (#458), #390 (#460), #392 (#459), #457 (#461). Unit 4,355 / 5 skipped; integration 229 / 1 skipped.
+- [ ] Dev: #458 first (fail-open on the live MSCI gate), then #459, #460, #461; add a `REPAIRABLE` gate test (mutant survives).
+- [ ] QA: check tonight's 21:00 extraction for SYS-202 (not in its Done-when; UNVERIFIED).
+- [ ] Owner: colloquial openers (Udah/Bener/Serius) and unlisted contrast words (Kendati/Sebaliknya/Hanya saja) -- in or accepted cost? #126/#239/#240/#242 still wait on owner reads.
+
 ## 2026-11-11: NLI natural set pilot (SYS-200 #430)
 - [x] Owner chose to pilot on the 69 stored `nli_shadow` rows now, instead of waiting for about 200 (PM nli-faithfulness).
 - [x] SDE: pilot done (6b79540). Agreement 63/69; 5/63 unsupported, all residual; v2 catches 2/5 with 2% false flags, arm A 1/5 with 7%.
