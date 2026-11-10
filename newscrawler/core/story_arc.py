@@ -49,10 +49,16 @@ refused, and the number and date checks then hold the prose to what is left.
 An agenda with no date, number or scheduling word is dropped, not refused; so is one that
 repeats the latar or hari_ini (SYS-163: its date -- or since SYS-165 its future time,
 "minggu depan" -- and at least AGENDA_REPEAT_SHARE of its content words are there).
+
+SYS-203 (#457, ADR-033): after two refusals, `repair` tries each refused answer whose refusal is
+not about facts (REPAIRABLE: length, style, an index problem), without a model call. It only
+removes -- whole trailing sentences, bad indexes -- and the result must pass every check of
+`parse` again. The fact checks are never loosened (owner, 2026-11-10: no false fact is the aim).
 """
+import json
 import logging
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date
 from typing import List, Optional, Sequence
 
@@ -223,6 +229,7 @@ class StoryArc:
     demoted: int = 0                    # today's articles moved out on the retry (SYS-80)
     demoted_alur: int = 0               # timeline items moved out on the retry
     agenda_dropped: bool = False
+    repaired: str = ""                  # SYS-203: the refusal `repair` fixed, "" when the model's answer passed
 
     @property
     def back_story(self) -> str:
@@ -571,11 +578,104 @@ def parse(answer: Optional[str], shown_texts: Sequence[str], timeline: Sequence[
                     [timeline[p] for p in positions], demoted, demoted_alur, agenda_dropped)
 
 
+REPAIRABLE = ("length", "style", "json")     # SYS-203: the refusals that are not about facts
+# A sentence that may qualify what came before it: dropping it could leave an earlier claim stronger than the source.
+_CONTRAST = re.compile(r"\b(?:namun|tetapi|tapi|meski|meskipun|walau|walaupun|padahal|sementara)\b", re.IGNORECASE)
+
+
+def _qualifies(sentence: str) -> bool:
+    low = {w.lower() for w in story_words.WORD.findall(sentence)}
+    return bool(low & causal_check._NEGATORS or causal_check._HEDGE.search(sentence) or _CONTRAST.search(sentence))
+
+
+def _trim(text: str, fits) -> Optional[str]:
+    """`text` less whole trailing sentences until `fits` it; None when that would drop its first sentence or one
+    that may qualify an earlier one (`_qualifies`)."""
+    parts = arc_style.sentences(text)
+    while not fits(" ".join(parts)):
+        if len(parts) <= 1 or _qualifies(parts[-1]):
+            return None
+        parts.pop()
+    return " ".join(parts)
+
+
+def _indexes_kept(value, lo: int, hi: int) -> Optional[List[int]]:
+    """The valid, first-seen indexes of a list field; None when the field is no list."""
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        return None
+    kept: List[int] = []
+    for i in value:
+        if isinstance(i, int) and not isinstance(i, bool) and lo <= i < hi and i not in kept:
+            kept.append(i)
+    return kept
+
+
+def _repaired(data: dict, n: int, m: int) -> Optional[dict]:
+    """SYS-203 (ADR-033): `data` with only text and indexes removed, or None when it cannot be repaired.
+    - indexes: drop the out-of-range and repeated ones; an article in both lists loses its `terkait` place, one in
+      neither is `tidak_terkait` -- so the sources the checks read can only shrink;
+    - length: whole trailing sentences of hari_ini / latar / agenda until each fits LIMITS; an agenda that cannot
+      fit is dropped whole (it is optional, as SYS-163 drops it); judul and sekilas are never edited;
+    - style: whole trailing latar sentences while `chronicle` objects."""
+    out = dict(data)
+    terkait = _indexes_kept(data.get("terkait"), 0, n)
+    tidak = _indexes_kept(data.get("tidak_terkait"), 0, n)
+    alur = _indexes_kept(data.get("alur"), n, n + m)
+    if terkait is None or tidak is None or alur is None:
+        return None
+    terkait = [i for i in terkait if i not in tidak]
+    out.update(terkait=terkait, tidak_terkait=tidak + [i for i in range(n) if i not in terkait and i not in tidak],
+               alur=alur)
+    texts = {key: data.get(key) or "" for key in LIMITS}
+    if not all(isinstance(t, str) for t in texts.values()):
+        return None
+    texts = {key: " ".join(t.split()) for key, t in texts.items()}
+    for key in ("hari_ini", "latar", "agenda"):
+        trimmed = _trim(texts[key], lambda t, key=key: words(t) <= LIMITS[key])
+        if trimmed is None and key == "agenda" and not any(_qualifies(s) for s in arc_style.sentences(texts[key])):
+            trimmed = ""
+        if trimmed is None:
+            return None
+        texts[key] = trimmed
+    latar = _trim(texts["latar"], lambda t: not chronicle(t, texts["judul"], texts["hari_ini"], bool(alur)))
+    if latar is None:
+        return None
+    out.update(texts, latar=latar)
+    return out
+
+
+def repair(answers: Sequence[str], refusals: Sequence[Rejected], shown_texts: Sequence[str],
+           timeline: Sequence[TimelineItem], digest_date: date) -> Optional[StoryArc]:
+    """SYS-203 (#457, ADR-033): the first refused answer, last first, that `_repaired` makes pass every check of
+    `parse` (lenient, as the retry); None when none does. Only a REPAIRABLE refusal of an answer that is a JSON
+    object is tried: a fact refusal (number, date, sebab, subject, alur) never is. No model call."""
+    for answer, refusal in reversed(list(zip(answers, refusals))):
+        if refusal.reason not in REPAIRABLE:
+            continue
+        try:
+            data = _repaired(json_object(answer), len(shown_texts), len(timeline))
+        except Rejected:
+            continue
+        if data is None:
+            continue
+        try:
+            arc = parse(json.dumps(data, ensure_ascii=False), shown_texts, timeline, digest_date, lenient=True)
+        except Rejected as r:
+            logger.info(f"Arc repair of a {refusal.reason} refusal refused ({r})")
+            continue
+        logger.info(f"Arc repaired ({refusal.reason}): {arc.judul!r}")
+        return replace(arc, repaired=refusal.reason)
+    return None
+
+
 def write_arc(summarizer, shown: Sequence[dict], timeline: Sequence[TimelineItem], digest_date: date,
               rejections: list) -> Optional[StoryArc]:
     """Ask once, and once more with the reason (lenient: strays and off-thread
-    items moved out); None after two refusals, each reason appended to
-    `rejections`. Provider errors pass through (llm_json, on_error="raise")."""
+    items moved out); after two refusals, `repair` (SYS-203), else None. Each
+    reason is appended to `rejections`. Provider errors pass through
+    (llm_json, on_error="raise")."""
     texts = [guard_text(a) for a in shown]
 
     def check(answer: str, attempt: int) -> StoryArc:
@@ -588,4 +688,6 @@ def write_arc(summarizer, shown: Sequence[dict], timeline: Sequence[TimelineItem
         rejections.extend(getattr(e, "refusals", []))
         raise
     rejections.extend(outcome.reasons)
+    if outcome.value is None:
+        return repair(outcome.answers, outcome.refusals, texts, timeline, digest_date)
     return outcome.value

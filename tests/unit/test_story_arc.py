@@ -1019,3 +1019,111 @@ class TestWriteArc:
         with pytest.raises(QuotaExhausted):
             sa.write_arc(_Script("x", QuotaExhausted("429")), SHOWN, TIMELINE, DAY, rejections)
         assert rejections == ["json"]
+
+
+BASE_LATAR = json.loads(_answer())["latar"]
+# 53 words, no number, date, cause, negation, hedge or contrast: with BASE_LATAR (25) only its length is wrong.
+LONG = ("Para menteri yang hadir dalam rapat itu membahas langkah pemadaman di lapangan bersama para kepala daerah "
+        "dari provinsi yang dilanda asap, termasuk koordinasi pasukan darat, pesawat pengebom air, posko kesehatan "
+        "warga, dan bantuan masker bagi sekolah serta pasar di kota yang tertutup kabut tebal, juga penjagaan lahan "
+        "gambut oleh warga desa sekitar hutan.")
+
+
+def _twice(answer, then=None):
+    """A model that answers `answer` and then `then` (default the same), and nothing more."""
+    return _Script(answer, answer if then is None else then)
+
+
+class TestRepair:
+    """SYS-203 (#457, ADR-033): a refused arc is repaired without a model call, only for refusals that are not about
+    facts, by removing whole trailing sentences or bad indexes; every check runs again on the result."""
+
+    def _write(self, script):
+        rejections = []
+        return sa.write_arc(script, SHOWN, TIMELINE, DAY, rejections), rejections, script
+
+    def test_an_overlong_latar_loses_its_trailing_sentence(self):
+        arc, rejections, s = self._write(_twice(_answer(latar=f"{BASE_LATAR} {LONG}")))
+        assert arc.repaired == "length" and arc.latar == BASE_LATAR
+        assert rejections == ["length", "length"] and len(s.prompts) == 2       # no third call
+
+    def test_a_style_refusal_loses_the_trailing_sentence_that_breaks_it(self):
+        latar = f"{BASE_LATAR} Persoalan asap juga menjadi perhatian para menteri di Istana."
+        assert _reason(_answer(latar=latar))[0] == "style"
+        arc, rejections, _ = self._write(_twice(_answer(latar=latar)))
+        assert arc.repaired == "style" and arc.latar == BASE_LATAR
+
+    @pytest.mark.parametrize("override", [{"alur": [N, N + 1, N + 9]},
+                                          {"terkait": [0, 1, 2], "tidak_terkait": [2]},
+                                          {"terkait": [0, 1], "tidak_terkait": []},
+                                          {"alur": [N, N + 1, N + 1]}])
+    def test_an_index_problem_is_repaired_by_removing(self, override):
+        assert _reason(_answer(**override))[0] == "json"
+        arc, _, _ = self._write(_twice(_answer(**override)))
+        assert arc.repaired == "json" and arc.terkait == [0, 1] and arc.tidak_terkait == [2] and arc.alur == [0, 1]
+        assert arc.demoted == 0         # removed by the repair, not demoted as a stray
+
+    def test_an_overlong_agenda_with_no_qualifier_is_dropped(self):
+        agenda = "Rapat lanjutan dijadwalkan Kamis (15/10) di Istana Negara bersama para menteri, kepala daerah, " \
+                 "pimpinan lembaga, dan perwakilan dunia usaha dari seluruh provinsi."
+        arc, _, _ = self._write(_twice(_answer(agenda=agenda)))
+        assert arc.repaired == "length" and arc.agenda == ""
+
+    def test_an_overlong_agenda_that_may_qualify_is_kept_and_falls_back(self):
+        agenda = "Rapat lanjutan belum dijadwalkan, dan Istana masih menunggu laporan para menteri, kepala daerah, "                  "pimpinan lembaga, dan perwakilan dunia usaha dari seluruh provinsi."
+        assert self._write(_twice(_answer(agenda=agenda)))[0] is None
+
+    def test_the_last_answer_is_repaired_first(self):
+        styled = _answer(latar=f"{BASE_LATAR} Persoalan asap juga menjadi perhatian para menteri di Istana.")
+        arc, rejections, _ = self._write(_twice(_answer(latar=f"{BASE_LATAR} {LONG}"), styled))
+        assert rejections == ["length", "style"] and arc.repaired == "style"
+
+    def test_the_repair_is_checked_leniently_as_the_retry(self):
+        """An off-thread item the length refusal hid is moved out, as the retry would, not refused."""
+        arc, _, _ = self._write(_twice(_answer(latar=f"{BASE_LATAR} {LONG}", alur=[N, N + 1, N + 2])))
+        assert arc.repaired == "length" and arc.alur == [0, 1] and arc.demoted_alur == 1
+
+    @pytest.mark.parametrize("tail", [f"Namun, {LONG[0].lower()}{LONG[1:]}", LONG.replace("membahas", "belum membahas"),
+                                      LONG.replace("membahas", "diperkirakan membahas")])
+    def test_a_sentence_that_may_qualify_is_never_dropped(self, tail):
+        assert self._write(_twice(_answer(latar=f"{BASE_LATAR} {tail}")))[0] is None
+
+    @pytest.mark.parametrize("override", [
+        {"latar": LONG.replace(".", ",") + " " + LONG},                       # one over-long sentence
+        {"judul": "Prabowo rapat karhutla lagi di Istana, asap sampai negara tetangga dan ganggu penerbangan"},
+        {"sekilas": "Prabowo kembali memimpin rapat soal karhutla di Istana Negara bersama para menteri dan kepala daerah terkait"}])
+    def test_what_cannot_be_cut_whole_falls_back(self, override):
+        assert _reason(_answer(**override))[0] == "length"
+        assert self._write(_twice(_answer(**override)))[0] is None
+
+    def test_a_repaired_answer_that_fails_a_fact_check_falls_back(self):
+        """The length refusal hid a number no source states; the repair does not."""
+        hari_ini = "Presiden Prabowo memimpin rapat terbatas karhutla di Istana Negara, Senin (12/10). " \
+                   "Kebakaran mengganggu 9.999 penerbangan domestik."
+        assert self._write(_twice(_answer(hari_ini=hari_ini, latar=f"{BASE_LATAR} {LONG}")))[0] is None
+
+    @pytest.mark.parametrize("tail,reason", [("Sebanyak 77 desa ikut dilanda asap.", "number"),
+                                             ("Pada 30 September asap kembali tebal.", "date")])
+    def test_a_fact_refusal_is_never_repaired(self, tail, reason):
+        """Dropping the last sentence would pass here, but a fact refusal is not REPAIRABLE."""
+        answer = _answer(latar=f"Persoalan karhutla sudah di meja Presiden sejak September. {tail}", alur=[])
+        assert _reason(answer)[0] == reason
+        arc, rejections, _ = self._write(_twice(answer))
+        assert arc is None and rejections == [reason, reason]
+
+    def test_a_subject_or_alur_refusal_is_never_repaired(self):
+        """The lenient re-check would move the off-thread item out and pass, but alur is a fact check (ADR-033)."""
+        arc, rejections, _ = self._write(_twice(_answer(alur=[N, N + 1, N + 2]), "x"))
+        assert arc is None and rejections == ["alur", "json"]
+
+    def test_unparseable_json_is_never_repaired(self):
+        assert self._write(_twice("{bukan json"))[0] is None
+
+    def test_the_earlier_answer_is_tried_when_the_last_is_a_fact_refusal(self):
+        numbered = _answer(hari_ini="Presiden Prabowo memimpin rapat karhutla di Istana Negara, Senin (12/10). "
+                                    "Kebakaran mengganggu 9.999 penerbangan domestik.")
+        arc, rejections, _ = self._write(_twice(_answer(latar=f"{BASE_LATAR} {LONG}"), numbered))
+        assert rejections == ["length", "number"] and arc.repaired == "length" and arc.latar == BASE_LATAR
+
+    def test_an_accepted_answer_is_not_marked_repaired(self):
+        assert self._write(_Script(_answer()))[0].repaired == ""
