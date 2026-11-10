@@ -1,5 +1,15 @@
 # Current Handoff
 
+## From: SDE (2026-11-11) -> To: QA, owner
+- **QA:**
+  - SYS-203 (#457) and its parent #338 are ready-for-qa; see the #457 comment for the Done-when evidence and the replay table.
+  - SYS-202 (#456): the 11-10 12:00 edition ran with 95/96 summaries and arcs 4/4.
+  - The 11-10 21:00 extraction never ran (the host slept; it fired at 04:21 while Postgres restarted). Check tonight's.
+- **Owner:**
+  - Read the 2 repaired arcs in `digests/preview/arcs-v8-203` (10-11 -Y, 10-12 -X).
+  - Decide whether "tidak" / "belum" should keep blocking a sentence drop.
+
+
 ## From: PM (2026-11-10) -> To: SDE
 **Read first:** ADR-033; `.10x/decisions/product-manager/newsletter-story-arcs.md` (2026-11-10 section); the SYS-203 (#457) body.
 - **Build `story_arc.repair`:** deterministic, no model call, removes only. It covers length (trailing sentences of hari_ini/latar/agenda; agenda may be dropped whole), style (trailing latar sentences while `chronicle` objects) and json index problems.

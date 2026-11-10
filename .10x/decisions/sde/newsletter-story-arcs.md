@@ -387,3 +387,27 @@ running spans 6, 0 refused; periods 22, 0 refused.
 - The purpose exemption reads one word back ("untuk terus mendorong"); other purpose shapes are gated.
 - A prose cause list now runs to its last comma item: a trailing new clause after a comma (no conjunction) must be
   covered too (fail closed).
+
+## 2026-11-10/11: SYS-203 (#457), arc repair of non-fact refusals (ADR-033)
+Commit 983702d on local `dev`, not pushed.
+
+**Built:**
+- `story_arc.repair(answers, refusals, ...)` runs from `write_arc` after two refusals. It tries each REPAIRABLE refused answer (length / style / json), last first, through `_repaired`, which only removes:
+  - whole trailing sentences of hari_ini / latar / agenda until each fits LIMITS; an agenda that cannot fit is dropped whole;
+  - whole trailing latar sentences while `chronicle` objects;
+  - out-of-range and repeated indexes. An article in both lists loses `terkait`; an unlisted one becomes `tidak_terkait`.
+- `parse(lenient=True)` re-checks the repaired answer with every check.
+- `_qualifies` blocks a drop: a sentence with a negator, a hedge (`causal_check._NEGATORS` / `_HEDGE`) or a contrast word is never dropped. judul and sekilas are never edited.
+- `StoryArc.repaired`, the edition stat `repaired`, and the replay total `arcs_repaired`.
+
+**Not changed:** `parse` and every fact check.
+
+**Tests:**
+- `test_story_arc.TestRepair`: 23 tests.
+- `test_newsletter_arcs`: the edition count. Its exact key-set assertion gained `repaired`.
+
+**Mutants:** 12 `sys203_`, KILLED. The first run of `sys203_fact_refusals_repaired` survived: number/date/sebab refusals give the repair nothing to remove, so that case was equivalent. The test was widened with a subject/alur case, which the lenient re-check would have passed.
+
+**Tech debt:** `_qualifies` reads `causal_check`'s private `_NEGATORS` / `_HEDGE`. A public alias would be cleaner, but this was kept so no fact-check module was touched.
+
+**Live:** the 11-10 12:00 edition ran this code: arcs 4/4, repaired 0.

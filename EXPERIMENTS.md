@@ -3669,3 +3669,17 @@ QA's grouped numbers on the 2,974-pair set were cause 0.607, denial 0.801, end 0
   - Both production call sites (`summarizer.py`, `extraction_provider.py`) now send `reasoning_effort="none"` and keep the old switch.
   - `scripts/label_filter_gold.py` has the same flag and was left alone (offline).
 - **Links:** SYS-202 (#456); OPS-20 (#136); #425
+
+## 2026-11-11 -- SYS-203: SYS-150's replay with the arc repair (ADR-033)
+- **Question:** with the repair of non-fact refusals (983702d), how many arcs fall back, and why?
+- **Method:** `replay_story_arcs.py --out-dir digests/preview/arcs-v8-203 --seed 425`, dates 2026-10-08..10-12, $0.64, log `logs/replay_arcs_v8_203.log`. A first run on 11-10 07:22 was stopped after 10-08 by the host's low-memory reaper; the 07:00 crawl was running at the same time.
+- **Result:**
+  - 13/20 built, 2 of them by the repair (both length: Houthi 10-11, IHSG 10-12); 7 fallbacks.
+  - 6 fallbacks are fact refusals: sebab x2, date, number/date, and twice "repair passed, then the re-check refused a causal claim".
+  - 1 is non-fact (Perpres Ojol, length + style). It was blocked by the safeguard: its last latar sentence holds "tidak", a fact of its own rather than a qualifier.
+  - Non-fact fallbacks: 4 on 11-10 without the repair, 1 now. Fact fallbacks: 3 on 11-10, 6 now. That is model variance between runs, so the rate stayed at 65%.
+- **Conclusion / do not repeat:**
+  - A replay rate compares poorly across runs, because the answers change. Compare fallbacks by their final reason.
+  - The repair leaves only safeguard-blocked non-fact fallbacks. The remaining 30% are the fact checks doing their job.
+  - Run replays clear of the crawl: two large-model processes exhausted memory.
+- **Links:** SYS-203 (#457), #425, ADR-033
