@@ -11,6 +11,9 @@ Every row is a published arc sentence with the ids of the quotes the gates read 
   rescore  --model <name or dir>: best_verdict over the rebuilt quotes, as the shadow scores -> a {id: p_entail} JSON.
   report   labeller agreement (Claude: natural_claude.csv, labelled in session), the unsupported share, gate family
            vs residual, and each scored arm's p_entail by label.
+  final    the natural set in eval_nli.py's format -> natural.jsonl. Label precedence (ADR-027): owner ruling
+           (natural_owner_rulings.csv) > Claude and Gemini agreeing; a disagreement without a ruling is left out.
+           error_type is the row's gate family, or "residual"; kind "natural".
 
   venv\\Scripts\\python.exe scripts/experiments/nli_natural_pilot.py export
 """
@@ -28,6 +31,8 @@ FIX = os.path.join(REPO, "tests", "fixtures", "nli_eval")
 ROWS = os.path.join(FIX, "natural_rows.jsonl")
 CLAUDE = os.path.join(FIX, "natural_claude.csv")
 GEMINI = os.path.join(FIX, "natural_gemini_blind.csv")
+RULINGS = os.path.join(FIX, "natural_owner_rulings.csv")
+NATURAL = os.path.join(FIX, "natural.jsonl")
 LABELS = ("supported", "unsupported")
 FIELDS = ["id", "label", "reason"]
 
@@ -215,6 +220,35 @@ def report(score_files: List[str]) -> int:
     return 0
 
 
+def final_labels(rows: List[dict]) -> Dict[str, str]:
+    """{id: supported|unsupported}: an owner ruling first, else the two labellers agreeing."""
+    claude, gem, rulings = read_labels(CLAUDE), read_labels(GEMINI), read_labels(RULINGS)
+    out = {}
+    for r in rows:
+        i = r["id"]
+        if i in rulings:
+            out[i] = rulings[i]["label"]
+        elif i in claude and i in gem and claude[i]["label"] == gem[i]["label"]:
+            out[i] = claude[i]["label"]
+    return out
+
+
+def final(out: str) -> int:
+    rows = read_rows()
+    labels = final_labels(rows)
+    with open(out, "w", encoding="utf-8", newline="\n") as f:
+        for r in rows:
+            if r["id"] not in labels:
+                continue
+            f.write(json.dumps({"id": r["id"], "error_type": r["error_tags"] or "residual",
+                                "premise": "\n\n".join(q["text"] for q in r["quotes"]), "hypothesis": r["sentence"],
+                                "label": "unfaithful" if labels[r["id"]] == "unsupported" else "faithful",
+                                "kind": "natural"}, ensure_ascii=False) + "\n")
+    counts = Counter(labels.values())
+    print(f"{len(labels)}/{len(rows)} rows ({dict(counts)}) -> {out}")
+    return 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -224,7 +258,10 @@ def main(argv=None) -> int:
     r.add_argument("--model", required=True)
     r.add_argument("--out", required=True)
     sub.add_parser("report").add_argument("--scores", nargs="*", default=[])
+    sub.add_parser("final").add_argument("--out", default=NATURAL)
     args = ap.parse_args(argv)
+    if args.cmd == "final":
+        return final(args.out)
     if args.cmd == "export":
         return export(args.out)
     if args.cmd == "gemini":

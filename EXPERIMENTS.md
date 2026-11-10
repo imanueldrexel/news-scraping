@@ -3718,3 +3718,18 @@ QA's grouped numbers on the 2,974-pair set were cause 0.607, denial 0.801, end 0
   - On real sentences, v2 beats A on both axes but catches only 2 of 5. The targeted-set recall (>= 0.9) does not carry over to these error kinds.
   - Show the labeller each timeline item's date. Without it, relative times read as unsupported.
 - **Links:** SYS-200 (#430), SYS-199 (#429), ADR-026/027
+- **Update, after the owner's rulings (2026-11-11, `natural_owner_rulings.csv`):**
+  - The rulings:
+    - a one-source year typo does not make a sentence unsupported;
+    - a timeline item's own date backs a relative time;
+    - a neutral link ("melanjutkan") is no claim, but one that claims a change ("diperluas") is;
+    - a sentence that repeats its source's confused comparison is supported.
+  - All 6 disputed rows are supported. `natural.jsonl`: 69 rows, 64 faithful, 5 unfaithful (7%), all residual.
+  - Recall / false flags on the 64 faithful rows:
+
+    | arm | tau 0.5 | tau 0.6 | tau 0.9 | all 5 caught |
+    |---|---|---|---|---|
+    | A | 1/5, 9% | 1/5, 11% | 4/5, 27% | 58% |
+    | B v2 | 2/5, 3% | 3/5, 3% | 4/5, 20% | 27% (tau 0.961) |
+
+  - With 5 errors, one row moves recall by 0.2. Grow the set before drawing a threshold from it.
