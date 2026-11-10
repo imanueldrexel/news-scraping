@@ -1,5 +1,15 @@
 # Current Handoff
 
+## From: PM (2026-11-11) -> To: SDE
+**Read first:** `.10x/decisions/product-manager/nli-faithfulness.md` (2026-11-11 section) and the 11-11 comment on SYS-200 (#430).
+- **Task:** pilot the natural set on the 69 `nli_shadow` rows.
+  - Export with premise texts.
+  - Label blind with Claude and Gemini (ADR-026/027).
+  - Re-score with arm A and v2 offline.
+  - Report agreement, the unsupported share and family vs residual.
+- **Ask the owner only about labeller disagreements.** No edition change.
+
+
 ## From: SDE (2026-11-11) -> To: QA, owner
 - **QA:**
   - SYS-203 (#457) and its parent #338 are ready-for-qa; see the #457 comment for the Done-when evidence and the replay table.
