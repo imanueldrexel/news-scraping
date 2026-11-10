@@ -5,9 +5,7 @@
   - SYS-203 (#457) and its parent #338 are ready-for-qa; see the #457 comment for the Done-when evidence and the replay table.
   - SYS-202 (#456): the 11-10 12:00 edition ran with 95/96 summaries and arcs 4/4.
   - The 11-10 21:00 extraction never ran (the host slept; it fired at 04:21 while Postgres restarted). Check tonight's.
-- **Owner:**
-  - Read the 2 repaired arcs in `digests/preview/arcs-v8-203` (10-11 -Y, 10-12 -X).
-  - Decide whether "tidak" / "belum" should keep blocking a sentence drop.
+- **Owner, decided 2026-11-11:** the repaired arcs are accepted and the negation block stays (`decisions/product-manager/newsletter-story-arcs.md`). QA can verify SYS-203 with the owner read done.
 
 
 ## From: PM (2026-11-10) -> To: SDE

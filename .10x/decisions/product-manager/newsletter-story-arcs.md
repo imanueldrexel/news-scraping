@@ -278,3 +278,10 @@ Indexes run on: today's articles are 0..n-1, the timeline n..n+m-1, so `terkait`
   - Never drop a sentence holding a negation, a hedge or a contrast word, because it may qualify what came before. Never cut inside a sentence, and never touch judul or sekilas.
 - **Out of scope:** unparseable JSON, a third model call, and any change to a fact check.
 - **P1.** #425 closes on the new Done-when, after the replay following SYS-203.
+
+## 2026-11-11: owner decisions on SYS-203's replay (#457)
+- **The two repaired arcs are accepted** (Houthi 10-11, IHSG 10-12 in `digests/preview/arcs-v8-203`): each still links today to its back-story, and nothing left became misleading. The owner's read in SYS-203's Done-when is done.
+- **The negation block stays** (option A). A trailing sentence with "tidak" / "belum" is never dropped by the repair, even with no contrast word. Such a sentence can qualify an earlier one ("... berlaku Januari. Aturan itu belum diteken presiden."), and dropping it would make the story claim more than the source.
+  - Cost: about 1 arc in 20 stays a summary (Perpres Ojol in the replay).
+  - Rejected: B, where only hedges and contrast words block, since it reintroduces exactly that risk; and C, where a negation blocks only when the sentence points back, since it means more rules and is a word-list approach (ADR-031) for 1 story in 20.
+- Revisit only if live editions show the block costing more often. Measuring that (a log line per blocked drop) is not ticketed; the owner has not asked for it.

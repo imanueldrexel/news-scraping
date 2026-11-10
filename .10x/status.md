@@ -7,7 +7,7 @@
 - [x] Owner decision (PM): the aim is no false fact. Fact checks are never loosened, and the 90% target is replaced. SYS-203 is rescoped to repairing length / style / structural-json refusals (ADR-033).
 - [x] SDE: SYS-203 built (983702d; unit 4,355, integration 229, 12/12 mutants killed).
 - [x] Replay arcs-v8-203, re-run 2026-11-11 after the 11-10 run was stopped by low memory: 13/20 built (2 repaired), 7 fallbacks, 6 of them fact refusals and 1 blocked by the negation safeguard. Posted on #457 and #425; #457 and #338 are ready-for-qa.
-- [ ] Owner: read the 2 repaired arcs, and decide whether a plain negation should still block a drop (#457).
+- [x] Owner (2026-11-11): the 2 repaired arcs are accepted, and the negation block stays (#457). No code change.
 - [ ] 11-10 19:00 crawl and 21:00 extraction did not run: the host slept from ~19:00 to 04:20, and the extraction fired at 04:21 while Postgres was restarting. The next scheduled runs should be normal.
 
 ## 2026-11-10: SDE of QA's 11-08 qa-defects
