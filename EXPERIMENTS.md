@@ -3683,3 +3683,38 @@ QA's grouped numbers on the 2,974-pair set were cause 0.607, denial 0.801, end 0
   - The repair leaves only safeguard-blocked non-fact fallbacks. The remaining 30% are the fact checks doing their job.
   - Run replays clear of the crawl: two large-model processes exhausted memory.
 - **Links:** SYS-203 (#457), #425, ADR-033
+
+## 2026-11-11 -- SYS-200 pilot: the natural set on the 69 stored nli_shadow rows
+- **Question:** owner, 2026-11-11: how many published arc sentences do their own quotes NOT support? Can the natural set measure recall, or only false flags? How do arm A and arm B v2 score real sentences?
+- **Method:** `scripts/experiments/nli_natural_pilot.py`:
+  - `export`: read-only; 69 rows, 68 quotes, rebuilt as the arc writer built them;
+  - `gemini`: blind, one story per call, 10 calls;
+  - `rescore` with arm A and with `models/nli/armb2-2026-11-05`;
+  - `report`.
+  Claude labelled in session first (`natural_claude.csv`), then Gemini blind (`natural_gemini_blind.csv`). Scores: `natural_scores_armA.json`, `natural_scores_armB2.json`.
+- **Result:**
+  - **Rebuild check:** arm A's re-scores equal the stored `p_entail` on every post-#437 row (11-05, 11-09: 27/27 exact). One 11-03 row differs by 0.12: the pre-fix truncation.
+  - **Agreement:** 63/69 (91%), over the >= 90% gate. The 6 disagreements:
+    - n2 and n5: Gemini leaned on one source's year typo ("3/11/2020"; four others say 2026);
+    - n32 and n60: a relative time backed by the timeline item's own date, which the labelling prompt did not show;
+    - n45 ("melanjutkan") and n47 (a confused comparison the source itself makes): meaning disagreements.
+  - **Unsupported:** 5 of the 63 agreed rows (8%), not the 1-2% feared. All 5 are residual: no gate family tags them, so the lexical gates cannot see them. They are:
+    - n10: a dropped "diduga" plus a Bareskrim attribution;
+    - n17: Hashim's title is in no cited quote;
+    - n25: DJP's statement is cut from its quote;
+    - n59: "BPS mengakui" attribution;
+    - n68: "diperluas" framing.
+  - **Gate families:** of the 69 rows, 63 residual, 4 end, 2 hedge, all labelled supported. Per-type recall cannot come from this set.
+  - **Scores** (agreed rows, flagged at p_entail < 0.5):
+
+    | arm | false flags | recall |
+    |---|---|---|
+    | A | 4/58 (7%) | 1/5 (n17 0.42) |
+    | B v2 | 1/58 (2%) | 2/5 (n68 0.02, n59 0.10; n25 0.55 just above) |
+
+    Both miss n10 (A 0.61, v2 0.83). v2 also misses n17 (0.96).
+- **Conclusion / do not repeat:**
+  - Live arcs carry about 8% unsupported sentences that the gates cannot see. They are attribution, framing and detail errors, not the five SYS-197 types. About 200 rows should give about 16 unsupported: enough for an overall residual recall, never for per-type recall.
+  - On real sentences, v2 beats A on both axes but catches only 2 of 5. The targeted-set recall (>= 0.9) does not carry over to these error kinds.
+  - Show the labeller each timeline item's date. Without it, relative times read as unsupported.
+- **Links:** SYS-200 (#430), SYS-199 (#429), ADR-026/027
