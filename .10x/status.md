@@ -5,7 +5,8 @@
 - [x] #425 replay measured on 334ecdc: 13/20 = 65% after the retry ($0.61). Final refusals: style 2, date 2, sebab 1, length 1, json 1.
 - [x] Per the owner's rule (< 90%), filed SYS-203 (#457): live acceptance, deterministic length trim first. #338 stays qa-failed.
 - [x] Owner decision (PM): the aim is no false fact. Fact checks are never loosened, and the 90% target is replaced. SYS-203 is rescoped to repairing length / style / structural-json refusals (ADR-033).
-- [ ] SDE: build SYS-203, then re-run the replay.
+- [x] SDE: SYS-203 built (983702d; unit 4,355, integration 229, 12/12 mutants killed).
+- [ ] Replay `digests/preview/arcs-v8-203` started 07:22 (log `logs/replay_arcs_v8_203.log`): read metrics.json `arcs_built / arcs_repaired / arcs_fallback`, post on #457, mark it ready-for-qa.
 
 ## 2026-11-10: SDE of QA's 11-08 qa-defects
 - [x] Fixed #450/#451 (closed opener class), #452 (movement builder admission; class rebuilt), #453 (place before a month), #454 (restated completions). ADR-032 amended. Not pushed.
