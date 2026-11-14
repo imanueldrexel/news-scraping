@@ -1,6 +1,7 @@
 # sde decisions — index
 
 ## Active features
+- [qa-1111-defects](qa-1111-defects.md) — 2026-11-15: QA's 11-11 qa-defects #458-#461 fixed (named event before a month, shifted time-first completion, sejalan, trim at abbreviations) + REPAIRABLE gate test; 4 parents ready-for-qa
 - [qa-1108-defects](qa-1108-defects.md) — 2026-11-10: QA's 11-08 qa-defects #450-#454 fixed (closed opener class, movement builder admission, place before a month, restated completions; ADR-032 amended); 5 parents ready-for-qa; #425 still blocked by the SumoPod cap; SYS-201 (#455) filed
 - [qa-1106-defects](qa-1106-defects.md) — 2026-11-08: QA's 11-06 qa-defects: #440 #445 #446 #448 #449 + held-out #421-#423 fixed (ADR-032 word classes from the archive), 6 parents ready-for-qa; #425 replay blocked by SumoPod key budget
 - [qa-1019-sendbacks](qa-1019-sendbacks.md) — 2026-10-20: QA's qa-defects #398-#412: 13 fixed, #401 (terimbas) and #405 disputed; ADR-022 (follow-up), ADR-023 (arc guards); parents ready-for-qa

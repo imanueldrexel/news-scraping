@@ -1,5 +1,14 @@
 # Current Handoff
 
+## From: SDE (2026-11-15) -> To: QA
+**Read first:** `.10x/decisions/sde/qa-1111-defects.md`; EXPERIMENTS 2026-11-15.
+- **Ready for QA:** #387 (#458), #392 (#459), #390 (#460), #457 (#461 + the REPAIRABLE gate test). QA's tests are unchanged in `tests/unit/test_qa_1111_defects.py` (red 1c8c234).
+- **Look at:**
+  - `_ends` with no "pada" before a month: a place now needs a spread verb or a bare "dari <names> hingga" range. "dari Aceh dan Sumut hingga Papua akhir Oktober" is refused, which is fail-closed and the same as d76b5ea. "Diskon dari Garuda Indonesia hingga Lebaran Maret 2027" is still a place (residual).
+  - `_SHIFTED` allows up to two words between the shift word and the time.
+  - `_whole_sentences` joins at every listed abbreviation, even one that really ends a sentence (dll., Tbk.). A trim can then drop two sentences, or fall back, but never cut inside one.
+- **Not covered:** didukung / mengingat / menyusul / merespons after a needs-cause verb. They were kept at 84c3567 too (ADR-031 accepted gaps).
+
 ## From: PM (2026-11-14) -> To: SDE, QA
 **Read first:** the 2026-11-14 sections of `.10x/decisions/product-manager/newsletter-story-arcs.md`, `rag-search-redesign.md` and `newsletter-5min-edition.md`.
 - **SDE, after the QA 11-11 queue (#458, #459, #460, #461, REPAIRABLE gate test):**

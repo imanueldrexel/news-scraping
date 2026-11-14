@@ -1,5 +1,11 @@
 # Project Status
 
+## 2026-11-15: SDE of QA's 11-11 qa-defects
+- [x] #458 (major), #459, #460, #461 fixed; REPAIRABLE gate test added. Red 1c8c234, fix commit after it. Unit 4,416 / 5 skipped; 23/23 mutants killed; tests/qa 55 -> 32 failing, 0 new.
+- [x] Parents #387 #392 #390 #457 moved to `status: ready-for-qa`. Pushed `dev`; dev -> main PR opened (#335 was merged).
+- [ ] QA: the four parents (`.10x/decisions/sde/qa-1111-defects.md`).
+- [ ] Dev next: SYS-204 (#462), SYS-205 (#463), SYS-206 (#464) + SYS-201 (#455).
+
 ## 2026-11-14: PM, owner decisions on QA 2026-11-11's open questions
 - [x] Contrast words protected from the repair: SYS-204 (#462) filed.
 - [x] Colloquial follow-up openers keep the thread: SYS-205 (#463) filed.
