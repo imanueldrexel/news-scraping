@@ -6,6 +6,7 @@ invented link: both halves are true, no source sentence joins them. Since ADR-01
 half) OMC is refused too: its cause half is mostly the source's effect. Since ADR-020 (owner, 2026-10-18: every word
 of a half covered) BPIH and Defisit are refused as well, each on one paraphrased verb.
 """
+import collections
 import json
 
 import pytest
@@ -14,6 +15,7 @@ import newscrawler.core.story_arc as sa
 from newscrawler.core import causal_check as cc
 from newscrawler.core import story_words
 from newscrawler.core.llm_json import Rejected
+from newscrawler.web import nya_words
 from tests.unit.test_story_arc import DAY, N, TEXTS, TIMELINE, _answer
 
 PHK_SRC = ("63.789 Orang Kena PHK sejak Januari-September 2026 Kemnaker mencatat 63.789 pekerja terkena PHK sepanjang "
@@ -955,3 +957,25 @@ class TestQa1106MovementIsNoCause:
     def test_the_word_class_is_read(self):
         assert {"tajam", "tipis", "sepanjang", "signifikan"} <= cc._MOVEMENT_WORDS
         assert not {"aksi", "sentimen", "pandemi", "harga", "utang", "kenaikan"} & cc._MOVEMENT_WORDS
+
+    def test_the_class_holds_no_possessed_noun_and_no_heading_or_parachute_noun(self):
+        """QA 2026-11-08 (#452): a possessed -nya noun after the verb is a cause here, so the builder admits none
+        ("hanya" only ends in -nya); "mayoritas" came from headings with no stop ("... menguat Mayoritas mata uang
+        ..."), "payung" from "terjun payung"."""
+        assert not {w for w in cc._MOVEMENT_WORDS if nya_words.is_reference(w)}
+        assert not {"mayoritas", "payung"} & cc._MOVEMENT_WORDS
+
+    def test_the_class_holds_no_cause_connective(self):
+        """QA 2026-11-11 (#460): "sejalan (dengan)" is "seiring (dengan)"; the builder admits it on frequency alone
+        ("menguat sejalan dengan ...") and must not."""
+        from scripts import build_word_classes as bwc
+        assert "sejalan" not in cc._MOVEMENT_WORDS
+        lower = {"sejalan": 50, "tajam": 50}
+        moved = {"sejalan": 20, "tajam": 20}
+        _, movement = bwc.classes(lower, collections.Counter(), moved, collections.Counter())
+        assert movement == {"tajam"}
+
+    @pytest.mark.parametrize("prose", ["IHSG terkerek hanya 0,2 persen pada Senin.",
+                                       "IHSG tertekan sepekan terakhir."])
+    def test_a_movement_word_the_rebuild_kept_is_no_cause(self, prose):
+        assert kept(prose, self.IHSG_DOWN)

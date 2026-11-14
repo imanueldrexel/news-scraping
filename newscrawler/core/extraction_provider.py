@@ -105,6 +105,7 @@ class OpenAICompatProvider:
                 temperature=0,
                 max_tokens=self._max_tokens,
                 response_format={"type": "json_object"},
+                reasoning_effort="none",    # SYS-202 (#456): SumoPod ignores `thinking` since 2026-11
                 extra_body={"thinking": {"type": "disabled"}},
             ), **kwargs)
         except QuotaExhausted as e:

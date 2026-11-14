@@ -1,5 +1,91 @@
 # Current Handoff
 
+## From: SDE (2026-11-15) -> To: QA
+**Read first:** `.10x/decisions/sde/qa-1111-defects.md`; EXPERIMENTS 2026-11-15.
+- **Ready for QA:** #387 (#458), #392 (#459), #390 (#460), #457 (#461 + the REPAIRABLE gate test). QA's tests are unchanged in `tests/unit/test_qa_1111_defects.py` (red 1c8c234).
+- **Look at:**
+  - `_ends` with no "pada" before a month: a place now needs a spread verb or a bare "dari <names> hingga" range. "dari Aceh dan Sumut hingga Papua akhir Oktober" is refused, which is fail-closed and the same as d76b5ea. "Diskon dari Garuda Indonesia hingga Lebaran Maret 2027" is still a place (residual).
+  - `_SHIFTED` allows up to two words between the shift word and the time.
+  - `_whole_sentences` joins at every listed abbreviation, even one that really ends a sentence (dll., Tbk.). A trim can then drop two sentences, or fall back, but never cut inside one.
+- **Not covered:** didukung / mengingat / menyusul / merespons after a needs-cause verb. They were kept at 84c3567 too (ADR-031 accepted gaps).
+
+## From: PM (2026-11-14) -> To: SDE, QA
+**Read first:** the 2026-11-14 sections of `.10x/decisions/product-manager/newsletter-story-arcs.md`, `rag-search-redesign.md` and `newsletter-5min-edition.md`.
+- **SDE, after the QA 11-11 queue (#458, #459, #460, #461, REPAIRABLE gate test):**
+  - SYS-204 (#462): add kendati / kendatipun / sebaliknya / hanya saja / biarpun to `story_arc._CONTRAST`.
+  - SYS-205 (#463): add sudah / udah / dah / bener / beneran / serius / emangnya to `followup._SHARED_OPENERS`.
+  - SYS-206 (#464, P2): a hedged source completion backs no stated end; fix it with SYS-201 (#455).
+- **QA:** the owner read is waived on #126 / #239 / #240 / #242. Verify each on a current edition (2026-11-13 or later) and close or send back. Taste issues go in new tickets. Also check SYS-202's scheduled extraction.
+- **Owner:** none of today's questions are still open. The SYS-200 top-up (~11-17) is next.
+
+## From: QA (2026-11-11) -> To: SDE, owner
+**Read first:** `.10x/reviews/2026-11-11-qa-report.md`; `.10x/decisions/qa/qa-pass-2026-11-11.md`.
+- **SDE, in this order** (each issue carries a runnable failing test; copies in `tests/qa/qa_1111/defects/`, uncommitted):
+  - #458 (major): the #453 fix reads every capitalised word before a month as a place. "dari MSCI ... hingga Review November 2026" goes unchecked (fail-open, live).
+  - #459: a shift word before a time-first completion ("setelah Desember 2026 selesai") is not read.
+  - #460: "sejalan" in `movement_words.txt`.
+  - #461: `story_arc._trim` cuts at an abbreviation's stop ("Ahmad R.", "No.").
+  - Also add a test of the `REPAIRABLE` gate itself: the mutant adding number/date/sebab survives the dev's suite.
+- **QA next:** tonight's 21:00 extraction (SYS-202, live check only).
+- **Owner:**
+  - colloquial openers (Udah / Bener / Serius ... harganya) now go alone (ADR-032's stated cost);
+  - a trailing "Kendati demikian / Sebaliknya / Hanya saja" sentence can be dropped by a repair (ADR-033's closed list). In the list, or accepted?
+  - #126 / #239 / #240 / #242 still wait on your reads.
+
+## From: SDE (2026-11-11) -> To: owner
+- **SYS-200 pilot done** (EXPERIMENTS 2026-11-11, the #430 comment). The owner rules on 6 labeller disagreements, then the natural set is written and topped up.
+- Pilot finding: about 8% of live arc sentences are unsupported, and none are in a gate family. Per-type recall must come from SYS-197's targeted set.
+
+
+## From: PM (2026-11-11) -> To: SDE
+**Read first:** `.10x/decisions/product-manager/nli-faithfulness.md` (2026-11-11 section) and the 11-11 comment on SYS-200 (#430).
+- **Task:** pilot the natural set on the 69 `nli_shadow` rows.
+  - Export with premise texts.
+  - Label blind with Claude and Gemini (ADR-026/027).
+  - Re-score with arm A and v2 offline.
+  - Report agreement, the unsupported share and family vs residual.
+- **Ask the owner only about labeller disagreements.** No edition change.
+
+
+## From: SDE (2026-11-11) -> To: QA, owner
+- **QA:**
+  - SYS-203 (#457) and its parent #338 are ready-for-qa; see the #457 comment for the Done-when evidence and the replay table.
+  - SYS-202 (#456): the 11-10 12:00 edition ran with 95/96 summaries and arcs 4/4.
+  - The 11-10 21:00 extraction never ran (the host slept; it fired at 04:21 while Postgres restarted). Check tonight's.
+- **Owner, decided 2026-11-11:** the repaired arcs are accepted and the negation block stays (`decisions/product-manager/newsletter-story-arcs.md`). QA can verify SYS-203 with the owner read done.
+
+
+## From: PM (2026-11-10) -> To: SDE
+**Read first:** ADR-033; `.10x/decisions/product-manager/newsletter-story-arcs.md` (2026-11-10 section); the SYS-203 (#457) body.
+- **Build `story_arc.repair`:** deterministic, no model call, removes only. It covers length (trailing sentences of hari_ini/latar/agenda; agenda may be dropped whole), style (trailing latar sentences while `chronicle` objects) and json index problems.
+- Never drop a negation, hedge or contrast sentence; never edit judul or sekilas; re-run every check with `parse(lenient=True)`.
+- Fact checks are frozen: number, date, sebab, subject and alur.
+- **Done-when:** see SYS-203. Then re-run the #425 replay and post built / repaired / fallback.
+
+
+## From: SDE (2026-11-10, after the top-up) -> To: QA, owner
+- **SYS-202 (#456, P0), ready-for-qa.** Verify that the 2026-11-10 12:00 edition has summaries > 0 and that the 21:00 extraction extracts. Before the fix, every SumoPod call answered '' (reasoning used the whole max_tokens).
+- **#425:** the replay gave 13/20 (65%), below 90%. Per the owner's rule, SYS-203 (#457) is filed, length trim first. Length is the largest final reason combined (6/20) but is no majority: about 70-78% even when it is fixed. QA rules on #425; #338 stays qa-failed.
+- **Owner:** SYS-203 is the next build. Decide whether style (5/20) and sebab (4/20) refusals are in scope after the trim.
+- The SDE handoff below (11-08 defects, 5 parents ready-for-qa) still applies.
+
+
+## From: SDE (2026-11-10) -> To: QA, owner
+**Read first:** ADR-032's 2026-11-10 amendment; `.10x/decisions/sde/qa-1108-defects.md`; the dev comment on each defect.
+- **QA:** re-verify parents #327, #328, #390, #387 and #392 (`status: ready-for-qa`). QA's tests are in `tests/unit/test_qa_1108_defects.py`. Worth probing:
+  - an opener missing from `followup._SHARED_OPENERS` (it reads as a subject);
+  - a source completion with a gap of 3 or more words (refused by design);
+  - a name before a bare year after a spread verb ("meluas hingga Riau 2026": refused, as at HEAD).
+- **Owner:**
+  - ADR-032 is amended. The opener class is now closed, which settles QA's 11-08 question in the narrowing direction.
+  - The SumoPod key is still at its cap (`Spend=61.50 Budget=61.5`, re-checked 2026-11-10 04:43). It blocks #425, the 12:00 edition, the 21:00 extraction and Tanya Berita answers.
+- **After the top-up:** run `replay_story_arcs.py --out-dir digests/preview/arcs-v7-425 --seed 425` and post the result on #425.
+- SYS-201 (#455) was filed: a negated stated end backs a prose end. It is pre-existing.
+
+---
+
+# Handoff History
+
 ## From: QA (2026-11-08) -> To: owner, then SDE
 **Read first:** `.10x/reviews/2026-11-08-qa-report.md`; `.10x/decisions/qa/qa-pass-2026-11-08.md`.
 - **Owner:** ADR-032 is Proposed. #450 shows that its "common word" class also holds nouns: "Gula harganya naik?" and "Timah labanya berapa?" after a gold question go to the old thread. Accept that cost, or have the class narrowed to time words, particles and hedges.

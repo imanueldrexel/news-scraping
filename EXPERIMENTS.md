@@ -184,7 +184,8 @@ One line each; read this before starting on a scraper or pipeline problem.
 - **An NLI checker scored only on the LLM-written targeted pairs can look perfect while it flags verbatim copies (2026-11-04, SYS-199 arm B):** the generator drops verbatim copies and every near-copy is a one-edit corruption, so a fine-tune learns "near-identical = unfaithful" (98% of exact copies below 0.5). Always run `scripts/experiments/compare_nli_arms.py` (identity + wrong-premise controls), never the held-out table alone. Fixed by faithful near-copies in training (ADR-029). -> 2026-11-04 arm B entry, 2026-11-05 arm B retry
 - **A hypothesis-only artefact check on contrastive pairs must keep each seed in one fold (2026-11-05, SYS-197 #431):** a seed's corruptions, restatement and hard positive are near-copies with opposite labels, so shuffled folds score at chance (0.43-0.54) while seed-grouped folds give 0.62-0.80. `eval_nli.hypothesis_only_accuracy` uses GroupKFold; ADR-030 gates a model's numbers on its wrong-premise AUC instead of discarding the families. -> 2026-11-05 SYS-197 entry
 - **A word-list or place-rule fix needs an inverse probe as well as held-out synonyms (2026-11-06 QA):** run true sentences that now contain the new word or shape. That found 3 of the 4 regressions of the 11-05/06 fixes ("tertekan tajam" read as a cause, "Kemarin harganya berapa?" read as a new subject, "dari <name> hingga Lebaran" read as a place). -> 2026-11-06 QA audit entry
-- **"Is this word a name / a word of the movement?" is answered by the archive, not a list (2026-11-07, ADR-032):** mid-sentence casing separates names from common words (kemarin 1469 lower / 7 capitalised, Sritex 0/10), and the words after a movement verb vs after a cause marker separate "tajam / sepanjang" from "aksi / sentimen". Rebuild with `scripts/build_word_classes.py`; do not hand-edit the two files. Count acronyms as capitalised or lowercase noise makes "ihsg" common. -> 2026-11-07 entry
+- **"Is this word a name / a word of the movement?" is answered by the archive, not a list (2026-11-07, ADR-032):** mid-sentence casing separates names from common words (kemarin 1469 lower / 7 capitalised, Sritex 0/10), and the words after a movement verb vs after a cause marker separate "tajam / sepanjang" from "aksi / sentimen". Rebuild with `scripts/build_word_classes.py`; do not hand-edit the two files. Count acronyms as capitalised or lowercase noise makes "ihsg" common. -> 2026-11-07 entry. **Amended 2026-11-10:** casing does NOT tell a common noun ("gula", "timah") from a time word or particle. The follow-up openers are a closed class (`followup._SHARED_OPENERS`); `common_words.txt` decides only the -kah form. The movement builder must skip headings with no stop, "terjun", and possessed -nya nouns. -> 2026-11-10 entry
+- **SumoPod's deepseek-v4-flash ignores `thinking: disabled` since 2026-11; send `reasoning_effort="none"` (2026-11-10, SYS-202):** without it every call spends `max_tokens` on reasoning and answers `''` (HTTP 200, `finish_reason=length`). "minimal" still reasons fully; "low", `enable_thinking`, `chat_template_kwargs` and `reasoning.enabled` still reason 35-39 tokens. -> 2026-11-10 SYS-202 entry
 
 ## Log
 
@@ -3619,3 +3620,123 @@ QA's grouped numbers on the 2,974-pair set were cause 0.607, denial 0.801, end 0
   - QA mutants: 4/4 killed.
 - **Conclusion / do not repeat:** probe a corpus-derived class for what it should NOT contain, not only for the words it was built to catch. "Lower case mid-sentence" does not mean "not a subject". "Follows a movement verb" does not mean "not a cause".
 - **Links:** #450, #451, #452, #453, #454; `.10x/reviews/2026-11-08-qa-report.md`; ADR-032
+
+## 2026-11-10 -- Fixing QA's 11-08 defects: can the archive tell nouns from openers, and where did the movement nouns come from?
+- **Question:**
+  1. (#450/#451) Can an archive signal separate the time words and particles a follow-up shares with its thread ("Kemarin / Kok harganya ...?") from common nouns that are a new subject ("Gula / Timah harganya ...?")? QA suggested governance: "harga gula" is common, "harga kemarin" is rare.
+  2. (#452) How did nouns get into `movement_words.txt`?
+- **Method:**
+  - `scripts/experiments/probe_opening_word_classes.py --limit 60000`.
+  - `scripts/experiments/probe_movement_word_next.py --limit 60000` (what follows each class word after a movement verb).
+  - Archive contexts of the suspect words, and full-archive counts under the old and new admission rules (throwaway scratch scripts).
+  - Routing diff of 207 follow-ups, and an end-point diff of QA's probes, my inverse probes and all 328 arc sentences in `digests/`. Both compare 84c3567, HEAD (d76b5ea) and the working tree, in `git archive` copies.
+- **Result:**
+  - Governance does not separate them. Share of uses right after a lower-case content word:
+    - nouns: gula 0.72, beras 0.80, cabai 0.53, bawang 0.45;
+    - time words, particles and adverbs: kemarin 0.36, tadi 0.52, kok 0.60, masa 0.69, mendadak 0.69, pasti 0.63. "malam tadi", "kenapa kok" and "secara mendadak" govern as often as "harga gula".
+    - Fix: a closed opener class, `followup._SHARED_OPENERS`. Every member but "anda" is in `common_words.txt`. Routing diff: every time word and particle routes as at HEAD, every common noun as on 84c3567, and 0 other decisions changed.
+  - "What follows the word" does not separate movement words either. Prepositions ("dalam" 0.83, "selama" 0.87) are followed by a content word as often as nouns are ("mayoritas" 1.00). "payung" 0.00 and "total" 0.00 are followed by the end of a clause, because in the archive they are "terjun payung" and "anjlok total".
+  - Where the nouns came from:
+    - "mayoritas" (11 uses after a movement verb, all capitalised): headings with no stop, "... menguat Mayoritas mata uang di Asia ...";
+    - "payung" (15) and "bebas" (151): "terjun payung" / "terjun bebas";
+    - the 9 -nya nouns: inverted subjects, "meningkat volumenya".
+  - Fix in `scripts/build_word_classes.py`:
+    - no possessed -nya noun (`nya_words.is_reference`);
+    - no capitalised word after a lower-case verb (a title-case heading still counts);
+    - no "terjun".
+  - The rebuild (209,479 articles) only removes words. A first draft that dropped every -nya word and every capitalised word lost "hanya" (29 uses), "setidaknya", "sepekan" and "berjamaah" (half of their uses are title-case headings), so "IHSG terkerek hanya 0,2 persen" would be refused again.
+  - End points (#453): a name in the gap is a named time only when a bare year follows ("Lebaran 2027"); before a month or a date it is a place.
+  - #454: a source completion restated (gap of up to 2 words, or the time before the verb) backs a prose completion. In the arc diff, 0 of 328 arc sentences change their end-point reading against HEAD.
+  - The real IEU-CEPA source (sitemap 230887) is still refused. Its completion sentence names no shared subject ("mudah-mudahan akhir September selesai"), which is SYS-193's rule, not this one.
+  - Found: a negated stated end backs a prose end ("belum diselesaikan / tidak selesai pada <time>"), pre-existing. Filed as SYS-201 (#455).
+  - Mutants 26/26 killed (13 new or retargeted, plus the ADR-032 set). `tests/qa`: 0 new failures. Unit 4,331 passed / 5 skipped; integration 229 / 1 skipped.
+- **Conclusion / do not repeat:**
+  - Neither neighbour signal (the word before or the word after) separates nouns from grammatical words. For a closed grammatical class, write the class and check it against the archive, rather than deriving it.
+  - When a word class looks wrong, read the archive contexts first. Here the bad members were artefacts of the count (headings, a second verb meaning, inverted subjects), not the threshold.
+  - A capitalised or -nya filter must keep title-case headings and the words that only end in -nya.
+- **Links:** #450, #451, #452, #453, #454, #455 (SYS-201); ADR-032 amendment 2026-11-10
+
+## 2026-11-10 -- SYS-202: after the SumoPod top-up every call answers empty
+- **Question:** after the owner's top-up, the #425 replay got HTTP 200 on every call but "Story grouping failed ...: empty answer", and no edition was built. Why, and which request switch still turns reasoning off?
+- **Method:** one throwaway probe per variant (inlined, not kept), `max_tokens=50`, prompt "Balas satu kata: OK", model `deepseek-v4-flash` at `OPENAI_BASE_URL`. Each call reports `finish_reason`, content and `completion_tokens_details.reasoning_tokens`. Then `reasoning_effort="none"` was tried together with the old switch, in JSON mode, and on a two-sentence answer, and a real call went through `OpenAICompatSummarizer` after the fix.
+- **Result:**
+  - The current `extra_body={"thinking": {"type": "disabled"}}`, no switch at all, and `reasoning_effort="minimal"` each give finish=length, content '' and reasoning 50/50.
+  - "low", `enable_thinking: false`, `chat_template_kwargs.thinking: false` and `reasoning.enabled: false` answer "OK", but still spend 35-39 tokens reasoning.
+  - Only `reasoning_effort="none"` gives finish=stop and reasoning 0. It also does so with the old switch kept, in JSON mode, and on a longer answer.
+  - `/v1/models` also lists deepseek-flash, deepseek-v4-pro, deepseek-v4.1-flash-1017, deepseek-v4.1-flash:fast and deepseek-v4.1-flash:netra (not tried).
+- **Conclusion / do not repeat:**
+  - The provider can silently stop honouring a request flag. An empty answer with finish=length and reasoning_tokens == completion_tokens is this failure, not a budget or network problem.
+  - Both production call sites (`summarizer.py`, `extraction_provider.py`) now send `reasoning_effort="none"` and keep the old switch.
+  - `scripts/label_filter_gold.py` has the same flag and was left alone (offline).
+- **Links:** SYS-202 (#456); OPS-20 (#136); #425
+
+## 2026-11-11 -- SYS-203: SYS-150's replay with the arc repair (ADR-033)
+- **Question:** with the repair of non-fact refusals (983702d), how many arcs fall back, and why?
+- **Method:** `replay_story_arcs.py --out-dir digests/preview/arcs-v8-203 --seed 425`, dates 2026-10-08..10-12, $0.64, log `logs/replay_arcs_v8_203.log`. A first run on 11-10 07:22 was stopped after 10-08 by the host's low-memory reaper; the 07:00 crawl was running at the same time.
+- **Result:**
+  - 13/20 built, 2 of them by the repair (both length: Houthi 10-11, IHSG 10-12); 7 fallbacks.
+  - 6 fallbacks are fact refusals: sebab x2, date, number/date, and twice "repair passed, then the re-check refused a causal claim".
+  - 1 is non-fact (Perpres Ojol, length + style). It was blocked by the safeguard: its last latar sentence holds "tidak", a fact of its own rather than a qualifier.
+  - Non-fact fallbacks: 4 on 11-10 without the repair, 1 now. Fact fallbacks: 3 on 11-10, 6 now. That is model variance between runs, so the rate stayed at 65%.
+- **Conclusion / do not repeat:**
+  - A replay rate compares poorly across runs, because the answers change. Compare fallbacks by their final reason.
+  - The repair leaves only safeguard-blocked non-fact fallbacks. The remaining 30% are the fact checks doing their job.
+  - Run replays clear of the crawl: two large-model processes exhausted memory.
+- **Links:** SYS-203 (#457), #425, ADR-033
+
+## 2026-11-11 -- SYS-200 pilot: the natural set on the 69 stored nli_shadow rows
+- **Question:** owner, 2026-11-11: how many published arc sentences do their own quotes NOT support? Can the natural set measure recall, or only false flags? How do arm A and arm B v2 score real sentences?
+- **Method:** `scripts/experiments/nli_natural_pilot.py`:
+  - `export`: read-only; 69 rows, 68 quotes, rebuilt as the arc writer built them;
+  - `gemini`: blind, one story per call, 10 calls;
+  - `rescore` with arm A and with `models/nli/armb2-2026-11-05`;
+  - `report`.
+  Claude labelled in session first (`natural_claude.csv`), then Gemini blind (`natural_gemini_blind.csv`). Scores: `natural_scores_armA.json`, `natural_scores_armB2.json`.
+- **Result:**
+  - **Rebuild check:** arm A's re-scores equal the stored `p_entail` on every post-#437 row (11-05, 11-09: 27/27 exact). One 11-03 row differs by 0.12: the pre-fix truncation.
+  - **Agreement:** 63/69 (91%), over the >= 90% gate. The 6 disagreements:
+    - n2 and n5: Gemini leaned on one source's year typo ("3/11/2020"; four others say 2026);
+    - n32 and n60: a relative time backed by the timeline item's own date, which the labelling prompt did not show;
+    - n45 ("melanjutkan") and n47 (a confused comparison the source itself makes): meaning disagreements.
+  - **Unsupported:** 5 of the 63 agreed rows (8%), not the 1-2% feared. All 5 are residual: no gate family tags them, so the lexical gates cannot see them. They are:
+    - n10: a dropped "diduga" plus a Bareskrim attribution;
+    - n17: Hashim's title is in no cited quote;
+    - n25: DJP's statement is cut from its quote;
+    - n59: "BPS mengakui" attribution;
+    - n68: "diperluas" framing.
+  - **Gate families:** of the 69 rows, 63 residual, 4 end, 2 hedge, all labelled supported. Per-type recall cannot come from this set.
+  - **Scores** (agreed rows, flagged at p_entail < 0.5):
+
+    | arm | false flags | recall |
+    |---|---|---|
+    | A | 4/58 (7%) | 1/5 (n17 0.42) |
+    | B v2 | 1/58 (2%) | 2/5 (n68 0.02, n59 0.10; n25 0.55 just above) |
+
+    Both miss n10 (A 0.61, v2 0.83). v2 also misses n17 (0.96).
+- **Conclusion / do not repeat:**
+  - Live arcs carry about 8% unsupported sentences that the gates cannot see. They are attribution, framing and detail errors, not the five SYS-197 types. About 200 rows should give about 16 unsupported: enough for an overall residual recall, never for per-type recall.
+  - On real sentences, v2 beats A on both axes but catches only 2 of 5. The targeted-set recall (>= 0.9) does not carry over to these error kinds.
+  - Show the labeller each timeline item's date. Without it, relative times read as unsupported.
+- **Links:** SYS-200 (#430), SYS-199 (#429), ADR-026/027
+- **Update, after the owner's rulings (2026-11-11, `natural_owner_rulings.csv`):**
+  - The rulings:
+    - a one-source year typo does not make a sentence unsupported;
+    - a timeline item's own date backs a relative time;
+    - a neutral link ("melanjutkan") is no claim, but one that claims a change ("diperluas") is;
+    - a sentence that repeats its source's confused comparison is supported.
+  - All 6 disputed rows are supported. `natural.jsonl`: 69 rows, 64 faithful, 5 unfaithful (7%), all residual.
+  - Recall / false flags on the 64 faithful rows:
+
+    | arm | tau 0.5 | tau 0.6 | tau 0.9 | all 5 caught |
+    |---|---|---|---|---|
+    | A | 1/5, 9% | 1/5, 11% | 4/5, 27% | 58% |
+    | B v2 | 2/5, 3% | 3/5, 3% | 4/5, 20% | 27% (tau 0.961) |
+
+  - With 5 errors, one row moves recall by 0.2. Grow the set before drawing a threshold from it.
+
+### 2026-11-15 — QA 2026-11-11 defects (#458-#461): which connectives after a needs-cause verb regressed, and did the end-point rewrite move any stored end point?
+- **Question / hypothesis:** (1) #460 names "sejalan" as the one causal synonym the ADR-032 movement class swallowed. Do the other connective-like words in `movement_words.txt` (didukung, mengingat, menyusul, merespons, ...) also regress against 84c3567, which would make the builder's admission rule, not one word, the defect? (2) Does the #458 `_ends` rewrite change any end point already printed in `digests/`?
+- **Method:** (1) `git archive 84c3567 newscrawler` into the scratchpad. For each connective w, `causal_check.unbacked_causes` on "Saham BBCA terangkat <w> kenaikan laba kuartal III." against "Saham BBCA naik 3 persen pada Senin.", run with `PYTHONPATH=.` in the archive and in the repo. (2) `source_check.end_points` on every `_sentences` of every `digests/**/*.md` line, at the red commit 1c8c234 and at the fix, diffed by (file, sentence).
+- **Result:** (1) Refused at 84c3567 and kept at HEAD: sejalan dengan, terutama, tercermin dari, jelang, pasca. Kept at both: didukung, mengingat, menyusul, merespons, disertai, mengikuti, bersamaan / beriringan dengan, usai. QA sorts terutama as a degree word, tercermin dari as a manner word, and jelang / pasca as time words, which the gate treats as no cause. (2) 677 sentences with an end point, 0 differences.
+- **Conclusion / do not repeat:** Only "sejalan" is a regressed cause connective. The kept-at-both words are pre-existing gaps that ADR-031 accepts, and #460 does not cover them. The builder now skips it (`_CONNECTIVES`), the way #452 skipped "terjun". The #458 rewrite changes no stored end point.
+- **Links:** #458 #459 #460 #461 (parents #387 #392 #390 #457), ADR-031, ADR-032

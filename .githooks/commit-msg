@@ -1,0 +1,5 @@
+#!/bin/sh
+# OPS-50: only QA closes tickets, so no Fixes/Closes/Resolves #N (scripts/ticket.py).
+py=venv/Scripts/python.exe
+[ -x "$py" ] || py=python
+exec "$py" scripts/ticket.py check-commit-msg "$1"

@@ -166,7 +166,9 @@ class OpenAICompatSummarizer:
     """Any OpenAI-compatible chat endpoint (SumoPod's `deepseek-v4-flash`).
     deepseek-v4-flash is a reasoning model: with thinking on it can spend the
     whole output budget on reasoning and return nothing (EXPERIMENTS, OPS-20),
-    so it is switched off; an endpoint that does not know the field ignores it."""
+    so it is switched off; an endpoint that does not know the field ignores it.
+    SYS-202 (#456): since 2026-11 SumoPod ignores `thinking` and honours only
+    `reasoning_effort="none"`; both are sent."""
     priced = True
 
     def __init__(self, model_name: str, api_key: str, base_url: Optional[str] = None,
@@ -192,6 +194,7 @@ class OpenAICompatSummarizer:
             messages=[{"role": "user", "content": prompt}],
             temperature=0.2,
             max_tokens=self._max_tokens,
+            reasoning_effort="none",
             extra_body={"thinking": {"type": "disabled"}},
         ), self._sleep)
         usage = getattr(response, "usage", None)

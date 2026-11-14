@@ -339,6 +339,7 @@ def main(argv=None) -> int:
         "cost_usd_peak": round(sum(m["cost_usd_peak"] for m in metrics["dates"].values()), 4),
         "arcs_built": sum(m["arcs"]["arcs"]["built"] for m in metrics["dates"].values()),
         "arcs_fallback": sum(m["arcs"]["arcs"]["fallback"] for m in metrics["dates"].values()),
+        "arcs_repaired": sum(m["arcs"]["arcs"].get("repaired", 0) for m in metrics["dates"].values()),   # SYS-203
         "max_words_arcs": max((m["arcs"]["words"] for m in metrics["dates"].values()), default=None),
         "repetition_share": round(sum(r["repeated"] for r in reps) / total_sentences, 3) if total_sentences else None,
         "handcheck_rows": len(rows), "style": style_metrics(all_backs),

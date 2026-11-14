@@ -373,3 +373,31 @@ class TestQa1106OpeningWords:
     def test_a_topicalised_reference_keeps_the_thread(self, question, previous):
         """No name in the clause, or a preposition / function word after the interrogative."""
         assert f.resolve(question, previous, None).how == f.FALLBACK_THREAD
+
+
+class TestQa1108CommonNounSubjects:
+    """QA 2026-11-08 (#450, #451, ADR-032 amended): a common noun the archive writes in lower case is a subject of its
+    own ("Minyak harganya ...?"); only a time word, a particle, a hedge, an adverb or a pronoun opens a thread
+    question. Words beyond QA's."""
+
+    ANTAM = ["Berapa harga emas Antam hari ini?"]
+
+    @pytest.mark.parametrize("question", ["Minyak harganya berapa?", "Kopi harganya naik?", "Cabai harganya turun?",
+                                          "Semen labanya berapa?", "Saham harganya berapa?"])
+    def test_a_common_noun_is_the_own_subject(self, question):
+        assert f.resolve(question, self.ANTAM, None).how == f.FALLBACK_OWN
+        assert f.resolve(question, self.ANTAM, question).how == f.KEPT
+
+    def test_a_common_noun_the_thread_holds_keeps_the_thread(self):
+        assert f.resolve("Emas harganya naik?", self.ANTAM, None).how == f.FALLBACK_THREAD
+
+    @pytest.mark.parametrize("question", ["Barusan harganya berapa?", "Nanti harganya naik?", "Ternyata harganya turun?",
+                                          "Dia labanya berapa?", "Tiba-tiba harganya anjlok?", "Bukankah harganya turun?"])
+    def test_a_shared_opener_keeps_the_thread(self, question):
+        assert f.resolve(question, self.ANTAM, None).how == f.FALLBACK_THREAD
+        assert f.resolve(question, self.ANTAM, question).how == f.KEPT_THREAD
+
+    def test_the_openers_are_common_words(self):
+        """The closed class is a part of the archive's lower-case class, nouns left out ("anda": a courtesy capital)."""
+        assert f._SHARED_OPENERS - {"anda"} <= f._COMMON_WORDS
+        assert not {"gula", "beras", "nikel", "timah", "mandiri", "emas", "saham"} & f._SHARED_OPENERS

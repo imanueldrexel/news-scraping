@@ -31,6 +31,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from sqlalchemy import create_engine, text  # noqa: E402
 
 from newscrawler.infrastructure.network.clients.sqlalchemy_client import SQLAlchemyClient  # noqa: E402
+from newscrawler.web import nya_words  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 COMMON_PATH = os.path.join(ROOT, "newscrawler", "web", "common_words.txt")
@@ -43,16 +44,21 @@ MOVE_RATIO = 3.0       # per use, after a movement verb at least this many times
 WORD = re.compile(r"[^\W\d_][\w-]*")
 _OPENS_SENTENCE = set(".?!\"'“”‘’:;(\n")
 # Unambiguous market-movement verbs. Not "naik" / "turun": they also mean get on / off ("naik kereta", "penumpang
-# turun"), which brought in nouns.
+# turun"), which brought in nouns. Not "terjun" (QA 2026-11-08, #452): "terjun payung" is a parachute jump.
 MOVE = re.compile(r"\b(?:melemah|menguat|anjlok|merosot|terkoreksi|menanjak|melonjak|ambles|ambruk|menurun|meningkat|"
-                  r"terdepresiasi|terapresiasi|terjun|meroket)\s+(?:oleh\s+)?([^\W\d_][\w-]*)", re.IGNORECASE)
+                  r"terdepresiasi|terapresiasi|meroket)\s+(?:oleh\s+)?([^\W\d_][\w-]*)", re.IGNORECASE)
 # Cause markers that take a noun phrase. Not "karena" / "lantaran": they take a clause ("karena jika ...").
 CAUSE = re.compile(r"\b(?:akibat|imbas|dipicu|disebabkan|terdampak|dampak)\s+(?:oleh\s+|dari\s+)?([^\W\d_][\w-]*)",
                    re.IGNORECASE)
 # A numeral opens a counted cause ("tertekan dua sentimen negatif") as often as a counted movement ("melemah dua
-# persen"): never a movement word.
+# persen"): never a movement word. Nor is a possessed -nya noun (#452, `nya_words.is_reference`): after the verb it
+# is the subject put last ("meningkat volumenya") or a cause ("tertekan menguatnya dolar AS"), and `causal_check`
+# reads it as a cause. "hanya", "setidaknya" and other words that only end in -nya stay.
 _NUMERALS = frozenset("satu dua tiga empat lima enam tujuh delapan sembilan sepuluh sebelas belas puluh ratus ribu "
                       "seratus seribu".split())
+# QA 2026-11-11 (#460): "sejalan (dengan)" is "seiring (dengan)", a cause connective ("tertekan sejalan dengan
+# pelemahan bursa Asia"): never a movement word, or `causal_check` skips it and finds no cause.
+_CONNECTIVES = frozenset({"sejalan"})
 
 
 def count(texts):
@@ -70,7 +76,11 @@ def count(texts):
                 continue
             (upper if word[0].isupper() else lower)[word.lower()] += 1
         for m in MOVE.finditer(body):
-            moved[m.group(1).lower()] += 1
+            # #452: after a lower-case verb, a capitalised word opens a sentence whose stop a heading dropped ("...
+            # menguat Mayoritas mata uang di Asia ...") or is a name; neither is a word of the movement. A title-case
+            # heading capitalises both ("Rupiah Melemah Sepekan").
+            if m.group(1)[0].islower() or m.group(0)[0].isupper():
+                moved[m.group(1).lower()] += 1
         for m in CAUSE.finditer(body):
             caused[m.group(1).lower()] += 1
     return n, lower, upper, moved, caused
@@ -80,7 +90,7 @@ def classes(lower, upper, moved, caused):
     common = {w for w, n in lower.items() if n >= MIN_LOWER and n >= upper[w]}
     m_total, c_total = max(sum(moved.values()), 1), max(sum(caused.values()), 1)
     movement = {w for w, n in moved.items()
-                if n >= MIN_MOVE and w in common and w not in _NUMERALS
+                if n >= MIN_MOVE and w in common and w not in _NUMERALS | _CONNECTIVES and not nya_words.is_reference(w)
                 and n / m_total >= MOVE_RATIO * caused[w] / c_total}
     return common, movement
 

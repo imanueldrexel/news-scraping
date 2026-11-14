@@ -57,9 +57,24 @@ _OPENING_SUBJECT = re.compile(r"^\W*([^\W\d_][\w-]*)\s+[\w-]+nya\b")
 _NOT_A_SUBJECT = frozenset("apa apakah siapa bagaimana gimana kapan berapa mengapa kenapa mana dimana "
                            "lalu lantas terus trus kemudian kalau kalo jika bila nah sekarang tapi tetapi sementara "
                            "selain terakhir apalagi bahkan padahal oh oke ok baik".split())
-# QA 2026-11-06 (#448, #449), ADR-032: nor is a word the archive writes in lower case where no sentence starts
-# ("Kemarin / Besok / Kok / Masa / Kira-kira harganya ...?"), nor such a word with the question particle -kah
-# ("Benarkah", "Mungkinkah"). A name is written capitalised (Sritex, Antam), and a new one is in no snapshot.
+# QA 2026-11-06 (#448, #449): nor is a time word, a particle, a hedge, a modal or aspect adverb or a pronoun
+# ("Kemarin / Besok / Kok / Masa / Kira-kira harganya ...?"). QA 2026-11-08 (#450, #451, ADR-032 amended): this is a
+# closed class, not every word the archive writes in lower case: that class also holds the common nouns a follow-up
+# opens on as its own subject ("Gula / Beras harganya ...?", "Timah / Mandiri labanya ...?"), and no archive signal
+# measured separates the two (scripts/experiments/probe_opening_word_classes.py). Every member but "anda" (a
+# courtesy capital) is in common_words.txt.
+_SHARED_OPENERS = frozenset(
+    "kemarin kemarin-kemarin besok esok lusa tadi semalam barusan nanti kini dulu dahulu kelak belakangan "
+    "baru-baru akhir-akhir pagi siang sore malam "
+    "kok masa masak emang memang toh sih dong deh kan lho loh ya iya wah nih tuh lah pun ayo coba tolong mohon "
+    "kira-kira konon mungkin barangkali entah betul benar sungguh pasti tentu jelas jangan-jangan bukan seperti "
+    "belum pernah harus boleh dapat mesti perlu sedang lagi pula saja cuma sangat makin semakin kian tiba-tiba "
+    "mendadak ternyata langsung segera justru malah malahan terutama sering kadang kadang-kadang selalu jarang tetap "
+    "secara begitu gitu demikian sebelum sesudah selama sampai sebab maka sehingga meski meskipun walau walaupun "
+    "biar supaya andai misal habis sedangkan "
+    "saya aku kami kita anda kamu dia ia mereka beliau sini situ sana".split())
+# A common word with the question particle -kah ("Benarkah", "Mungkinkah") is no subject either. A name is written
+# capitalised (Sritex, Antam), and a new one is in no snapshot (ADR-032).
 _COMMON_WORDS = story_words.read_words(os.path.join(os.path.dirname(os.path.abspath(__file__)), "common_words.txt"))
 _LABEL = re.compile(r"^(?:pertanyaan(?:\s+(?:hasil|baru|lengkap))?|hasil)\s*:\s*", re.IGNORECASE)
 _QUOTES = "\"'“”‘’`"
@@ -102,12 +117,12 @@ def refers_back(question: str) -> bool:
 
 def _opening_subject(question: str, thread: set) -> bool:
     """#421/#422: the question opens on a capitalised word the thread does not hold, right before a -nya word, and
-    the word is no common word (#448/#449)."""
+    the word is no shared opener (#448/#449; a common noun is a subject, #450/#451)."""
     m = _OPENING_SUBJECT.match(question or "")
     if not m or not m.group(1)[0].isupper():
         return False
     low = m.group(1).lower()
-    common = low in _COMMON_WORDS or (low.endswith("kah") and low[:-3] in _COMMON_WORDS)
+    common = low in _SHARED_OPENERS or (low.endswith("kah") and low[:-3] in _COMMON_WORDS)
     return not (low.endswith("nya") or low in story_words.STOPWORDS or low in _NOT_A_SUBJECT or low in thread
                 or common)
 

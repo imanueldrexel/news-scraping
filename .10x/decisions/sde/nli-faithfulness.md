@@ -56,3 +56,10 @@
 - v2 weights `models/nli/armb2-2026-11-05/` (sha256 5b6d8852...), local only, not wired. Hedge: recall 0.90, ff restated 0.04, hard 0.01, identity 0.00, near-copy 0.04. All types pass ADR-029.
 - Arm B total spend $1.13. v1 weights kept for the record (fails identity).
 - Next: SYS-200 natural set scores arm A and v2 offline; switching the shadow's NLI_MODEL is an owner decision.
+
+## 2026-11-11: SYS-200 pilot (6b79540)
+- `scripts/experiments/nli_natural_pilot.py` (export / gemini / rescore / report).
+  - It rebuilds each quote as the arc writer built it: a same-date article is `terkait` (`guard_text`), an older one is `alur` (`item_source` / `opening`).
+  - The rebuild is verified exact against the stored post-#437 scores.
+- Fixtures: `tests/fixtures/nli_eval/natural_rows.jsonl`, `natural_claude.csv`, `natural_gemini_blind.csv`, `natural_scores_armA.json`, `natural_scores_armB2.json`.
+- **Gap:** the labelling prompt does not show each timeline item's date. Two disagreements came from that; add the date before the top-up.

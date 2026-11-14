@@ -420,7 +420,7 @@ def write_arcs(summarizer, cands: Sequence[Candidate], choice: "Choice", digest_
     (story_arc). A refused arc, or a failed call, leaves that story to its
     summary as prose; a quota stops the arcs."""
     stats = {"built": 0, "fallback": 0, "refusals": {r: 0 for r in ARC_REASONS}, "alur_items": 0,
-             "no_history": 0, "agenda": 0, "demoted": 0, "errors": 0, "stopped": None}
+             "no_history": 0, "agenda": 0, "demoted": 0, "repaired": 0, "errors": 0, "stopped": None}
     by_id = {c.id: c for c in cands}
     arcs: Dict[int, StoryArc] = {}
     trace = []
@@ -453,6 +453,7 @@ def write_arcs(summarizer, cands: Sequence[Candidate], choice: "Choice", digest_
             stats["no_history"] += not arc.alur_items
             stats["agenda"] += bool(arc.agenda)
             stats["demoted"] += arc.demoted_alur
+            stats["repaired"] += bool(arc.repaired)     # SYS-203: built by `story_arc.repair`, no model call
         trace.append({"id": cid, "timeline": timeline, "reasons": rejections, "arc": arc})
     return arcs, stats, trace
 
@@ -605,7 +606,7 @@ def build(summarizer, sections: Sequence[dict], digest_date: date, article_count
         if summarizer is None:
             written, arc_trace = {}, []
             arc_stats = {"built": 0, "fallback": len(choice.utama), "refusals": {r: 0 for r in ARC_REASONS},
-                         "alur_items": 0, "no_history": 0, "agenda": 0, "demoted": 0, "errors": 0,
+                         "alur_items": 0, "no_history": 0, "agenda": 0, "demoted": 0, "repaired": 0, "errors": 0,
                          "stopped": no_call_reason}
         else:
             written, arc_stats, arc_trace = write_arcs(summarizer, cands, choice, digest_date, arcs)
