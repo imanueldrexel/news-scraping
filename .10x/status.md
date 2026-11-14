@@ -1,5 +1,13 @@
 # Project Status
 
+## 2026-11-14: PM, owner decisions on QA 2026-11-11's open questions
+- [x] Contrast words protected from the repair: SYS-204 (#462) filed.
+- [x] Colloquial follow-up openers keep the thread: SYS-205 (#463) filed.
+- [x] A hedged source completion must not back a stated end: SYS-206 (#464, P2) filed; fix it alongside SYS-201 (#455).
+- [x] Owner reads on #126 / #239 / #240 / #242 delegated to QA (commented on each). QA closes them on a current edition (2026-11-13 or later).
+- [ ] Dev: #458 (major) first, then #459, #460, #461, the REPAIRABLE gate test, then SYS-204, SYS-205, SYS-206 + SYS-201.
+- [ ] QA: the four delegated tickets; SYS-202's scheduled extraction (not checked live yet).
+
 ## 2026-11-11: QA of the ready-for-qa queue (fde6580, SYS-202, SYS-203)
 - [x] QA audited 8 parents at 5e1ea30. Closed #450 #451 #452 #453 #454 #425. Filed #458 (major), #459, #460, #461 (minor); 3 are regressions from the fixes. Report: `.10x/reviews/2026-11-11-qa-report.md`.
 - [x] qa-passed: #327, #328, #338, #456. qa-failed: #387 (#458), #390 (#460), #392 (#459), #457 (#461). Unit 4,355 / 5 skipped; integration 229 / 1 skipped.

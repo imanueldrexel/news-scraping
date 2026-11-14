@@ -9,3 +9,6 @@
 - [newsletter-story-arcs](newsletter-story-arcs.md) — **owner aligned 2026-10-13**: top 3-4 stories told as pure-prose arcs over ≤ 30 days (L1 vector thread finder + arc prompt + guards), replay A/B as the ship gate; P1 story memory. ADR-016 accepted; tracker #336, SYS-147..152 = #337..#342; next SDE. **2026-11-10 (owner): no false fact is the aim; acceptance raised only by repairing non-fact refusals (SYS-203 #457, ADR-033); fact checks never loosened; 90% target replaced**
 
 - [nli-faithfulness](nli-faithfulness.md) -- scope and success, 2026-10-25
+
+## 2026-11-14 owner decisions
+- SYS-204 #462 (repair contrast words, newsletter-story-arcs), SYS-205 #463 (colloquial openers, rag-search-redesign), SYS-206 #464 (hedged completion, P2, newsletter-story-arcs), owner reads on #126/#239/#240/#242 delegated to QA (newsletter-5min-edition).

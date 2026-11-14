@@ -1,5 +1,14 @@
 # Current Handoff
 
+## From: PM (2026-11-14) -> To: SDE, QA
+**Read first:** the 2026-11-14 sections of `.10x/decisions/product-manager/newsletter-story-arcs.md`, `rag-search-redesign.md` and `newsletter-5min-edition.md`.
+- **SDE, after the QA 11-11 queue (#458, #459, #460, #461, REPAIRABLE gate test):**
+  - SYS-204 (#462): add kendati / kendatipun / sebaliknya / hanya saja / biarpun to `story_arc._CONTRAST`.
+  - SYS-205 (#463): add sudah / udah / dah / bener / beneran / serius / emangnya to `followup._SHARED_OPENERS`.
+  - SYS-206 (#464, P2): a hedged source completion backs no stated end; fix it with SYS-201 (#455).
+- **QA:** the owner read is waived on #126 / #239 / #240 / #242. Verify each on a current edition (2026-11-13 or later) and close or send back. Taste issues go in new tickets. Also check SYS-202's scheduled extraction.
+- **Owner:** none of today's questions are still open. The SYS-200 top-up (~11-17) is next.
+
 ## From: QA (2026-11-11) -> To: SDE, owner
 **Read first:** `.10x/reviews/2026-11-11-qa-report.md`; `.10x/decisions/qa/qa-pass-2026-11-11.md`.
 - **SDE, in this order** (each issue carries a runnable failing test; copies in `tests/qa/qa_1111/defects/`, uncommitted):

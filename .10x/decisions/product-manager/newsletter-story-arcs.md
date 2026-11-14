@@ -285,3 +285,7 @@ Indexes run on: today's articles are 0..n-1, the timeline n..n+m-1, so `terkait`
   - Cost: about 1 arc in 20 stays a summary (Perpres Ojol in the replay).
   - Rejected: B, where only hedges and contrast words block, since it reintroduces exactly that risk; and C, where a negation blocks only when the sentence points back, since it means more rules and is a word-list approach (ADR-031) for 1 story in 20.
 - Revisit only if live editions show the block costing more often. Measuring that (a log line per blocked drop) is not ticketed; the owner has not asked for it.
+
+## 2026-11-14: owner decisions on QA 2026-11-11's open questions
+- **Contrast words in the repair: added (SYS-204 #462).** Kendati / kendatipun / sebaliknya / hanya saja / biarpun join ADR-033's never-drop contrast list. Why: a longer safeguard list means fewer repairs, never a false fact, and a cut "Kendati demikian ..." makes an arc more one-sided than its sources. ADR-031's freeze covers fact-gate lists, not this safeguard list. Cost: a few more arcs fall back to their summary.
+- **Hedged completion backing a stated end: ticketed (SYS-206 #464, P2).** "diperkirakan selesai pada X" in a source must not back "diselesaikan pada X" in the prose. This is the hedged twin of SYS-201 (#455, negated end), and the two are best fixed together. Allowed under ADR-031: the risk is in arc output's fact backing, it is not a corpus-only synonym.
