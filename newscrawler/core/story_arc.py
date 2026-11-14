@@ -588,10 +588,27 @@ def _qualifies(sentence: str) -> bool:
     return bool(low & causal_check._NEGATORS or causal_check._HEDGE.search(sentence) or _CONTRAST.search(sentence))
 
 
+# QA 2026-11-11 (#461): a stop after an initial or an abbreviation ends no sentence here ("Ahmad R. Rizal", "Bulog
+# No. 104", "Jl. M.H. Thamrin", "s.d.", "BBCA Tbk. naik"). One that does end a sentence ("... dan lain-lain dll.")
+# only makes the trim drop two sentences as one, never cut inside one.
+_LEADS_ON = re.compile(r"(?:^|[\s(])(?:[A-Z]|(?:[A-Za-z]\.)+[A-Za-z]|"
+                       r"(?i:no|prof|dr|drs|ir|jl|jln|kec|kab|kel|hj|sdr|bpk|ny|tn|st|pol|vs|tbk|dkk|dll|dsb|dst))\.$")
+
+
+def _whole_sentences(text: str) -> List[str]:
+    out: List[str] = []
+    for piece in arc_style.sentences(text):
+        if out and _LEADS_ON.search(out[-1]):
+            out[-1] += " " + piece
+        else:
+            out.append(piece)
+    return out
+
+
 def _trim(text: str, fits) -> Optional[str]:
-    """`text` less whole trailing sentences until `fits` it; None when that would drop its first sentence or one
-    that may qualify an earlier one (`_qualifies`)."""
-    parts = arc_style.sentences(text)
+    """`text` less whole trailing sentences (`_whole_sentences`) until `fits` it; None when that would drop its first
+    sentence or one that may qualify an earlier one (`_qualifies`)."""
+    parts = _whole_sentences(text)
     while not fits(" ".join(parts)):
         if len(parts) <= 1 or _qualifies(parts[-1]):
             return None

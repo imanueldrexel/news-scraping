@@ -3733,3 +3733,10 @@ QA's grouped numbers on the 2,974-pair set were cause 0.607, denial 0.801, end 0
     | B v2 | 2/5, 3% | 3/5, 3% | 4/5, 20% | 27% (tau 0.961) |
 
   - With 5 errors, one row moves recall by 0.2. Grow the set before drawing a threshold from it.
+
+### 2026-11-15 — QA 2026-11-11 defects (#458-#461): which connectives after a needs-cause verb regressed, and did the end-point rewrite move any stored end point?
+- **Question / hypothesis:** (1) #460 names "sejalan" as the one causal synonym the ADR-032 movement class swallowed. Do the other connective-like words in `movement_words.txt` (didukung, mengingat, menyusul, merespons, ...) also regress against 84c3567, which would make the builder's admission rule, not one word, the defect? (2) Does the #458 `_ends` rewrite change any end point already printed in `digests/`?
+- **Method:** (1) `git archive 84c3567 newscrawler` into the scratchpad. For each connective w, `causal_check.unbacked_causes` on "Saham BBCA terangkat <w> kenaikan laba kuartal III." against "Saham BBCA naik 3 persen pada Senin.", run with `PYTHONPATH=.` in the archive and in the repo. (2) `source_check.end_points` on every `_sentences` of every `digests/**/*.md` line, at the red commit 1c8c234 and at the fix, diffed by (file, sentence).
+- **Result:** (1) Refused at 84c3567 and kept at HEAD: sejalan dengan, terutama, tercermin dari, jelang, pasca. Kept at both: didukung, mengingat, menyusul, merespons, disertai, mengikuti, bersamaan / beriringan dengan, usai. QA sorts terutama as a degree word, tercermin dari as a manner word, and jelang / pasca as time words, which the gate treats as no cause. (2) 677 sentences with an end point, 0 differences.
+- **Conclusion / do not repeat:** Only "sejalan" is a regressed cause connective. The kept-at-both words are pre-existing gaps that ADR-031 accepts, and #460 does not cover them. The builder now skips it (`_CONNECTIVES`), the way #452 skipped "terjun". The #458 rewrite changes no stored end point.
+- **Links:** #458 #459 #460 #461 (parents #387 #392 #390 #457), ADR-031, ADR-032

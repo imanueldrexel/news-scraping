@@ -1111,6 +1111,13 @@ class TestRepair:
         arc, rejections, _ = self._write(_twice(answer))
         assert arc is None and rejections == [reason, reason]
 
+    @pytest.mark.parametrize("reason", ["number", "date", "sebab", "subject", "alur"])
+    def test_the_gate_itself_refuses_a_fact_reason(self, reason):
+        """QA 2026-11-11: the answer is one a length trim repairs; only its refusal's reason keeps it from `repair`."""
+        answer = _answer(latar=f"{BASE_LATAR} {LONG}")
+        assert sa.repair([answer], [Rejected("length", "x")], TEXTS, TIMELINE, DAY).latar == BASE_LATAR
+        assert sa.repair([answer], [Rejected(reason, "x")], TEXTS, TIMELINE, DAY) is None
+
     def test_a_subject_or_alur_refusal_is_never_repaired(self):
         """The lenient re-check would move the off-thread item out and pass, but alur is a fact check (ADR-033)."""
         arc, rejections, _ = self._write(_twice(_answer(alur=[N, N + 1, N + 2]), "x"))
@@ -1127,3 +1134,14 @@ class TestRepair:
 
     def test_an_accepted_answer_is_not_marked_repaired(self):
         assert self._write(_Script(_answer()))[0].repaired == ""
+
+    @pytest.mark.parametrize("text,parts", [
+        ("A ditinjau Ahmad R. Rizal. B lain.", ["A ditinjau Ahmad R. Rizal.", "B lain."]),
+        ("Rapat di Jl. M.H. Thamrin. Hasilnya nihil.", ["Rapat di Jl. M.H. Thamrin.", "Hasilnya nihil."]),
+        ("Saham BBCA Tbk. naik. Laba tumbuh.", ["Saham BBCA Tbk. naik.", "Laba tumbuh."]),
+        ("Kata Prof. Budi. Lalu selesai.", ["Kata Prof. Budi.", "Lalu selesai."]),
+        ("Harga naik. Pedagang senang.", ["Harga naik.", "Pedagang senang."]),
+    ])
+    def test_an_initial_or_abbreviation_ends_no_sentence_the_trim_drops(self, text, parts):
+        """QA 2026-11-11 (#461): the trim never cuts inside a sentence."""
+        assert sa._whole_sentences(text) == parts

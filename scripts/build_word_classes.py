@@ -56,6 +56,9 @@ CAUSE = re.compile(r"\b(?:akibat|imbas|dipicu|disebabkan|terdampak|dampak)\s+(?:
 # reads it as a cause. "hanya", "setidaknya" and other words that only end in -nya stay.
 _NUMERALS = frozenset("satu dua tiga empat lima enam tujuh delapan sembilan sepuluh sebelas belas puluh ratus ribu "
                       "seratus seribu".split())
+# QA 2026-11-11 (#460): "sejalan (dengan)" is "seiring (dengan)", a cause connective ("tertekan sejalan dengan
+# pelemahan bursa Asia"): never a movement word, or `causal_check` skips it and finds no cause.
+_CONNECTIVES = frozenset({"sejalan"})
 
 
 def count(texts):
@@ -87,7 +90,7 @@ def classes(lower, upper, moved, caused):
     common = {w for w, n in lower.items() if n >= MIN_LOWER and n >= upper[w]}
     m_total, c_total = max(sum(moved.values()), 1), max(sum(caused.values()), 1)
     movement = {w for w, n in moved.items()
-                if n >= MIN_MOVE and w in common and w not in _NUMERALS and not nya_words.is_reference(w)
+                if n >= MIN_MOVE and w in common and w not in _NUMERALS | _CONNECTIVES and not nya_words.is_reference(w)
                 and n / m_total >= MOVE_RATIO * caused[w] / c_total}
     return common, movement
 
