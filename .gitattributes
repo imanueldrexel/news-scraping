@@ -6,3 +6,4 @@
 tests/fixtures/**/*.jsonl text eol=lf
 *.npz binary
 data/nli_train/*.jsonl text eol=lf
+.githooks/* text eol=lf
