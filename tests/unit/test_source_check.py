@@ -759,3 +759,63 @@ class TestQa1106EndPoints:
                                        "Asap meluas hingga Riau pada akhir Oktober."])
     def test_a_place_joined_by_pada_is_still_no_end(self, prose):
         assert sc.unbacked_end_times(prose, "Asap meluas sejak Kamis (22/10).") == []
+
+
+class TestQa1108EndPoints:
+    """QA 2026-11-08: a name before a month or a date is a place, before a bare year a named time (#453); a source
+    states a completion's time in other words too, never a negated or shifted one (#454)."""
+
+    NONE = "Asap meluas sejak Kamis (22/10)."
+    CASE = "Kasus itu diselesaikan pada Oktober 2026."
+
+    @pytest.mark.parametrize("prose", ["Bantuan mengalir hingga Papua 12 Oktober.",
+                                       "Asap meluas hingga Jambi dan Riau akhir Oktober."])
+    def test_a_place_before_a_month_or_date_is_no_end(self, prose):
+        assert sc.unbacked_end_times(prose, self.NONE) == []
+
+    @pytest.mark.parametrize("prose", ["Promo dari Telkomsel berlaku hingga Natal tahun 2026.",
+                                       "Diskon dari Garuda Indonesia hingga Lebaran 2027."])
+    def test_a_name_before_a_year_is_a_named_time(self, prose):
+        assert sc.unbacked_end_times(prose, self.NONE) != []
+
+    @pytest.mark.parametrize("source", ["Kasus itu rampung Oktober 2026.",
+                                        "Pada Oktober 2026 kasus itu selesai."])
+    def test_a_completion_restated_backs_the_prose(self, source):
+        assert sc.unbacked_end_times(self.CASE, source) == []
+
+    @pytest.mark.parametrize("source", ["Kasus itu diselesaikan setelah Oktober 2026.",
+                                        "Pada Oktober 2026 kasus itu belum selesai.",
+                                        "Kasus itu tidak diselesaikan secara damai pada Oktober 2026.",
+                                        "Kasus itu diselesaikan paling lambat Oktober 2026.",
+                                        "Sidang kasus itu digelar pada Oktober 2026.",
+                                        "Renovasi stadion diselesaikan pada Oktober 2026."])
+    def test_a_shifted_negated_or_other_completion_does_not(self, source):
+        assert sc.unbacked_end_times(self.CASE, source) != []
+
+    def test_a_completion_backs_no_running_end(self):
+        """It says when an act was done, not until when something lasts."""
+        assert sc.unbacked_end_times("Kasus itu berlanjut hingga Oktober 2026.",
+                                     "Kasus itu diselesaikan secara damai pada Oktober 2026.") != []
+
+
+class TestQa1111EndPoints:
+    """QA 2026-11-11: a name before a month is a place only after a verb of spread or in a bare range of places
+    (#458); a shift word before a time-first completion backs no completion (#459)."""
+
+    NONE = "Asap meluas sejak Kamis (22/10)."
+
+    @pytest.mark.parametrize("prose", ["Bantuan disalurkan dari Jakarta Selatan hingga Bekasi akhir Oktober.",
+                                       "Bantuan dari Kemensos disalurkan hingga Papua pada akhir Oktober."])
+    def test_a_range_of_places_or_a_place_joined_by_pada_is_still_no_end(self, prose):
+        assert sc.unbacked_end_times(prose, self.NONE) == []
+
+    def test_dari_a_day_is_no_place_before_pada_either(self):
+        assert sc.unbacked_end_times("Diskon berlaku dari Senin hingga Harbolnas pada Desember 2026.", self.NONE) != []
+
+    def test_a_named_event_before_a_month_after_dari_name_verb_is_an_end(self):
+        assert sc.unbacked_end_times("Promo dari Telkomsel berlaku hingga Harbolnas Desember 2026.", self.NONE) != []
+
+    @pytest.mark.parametrize("source", ["Audit rampung sesudah Desember 2026.",
+                                        "Audit diselesaikan melewati Desember 2026."])
+    def test_sesudah_and_melewati_in_the_gap_shift_the_completion(self, source):
+        assert sc.unbacked_end_times("Audit diselesaikan pada Desember 2026.", source) != []

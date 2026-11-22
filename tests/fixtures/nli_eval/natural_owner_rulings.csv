@@ -1,0 +1,7 @@
+id,label,reason
+n2,supported,"owner 2026-11-11: one source's year typo (3/11/2020) against four that say 2026 does not make the sentence unsupported"
+n5,supported,"owner 2026-11-11: same year typo as n2"
+n32,supported,"owner 2026-11-11: a timeline item's own date is part of its source; a relative time it backs is supported"
+n60,supported,"owner 2026-11-11: same as n32 (""awal Oktober"" from the item's date)"
+n45,supported,"owner 2026-11-11: a neutral link (""melanjutkan"") joining two stated facts is no claim; a link claiming a change (""diperluas"", n68) is"
+n47,supported,"owner 2026-11-11: the sentence repeats the source's own comparison; a confused source is still what it says"

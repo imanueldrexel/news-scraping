@@ -89,6 +89,19 @@ class TestOn:
         story = edition.trace["candidates"][edition.trace["choice"].utama[0] - 1].story
         assert f"\n\n{story.inti}\n\n" in edition.markdown.split(first)[1]
 
+    def test_a_repaired_arc_is_built_and_counted(self, monkeypatch):
+        """SYS-203: an arc refused twice for length is repaired without a third call, and counted."""
+        from tests.unit.newsletter_fakes import arc_answer, arc_articles
+
+        def overlong(prompt):
+            head = arc_articles(prompt)[0][2].rstrip(".")
+            return arc_answer(prompt, hari_ini=" ".join([f"{head}."] * (60 // len(head.split()) + 2)))
+        s = FakeNewsroom(arc=[overlong, overlong])
+        gen, plan, _ = _plan(monkeypatch, s)
+        edition = gen.build_edition(plan, arcs=True)
+        assert edition.arcs["repaired"] == 1 and edition.arcs["refusals"]["length"] == 2
+        assert edition.arcs["fallback"] == 0 and len(s.prompts["arc"]) == edition.utama + 1
+
     def test_a_quota_stops_the_arcs(self, monkeypatch):
         s = FakeNewsroom(arc=[QuotaExhausted("429")])
         gen, plan, _ = _plan(monkeypatch, s)
@@ -101,7 +114,7 @@ class TestOn:
         stats = gen.build_edition(plan, arcs=True).stats()
         assert stats["arcs"]["built"] == stats["utama"] and stats["arcs"]["no_history"] == stats["utama"]
         assert set(stats["arcs"]) == {"built", "fallback", "refusals", "alur_items", "no_history", "agenda",
-                                      "demoted", "errors", "stopped"}
+                                      "demoted", "repaired", "errors", "stopped"}
         assert len(stats["stories"]) == stats["utama"]
         first = stats["stories"][0]
         assert first["arc"] is True and first["alur_ids"] == [] and len(first["terkait_ids"]) == 2

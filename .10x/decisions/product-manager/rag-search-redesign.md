@@ -98,3 +98,6 @@ Pertanyaan: {pertanyaan}
 ## Out of scope
 - A knowledge-base browsing page (entities): asked about 2026-10-07, not requested as a build.
 - SYS-91 (1970 dates in FAISS) stays in its own queue.
+
+## 2026-11-14: owner decision on colloquial follow-up openers (QA 2026-11-11, #327)
+- **Added (SYS-205 #463):** sudah / udah / dah / bener / beneran / serius / emangnya join `followup._SHARED_OPENERS`, so "Udah harganya turun?" keeps the thread on the fallback path. These are function words, not nouns, so #450 is not reopened, and the class stays closed (ADR-032). Impact is small: the fallback runs only when the model rewrite (ADR-010) is unusable.

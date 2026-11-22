@@ -262,3 +262,30 @@ Indexes run on: today's articles are 0..n-1, the timeline n..n+m-1, so `terkait`
 ## 2026-10-20: owner decisions after QA's audit
 - **#401:** "terimbas" / "terpengaruh" followed by a cause need a quote; a bare "affected" use stays exempt (SYS-184 narrowed).
 - **Closed word lists:** the owner agrees with QA that the send-backs fix the ticket's words, not the class (the omitted synonyms are more frequent than the added ones). The lexical gates need a design, brainstormed before more list fixes.
+
+## 2026-11-10: owner decision on arc acceptance (#425, SYS-203 #457)
+- **Aim, stated by the owner:** no fact is ever falsely claimed. A fallback (the story goes out as its fact-checked summary) costs story quality, never truth.
+- **Decided (option B):** raise acceptance only by repairing refusals that are not about facts. The checks that guard facts are never loosened to raise acceptance: number, date, sebab, subject and alur.
+- **Why not "loosen to 90%":** over the 20 final refusals (13 live, 7 replay), 13 are non-fact (length 6, style 5, json 2) and 7 are fact (sebab 4, date 2, number 1). Repairing every non-fact refusal still tops out at ~85% (replay) / ~89% (live). The old 90% target could only be met by loosening a fact check.
+- **New target (replaces SYS-148's ">= 90% accepted"):**
+  1. 0 fact checks loosened;
+  2. on the replay, no fallback whose only refusals were repairable (length / style / structural json) and whose repair would have passed every check.
+  The arc rate is reported, not targeted.
+- **Scope of the repair:** deterministic, no model call.
+  - Drop whole trailing sentences of an over-long field, or of a latar that breaks a style rule.
+  - Drop out-of-range or duplicate indexes, and file unlisted articles as not related.
+  - Re-run every check on the result. Accept only if all pass; otherwise fall back as today.
+  - Never drop a sentence holding a negation, a hedge or a contrast word, because it may qualify what came before. Never cut inside a sentence, and never touch judul or sekilas.
+- **Out of scope:** unparseable JSON, a third model call, and any change to a fact check.
+- **P1.** #425 closes on the new Done-when, after the replay following SYS-203.
+
+## 2026-11-11: owner decisions on SYS-203's replay (#457)
+- **The two repaired arcs are accepted** (Houthi 10-11, IHSG 10-12 in `digests/preview/arcs-v8-203`): each still links today to its back-story, and nothing left became misleading. The owner's read in SYS-203's Done-when is done.
+- **The negation block stays** (option A). A trailing sentence with "tidak" / "belum" is never dropped by the repair, even with no contrast word. Such a sentence can qualify an earlier one ("... berlaku Januari. Aturan itu belum diteken presiden."), and dropping it would make the story claim more than the source.
+  - Cost: about 1 arc in 20 stays a summary (Perpres Ojol in the replay).
+  - Rejected: B, where only hedges and contrast words block, since it reintroduces exactly that risk; and C, where a negation blocks only when the sentence points back, since it means more rules and is a word-list approach (ADR-031) for 1 story in 20.
+- Revisit only if live editions show the block costing more often. Measuring that (a log line per blocked drop) is not ticketed; the owner has not asked for it.
+
+## 2026-11-14: owner decisions on QA 2026-11-11's open questions
+- **Contrast words in the repair: added (SYS-204 #462).** Kendati / kendatipun / sebaliknya / hanya saja / biarpun join ADR-033's never-drop contrast list. Why: a longer safeguard list means fewer repairs, never a false fact, and a cut "Kendati demikian ..." makes an arc more one-sided than its sources. ADR-031's freeze covers fact-gate lists, not this safeguard list. Cost: a few more arcs fall back to their summary.
+- **Hedged completion backing a stated end: ticketed (SYS-206 #464, P2).** "diperkirakan selesai pada X" in a source must not back "diselesaikan pada X" in the prose. This is the hedged twin of SYS-201 (#455, negated end), and the two are best fixed together. Allowed under ADR-031: the risk is in arc output's fact backing, it is not a corpus-only synonym.

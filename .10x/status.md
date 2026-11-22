@@ -1,5 +1,48 @@
 # Project Status
 
+## 2026-11-15: SDE of QA's 11-11 qa-defects
+- [x] #458 (major), #459, #460, #461 fixed; REPAIRABLE gate test added. Red 1c8c234, fix commit after it. Unit 4,416 / 5 skipped; 23/23 mutants killed; tests/qa 55 -> 32 failing, 0 new.
+- [x] Parents #387 #392 #390 #457 moved to `status: ready-for-qa`. Pushed `dev`; dev -> main PR opened (#335 was merged).
+- [ ] QA: the four parents (`.10x/decisions/sde/qa-1111-defects.md`).
+- [ ] Dev next: SYS-204 (#462), SYS-205 (#463), SYS-206 (#464) + SYS-201 (#455).
+
+## 2026-11-14: PM, owner decisions on QA 2026-11-11's open questions
+- [x] Contrast words protected from the repair: SYS-204 (#462) filed.
+- [x] Colloquial follow-up openers keep the thread: SYS-205 (#463) filed.
+- [x] A hedged source completion must not back a stated end: SYS-206 (#464, P2) filed; fix it alongside SYS-201 (#455).
+- [x] Owner reads on #126 / #239 / #240 / #242 delegated to QA (commented on each). QA closes them on a current edition (2026-11-13 or later).
+- [ ] Dev: #458 (major) first, then #459, #460, #461, the REPAIRABLE gate test, then SYS-204, SYS-205, SYS-206 + SYS-201.
+- [ ] QA: the four delegated tickets; SYS-202's scheduled extraction (not checked live yet).
+
+## 2026-11-11: QA of the ready-for-qa queue (fde6580, SYS-202, SYS-203)
+- [x] QA audited 8 parents at 5e1ea30. Closed #450 #451 #452 #453 #454 #425. Filed #458 (major), #459, #460, #461 (minor); 3 are regressions from the fixes. Report: `.10x/reviews/2026-11-11-qa-report.md`.
+- [x] qa-passed: #327, #328, #338, #456. qa-failed: #387 (#458), #390 (#460), #392 (#459), #457 (#461). Unit 4,355 / 5 skipped; integration 229 / 1 skipped.
+- [ ] Dev: #458 first (fail-open on the live MSCI gate), then #459, #460, #461; add a `REPAIRABLE` gate test (mutant survives).
+- [ ] QA: check tonight's 21:00 extraction for SYS-202 (not in its Done-when; UNVERIFIED).
+- [ ] Owner: colloquial openers (Udah/Bener/Serius) and unlisted contrast words (Kendati/Sebaliknya/Hanya saja) -- in or accepted cost? #126/#239/#240/#242 still wait on owner reads.
+
+## 2026-11-11: NLI natural set pilot (SYS-200 #430)
+- [x] Owner chose to pilot on the 69 stored `nli_shadow` rows now, instead of waiting for about 200 (PM nli-faithfulness).
+- [x] SDE: pilot done (6b79540). Agreement 63/69; 5/63 unsupported, all residual; v2 catches 2/5 with 2% false flags, arm A 1/5 with 7%.
+- [x] Owner ruled on the 6 disagreements; natural.jsonl written (69 rows, 5 unfaithful). v2: 3/5 at 3% false flags (tau 0.6).
+- [ ] Top up to ~200 rows around 11-17, with item dates in the labelling prompt.
+
+## 2026-11-10 (after the owner's SumoPod top-up)
+- [x] SYS-202 (#456, P0) found and fixed in 334ecdc. deepseek-v4-flash ignores `thinking: disabled` and answers empty; both call sites now send `reasoning_effort="none"`. Status: ready-for-qa; QA checks the 11-10 12:00 newsletter and the 21:00 extraction.
+- [x] #425 replay measured on 334ecdc: 13/20 = 65% after the retry ($0.61). Final refusals: style 2, date 2, sebab 1, length 1, json 1.
+- [x] Per the owner's rule (< 90%), filed SYS-203 (#457): live acceptance, deterministic length trim first. #338 stays qa-failed.
+- [x] Owner decision (PM): the aim is no false fact. Fact checks are never loosened, and the 90% target is replaced. SYS-203 is rescoped to repairing length / style / structural-json refusals (ADR-033).
+- [x] SDE: SYS-203 built (983702d; unit 4,355, integration 229, 12/12 mutants killed).
+- [x] Replay arcs-v8-203, re-run 2026-11-11 after the 11-10 run was stopped by low memory: 13/20 built (2 repaired), 7 fallbacks, 6 of them fact refusals and 1 blocked by the negation safeguard. Posted on #457 and #425; #457 and #338 are ready-for-qa.
+- [x] Owner (2026-11-11): the 2 repaired arcs are accepted, and the negation block stays (#457). No code change.
+- [ ] 11-10 19:00 crawl and 21:00 extraction did not run: the host slept from ~19:00 to 04:20, and the extraction fired at 04:21 while Postgres was restarting. The next scheduled runs should be normal.
+
+## 2026-11-10: SDE of QA's 11-08 qa-defects
+- [x] Fixed #450/#451 (closed opener class), #452 (movement builder admission; class rebuilt), #453 (place before a month), #454 (restated completions). ADR-032 amended. Not pushed.
+- [x] Parents #327 #328 #390 #387 #392 moved to `status: ready-for-qa`. Unit 4,331 / 5 skipped; integration 229 / 1 skipped; 26/26 mutants killed.
+- [ ] #425: replay still BLOCKED by the SumoPod key budget (re-tried 2026-11-10 04:43). #338 stays qa-failed. The cap also stopped the 11-07..11-09 editions and the 11-09 extraction.
+- [ ] SYS-201 (#455, P3): a negated stated end backs a prose end. Filed, not fixed.
+
 ## 2026-11-08: QA of the ADR-032 fixes (4175812)
 - [x] QA audited 6 parents at 02cad04 (baseline 84c3567). 8 defects closed (#448 #449 #440 #446 #445 #421 #422 #423); #450-#454 filed (4 regressions). Report: `.10x/reviews/2026-11-08-qa-report.md`.
 - [x] #331 qa-passed; #327 #328 #390 #387 #392 qa-failed. Unit 4,274 / 5 skipped; integration 229 / 1 skipped; 4/4 QA mutants killed.

@@ -47,6 +47,7 @@ class TestOpenAICompatProvider:
         assert kwargs["messages"] == [{"role": "user", "content": "the prompt"}]
         assert kwargs["response_format"] == {"type": "json_object"}
         assert kwargs["extra_body"] == {"thinking": {"type": "disabled"}}, "reasoning tokens are billed as output"
+        assert kwargs["reasoning_effort"] == "none", "SYS-202: the only switch SumoPod still honours"
         assert kwargs["temperature"] == 0
 
     def test_the_model_is_the_usage_key_and_the_provider_is_priced(self):

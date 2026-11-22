@@ -41,3 +41,21 @@ Three QA rounds showed that a hand list fails on the first held-out word (ADR-03
 
 ## Dependencies
 - ADR-021/022 (follow-up subject and adverb place), ADR-031 (the arc lists are frozen; this changes a rule for a regression, not a list for a synonym).
+
+## Amendment 2026-11-10 (QA 2026-11-08: #450, #451, #452)
+QA found that both classes hold members that break the rules they feed. Decision 2 and decision 1's movement half change. Decisions 3 and 4 stand.
+
+**Decision 2, amended: the opener class is closed.** `_opening_subject` no longer refuses every common word. It refuses only `followup._SHARED_OPENERS`: time words, particles, hedges, modal and aspect adverbs, connectives and pronouns ("Kemarin / Kok / Kira-kira / Ternyata / Dia ... harganya?").
+- Why: "lower case mid-sentence" also holds every common noun, and a commodity or a lower-case company name is the ordinary subject of a finance question ("Gula harganya naik?", "Timah labanya berapa?").
+- No archive signal separates the two. `scripts/experiments/probe_opening_word_classes.py`, 60k articles: the share of uses governed by a lower-case content word is 0.45-0.90 for nouns and 0.04-0.69 for time words and particles. "malam tadi" and "kenapa kok" govern as often as "harga gula" does.
+- Unlike nouns, the grammatical class is closed. Every member but "anda" (a courtesy capital) is in `common_words.txt`, and a test holds that.
+- `common_words.txt` still decides the -kah form ("Benarkah", "Sungguhkah").
+- Cost: an opener the list lacks opens its own subject. That is the pre-9d9ad16 behaviour, and it is rarer than a common noun.
+- Routing check: 207 follow-ups. Every time word and particle routes as at HEAD, every common noun as on 84c3567, nothing else moved.
+
+**Decision 1, amended: movement admission.** `scripts/build_word_classes.py`:
+- admits no possessed -nya noun (`nya_words.is_reference`: eskalasinya, ekspornya, volumenya). `causal_check` reads such a word as a cause. "hanya" and "setidaknya" only end in -nya, so they stay;
+- after a lower-case verb, it skips a capitalised word: a heading with no stop ("... menguat Mayoritas mata uang ..."), or a name. A title-case heading ("Rupiah Melemah Sepekan") still counts;
+- drops "terjun" from the movement verbs, because "terjun payung" is a parachute jump.
+
+The rebuild changed only `movement_words.txt`. `common_words.txt` is left at its 2026-11-07 snapshot.

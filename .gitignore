@@ -173,3 +173,4 @@ package/*
 /venv-train/
 /models/
 /data/indonli/
+.claude/state/

@@ -44,3 +44,7 @@ Subscriber lists, email/web delivery, personalisation, analytics, images/charts,
 
 ## Risks
 Flash model ignoring limits or inventing numbers (guards + fallback, reported); number guard false rejects (verbatim-number rule, measured in replay); bad editor picks (deterministic fallback + coverage metric); a public factual error once shared wider (disclosure, guard, hand-check before sharing).
+
+## 2026-11-14: owner reads delegated to QA
+- The owner-read item in the Done-when of SYS-40 (#126), SYS-82 (#239), SYS-83 (#240) and OPS-42 (#242) is waived. QA closes these on its own verification, re-checked on a current scheduled edition (2026-11-13 or later), since its evidence dates from the 10-05 v5 editions. Taste issues become new tickets and do not block. This is posted on each ticket.
+- Why: the tickets have waited on the owner since 2026-10-05 while editions ship daily. The owner no longer gates them.
